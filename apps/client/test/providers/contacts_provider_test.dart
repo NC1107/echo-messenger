@@ -195,17 +195,17 @@ void main() {
 
       container = ProviderContainer(
         overrides: [
-          authProvider.overrideWith((ref) {
-            final n = AuthNotifier(ref);
-            n.state = const AuthState(
-              isLoggedIn: true,
-              userId: 'me',
-              username: 'testuser',
-              token: 'fake-token',
-              refreshToken: 'fake-refresh',
-            );
-            return n;
-          }),
+          authProvider.overrideWith(
+            () => FakeLoggedInAuthNotifier(
+              const AuthState(
+                isLoggedIn: true,
+                userId: 'me',
+                username: 'testuser',
+                token: 'fake-token',
+                refreshToken: 'fake-refresh',
+              ),
+            ),
+          ),
           serverUrlProvider.overrideWith(
             () => FakeServerUrlNotifier('http://localhost:8080'),
           ),

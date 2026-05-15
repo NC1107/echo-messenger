@@ -35,13 +35,16 @@ const loadingAuthState = AuthState(isLoading: true);
 
 /// Override [authProvider] with a fixed [AuthState].
 Override authOverride([AuthState state = const AuthState()]) {
-  return authProvider.overrideWith((ref) => _FakeAuthNotifier(ref, state));
+  return authProvider.overrideWith(() => _FakeAuthNotifier(state));
 }
 
 class _FakeAuthNotifier extends AuthNotifier {
-  _FakeAuthNotifier(super.ref, AuthState initial) {
-    state = initial;
-  }
+  _FakeAuthNotifier(this._initial);
+
+  final AuthState _initial;
+
+  @override
+  AuthState build() => _initial;
 
   @override
   Future<void> login(String username, String password) async {
@@ -67,6 +70,26 @@ class _FakeAuthNotifier extends AuthNotifier {
       token: 'fake-jwt-token',
     );
   }
+
+  @override
+  Future<bool> tryAutoLogin() async => false;
+
+  @override
+  Future<void> logout({String? serverUrl}) async => state = const AuthState();
+}
+
+/// Test override for [AuthNotifier] that publishes a logged-in state via
+/// `build()` and disables network round-trips. Exposed publicly so individual
+/// test files can build their own overrides without re-declaring the
+/// boilerplate (previously each test file inlined `AuthNotifier(ref)` + a
+/// `state =` assignment, which no longer works after the @riverpod migration).
+class FakeLoggedInAuthNotifier extends AuthNotifier {
+  FakeLoggedInAuthNotifier(this._initial);
+
+  final AuthState _initial;
+
+  @override
+  AuthState build() => _initial;
 
   @override
   Future<bool> tryAutoLogin() async => false;

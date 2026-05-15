@@ -22,17 +22,17 @@ ProviderContainer _makeContainer({String? token = 'fake-jwt'}) {
   SharedPreferences.setMockInitialValues({});
   return ProviderContainer(
     overrides: [
-      authProvider.overrideWith((ref) {
-        final n = AuthNotifier(ref);
-        n.state = AuthState(
-          isLoggedIn: token != null,
-          userId: 'user-1',
-          username: 'testuser',
-          token: token,
-          refreshToken: 'refresh-tok',
-        );
-        return n;
-      }),
+      authProvider.overrideWith(
+        () => FakeLoggedInAuthNotifier(
+          AuthState(
+            isLoggedIn: token != null,
+            userId: 'user-1',
+            username: 'testuser',
+            token: token,
+            refreshToken: 'refresh-tok',
+          ),
+        ),
+      ),
       serverUrlProvider.overrideWith(
         () => FakeServerUrlNotifier('http://localhost:8080'),
       ),

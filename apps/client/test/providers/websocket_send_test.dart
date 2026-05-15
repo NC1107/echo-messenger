@@ -151,16 +151,16 @@ ProviderContainer _createContainer({
 }) {
   final container = ProviderContainer(
     overrides: [
-      authProvider.overrideWith((ref) {
-        final n = AuthNotifier(ref);
-        n.state = const AuthState(
-          isLoggedIn: true,
-          userId: 'my-user-id',
-          username: 'testuser',
-          token: 'fake-jwt-token',
-        );
-        return n;
-      }),
+      authProvider.overrideWith(
+        () => FakeLoggedInAuthNotifier(
+          const AuthState(
+            isLoggedIn: true,
+            userId: 'my-user-id',
+            username: 'testuser',
+            token: 'fake-jwt-token',
+          ),
+        ),
+      ),
       serverUrlProvider.overrideWith(
         () => FakeServerUrlNotifier('http://localhost:8080'),
       ),

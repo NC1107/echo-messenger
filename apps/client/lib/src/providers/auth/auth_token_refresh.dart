@@ -9,7 +9,7 @@ part of 'auth_provider.dart';
 /// Mixed in alongside [AuthTokenStorageMixin]; the `on` clause makes the
 /// storage helpers (`_storeTokens` / `_clearStoredTokens` / `_setUserScope`
 /// / `migrateTokensFromSharedPreferences`) statically visible from here.
-mixin AuthTokenRefreshMixin on StateNotifier<AuthState>, AuthTokenStorageMixin {
+mixin AuthTokenRefreshMixin on Notifier<AuthState>, AuthTokenStorageMixin {
   /// Lock to prevent concurrent token refresh calls. When a refresh is
   /// in-flight, subsequent callers await the same Future instead of
   /// sending duplicate refresh requests (which would fail due to

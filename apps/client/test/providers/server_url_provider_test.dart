@@ -83,8 +83,7 @@ void main() {
       return ProviderContainer(
         overrides: [
           authProvider.overrideWith(
-            (ref) => _RecordingAuthNotifier(
-              ref,
+            () => _RecordingAuthNotifier(
               initial: const AuthState(
                 isLoggedIn: true,
                 userId: 'u1',
@@ -254,9 +253,12 @@ class _LogoutCall {
 class _RecordingAuthNotifier extends AuthNotifier {
   final List<_LogoutCall> logoutCalls = [];
 
-  _RecordingAuthNotifier(super.ref, {AuthState? initial}) {
-    if (initial != null) state = initial;
-  }
+  _RecordingAuthNotifier({AuthState? initial}) : _initial = initial;
+
+  final AuthState? _initial;
+
+  @override
+  AuthState build() => _initial ?? const AuthState();
 
   @override
   Future<void> logout({String? serverUrl}) async {

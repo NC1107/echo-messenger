@@ -17,16 +17,16 @@ import 'package:echo_app/src/services/message_cache.dart';
 Chat _createNotifier() {
   final container = ProviderContainer(
     overrides: [
-      authProvider.overrideWith((ref) {
-        final n = AuthNotifier(ref);
-        n.state = const AuthState(
-          isLoggedIn: true,
-          userId: 'me',
-          username: 'testuser',
-          token: 'fake-token',
-        );
-        return n;
-      }),
+      authProvider.overrideWith(
+        () => FakeLoggedInAuthNotifier(
+          const AuthState(
+            isLoggedIn: true,
+            userId: 'me',
+            username: 'testuser',
+            token: 'fake-token',
+          ),
+        ),
+      ),
       serverUrlProvider.overrideWith(
         () => FakeServerUrlNotifier('http://localhost:8080'),
       ),

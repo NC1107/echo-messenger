@@ -52,17 +52,17 @@ Widget _wrap({
 }) {
   return ProviderScope(
     overrides: [
-      authProvider.overrideWith((ref) {
-        final n = AuthNotifier(ref);
-        n.state = const AuthState(
-          isLoggedIn: true,
-          userId: 'me',
-          username: 'me',
-          token: 'fake-jwt',
-          refreshToken: 'refresh',
-        );
-        return n;
-      }),
+      authProvider.overrideWith(
+        () => FakeLoggedInAuthNotifier(
+          const AuthState(
+            isLoggedIn: true,
+            userId: 'me',
+            username: 'me',
+            token: 'fake-jwt',
+            refreshToken: 'refresh',
+          ),
+        ),
+      ),
       serverUrlProvider.overrideWith(
         () => FakeServerUrlNotifier('http://localhost:8080'),
       ),
@@ -179,17 +179,17 @@ void main() {
                       context: context,
                       builder: (_) => ProviderScope(
                         overrides: [
-                          authProvider.overrideWith((ref) {
-                            final n = AuthNotifier(ref);
-                            n.state = const AuthState(
-                              isLoggedIn: true,
-                              userId: 'me',
-                              username: 'me',
-                              token: 'fake-jwt',
-                              refreshToken: 'refresh',
-                            );
-                            return n;
-                          }),
+                          authProvider.overrideWith(
+                            () => FakeLoggedInAuthNotifier(
+                              const AuthState(
+                                isLoggedIn: true,
+                                userId: 'me',
+                                username: 'me',
+                                token: 'fake-jwt',
+                                refreshToken: 'refresh',
+                              ),
+                            ),
+                          ),
                           serverUrlProvider.overrideWith(
                             () =>
                                 FakeServerUrlNotifier('http://localhost:8080'),

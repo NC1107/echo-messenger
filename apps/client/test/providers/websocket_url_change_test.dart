@@ -44,8 +44,7 @@ void main() {
       overrides: [
         // Authenticated session so the URL listener triggers a reconnect.
         authProvider.overrideWith(
-          (ref) => _StubAuthNotifier(
-            ref,
+          () => _StubAuthNotifier(
             const AuthState(
               isLoggedIn: true,
               userId: 'u1',
@@ -98,7 +97,10 @@ void main() {
 /// Minimal AuthNotifier that just sets initial state. Defined here (instead
 /// of using mock_providers') so the test owns the auth shape exactly.
 class _StubAuthNotifier extends AuthNotifier {
-  _StubAuthNotifier(super.ref, AuthState initial) {
-    state = initial;
-  }
+  _StubAuthNotifier(this._initial);
+
+  final AuthState _initial;
+
+  @override
+  AuthState build() => _initial;
 }

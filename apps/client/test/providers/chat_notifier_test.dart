@@ -13,16 +13,16 @@ import '../helpers/mock_providers.dart';
 Chat _createNotifier() {
   final container = ProviderContainer(
     overrides: [
-      authProvider.overrideWith((ref) {
-        final n = AuthNotifier(ref);
-        n.state = const AuthState(
-          isLoggedIn: true,
-          userId: 'me',
-          username: 'testuser',
-          token: 'fake-token',
-        );
-        return n;
-      }),
+      authProvider.overrideWith(
+        () => FakeLoggedInAuthNotifier(
+          const AuthState(
+            isLoggedIn: true,
+            userId: 'me',
+            username: 'testuser',
+            token: 'fake-token',
+          ),
+        ),
+      ),
       serverUrlProvider.overrideWith(
         () => FakeServerUrlNotifier('http://localhost:8080'),
       ),
