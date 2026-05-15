@@ -2,6 +2,7 @@ pub mod auth;
 pub mod canvas;
 pub mod channels;
 pub mod contacts;
+pub mod feedback;
 pub mod group_keys;
 pub mod groups;
 pub mod keys;
@@ -399,6 +400,7 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Rout
             post(link_preview::fetch_preview).layer(middleware::from_fn(link_preview_limit)),
         )
         .route("/api/search", get(search::universal_search))
+        .route("/api/feedback", post(feedback::create_feedback))
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/api/health", get(health))
