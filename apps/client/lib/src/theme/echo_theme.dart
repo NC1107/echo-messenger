@@ -69,10 +69,23 @@ class EchoTheme {
         ? ThemeData.dark().textTheme
         : ThemeData.light().textTheme;
     final baseTextTheme = GoogleFonts.interTextTheme(base);
-    // Route any glyph not present in Inter (notably emoji codepoints) to the
-    // bundled NotoEmoji font. Without this fallback, AppImage builds render
-    // tofu boxes when the host system fonts are missing.
-    const emojiFallback = ['NotoEmoji'];
+    // Route any glyph not present in Inter (notably emoji codepoints) to a
+    // fallback chain. Platform-native emoji fonts come FIRST: 'Apple Color
+    // Emoji' (macOS/iOS) and 'Segoe UI Emoji' (Windows) both ship with the
+    // GSUB ligature table that combines regional-indicator pairs into the
+    // expected flag glyph (#917). 'Twemoji Mozilla' covers Linux distros
+    // that ship Twemoji. NotoEmoji is kept at the end as the last-resort
+    // fallback so AppImage builds without system emoji fonts still render
+    // tofu-free for most codepoints -- the bundled CBDT NotoColorEmoji
+    // does not include flag ligatures, so Linux desktops without a system
+    // emoji font will still show regional-indicator letter pairs for
+    // flags. Tracked as a follow-up to ship a COLRv1 build.
+    const emojiFallback = [
+      'Apple Color Emoji',
+      'Segoe UI Emoji',
+      'Twemoji Mozilla',
+      'NotoEmoji',
+    ];
     return baseTextTheme.copyWith(
       headlineLarge: baseTextTheme.headlineLarge?.copyWith(
         fontSize: 24,
