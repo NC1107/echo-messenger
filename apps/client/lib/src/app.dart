@@ -18,12 +18,39 @@ ThemeData _applyCustomColors(ThemeData base, CustomColorsState custom) {
   final scheme = base.colorScheme;
   final primary = custom.primaryColor ?? scheme.primary;
   final accent = custom.accentColor ?? scheme.secondary;
+  // Recompute on-color contrast for the new primary so text on sent bubbles
+  // + buttons stays readable on a custom accent.
+  final onPrimary =
+      ThemeData.estimateBrightnessForColor(primary) == Brightness.dark
+      ? Colors.white
+      : Colors.black;
+  final onSecondary =
+      ThemeData.estimateBrightnessForColor(accent) == Brightness.dark
+      ? Colors.white
+      : Colors.black;
+  // Propagate the override into EchoColorExtension so old + new message
+  // bubbles (sentBubble) and any accent-derived surface (accentLight) reflect
+  // the picker choice. Locked rule: sentBubble = primary.
+  final echoExt = base.extension<EchoColorExtension>();
+  final updatedEcho = echoExt?.copyWith(
+    sentBubble: primary,
+    accentLight: primary.withValues(alpha: 0.2),
+  );
   return base.copyWith(
-    colorScheme: scheme.copyWith(primary: primary, secondary: accent),
+    colorScheme: scheme.copyWith(
+      primary: primary,
+      onPrimary: onPrimary,
+      secondary: accent,
+      onSecondary: onSecondary,
+    ),
+    extensions: [
+      ...base.extensions.values.where((e) => e is! EchoColorExtension),
+      ?updatedEcho,
+    ],
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         backgroundColor: accent,
-        foregroundColor: scheme.onPrimary,
+        foregroundColor: onSecondary,
       ),
     ),
     textButtonTheme: TextButtonThemeData(
