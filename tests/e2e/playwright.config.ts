@@ -61,6 +61,18 @@ export default defineConfig({
         viewport: { width: 1920, height: 1080 },
       },
     },
+    {
+      // Theme tour: switches through every theme and captures key surfaces
+      // so hardcoded-color leaks become visible. Run on demand:
+      //   npx playwright test --project=themes
+      // Output: docs/screenshots/themes/{theme}/{surface}.png
+      name: 'themes',
+      testMatch: ['theme_tour.spec.ts'],
+      use: {
+        browserName: 'chromium',
+        viewport: { width: 1920, height: 1080 },
+      },
+    },
   ],
   outputDir: './test-results',
 });
