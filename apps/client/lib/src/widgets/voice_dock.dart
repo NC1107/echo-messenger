@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:livekit_client/livekit_client.dart' show ConnectionQuality;
 
 import '../providers/channels_provider.dart';
 import '../providers/livekit_voice_provider.dart';
@@ -25,6 +26,23 @@ class VoiceDock extends ConsumerWidget {
     this.onNavigateToLounge,
     this.collapsed = false,
   });
+
+  static String _qualityLabel(ConnectionQuality q) => switch (q) {
+    ConnectionQuality.excellent => 'Excellent',
+    ConnectionQuality.good => 'Good',
+    ConnectionQuality.poor => 'Poor',
+    ConnectionQuality.lost => 'Lost',
+    ConnectionQuality.unknown => 'Unknown',
+  };
+
+  static Color _qualityColor(BuildContext context, ConnectionQuality q) =>
+      switch (q) {
+        ConnectionQuality.excellent => EchoTheme.online,
+        ConnectionQuality.good => context.accent,
+        ConnectionQuality.poor => EchoTheme.warning,
+        ConnectionQuality.lost => EchoTheme.danger,
+        ConnectionQuality.unknown => context.textMuted,
+      };
 
   static String _voiceStatusLabel(bool isJoining, int peerCount) {
     if (isJoining) return 'Connecting...';
@@ -97,6 +115,7 @@ class VoiceDock extends ConsumerWidget {
               voiceLk.isJoining,
               peerCount,
               channelName,
+              voiceLk.localConnectionQuality,
               m,
             ),
             ..._buildControlButtons(
@@ -181,12 +200,27 @@ class VoiceDock extends ConsumerWidget {
     bool isJoining,
     int peerCount,
     String channelName,
+    ConnectionQuality quality,
     _DockMetrics m,
   ) {
     return Expanded(
       child: Row(
         children: [
           Icon(Icons.graphic_eq, size: m.statusIconSize, color: statusColor),
+          if (quality != ConnectionQuality.unknown) ...[
+            const SizedBox(width: 4),
+            Tooltip(
+              message: 'Connection: ${_qualityLabel(quality)}',
+              child: Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: _qualityColor(context, quality),
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+          ],
           SizedBox(width: m.gap),
           Expanded(
             child: Column(

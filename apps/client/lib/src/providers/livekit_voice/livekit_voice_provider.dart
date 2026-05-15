@@ -49,6 +49,12 @@ class LiveKitVoiceState {
   /// than waiting for the local audio-level poll to ramp up (#907).
   final Set<String> activeSpeakerIdentities;
 
+  /// LiveKit's coarse connection-quality measurement for the local
+  /// participant. Updated via `ParticipantConnectionQualityUpdatedEvent`.
+  /// Surfaces as a colored badge in the voice dock so beta testers can
+  /// diagnose call quality at a glance (#906).
+  final ConnectionQuality localConnectionQuality;
+
   /// Number of remote participants currently in the room.
   final int peerCount;
 
@@ -72,6 +78,7 @@ class LiveKitVoiceState {
     this.peerAudioLevels = const {},
     this.localAudioLevel = 0.0,
     this.activeSpeakerIdentities = const {},
+    this.localConnectionQuality = ConnectionQuality.unknown,
     this.peerCount = 0,
     this.peerConnectionStates = const {},
     this.peerLatencies = const {},
@@ -92,6 +99,7 @@ class LiveKitVoiceState {
     Map<String, double>? peerAudioLevels,
     double? localAudioLevel,
     Set<String>? activeSpeakerIdentities,
+    ConnectionQuality? localConnectionQuality,
     int? peerCount,
     Map<String, String>? peerConnectionStates,
     Map<String, double>? peerLatencies,
@@ -112,6 +120,8 @@ class LiveKitVoiceState {
       localAudioLevel: localAudioLevel ?? this.localAudioLevel,
       activeSpeakerIdentities:
           activeSpeakerIdentities ?? this.activeSpeakerIdentities,
+      localConnectionQuality:
+          localConnectionQuality ?? this.localConnectionQuality,
       peerCount: peerCount ?? this.peerCount,
       peerConnectionStates: peerConnectionStates ?? this.peerConnectionStates,
       peerLatencies: peerLatencies ?? this.peerLatencies,
@@ -485,6 +495,17 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       ..on<TrackUnsubscribedEvent>((event) {
         _syncPeerState();
         _syncRemoteScreenShareForPip();
+      })
+      ..on<ParticipantConnectionQualityUpdatedEvent>((event) {
+        if (_disposed) return;
+        // Only the local participant's quality is surfaced in the dock —
+        // remote participants' quality is shown via individual presence
+        // dots elsewhere.
+        if (event.participant.identity == room.localParticipant?.identity) {
+          state = state.copyWith(
+            localConnectionQuality: event.connectionQuality,
+          );
+        }
       })
       ..on<ActiveSpeakersChangedEvent>((event) {
         if (_disposed) return;
