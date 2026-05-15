@@ -1,3 +1,4 @@
+pub mod admin;
 pub mod auth;
 pub mod canvas;
 pub mod channels;
@@ -401,6 +402,8 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Rout
         )
         .route("/api/search", get(search::universal_search))
         .route("/api/feedback", post(feedback::create_feedback))
+        .route("/api/admin/stats", get(admin::get_stats))
+        .route("/api/admin/feedback", get(admin::list_feedback))
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/api/health", get(health))
