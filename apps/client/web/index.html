@@ -19,6 +19,18 @@
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="A new Flutter project.">
+  <!--
+    Viewport + body reset are required for reliable pointer-event routing in
+    Flutter web (CanvasKit). Without `margin:0` on <body>, the default 8px
+    body margin pushes the flutter-view down so clicks near the top/left edge
+    of the canvas land outside Flutter's hit-test grid (#904). Without
+    `overflow:hidden` an accidental wheel/touch can scroll <body>, shifting
+    the canvas relative to the viewport between frames, which manifests as
+    "clicks need two presses" or "clicks land on nothing" in Chrome.
+    `touch-action: manipulation` disables double-tap-to-zoom delay so the
+    first click registers immediately on touch-capable laptops.
+  -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
@@ -33,6 +45,25 @@
 
   <title>Echo</title>
   <link rel="manifest" href="manifest.json">
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    /* Ensure the Flutter glass pane always sits above any browser-injected
+       overlay and accepts pointer events. CanvasKit routes hit-tests through
+       this element; a stray `pointer-events: none` or a competing stacking
+       context can silently swallow clicks. */
+    flutter-view, flt-glass-pane {
+      pointer-events: auto !important;
+      user-select: none;
+    }
+  </style>
 </head>
 <body>
   <!--
