@@ -39,10 +39,10 @@ class _SecondsClockNotifier extends ValueNotifier<DateTime> {
   void removeListener(VoidCallback listener) {
     super.removeListener(listener);
     _listenerCount--;
-    if (_listenerCount <= 0) {
+    assert(_listenerCount >= 0);
+    if (_listenerCount == 0) {
       _timer?.cancel();
       _timer = null;
-      _listenerCount = 0;
     }
   }
 }

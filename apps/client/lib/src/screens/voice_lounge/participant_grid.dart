@@ -510,7 +510,11 @@ class _ParticipantTileState extends State<ParticipantTile> {
       ),
       items: [
         PopupMenuItem<void>(
-          enabled: false,
+          // enabled: true (default) keeps the slider track + thumb rendered in
+          // their normal theme colors. We override [onTap] to null so tapping
+          // the slider doesn't dismiss the menu — the popover handles its own
+          // dismissal via the "Toggle mute for me" row.
+          onTap: null,
           padding: EdgeInsets.zero,
           child: _ParticipantVolumePopover(
             participant: participant,
@@ -566,8 +570,15 @@ class _ParticipantVolumePopoverState extends State<_ParticipantVolumePopover> {
     _volume = ParticipantVolumeController.instance.volumeFor(identity);
   }
 
-  Future<void> _onChanged(double next) async {
+  /// Visual-only update while the user is dragging. We deliberately do NOT
+  /// call [ParticipantVolumeController.setVolume] from here — overlapping
+  /// async slider events can resolve out of order and leave the WebRTC track
+  /// gain at a stale value. The commit happens once on [_onChangeEnd].
+  void _onChanged(double next) {
     setState(() => _volume = next);
+  }
+
+  Future<void> _onChangeEnd(double next) async {
     await ParticipantVolumeController.instance.setVolume(
       widget.participant,
       next,
@@ -604,6 +615,7 @@ class _ParticipantVolumePopoverState extends State<_ParticipantVolumePopover> {
             min: 0,
             max: 1,
             onChanged: supported ? _onChanged : null,
+            onChangeEnd: supported ? _onChangeEnd : null,
           ),
         ),
       ),
