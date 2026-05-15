@@ -163,9 +163,9 @@ curl https://your-domain.com/api/health
 
 ## LiveKit Voice & Video Calls
 
-Echo uses [LiveKit](https://livekit.io) for group voice and video calls. The
-LiveKit server runs as a separate container in the production compose and
-needs **direct UDP access** for WebRTC media — Traefik cannot proxy this.
+Echo uses [LiveKit](https://livekit.io) for group voice and video calls. The production compose pins `livekit/livekit-server:v1.10.1` — check [LiveKit releases](https://github.com/livekit/livekit/releases) before upgrading, as this image bundles SFU/media libraries and version bumps can be breaking.
+
+The LiveKit server runs as a separate container and needs **direct UDP access** for WebRTC media — Traefik cannot proxy this.
 
 ### Required router / firewall ports
 
