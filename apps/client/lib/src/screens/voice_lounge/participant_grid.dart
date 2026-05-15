@@ -4,6 +4,8 @@ library;
 import 'dart:async';
 import 'dart:ui' show ImageFilter;
 
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
@@ -544,6 +546,17 @@ class _ParticipantVolumePopover extends StatefulWidget {
 class _ParticipantVolumePopoverState extends State<_ParticipantVolumePopover> {
   late double _volume;
 
+  /// `flutter_webrtc`'s `Helper.setVolume` is a no-op on the Windows native
+  /// backend (#909). We keep the slider visible so users can see the control
+  /// exists, but render it disabled with a tooltip explaining why.
+  bool get _perUserVolumeSupported {
+    if (kIsWeb) return true;
+    return defaultTargetPlatform != TargetPlatform.windows;
+  }
+
+  static const String _windowsTooltip =
+      'Per-user volume is not supported on Windows yet (flutter_webrtc limitation)';
+
   @override
   void initState() {
     super.initState();
@@ -578,17 +591,26 @@ class _ParticipantVolumePopoverState extends State<_ParticipantVolumePopover> {
     // the high end sits at the top. SfSlider isn't a project dep, and a
     // hand-rolled GestureDetector slider would skip a11y/keyboard support
     // — rotating the framework Slider keeps semantics intact.
-    final verticalSlider = SizedBox(
+    final supported = _perUserVolumeSupported;
+    Widget verticalSlider = SizedBox(
       width: 36,
       height: 140,
       child: RotatedBox(
         quarterTurns: 3,
         child: SliderTheme(
           data: sliderTheme,
-          child: Slider(value: _volume, min: 0, max: 1, onChanged: _onChanged),
+          child: Slider(
+            value: _volume,
+            min: 0,
+            max: 1,
+            onChanged: supported ? _onChanged : null,
+          ),
         ),
       ),
     );
+    if (!supported) {
+      verticalSlider = Tooltip(message: _windowsTooltip, child: verticalSlider);
+    }
 
     return SizedBox(
       width: 180,
