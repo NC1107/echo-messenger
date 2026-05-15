@@ -13,6 +13,7 @@ import '../../theme/motion_tokens.dart';
 import '../../utils/canvas_utils.dart';
 import '../../widgets/voice/participant_attention.dart';
 import '../../widgets/voice_speaking_ring.dart';
+import 'participant_volume_controller.dart';
 
 class ParticipantGrid extends StatelessWidget {
   final lk.Room? room;
@@ -180,6 +181,8 @@ class ParticipantGrid extends StatelessWidget {
           }
         }
       },
+      remoteParticipant: participant,
+      identity: identity,
       authToken: authToken,
     );
   }
@@ -225,6 +228,14 @@ class ParticipantTile extends StatelessWidget {
   final VoidCallback? onMuteForMe;
   final String? authToken;
 
+  /// Remote participant handle — required for the per-peer volume slider in
+  /// the secondary-tap / long-press popover. Null for the local tile (which
+  /// has no slider — you can't adjust your own outgoing volume from here).
+  final lk.RemoteParticipant? remoteParticipant;
+
+  /// Stable identity used as the key into [ParticipantVolumeController].
+  final String? identity;
+
   /// Phase 3c: room-level attention (speaking / faded / idle).
   /// Drives the tile's scale + opacity so non-speakers fade back when
   /// someone else is on the air.
@@ -245,6 +256,8 @@ class ParticipantTile extends StatelessWidget {
     this.onTap,
     this.onMuteForMe,
     this.authToken,
+    this.remoteParticipant,
+    this.identity,
   });
 
   @override
@@ -280,11 +293,14 @@ class ParticipantTile extends StatelessWidget {
         curve: MotionCurves.emphasis,
         child: GestureDetector(
           onTap: onTap,
-          onSecondaryTapUp: !isLocal && onMuteForMe != null
+          onSecondaryTapUp: !isLocal && remoteParticipant != null
               ? (details) =>
                     _showParticipantMenu(context, details.globalPosition)
               : null,
-          onLongPress: !isLocal && onMuteForMe != null ? onMuteForMe : null,
+          onLongPressStart: !isLocal && remoteParticipant != null
+              ? (details) =>
+                    _showParticipantMenu(context, details.globalPosition)
+              : null,
           child: AnimatedContainer(
             duration: MotionDurations.standard,
             curve: MotionCurves.entrance,
@@ -392,37 +408,185 @@ class ParticipantTile extends StatelessWidget {
   }
 
   void _showParticipantMenu(BuildContext context, Offset position) {
-    showMenu<String>(
+    final participant = remoteParticipant;
+    if (participant == null) return;
+
+    final overlay =
+        Overlay.of(context, rootOverlay: true).context.findRenderObject()
+            as RenderBox?;
+    final overlaySize = overlay?.size ?? MediaQuery.of(context).size;
+
+    showMenu<void>(
       context: context,
       position: RelativeRect.fromLTRB(
         position.dx,
         position.dy,
-        position.dx + 1,
-        position.dy + 1,
+        overlaySize.width - position.dx,
+        overlaySize.height - position.dy,
       ),
       color: context.surface,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
         side: BorderSide(color: context.border),
       ),
       items: [
-        PopupMenuItem(
-          value: 'mute',
-          child: Row(
-            children: [
-              Icon(Icons.volume_off, size: 16, color: context.textSecondary),
-              const SizedBox(width: 8),
-              Text(
-                'Toggle mute for me',
-                style: TextStyle(color: context.textPrimary, fontSize: 13),
-              ),
-            ],
+        PopupMenuItem<void>(
+          enabled: false,
+          padding: EdgeInsets.zero,
+          child: _ParticipantVolumePopover(
+            participant: participant,
+            name: name,
+            onToggleMute: onMuteForMe,
           ),
         ),
       ],
-    ).then((value) {
-      if (value == 'mute') onMuteForMe?.call();
-    });
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Volume slider popover (per-participant)
+// ---------------------------------------------------------------------------
+
+class _ParticipantVolumePopover extends StatefulWidget {
+  final lk.RemoteParticipant participant;
+  final String name;
+  final VoidCallback? onToggleMute;
+
+  const _ParticipantVolumePopover({
+    required this.participant,
+    required this.name,
+    this.onToggleMute,
+  });
+
+  @override
+  State<_ParticipantVolumePopover> createState() =>
+      _ParticipantVolumePopoverState();
+}
+
+class _ParticipantVolumePopoverState extends State<_ParticipantVolumePopover> {
+  late double _volume;
+
+  @override
+  void initState() {
+    super.initState();
+    final identity = widget.participant.identity.isNotEmpty
+        ? widget.participant.identity
+        : widget.participant.sid.toString();
+    _volume = ParticipantVolumeController.instance.volumeFor(identity);
+  }
+
+  Future<void> _onChanged(double next) async {
+    setState(() => _volume = next);
+    await ParticipantVolumeController.instance.setVolume(
+      widget.participant,
+      next,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final percent = (_volume * 100).round();
+    final sliderTheme = SliderTheme.of(context).copyWith(
+      trackHeight: 4,
+      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+      overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+      activeTrackColor: context.accent,
+      inactiveTrackColor: context.border,
+      thumbColor: context.accent,
+      overlayColor: context.accent.withValues(alpha: 0.18),
+    );
+
+    // Vertical slider: rotate a horizontal Slider 90° counter-clockwise so
+    // the high end sits at the top. SfSlider isn't a project dep, and a
+    // hand-rolled GestureDetector slider would skip a11y/keyboard support
+    // — rotating the framework Slider keeps semantics intact.
+    final verticalSlider = SizedBox(
+      width: 36,
+      height: 140,
+      child: RotatedBox(
+        quarterTurns: 3,
+        child: SliderTheme(
+          data: sliderTheme,
+          child: Slider(value: _volume, min: 0, max: 1, onChanged: _onChanged),
+        ),
+      ),
+    );
+
+    return SizedBox(
+      width: 180,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: double.infinity,
+              child: Text(
+                widget.name,
+                style: TextStyle(
+                  color: context.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '$percent%',
+              style: TextStyle(color: context.textMuted, fontSize: 11),
+            ),
+            const SizedBox(height: 4),
+            Icon(Icons.volume_up, size: 16, color: context.textMuted),
+            verticalSlider,
+            Icon(
+              _volume <= 0.001 ? Icons.volume_off : Icons.volume_down,
+              size: 16,
+              color: context.textMuted,
+            ),
+            if (widget.onToggleMute != null) ...[
+              const SizedBox(height: 6),
+              const Divider(height: 1),
+              const SizedBox(height: 4),
+              InkWell(
+                onTap: () {
+                  Navigator.of(context).pop();
+                  widget.onToggleMute?.call();
+                },
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 8,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.volume_off,
+                        size: 16,
+                        color: context.textSecondary,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Toggle mute for me',
+                        style: TextStyle(
+                          color: context.textPrimary,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }
 
