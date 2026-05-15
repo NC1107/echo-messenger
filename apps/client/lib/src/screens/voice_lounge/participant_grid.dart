@@ -42,6 +42,7 @@ class ParticipantGrid extends StatelessWidget {
   static const double _attentionThreshold = 0.05;
 
   bool get _anyoneSpeaking {
+    if (voiceState.activeSpeakerIdentities.isNotEmpty) return true;
     if (voiceState.localAudioLevel > _attentionThreshold) return true;
     for (final level in voiceState.peerAudioLevels.values) {
       if (level > _attentionThreshold) return true;
@@ -143,7 +144,11 @@ class ParticipantGrid extends StatelessWidget {
         : participant.sid.toString();
     final audioLevel = voiceState.peerAudioLevels[identity] ?? 0.0;
 
-    final remoteIsSpeaking = audioLevel > _attentionThreshold;
+    // Speaker outline reacts to whichever fires first: the server-push
+    // ActiveSpeakersChangedEvent OR the local audio-level threshold (#907).
+    final remoteIsSpeaking =
+        audioLevel > _attentionThreshold ||
+        voiceState.activeSpeakerIdentities.contains(identity);
     final attention = attentionFor(
       isSpeaking: remoteIsSpeaking,
       anyoneElseSpeaking: anyoneSpeaking && !remoteIsSpeaking,

@@ -43,6 +43,12 @@ class LiveKitVoiceState {
   final Map<String, double> peerAudioLevels;
   final double localAudioLevel;
 
+  /// Identities currently flagged as active speakers by LiveKit's
+  /// server-side detector. Push-based via `ActiveSpeakersChangedEvent`,
+  /// so the speaker outline reacts within network RTT (~30-50ms) rather
+  /// than waiting for the local audio-level poll to ramp up (#907).
+  final Set<String> activeSpeakerIdentities;
+
   /// Number of remote participants currently in the room.
   final int peerCount;
 
@@ -65,6 +71,7 @@ class LiveKitVoiceState {
     this.channelId,
     this.peerAudioLevels = const {},
     this.localAudioLevel = 0.0,
+    this.activeSpeakerIdentities = const {},
     this.peerCount = 0,
     this.peerConnectionStates = const {},
     this.peerLatencies = const {},
@@ -84,6 +91,7 @@ class LiveKitVoiceState {
     String? channelId,
     Map<String, double>? peerAudioLevels,
     double? localAudioLevel,
+    Set<String>? activeSpeakerIdentities,
     int? peerCount,
     Map<String, String>? peerConnectionStates,
     Map<String, double>? peerLatencies,
@@ -102,6 +110,8 @@ class LiveKitVoiceState {
       channelId: channelId ?? this.channelId,
       peerAudioLevels: peerAudioLevels ?? this.peerAudioLevels,
       localAudioLevel: localAudioLevel ?? this.localAudioLevel,
+      activeSpeakerIdentities:
+          activeSpeakerIdentities ?? this.activeSpeakerIdentities,
       peerCount: peerCount ?? this.peerCount,
       peerConnectionStates: peerConnectionStates ?? this.peerConnectionStates,
       peerLatencies: peerLatencies ?? this.peerLatencies,
@@ -475,6 +485,18 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       ..on<TrackUnsubscribedEvent>((event) {
         _syncPeerState();
         _syncRemoteScreenShareForPip();
+      })
+      ..on<ActiveSpeakersChangedEvent>((event) {
+        if (_disposed) return;
+        // Push-based: reacts within ~RTT to the server-side detector,
+        // rather than waiting for the 100ms local audio-level poll to
+        // ramp past the static threshold (#907).
+        final ids = <String>{};
+        for (final p in event.speakers) {
+          final id = p.identity.isNotEmpty ? p.identity : p.sid.toString();
+          ids.add(id);
+        }
+        state = state.copyWith(activeSpeakerIdentities: ids);
       })
       ..on<RoomDisconnectedEvent>((_) {
         DebugLogService.instance.log(
