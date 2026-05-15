@@ -47,7 +47,7 @@ class NoConversationPlaceholder extends StatelessWidget {
                   label: const Text('Add Contact'),
                   style: FilledButton.styleFrom(
                     backgroundColor: context.accent,
-                    foregroundColor: Colors.white,
+                    foregroundColor: context.onAccent,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 20,
                       vertical: 12,

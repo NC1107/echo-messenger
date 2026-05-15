@@ -1027,6 +1027,13 @@ extension EchoColors on BuildContext {
   /// bubble at or near the accent color; promote to a dedicated
   /// [EchoColorExtension] field if a theme ever needs a non-onPrimary value.
   Color get onSentBubble => Theme.of(this).colorScheme.onPrimary;
+
+  /// Foreground color for content rendered on top of [accent]-coloured
+  /// surfaces (FAB icons, FilledButton labels, spinner-in-accent-button).
+  /// Resolves to `ColorScheme.onPrimary` so themes whose accent is light
+  /// (graphite/ember) get a dark foreground instead of unreadable white
+  /// (#830).
+  Color get onAccent => Theme.of(this).colorScheme.onPrimary;
   Color get cardRowBg => echo.resolvedCardRowBg;
   Gradient? get chatBgGradient => echo.chatBgGradient;
 

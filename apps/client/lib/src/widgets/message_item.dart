@@ -27,6 +27,7 @@ import 'message/link_preview_card.dart';
 import 'message/media_content.dart';
 import 'message/message_status_icon.dart';
 import 'message/message_indicators.dart';
+import 'message/quick_reaction_row.dart';
 import 'message/reaction_bar.dart';
 import 'message/reply_count_badge.dart';
 import 'message/reply_quote.dart';
@@ -478,90 +479,20 @@ class _MessageItemState extends State<MessageItem>
   /// Quick reaction emoji row for the mobile action sheet.
   ///
   /// Wrapped in a horizontal-fade ShaderMask so the leading and trailing edges
-  /// hint at off-screen reactions (#508).
+  /// hint at off-screen reactions (#508). On desktop / web a chevron overlay
+  /// is rendered when the row actually overflows (#577).
   Widget _buildQuickReactionRow(BuildContext sheetContext, ChatMessage msg) {
-    final textDir = Directionality.of(sheetContext);
-    return ShaderMask(
-      blendMode: BlendMode.dstIn,
-      shaderCallback: (bounds) => const LinearGradient(
-        begin: AlignmentDirectional.centerStart,
-        end: AlignmentDirectional.centerEnd,
-        stops: [0.0, 0.04, 0.96, 1.0],
-        colors: [
-          Colors.transparent,
-          Colors.black,
-          Colors.black,
-          Colors.transparent,
-        ],
-      ).createShader(bounds, textDirection: textDir),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: Row(
-          children: [
-            for (final emoji in reactionEmojis) ...[
-              Builder(
-                builder: (_) {
-                  final alreadyReacted = msg.reactions.any(
-                    (r) => r.emoji == emoji && r.userId == widget.myUserId,
-                  );
-                  return GestureDetector(
-                    onTap: () {
-                      Navigator.pop(sheetContext);
-                      widget.onReactionSelect?.call(msg, emoji);
-                    },
-                    child: Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: alreadyReacted
-                            ? context.accent.withValues(alpha: 0.2)
-                            : null,
-                        borderRadius: BorderRadius.circular(8),
-                        border: alreadyReacted
-                            ? Border.all(color: context.accent, width: 2)
-                            : null,
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        emoji,
-                        style: const TextStyle(
-                          fontSize: 24,
-                          decoration: TextDecoration.none,
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(width: 4),
-            ],
-            Semantics(
-              button: true,
-              label: 'More emojis',
-              child: GestureDetector(
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  widget.onMoreReactions?.call(msg);
-                },
-                child: Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  alignment: Alignment.center,
-                  child: Icon(
-                    Icons.add_reaction_outlined,
-                    size: 24,
-                    color: context.accent,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+    return QuickReactionRow(
+      message: msg,
+      myUserId: widget.myUserId,
+      onSelect: (emoji) {
+        Navigator.pop(sheetContext);
+        widget.onReactionSelect?.call(msg, emoji);
+      },
+      onMore: () {
+        Navigator.pop(sheetContext);
+        widget.onMoreReactions?.call(msg);
+      },
     );
   }
 

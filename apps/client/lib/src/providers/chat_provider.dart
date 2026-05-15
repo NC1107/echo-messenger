@@ -338,6 +338,28 @@ class Chat extends _$Chat {
     );
   }
 
+  /// Decrement the reply count on a parent message by 1 (floor at 0).
+  ChatState _decrementReplyCount(
+    ChatState s,
+    String conversationId,
+    String parentId,
+  ) {
+    final messages = s.messagesForConversation(conversationId);
+    final idx = messages.indexWhere((m) => m.id == parentId);
+    if (idx == -1) return s;
+    final parent = messages[idx];
+    if (parent.replyCount <= 0) return s;
+    final updated = parent.copyWith(replyCount: parent.replyCount - 1);
+    final newList = List<ChatMessage>.from(messages);
+    newList[idx] = updated;
+    return s.copyWith(
+      messagesByConversation: {
+        ...s.messagesByConversation,
+        conversationId: newList,
+      },
+    );
+  }
+
   /// Transition a pending message to failed status after send timeout.
   void _transitionToFailed(
     String conversationId,
@@ -357,12 +379,18 @@ class Chat extends _$Chat {
     );
     final updatedList = List<ChatMessage>.from(messages);
     updatedList[idx] = updated;
-    state = state.copyWith(
+    var newState = state.copyWith(
       messagesByConversation: {
         ...state.messagesByConversation,
         conversationId: updatedList,
       },
     );
+    // Roll back the optimistic replyCount bump on the parent so failed
+    // sends don't permanently inflate the thread badge (#830).
+    if (msg.replyToId != null) {
+      newState = _decrementReplyCount(newState, conversationId, msg.replyToId!);
+    }
+    state = newState;
   }
 
   void confirmSent(
@@ -789,6 +817,14 @@ class Chat extends _$Chat {
     final messages = state.messagesByConversation[conversationId];
     if (messages == null) return;
 
+    // Detect transitions involving a failed reply so we can keep the parent
+    // replyCount in sync with the optimistic-bump bookkeeping (#830):
+    //   failed -> sending  (user retried)  : re-increment parent
+    //   sending|sent|... -> failed         : decrement parent (e.g. ws send threw)
+    ChatMessage? before;
+    final idx = messages.indexWhere((m) => m.id == messageId);
+    if (idx != -1) before = messages[idx];
+
     final updated = messages.map((msg) {
       if (msg.id == messageId) {
         return msg.copyWith(status: status);
@@ -796,12 +832,32 @@ class Chat extends _$Chat {
       return msg;
     }).toList();
 
-    state = state.copyWith(
+    var newState = state.copyWith(
       messagesByConversation: {
         ...state.messagesByConversation,
         conversationId: updated,
       },
     );
+
+    if (before != null && before.replyToId != null) {
+      final wasFailed = before.status == MessageStatus.failed;
+      final isFailed = status == MessageStatus.failed;
+      if (wasFailed && !isFailed) {
+        newState = _incrementReplyCount(
+          newState,
+          conversationId,
+          before.replyToId!,
+        );
+      } else if (!wasFailed && isFailed) {
+        newState = _decrementReplyCount(
+          newState,
+          conversationId,
+          before.replyToId!,
+        );
+      }
+    }
+
+    state = newState;
   }
 
   /// Mark all of my sent/delivered messages in a conversation as read.

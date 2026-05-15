@@ -140,6 +140,12 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     final token = ref.read(authProvider).token;
     if (token == null) return;
 
+    // Cancel any pending reconnect timer before establishing a fresh
+    // connection — otherwise a queued backoff fire can race the manual
+    // connect and end up with two parallel channels (#830).
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+
     disconnect();
     _reconnectAttempts = 0;
     // wasReplaced is intentionally NOT cleared here. Only [reconnectAfterReplacement]
