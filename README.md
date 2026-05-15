@@ -1,5 +1,11 @@
 # Echo - Encrypted Messenger
 
+[![Release](https://img.shields.io/github/v/release/NC1107/echo-messenger?label=latest)](https://github.com/NC1107/echo-messenger/releases/latest)
+[![Release](https://github.com/NC1107/echo-messenger/actions/workflows/release.yml/badge.svg)](https://github.com/NC1107/echo-messenger/actions/workflows/release.yml)
+[![Rust CI](https://github.com/NC1107/echo-messenger/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/NC1107/echo-messenger/actions/workflows/rust-ci.yml)
+[![Flutter CI](https://github.com/NC1107/echo-messenger/actions/workflows/flutter-ci.yml/badge.svg)](https://github.com/NC1107/echo-messenger/actions/workflows/flutter-ci.yml)
+[![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue)](LICENSE)
+
 A lightweight, cross-platform messaging app with end-to-end encryption. I'm not a fan of the direction Discord is moving, and I don't think most people can set up Matrix, so this is my attempt at a replacement. It runs centralized by default, but you can always host the server yourself.
 
 ## Downloads
