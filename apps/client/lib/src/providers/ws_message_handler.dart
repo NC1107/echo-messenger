@@ -139,7 +139,26 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
 
   /// Messages received before crypto was initialized.
   /// Drained by [drainPendingDecryptQueue] once crypto is ready.
-  final List<Map<String, dynamic>> _pendingDecryptQueue = [];
+  ///
+  /// Each entry carries the user ID that was authenticated at the time the
+  /// envelope was queued. The drain step refuses to decrypt entries whose
+  /// owner does not match the currently-authenticated user, so a logout +
+  /// re-login on the same process cannot leak user A's queued ciphertext
+  /// into user B's chat/conversations state (#830 finding 4).
+  final List<_PendingDecryptEntry> _pendingDecryptQueue = [];
+
+  /// Length of the pending decrypt queue. Exposed for tests asserting that
+  /// the session-cleanup paths actually empty the queue.
+  int get pendingDecryptQueueLength => _pendingDecryptQueue.length;
+
+  /// Enqueue an envelope that arrived before crypto finished initialising.
+  /// Records the currently-authenticated user ID alongside the payload so the
+  /// drain step can refuse cross-account leakage (#830 finding 4).
+  void _enqueuePendingDecrypt(Map<String, dynamic> json, String myUserId) {
+    _pendingDecryptQueue.add(
+      _PendingDecryptEntry(ownerUserId: myUserId, json: json),
+    );
+  }
 
   /// Library-private state accessors used by the part-file extensions.
   ///
@@ -169,16 +188,34 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
   }
 
   /// Decrypt queued messages that arrived before crypto init completed.
+  ///
+  /// Defensively drops any queue entries whose owning user ID does not match
+  /// [myUserId]. If user A logs out mid-decrypt and user B logs in on the
+  /// same process before the queue was cleared, those stale ciphertext
+  /// envelopes must never be delivered into user B's state (#830 finding 4).
   void drainPendingDecryptQueue(String myUserId) {
     if (_pendingDecryptQueue.isEmpty) return;
     final crypto = ref.read(cryptoServiceProvider);
     final token = ref.read(authProvider).token ?? '';
     crypto.setToken(token);
 
-    final queue = List<Map<String, dynamic>>.from(_pendingDecryptQueue);
+    final queue = List<_PendingDecryptEntry>.from(_pendingDecryptQueue);
     _pendingDecryptQueue.clear();
 
-    for (final json in queue) {
+    for (final entry in queue) {
+      if (entry.ownerUserId != myUserId) {
+        // Cross-account envelope from a previous session — discard silently.
+        // The cleanup hook should have already cleared this, but defence in
+        // depth: never deliver into the wrong user's chat state.
+        DebugLogService.instance.log(
+          LogLevel.warning,
+          'WebSocket',
+          'Dropped pending decrypt entry owned by '
+              '${entry.ownerUserId} (current user $myUserId)',
+        );
+        continue;
+      }
+      final json = entry.json;
       final rawContent = (json['content'] ?? '').toString();
       final fromUserId = json['from_user_id'] as String? ?? '';
       final conversationId = json['conversation_id'] as String? ?? '';
@@ -441,4 +478,14 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
   void _handleCanvasEvent(Map<String, dynamic> json) {
     ref.read(canvasProvider.notifier).handleCanvasEvent(json);
   }
+}
+
+/// Single entry in the pending-decrypt queue. Binds the envelope to the user
+/// ID that was authenticated when it was enqueued so a drain after a logout
+/// can refuse to deliver into the wrong account (#830 finding 4).
+class _PendingDecryptEntry {
+  final String ownerUserId;
+  final Map<String, dynamic> json;
+
+  const _PendingDecryptEntry({required this.ownerUserId, required this.json});
 }

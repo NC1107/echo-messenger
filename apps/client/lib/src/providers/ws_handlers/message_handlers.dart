@@ -183,8 +183,10 @@ extension MessageHandlersOn on WsMessageHandler {
       }, myUserId).copyWith(isEncrypted: true);
       ref.read(chatProvider.notifier).addMessage(placeholder);
 
-      // Queue the raw JSON so it can be decrypted once crypto initializes
-      _pendingDecryptQueue.add(json);
+      // Queue the raw JSON so it can be decrypted once crypto initializes.
+      // Bind the entry to the current user so a logout + re-login cannot
+      // leak this ciphertext into another account's state (#830 finding 4).
+      _enqueuePendingDecrypt(json, myUserId);
 
       ref
           .read(conversationsProvider.notifier)
