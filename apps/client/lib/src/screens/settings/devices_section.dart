@@ -417,24 +417,28 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
         ? ref.watch(cryptoServiceProvider).deviceId
         : null;
 
+    // Layout mirrors the other settings sections (notifications, privacy,
+    // appearance, ...): Center > ConstrainedBox(maxWidth: 900) > ListView
+    // with `padding: EdgeInsets.all(24)` and an 18px header. The previous
+    // mix of `shrinkWrap: true` + child-side LTRB padding caused the column
+    // to read as left-aligned relative to the settings top bar (#916).
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 900),
         child: ListView(
-          shrinkWrap: true,
+          padding: const EdgeInsets.all(24),
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
-              child: Row(
-                children: [
-                  Column(
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         'My Devices',
                         style: TextStyle(
                           color: context.textPrimary,
-                          fontSize: 20,
+                          fontSize: 18,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -448,15 +452,15 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
                       ),
                     ],
                   ),
-                  const Spacer(),
-                  IconButton(
-                    icon: Icon(Icons.refresh, color: context.textSecondary),
-                    tooltip: 'Refresh',
-                    onPressed: _loading ? null : _loadDevices,
-                  ),
-                ],
-              ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.refresh, color: context.textSecondary),
+                  tooltip: 'Refresh',
+                  onPressed: _loading ? null : _loadDevices,
+                ),
+              ],
             ),
+            const SizedBox(height: 12),
             const Divider(height: 1),
             _buildDeviceListBody(context, myDeviceId),
             if (!_loading &&
@@ -464,7 +468,7 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
                 myDeviceId != null &&
                 _devices.any((d) => d.deviceId != myDeviceId))
               Padding(
-                padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                padding: const EdgeInsets.only(top: 16),
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: TextButton.icon(
