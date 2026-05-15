@@ -84,10 +84,25 @@ async function shot(page: Page, themeId: string, name: string) {
   console.log(`captured themes/${themeId}/${name}.png`);
 }
 
-async function loginOrRegister(page: Page) {
+/// Register the tour user directly via the REST API. Idempotent — falls
+/// through silently if the user already exists (so re-running the spec is
+/// cheap). Called once before any tests.
+async function apiRegisterTourUser() {
+  const res = await fetch(`${LOCAL}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: TOUR_USER, password: TOUR_PASS }),
+  });
+  if (res.status !== 201 && res.status !== 409) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Could not seed tour user: ${res.status} ${body}`);
+  }
+  console.log(`tour user ${TOUR_USER} ready (status ${res.status})`);
+}
+
+async function uiLogin(page: Page) {
   await page.goto(APP);
   await waitForFlutter(page);
-  // Try login first; if it fails, register.
   const userInput = page.locator('input[aria-label="Username"]').first();
   if (await userInput.isVisible({ timeout: 3000 }).catch(() => false)) {
     await userInput.focus();
@@ -95,25 +110,8 @@ async function loginOrRegister(page: Page) {
     const passInput = page.locator('input[aria-label="Password"]').first();
     await passInput.focus();
     await page.keyboard.type(TOUR_PASS, { delay: 10 });
-    if (!(await tryClickByText(page, /^sign in$|^log ?in$/i))) {
-      // No login button found — try register
-      await tryClickByText(page, /create account|sign up|register/i);
-    }
+    await tryClickByText(page, /^log ?in$|^sign in$/i);
     await page.waitForTimeout(3000);
-    // If still on auth screen (login failed), register the user fresh.
-    if (await userInput.isVisible({ timeout: 1500 }).catch(() => false)) {
-      await tryClickByText(page, /create account|sign up|register/i);
-      await page.waitForTimeout(1000);
-      const u2 = page.locator('input[aria-label="Username"]').first();
-      if (await u2.isVisible({ timeout: 2000 }).catch(() => false)) {
-        await u2.focus();
-        await page.keyboard.type(TOUR_USER, { delay: 10 });
-        await page.locator('input[aria-label="Password"]').first().focus();
-        await page.keyboard.type(TOUR_PASS, { delay: 10 });
-        await tryClickByText(page, /^sign up$|^create account$|^register$/i);
-        await page.waitForTimeout(3000);
-      }
-    }
   }
   await dismissDialogs(page);
   // Skip onboarding wizard if it appeared.
@@ -156,9 +154,30 @@ async function selectTheme(page: Page, label: string) {
   }
 }
 
+/// Set the theme directly in localStorage and reload — bypasses the picker
+/// UI entirely. Flutter's shared_preferences plugin reads from
+/// `flutter.{key}` on web, so writing `flutter.echo_theme_mode` to the
+/// new value + reload picks it up on next boot.
+async function setThemeViaLocalStorage(page: Page, themeName: string) {
+  await page.evaluate((name) => {
+    // shared_preferences/web stores values under a `flutter.` prefix
+    window.localStorage.setItem(
+      'flutter.echo_theme_mode',
+      JSON.stringify(name),
+    );
+  }, themeName);
+  await page.reload();
+  await waitForFlutter(page);
+  await page.waitForTimeout(1500);
+}
+
 test.describe.serial('Theme tour', () => {
+  test.beforeAll(async () => {
+    await apiRegisterTourUser();
+  });
+
   test('00 — bootstrap login + reach settings', async ({ page }) => {
-    await loginOrRegister(page);
+    await uiLogin(page);
     await openSettingsAppearance(page);
     // Sanity screenshot of the picker in the default theme.
     fs.mkdirSync(SHOTS_ROOT, { recursive: true });
@@ -169,28 +188,27 @@ test.describe.serial('Theme tour', () => {
   });
 
   for (const t of THEMES) {
-    test(`theme: ${t.id} — appearance + chat`, async ({ page }) => {
-      await loginOrRegister(page);
-      await openSettingsAppearance(page);
-      await selectTheme(page, t.label);
-      // Capture the picker in this theme.
-      await shot(page, t.id, 'settings-appearance');
-      // Back to home / chat list.
-      // Try clicking a "back" or app-bar leading arrow; if none, navigate via hash.
-      const back = page.getByRole('button', { name: /back|close/i }).first();
-      if (await back.isVisible({ timeout: 1000 }).catch(() => false)) {
-        await back.click();
-      } else {
-        await page.evaluate(() => {
-          window.location.hash = '#/';
-        });
+    test(`theme: ${t.id} — surfaces`, async ({ page }) => {
+      await uiLogin(page);
+      // Force the theme via localStorage + reload — more reliable than
+      // clicking through the picker, which proved brittle in practice.
+      await setThemeViaLocalStorage(page, t.id);
+      // Re-login if the reload kicked us back to auth.
+      const userInput = page.locator('input[aria-label="Username"]').first();
+      if (await userInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await uiLogin(page);
       }
-      await page.waitForTimeout(1500);
+      // Capture home / chat list in this theme.
       await shot(page, t.id, 'home');
+      // Open Settings → see the sidebar in this theme.
+      await openSettingsAppearance(page);
+      await shot(page, t.id, 'settings');
       // Click the first conversation if any.
-      const conv = page
-        .locator('flt-semantics[role="button"]')
-        .first();
+      await page.evaluate(() => {
+        window.location.hash = '#/';
+      });
+      await page.waitForTimeout(1500);
+      const conv = page.locator('flt-semantics[role="button"]').first();
       if (await conv.isVisible({ timeout: 1500 }).catch(() => false)) {
         await conv.click();
         await page.waitForTimeout(1500);
