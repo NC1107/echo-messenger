@@ -137,10 +137,13 @@ class _EchoScreenSelectDialogState extends State<_EchoScreenSelectDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final visible = _sources.values.where((s) => s.type == _tab).toList();
     final columns = _tab == rtc.SourceType.Screen ? 2 : 3;
 
     return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      clipBehavior: Clip.antiAlias,
       child: SizedBox(
         width: 640,
         height: 560,
@@ -148,22 +151,19 @@ class _EchoScreenSelectDialogState extends State<_EchoScreenSelectDialog> {
           children: [
             // --- header --------------------------------------------------
             Padding(
-              padding: const EdgeInsets.all(10),
-              child: Stack(
+              padding: const EdgeInsets.fromLTRB(20, 16, 8, 8),
+              child: Row(
                 children: [
-                  const Align(
-                    alignment: Alignment.topLeft,
+                  Expanded(
                     child: Text(
                       'Choose what to share',
-                      style: TextStyle(fontSize: 16),
+                      style: theme.textTheme.titleLarge,
                     ),
                   ),
-                  Align(
-                    alignment: Alignment.topRight,
-                    child: InkWell(
-                      onTap: _cancel,
-                      child: const Icon(Icons.close),
-                    ),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: _cancel,
+                    icon: const Icon(Icons.close),
                   ),
                 ],
               ),
@@ -187,12 +187,12 @@ class _EchoScreenSelectDialogState extends State<_EchoScreenSelectDialog> {
                       child: visible.isEmpty
                           ? const Center(child: CircularProgressIndicator())
                           : GridView.builder(
-                              padding: const EdgeInsets.all(8),
+                              padding: const EdgeInsets.all(12),
                               gridDelegate:
                                   SliverGridDelegateWithFixedCrossAxisCount(
                                     crossAxisCount: columns,
-                                    crossAxisSpacing: 8,
-                                    mainAxisSpacing: 8,
+                                    crossAxisSpacing: 12,
+                                    mainAxisSpacing: 12,
                                   ),
                               itemCount: visible.length,
                               itemBuilder: (_, i) {
@@ -213,14 +213,19 @@ class _EchoScreenSelectDialogState extends State<_EchoScreenSelectDialog> {
             ),
 
             // --- action buttons ------------------------------------------
-            OverflowBar(
-              children: [
-                TextButton(onPressed: _cancel, child: const Text('Cancel')),
-                ElevatedButton(
-                  onPressed: _selected != null ? _submit : null,
-                  child: const Text('Share'),
-                ),
-              ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: OverflowBar(
+                spacing: 8,
+                alignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(onPressed: _cancel, child: const Text('Cancel')),
+                  FilledButton(
+                    onPressed: _selected != null ? _submit : null,
+                    child: const Text('Share'),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -289,44 +294,66 @@ class _SourceTileState extends State<_SourceTile> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: widget.onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          border: widget.selected
-              ? Border.all(
-                  width: 2,
-                  color: Theme.of(context).colorScheme.primary,
-                )
-              : null,
-        ),
-        child: Column(
-          children: [
-            Expanded(
-              child: _thumb != null
-                  ? Image.memory(
-                      _thumb!,
-                      gaplessPlayback: true,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, _, _) => const _ThumbPlaceholder(),
-                    )
-                  : const _ThumbPlaceholder(),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Text(
-                _name,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: widget.selected
-                      ? FontWeight.bold
-                      : FontWeight.normal,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final radius = BorderRadius.circular(8);
+
+    return Semantics(
+      button: true,
+      selected: widget.selected,
+      label: _name.isEmpty ? 'Screen source' : _name,
+      child: Material(
+        color: widget.selected
+            ? scheme.primaryContainer
+            : scheme.surfaceContainerHighest,
+        borderRadius: radius,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: widget.onTap,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: radius,
+              border: Border.all(
+                width: widget.selected ? 2 : 1,
+                color: widget.selected ? scheme.primary : scheme.outlineVariant,
               ),
             ),
-          ],
+            padding: const EdgeInsets.all(6),
+            child: Column(
+              children: [
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: _thumb != null
+                        ? Image.memory(
+                            _thumb!,
+                            gaplessPlayback: true,
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, _, _) =>
+                                const _ThumbPlaceholder(),
+                          )
+                        : const _ThumbPlaceholder(),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    _name,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: widget.selected
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                      color: widget.selected
+                          ? scheme.onPrimaryContainer
+                          : scheme.onSurface,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -342,10 +369,15 @@ class _ThumbPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
-      color: Colors.grey.shade200,
-      child: const Center(
-        child: Icon(Icons.desktop_windows, size: 40, color: Colors.grey),
+      color: scheme.surfaceContainerHigh,
+      child: Center(
+        child: Icon(
+          Icons.desktop_windows,
+          size: 40,
+          color: scheme.onSurfaceVariant,
+        ),
       ),
     );
   }
