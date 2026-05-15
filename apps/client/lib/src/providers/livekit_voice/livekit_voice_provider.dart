@@ -15,6 +15,7 @@ import '../auth_provider.dart';
 import '../channels_provider.dart';
 import '../server_url_provider.dart';
 import '../voice_settings_provider.dart';
+import 'rtc_stats_poll.dart';
 
 part 'livekit_voice_provider.g.dart';
 part 'livekit_voice_av_controls.dart';
@@ -75,6 +76,16 @@ class LiveKitVoiceState {
   /// label rendered in the voice dock (#925).
   final DateTime? callStartedAt;
 
+  /// Most recent outbound audio bitrate (bits per second) sampled from the
+  /// LiveKit peer connections via `RtcStatsPoll`. `0` while idle or before
+  /// the first poll tick.  Surfaced in the dock connection-quality tooltip
+  /// (#937, follow-up to #906).
+  final int audioBitrateBps;
+
+  /// Most recent round-trip time (milliseconds) for the selected ICE
+  /// candidate pair. `0` while idle or before the first poll tick.
+  final double rttMs;
+
   const LiveKitVoiceState({
     this.isActive = false,
     this.isJoining = false,
@@ -95,6 +106,8 @@ class LiveKitVoiceState {
     this.peerLatencies = const {},
     this.error,
     this.callStartedAt,
+    this.audioBitrateBps = 0,
+    this.rttMs = 0,
   });
 
   LiveKitVoiceState copyWith({
@@ -117,6 +130,8 @@ class LiveKitVoiceState {
     Map<String, double>? peerLatencies,
     String? error,
     Object? callStartedAt = _callStartedAtSentinel,
+    int? audioBitrateBps,
+    double? rttMs,
   }) {
     return LiveKitVoiceState(
       isActive: isActive ?? this.isActive,
@@ -142,6 +157,8 @@ class LiveKitVoiceState {
       callStartedAt: identical(callStartedAt, _callStartedAtSentinel)
           ? this.callStartedAt
           : callStartedAt as DateTime?,
+      audioBitrateBps: audioBitrateBps ?? this.audioBitrateBps,
+      rttMs: rttMs ?? this.rttMs,
     );
   }
 
@@ -164,6 +181,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
   Room? _room;
   EventsListener<RoomEvent>? _roomListener;
   Timer? _audioLevelTimer;
+  RtcStatsPoll? _rtcStatsPoll;
   @override
   bool _disposed = false;
 
@@ -342,6 +360,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
 
       _syncPeerState();
       _startAudioLevelPolling();
+      _startRtcStatsPolling(room);
       SoundService().playVoiceJoin();
 
       // Promote the foreground service to voice mode (Android) and report
@@ -646,6 +665,31 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     _audioLevelTimer = null;
   }
 
+  // -------------------------------------------------------------------------
+  // RTC stats polling (bitrate + RTT for the dock tooltip — #937)
+  // -------------------------------------------------------------------------
+
+  void _startRtcStatsPolling(Room room) {
+    _rtcStatsPoll?.dispose();
+    final poll = RtcStatsPoll(
+      room,
+      onSample: (sample) {
+        if (_disposed) return;
+        state = state.copyWith(
+          audioBitrateBps: sample.audioBitrateBps,
+          rttMs: sample.rttMs,
+        );
+      },
+    );
+    _rtcStatsPoll = poll;
+    poll.start();
+  }
+
+  void _stopRtcStatsPolling() {
+    _rtcStatsPoll?.dispose();
+    _rtcStatsPoll = null;
+  }
+
   void _pollAudioLevels() {
     final room = _room;
     if (room == null || _disposed) return;
@@ -675,6 +719,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
 
   Future<void> _cleanupRoom() async {
     _stopAudioLevelPolling();
+    _stopRtcStatsPolling();
     _roomListener?.dispose();
     _roomListener = null;
 
@@ -700,6 +745,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
   void _handleDispose() {
     _disposed = true;
     _stopAudioLevelPolling();
+    _stopRtcStatsPolling();
     _detachNotificationActionListener();
     unawaited(BackgroundService.instance.stopVoice());
     unawaited(VoiceCallKitService.instance.endCall());
