@@ -84,20 +84,33 @@ async function shot(page: Page, themeId: string, name: string) {
   console.log(`captured themes/${themeId}/${name}.png`);
 }
 
-/// Register the tour user directly via the REST API. Idempotent — falls
-/// through silently if the user already exists (so re-running the spec is
-/// cheap). Called once before any tests.
-async function apiRegisterTourUser() {
-  const res = await fetch(`${LOCAL}/api/auth/register`, {
+// ---------------------------------------------------------------------------
+// API helpers
+// ---------------------------------------------------------------------------
+
+async function apiPost(path: string, body: any, token?: string) {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${LOCAL}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: TOUR_USER, password: TOUR_PASS }),
+    headers,
+    body: JSON.stringify(body),
   });
-  if (res.status !== 201 && res.status !== 409) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`Could not seed tour user: ${res.status} ${body}`);
+  return { status: res.status, data: await res.json().catch(() => ({})) };
+}
+
+/// Register the tour user directly via the REST API. Idempotent — accepts
+/// 201 (created) or 409 (already exists) as success, so re-running the spec
+/// is cheap. Called once before any tests.
+async function apiRegisterTourUser() {
+  const { status } = await apiPost('/api/auth/register', {
+    username: TOUR_USER,
+    password: TOUR_PASS,
+  });
+  if (status !== 201 && status !== 409) {
+    throw new Error(`Could not seed tour user: ${status}`);
   }
-  console.log(`tour user ${TOUR_USER} ready (status ${res.status})`);
+  console.log(`tour user ${TOUR_USER} ready (status ${status})`);
 }
 
 async function uiLogin(page: Page) {
