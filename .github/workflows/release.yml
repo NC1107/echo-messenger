@@ -192,7 +192,7 @@ jobs:
           channel: stable
           cache: true
       - name: Cache pub-cache + .dart_tool
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.pub-cache
@@ -313,7 +313,7 @@ jobs:
           channel: stable
           cache: true
       - name: Cache pub-cache + .dart_tool
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.pub-cache
@@ -322,7 +322,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pubcache-
       - name: Cache AppImage tools
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/echo-appimage-tools
           key: appimage-tools-v1
@@ -608,7 +608,7 @@ jobs:
           channel: stable
           cache: true
       - name: Cache pub-cache + .dart_tool
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.pub-cache
@@ -686,7 +686,7 @@ jobs:
           channel: stable
           cache: true
       - name: Cache pub-cache + .dart_tool
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.pub-cache
@@ -695,7 +695,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pubcache-
       - name: Cache Gradle
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.gradle/caches
@@ -757,7 +757,7 @@ jobs:
           channel: stable
           cache: true
       - name: Cache pub-cache + .dart_tool
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.pub-cache
@@ -766,7 +766,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pubcache-
       - name: Cache CocoaPods
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             apps/client/ios/Pods
@@ -920,7 +920,7 @@ jobs:
           channel: stable
           cache: true
       - name: Cache pub-cache + .dart_tool
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.pub-cache
@@ -929,7 +929,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pubcache-
       - name: Cache CocoaPods
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             apps/client/macos/Pods
@@ -1046,7 +1046,7 @@ jobs:
           channel: stable
           cache: true
       - name: Cache pub-cache + .dart_tool
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.pub-cache
