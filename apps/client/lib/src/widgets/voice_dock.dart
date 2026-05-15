@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/channels_provider.dart';
 import '../providers/livekit_voice_provider.dart';
 import '../providers/screen_share_provider.dart';
+import '../screens/voice_lounge/screen_share_actions.dart';
 import '../providers/theme_provider.dart' show UIDensity, uiDensityProvider;
 import '../providers/voice_settings_provider.dart';
 import '../theme/echo_theme.dart';
@@ -316,19 +317,7 @@ class VoiceDock extends ConsumerWidget {
           : context.textSecondary,
       tooltip: screenShare.isScreenSharing ? 'Stop sharing' : 'Share screen',
       iconSize: m.btnIconSize,
-      onPressed: () async {
-        final lkNotifier = ref.read(livekitVoiceProvider.notifier);
-        final ssNotifier = ref.read(screenShareProvider.notifier);
-        if (screenShare.isScreenSharing) {
-          await lkNotifier.setScreenShareEnabled(false);
-          ssNotifier.setLiveKitScreenShareActive(false);
-        } else {
-          final ok = await lkNotifier.setScreenShareEnabled(true);
-          if (ok) {
-            ssNotifier.setLiveKitScreenShareActive(true);
-          }
-        }
-      },
+      onPressed: () => toggleScreenShare(context, ref),
     );
   }
 
