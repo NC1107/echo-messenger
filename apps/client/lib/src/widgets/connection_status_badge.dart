@@ -254,8 +254,9 @@ class _ConnectionStatusBadgeState extends ConsumerState<ConnectionStatusBadge>
       ],
     );
 
-    final tooltip = Tooltip(message: tooltipLabel, child: stack);
-
+    // Mobile: keep the system tooltip (long-press hint). Desktop uses the
+    // custom OverlayPortal popover, so we drop the tooltip to avoid the
+    // double-hover affect (system tooltip overlaps + covers the popover).
     if (isMobile) {
       return Semantics(
         button: true,
@@ -263,7 +264,7 @@ class _ConnectionStatusBadgeState extends ConsumerState<ConnectionStatusBadge>
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () => _openMobileSheet(kind),
-          child: tooltip,
+          child: Tooltip(message: tooltipLabel, child: stack),
         ),
       );
     }
@@ -287,7 +288,7 @@ class _ConnectionStatusBadgeState extends ConsumerState<ConnectionStatusBadge>
         child: Semantics(
           button: true,
           label: 'Connection status: $tooltipLabel',
-          child: tooltip,
+          child: stack,
         ),
       ),
     );
