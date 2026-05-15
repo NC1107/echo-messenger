@@ -19,6 +19,8 @@ Client apps and server binaries are on the [Releases page](https://github.com/NC
 | Windows | [Echo-Setup-x64.exe](https://github.com/NC1107/echo-messenger/releases/latest/download/Echo-Setup-x64.exe) (installer) |
 | Linux | [Echo-x86_64.AppImage](https://github.com/NC1107/echo-messenger/releases/latest/download/Echo-x86_64.AppImage) (single file) |
 | Web | [echo-messenger.us](https://echo-messenger.us) (hosted) or [echo-web.tar.gz](https://github.com/NC1107/echo-messenger/releases/latest/download/echo-web.tar.gz) (self-host static files) |
+| iOS | Available via TestFlight — see [ios-testflight-setup.md](docs/ios-testflight-setup.md) |
+| Android | APK on the [Releases page](https://github.com/NC1107/echo-messenger/releases) (sideload) |
 
 **Self-hosting the server**
 
