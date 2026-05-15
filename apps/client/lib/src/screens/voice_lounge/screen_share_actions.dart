@@ -41,6 +41,44 @@ Future<void> toggleScreenShare(BuildContext context, WidgetRef ref) async {
   final ssNotifier = ref.read(screenShareProvider.notifier);
 
   if (screenShare.isScreenSharing) {
+    // #936: On Linux, LiveKit's `setScreenShareEnabled(false)` only mutes /
+    // unpublishes the track but can leave the underlying `LocalVideoTrack`
+    // (and its now-dead xdg-desktop-portal MediaStream) cached on the
+    // participant. A subsequent `setScreenShareEnabled(true)` then reuses
+    // that stale reference and the freshly-picked source publishes as a
+    // white frame. Explicitly unpublish + stop + dispose the screen-share
+    // publication so the next start request is forced to acquire a brand
+    // new portal source. Safe on every platform because we walk only the
+    // screen-share publication and skip camera tracks.
+    final room = lkNotifier.room;
+    final local = room?.localParticipant;
+    if (local != null) {
+      final screenPubs = local.videoTrackPublications
+          .where((pub) => pub.source == lk.TrackSource.screenShareVideo)
+          .toList();
+      for (final pub in screenPubs) {
+        final track = pub.track;
+        try {
+          await local.removePublishedTrack(pub.sid);
+        } catch (e) {
+          debugPrint('[ScreenShare] removePublishedTrack failed: $e');
+        }
+        if (track is lk.LocalVideoTrack) {
+          try {
+            await track.stop();
+          } catch (e) {
+            debugPrint('[ScreenShare] track.stop failed: $e');
+          }
+          try {
+            await track.dispose();
+          } catch (e) {
+            debugPrint('[ScreenShare] track.dispose failed: $e');
+          }
+        }
+      }
+    }
+    // Still call the LiveKit notifier so its internal flag flips false and
+    // any SDK-side bookkeeping (audio capture, signaling) settles cleanly.
     await lkNotifier.setScreenShareEnabled(false);
     ssNotifier.setLiveKitScreenShareActive(false);
     return;
@@ -68,6 +106,28 @@ Future<void> toggleScreenShare(BuildContext context, WidgetRef ref) async {
     // Mobile / Web / Linux: let LiveKit route through the platform's
     // native picker (xdg-desktop-portal on Linux Wayland, system sheet
     // on iOS / Android, the browser's getDisplayMedia chooser on web).
+    //
+    // #936: defensively sweep any leftover screen-share publication
+    // before asking LiveKit to enable one. If the toggle state in
+    // [screenShareProvider] ever drifts out of sync with LiveKit's
+    // internal `getTrackPublicationBySource`, the SDK would take the
+    // `unmute(stale-track)` branch and publish white frames instead of
+    // creating a fresh track from the portal source the user just
+    // picked. Cheap no-op when there's nothing stale to clear.
+    final room = lkNotifier.room;
+    final local = room?.localParticipant;
+    if (local != null) {
+      final stalePubs = local.videoTrackPublications
+          .where((pub) => pub.source == lk.TrackSource.screenShareVideo)
+          .toList();
+      for (final pub in stalePubs) {
+        try {
+          await local.removePublishedTrack(pub.sid);
+        } catch (e) {
+          debugPrint('[ScreenShare] stale pub cleanup failed: $e');
+        }
+      }
+    }
     final ok = await lkNotifier.setScreenShareEnabled(true);
     if (ok) {
       ssNotifier.setLiveKitScreenShareActive(true);
