@@ -100,7 +100,10 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
             myUserId,
           );
           if (!existingIds.contains(reply.id)) {
-            notifier.addMessage(reply);
+            // Historical seeding: the parent's `replyCount` is already
+            // authoritative on the server, so suppress the optimistic bump
+            // that addMessage normally applies to fresh WS replies (#919).
+            notifier.addMessage(reply, bumpReplyCount: false);
           }
         }
         if (mounted) {

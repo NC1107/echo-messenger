@@ -225,10 +225,22 @@ class Chat extends _$Chat {
     }
   }
 
-  void addMessage(ChatMessage msg) {
+  /// Add a single message to state. When [bumpReplyCount] is true (the live
+  /// WS path) and the message is a reply, the parent's `replyCount` is
+  /// incremented optimistically. Historical seeders (e.g. the thread panel's
+  /// `/replies` fetch) pass false because the parent's count already reflects
+  /// the server-authoritative total -- bumping again would inflate the badge
+  /// every time the panel was opened (#919).
+  void addMessage(ChatMessage msg, {bool bumpReplyCount = true}) {
+    // Detect duplicate-by-id BEFORE withMessage runs so we don't double-bump
+    // when the server echoes a message we've already counted (e.g. a group
+    // sender receiving their own broadcast back). withMessage dedups by id
+    // but _incrementReplyCount used to run regardless.
+    final alreadyKnown =
+        state._messageIdIndex[msg.conversationId]?.contains(msg.id) ?? false;
+
     var newState = state.withMessage(msg);
-    // Increment reply count on the parent when an incoming message is a reply.
-    if (msg.replyToId != null) {
+    if (bumpReplyCount && msg.replyToId != null && !alreadyKnown) {
       newState = _incrementReplyCount(
         newState,
         msg.conversationId,
