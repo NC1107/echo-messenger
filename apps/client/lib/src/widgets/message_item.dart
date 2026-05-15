@@ -1778,6 +1778,13 @@ class _MessageItemState extends State<MessageItem>
                   onTap: widget.onViewThread,
                   inlineStyle: widget._isPlain,
                 ),
+              if (msg.replyCount > 0 &&
+                  (msg.latestReplyPreview?.trim().isNotEmpty ?? false) &&
+                  !msg.isEncrypted)
+                _LatestReplyPreview(
+                  preview: msg.latestReplyPreview!,
+                  isMine: isMine,
+                ),
               if (widget.isLastInGroup)
                 _buildTimestampRow(msg: msg, isMine: isMine)
               else
@@ -1804,7 +1811,17 @@ class _MessageItemState extends State<MessageItem>
         onExit: (_) => _hoverNotifier.value = false,
         child: Semantics(
           label: _composeMessageSemanticsLabel(msg, isMine),
-          button: true,
+          // Audit #830 finding 11: the row's only direct gesture is
+          // long-press to open the action sheet; advertising `button: true`
+          // lied to screen readers ("activate" was announced even though
+          // a tap is a no-op). Declare the action that actually fires.
+          onLongPress: () => _handleLongPress(
+            const LongPressStartDetails(),
+            msg,
+            isMine,
+            mediaUrl,
+            hasReactions,
+          ),
           child: GestureDetector(
             onLongPressStart: (details) =>
                 _handleLongPress(details, msg, isMine, mediaUrl, hasReactions),
@@ -1950,5 +1967,39 @@ class _HoverStyleSpec {
           rowHoverBorderColor: context.border.withValues(alpha: 0.09),
         );
     }
+  }
+}
+
+/// Slack-style inline preview of the latest reply, rendered as a small
+/// muted italic line directly under the reply-count badge. Aligns to the
+/// same side as the badge (left for incoming, right for outgoing in
+/// bubble layouts) so the eye treats badge + preview as one cluster.
+class _LatestReplyPreview extends StatelessWidget {
+  final String preview;
+  final bool isMine;
+
+  const _LatestReplyPreview({required this.preview, required this.isMine});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(top: 2, left: isMine ? 0 : 36, right: 4),
+      child: Align(
+        alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 320),
+          child: Text(
+            preview,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontStyle: FontStyle.italic,
+              color: context.textMuted,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
