@@ -96,7 +96,22 @@ Future<void> toggleScreenShare(BuildContext context, WidgetRef ref) async {
       );
       final room = lkNotifier.room;
       if (room != null) {
-        await room.localParticipant?.publishVideoTrack(track);
+        // #910: explicit single-layer VP8 publish for screen-share. Without
+        // this, the SDK falls back to `roomOptions.defaultVideoPublishOptions`
+        // which is tuned for camera (simulcast=true + a camera-shaped
+        // VideoEncoding). On macOS/Windows that combination negotiates a
+        // simulcast layout that the SFU silently drops for remote viewers —
+        // the sharer keeps their local preview (no SFU round-trip) but
+        // remotes see no track. A single-layer VP8 publish matches what
+        // LiveKit's own meet sample uses for screen-share and is decodable
+        // everywhere flutter_webrtc runs.
+        await room.localParticipant?.publishVideoTrack(
+          track,
+          publishOptions: const lk.VideoPublishOptions(
+            simulcast: false,
+            videoCodec: 'vp8',
+          ),
+        );
         ssNotifier.setLiveKitScreenShareActive(true);
       }
     } catch (e) {

@@ -140,8 +140,32 @@ mixin LiveKitVoiceAvControlsMixin on Notifier<LiveKitVoiceState> {
           enabled,
           captureScreenAudio: true,
         );
+      } else if (!enabled) {
+        // Disable path: SDK handles unpublish + track stop internally.
+        await room.localParticipant?.setScreenShareEnabled(false);
       } else {
-        await room.localParticipant?.setScreenShareEnabled(enabled);
+        // #910: Enable path bypasses `setScreenShareEnabled(true)` so we
+        // can pass explicit publish options. The SDK shortcut falls back
+        // to `roomOptions.defaultVideoPublishOptions`, which is tuned for
+        // camera (simulcast=true + a camera-shaped VideoEncoding). For
+        // screen-share that combination negotiates a multi-layer simulcast
+        // publish that the SFU silently drops for remote viewers — the
+        // sharer keeps their local preview (no SFU round-trip) but
+        // remotes see no track. A single-layer VP8 publish matches the
+        // LiveKit meet sample and is decodable wherever flutter_webrtc
+        // runs (Linux xdg-desktop-portal, web getDisplayMedia, Android).
+        final captureOptions =
+            room.roomOptions.defaultScreenShareCaptureOptions;
+        final track = await LocalVideoTrack.createScreenShareTrack(
+          captureOptions,
+        );
+        await room.localParticipant?.publishVideoTrack(
+          track,
+          publishOptions: const VideoPublishOptions(
+            simulcast: false,
+            videoCodec: 'vp8',
+          ),
+        );
       }
       return true;
     } catch (e) {
