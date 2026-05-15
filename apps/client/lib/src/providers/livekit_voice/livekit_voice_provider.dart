@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:livekit_client/livekit_client.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../screens/voice_lounge/participant_volume_controller.dart';
 import '../../services/background_service.dart';
 import '../../services/debug_log_service.dart';
 import '../../services/pip_controller.dart';
@@ -726,6 +727,22 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     final room = _room;
     _room = null;
     if (room != null) {
+      // #927: restore per-participant track volumes to 1.0 BEFORE disconnect
+      // so the underlying MediaStreamTrack handles are still alive when the
+      // `Helper.setVolume` calls land. On Windows the per-track gain is
+      // applied via WASAPI session volume, which Windows persists across
+      // process lifetime — exiting with a reduced gain leaves the app
+      // visibly pinned at the lower level in the system mixer until the
+      // user manually re-adjusts it. Harmless no-op on other platforms.
+      try {
+        await ParticipantVolumeController.instance.restoreAll(room);
+      } catch (e) {
+        DebugLogService.instance.log(
+          LogLevel.warning,
+          'LiveKitVoice',
+          'Volume restore failed during cleanup (ignored): $e',
+        );
+      }
       try {
         await room.disconnect();
       } catch (_) {
@@ -759,8 +776,17 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     _room = null;
     listener?.dispose();
     if (room != null) {
+      // #927: chain the volume restore before disconnect so per-track gain is
+      // returned to 1.0 while tracks are still alive. See `_cleanupRoom` for
+      // the long-form rationale. Fire-and-forget by design — dispose is
+      // synchronous from the framework's POV.
       unawaited(
-        room.disconnect().then((_) => room.dispose()).catchError((_) => false),
+        ParticipantVolumeController.instance
+            .restoreAll(room)
+            .catchError((_) {})
+            .then((_) => room.disconnect())
+            .then((_) => room.dispose())
+            .catchError((_) => false),
       );
     }
   }
