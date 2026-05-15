@@ -128,7 +128,7 @@ class _ToastWidgetState extends State<_ToastWidget>
     super.dispose();
   }
 
-  Color _backgroundColor() {
+  Color _backgroundColor(BuildContext context) {
     switch (widget.type) {
       case ToastType.success:
         return EchoTheme.online;
@@ -137,7 +137,7 @@ class _ToastWidgetState extends State<_ToastWidget>
       case ToastType.warning:
         return EchoTheme.warning;
       case ToastType.info:
-        return EchoTheme.accent;
+        return context.accent;
     }
   }
 
@@ -170,7 +170,7 @@ class _ToastWidgetState extends State<_ToastWidget>
               constraints: const BoxConstraints(maxWidth: 360),
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: _backgroundColor(),
+                color: _backgroundColor(context),
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(

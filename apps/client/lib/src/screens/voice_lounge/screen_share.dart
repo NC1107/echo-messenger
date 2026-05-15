@@ -182,7 +182,7 @@ class _DraggableScreenShareWindowState
                 color: Colors.black.withValues(alpha: 0.85),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: (widget.isLocal ? EchoTheme.danger : EchoTheme.accent)
+                  color: (widget.isLocal ? EchoTheme.danger : context.accent)
                       .withValues(alpha: 0.6),
                   width: 1.5,
                 ),
