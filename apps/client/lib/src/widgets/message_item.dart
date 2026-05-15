@@ -1811,7 +1811,17 @@ class _MessageItemState extends State<MessageItem>
         onExit: (_) => _hoverNotifier.value = false,
         child: Semantics(
           label: _composeMessageSemanticsLabel(msg, isMine),
-          button: true,
+          // Audit #830 finding 11: the row's only direct gesture is
+          // long-press to open the action sheet; advertising `button: true`
+          // lied to screen readers ("activate" was announced even though
+          // a tap is a no-op). Declare the action that actually fires.
+          onLongPress: () => _handleLongPress(
+            const LongPressStartDetails(),
+            msg,
+            isMine,
+            mediaUrl,
+            hasReactions,
+          ),
           child: GestureDetector(
             onLongPressStart: (details) =>
                 _handleLongPress(details, msg, isMine, mediaUrl, hasReactions),
