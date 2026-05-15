@@ -1041,6 +1041,22 @@ extension EchoColors on BuildContext {
   /// [EchoColorExtension] field if a theme ever needs a non-onPrimary value.
   Color get onSentBubble => Theme.of(this).colorScheme.onPrimary;
 
+  /// Tint color used for translucent overlays painted on top of [sentBubble]
+  /// (e.g. inner reply-quote wash, badge halos). Picks the contrast direction
+  /// that stays visible against the bubble: themes whose `onSentBubble` is
+  /// light (indigo, graphite, sakura) want a dark tint that DARKENS the
+  /// bubble, while themes whose `onSentBubble` is dark (ember's amber) need
+  /// a white tint that LIGHTENS the bubble -- otherwise an alpha-12
+  /// near-black wash flattens the bubble into a near-black block and the
+  /// dark foreground reads as black-on-black (#920).
+  ///
+  /// Centralised here so call sites never hardcode `Colors.white` again
+  /// (#830 Findings 7+8).
+  Color get sentBubbleTint {
+    final fg = onSentBubble;
+    return fg.computeLuminance() < 0.3 ? Colors.white : fg;
+  }
+
   /// Foreground color for content rendered on top of [accent]-coloured
   /// surfaces (FAB icons, FilledButton labels, spinner-in-accent-button).
   /// Resolves to `ColorScheme.onPrimary` so themes whose accent is light
