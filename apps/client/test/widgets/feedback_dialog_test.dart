@@ -71,8 +71,9 @@ void main() {
       // We locate it via its key so the test stays robust to layout
       // changes elsewhere in the dialog.
       bool isEnabled() {
-        final btn = tester.widget(find.byKey(const Key('feedback-send-button')))
-            as ButtonStyleButton;
+        final btn =
+            tester.widget(find.byKey(const Key('feedback-send-button')))
+                as ButtonStyleButton;
         return btn.onPressed != null;
       }
 
