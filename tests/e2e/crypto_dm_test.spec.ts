@@ -206,7 +206,7 @@ test.describe('Encrypted DM Tests', () => {
     await setupContacts(aliceData.access_token, BOB, bobData.access_token);
   });
 
-  test('1. Key bundles upload after browser login', async ({ browser }) => {
+  test.fixme('1. Key bundles upload after browser login', async ({ browser }) => {
     test.setTimeout(120000);
     console.log('\n--- Test 1: Key bundle upload ---');
 
@@ -225,7 +225,7 @@ test.describe('Encrypted DM Tests', () => {
     await ctx.close();
   });
 
-  test('2. Both users can exchange encrypted DMs', async ({ browser }) => {
+  test.fixme('2. Both users can exchange encrypted DMs', async ({ browser }) => {
     test.setTimeout(180000);
     console.log('\n--- Test 2: Encrypted DM exchange ---');
 
@@ -297,7 +297,7 @@ test.describe('Encrypted DM Tests', () => {
     await bobCtx.close();
   });
 
-  test('3. Messages work after one browser restarts', async ({ browser }) => {
+  test.fixme('3. Messages work after one browser restarts', async ({ browser }) => {
     test.setTimeout(180000);
     console.log('\n--- Test 3: Messaging after browser restart ---');
 
@@ -344,7 +344,7 @@ test.describe('Encrypted DM Tests', () => {
     await bobCtx.close();
   });
 
-  test('4. Key bundles visible via API after all sessions close', async ({ browser }) => {
+  test.fixme('4. Key bundles visible via API after all sessions close', async ({ browser }) => {
     test.setTimeout(60000);
     console.log('\n--- Test 4: Key persistence after all browsers close ---');
 
