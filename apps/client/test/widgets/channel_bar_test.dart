@@ -70,7 +70,10 @@ class _FakeChannelsNotifier extends Channels {
 }
 
 class _FakeVoiceRtcNotifier extends LiveKitVoiceNotifier {
-  _FakeVoiceRtcNotifier(super.ref);
+  _FakeVoiceRtcNotifier();
+
+  @override
+  LiveKitVoiceState build() => LiveKitVoiceState.empty;
 
   int joinCalls = 0;
   int leaveCalls = 0;
@@ -141,8 +144,8 @@ void main() {
             fakeChannels = _FakeChannelsNotifier();
             return fakeChannels;
           }),
-          voiceRtcProvider.overrideWith((ref) {
-            fakeVoiceRtc = _FakeVoiceRtcNotifier(ref);
+          voiceRtcProvider.overrideWith(() {
+            fakeVoiceRtc = _FakeVoiceRtcNotifier();
             return fakeVoiceRtc;
           }),
           voiceSettingsProvider.overrideWith(_FakeVoiceSettingsConfirm.new),
@@ -183,8 +186,8 @@ void main() {
             fakeChannels = _FakeChannelsNotifier();
             return fakeChannels;
           }),
-          voiceRtcProvider.overrideWith((ref) {
-            fakeVoiceRtc = _FakeVoiceRtcNotifier(ref);
+          voiceRtcProvider.overrideWith(() {
+            fakeVoiceRtc = _FakeVoiceRtcNotifier();
             return fakeVoiceRtc;
           }),
           voiceSettingsProvider.overrideWith(_FakeVoiceSettingsConfirm.new),
@@ -270,8 +273,8 @@ void main() {
             fakeChannels = _FakeChannelsNotifier();
             return fakeChannels;
           }),
-          voiceRtcProvider.overrideWith((ref) {
-            fakeVoiceRtc = _FakeVoiceRtcNotifier(ref);
+          voiceRtcProvider.overrideWith(() {
+            fakeVoiceRtc = _FakeVoiceRtcNotifier();
             return fakeVoiceRtc;
           }),
           voiceSettingsProvider.overrideWith(_FakeVoiceSettings.new),

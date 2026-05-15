@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:livekit_client/livekit_client.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../services/background_service.dart';
 import '../../services/debug_log_service.dart';
@@ -16,6 +16,7 @@ import '../channels_provider.dart';
 import '../server_url_provider.dart';
 import '../voice_settings_provider.dart';
 
+part 'livekit_voice_provider.g.dart';
 part 'livekit_voice_av_controls.dart';
 
 // ---------------------------------------------------------------------------
@@ -120,10 +121,9 @@ class LiveKitVoiceState {
 /// listener, peer-state sync, audio-level polling, and the LiveKit JWT
 /// fetch. AV controls (mic / camera / screen share / video quality) live
 /// in [LiveKitVoiceAvControlsMixin] in `livekit_voice_av_controls.dart`.
-class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState>
+@Riverpod(keepAlive: true)
+class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     with LiveKitVoiceAvControlsMixin {
-  final Ref ref;
-
   @override
   Room? _room;
   EventsListener<RoomEvent>? _roomListener;
@@ -143,7 +143,11 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState>
   /// as the Android notification action sub — active only during a call.
   StreamSubscription<CallKitAction>? _callKitActionSub;
 
-  LiveKitVoiceNotifier(this.ref) : super(LiveKitVoiceState.empty);
+  @override
+  LiveKitVoiceState build() {
+    ref.onDispose(_handleDispose);
+    return LiveKitVoiceState.empty;
+  }
 
   /// Resolve the human-readable channel name for the active room so the
   /// voice notification can show "lounge" instead of a UUID.  Falls back
@@ -629,8 +633,10 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState>
     }
   }
 
-  @override
-  void dispose() {
+  /// Wired up via `ref.onDispose` in `build()`. Mirrors the StateNotifier-era
+  /// `dispose()` override so timers, notifications, and the LiveKit room
+  /// are released when the provider is invalidated.
+  void _handleDispose() {
     _disposed = true;
     _stopAudioLevelPolling();
     _detachNotificationActionListener();
@@ -650,8 +656,6 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState>
         room.disconnect().then((_) => room.dispose()).catchError((_) => false),
       );
     }
-
-    super.dispose();
   }
 }
 
@@ -678,10 +682,11 @@ String _deriveLiveKitUrl(String serverUrl) {
 // ---------------------------------------------------------------------------
 
 /// Primary voice provider using LiveKit SFU.
-final livekitVoiceProvider =
-    StateNotifierProvider<LiveKitVoiceNotifier, LiveKitVoiceState>(
-      (ref) => LiveKitVoiceNotifier(ref),
-    );
+///
+/// Back-compat alias — the generated provider is
+/// [liveKitVoiceNotifierProvider]; we re-export the historical short name
+/// here so the ~80 existing call sites and tests do not change.
+final livekitVoiceProvider = liveKitVoiceNotifierProvider;
 
 /// Convenience aliases so widgets/tests can use old names without mass-renaming.
 final voiceRtcProvider = livekitVoiceProvider;

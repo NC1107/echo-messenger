@@ -65,7 +65,8 @@ class _FakeVoiceSettings extends VoiceSettings {
 }
 
 class _FakeVoiceRtcNotifier extends LiveKitVoiceNotifier {
-  _FakeVoiceRtcNotifier(super.ref);
+  @override
+  LiveKitVoiceState build() => LiveKitVoiceState.empty;
 }
 
 /// Builds the full set of overrides needed for ChatPanel widget tests.
@@ -76,7 +77,7 @@ List<Override> _chatPanelOverrides({ChatState chatState = const ChatState()}) {
     channelsProvider.overrideWith(_FakeChannelsNotifier.new),
     privacyProvider.overrideWith(_FakePrivacy.new),
     voiceSettingsProvider.overrideWith(_FakeVoiceSettings.new),
-    voiceRtcProvider.overrideWith((ref) => _FakeVoiceRtcNotifier(ref)),
+    voiceRtcProvider.overrideWith(_FakeVoiceRtcNotifier.new),
     appThemeProvider.overrideWith(_FakeTheme.new),
     messageLayoutNotifierProvider.overrideWith(_FakeMessageLayoutNotifier.new),
   ];
