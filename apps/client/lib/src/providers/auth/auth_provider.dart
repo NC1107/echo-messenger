@@ -125,13 +125,24 @@ class AuthNotifier extends _$AuthNotifier
   Future<void> register(String username, String password) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final response = await http
-          .post(
-            Uri.parse('$_serverUrl/api/auth/register'),
-            headers: _kJsonHeaders,
-            body: jsonEncode({'username': username, 'password': password}),
-          )
-          .timeout(const Duration(seconds: 15));
+      // On web we MUST use the credentialed BrowserClient so the
+      // HttpOnly Set-Cookie refresh-token response header is actually stored
+      // by the browser. Without `withCredentials = true` the cookie is
+      // silently dropped from a CORS response and the user gets logged out
+      // on the next page refresh (#929).
+      final client = buildHttpClient();
+      final http.Response response;
+      try {
+        response = await client
+            .post(
+              Uri.parse('$_serverUrl/api/auth/register'),
+              headers: _kJsonHeaders,
+              body: jsonEncode({'username': username, 'password': password}),
+            )
+            .timeout(const Duration(seconds: 15));
+      } finally {
+        client.close();
+      }
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -179,13 +190,24 @@ class AuthNotifier extends _$AuthNotifier
   Future<void> login(String username, String password) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final response = await http
-          .post(
-            Uri.parse('$_serverUrl/api/auth/login'),
-            headers: _kJsonHeaders,
-            body: jsonEncode({'username': username, 'password': password}),
-          )
-          .timeout(const Duration(seconds: 15));
+      // On web we MUST use the credentialed BrowserClient so the
+      // HttpOnly Set-Cookie refresh-token response header is actually stored
+      // by the browser. Without `withCredentials = true` the cookie is
+      // silently dropped from a CORS response and the user gets logged out
+      // on the next page refresh (#929).
+      final client = buildHttpClient();
+      final http.Response response;
+      try {
+        response = await client
+            .post(
+              Uri.parse('$_serverUrl/api/auth/login'),
+              headers: _kJsonHeaders,
+              body: jsonEncode({'username': username, 'password': password}),
+            )
+            .timeout(const Duration(seconds: 15));
+      } finally {
+        client.close();
+      }
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
