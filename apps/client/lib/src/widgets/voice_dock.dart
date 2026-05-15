@@ -189,6 +189,7 @@ class VoiceDock extends ConsumerWidget {
     Color statusColor,
   ) {
     const m = _DockMetrics.compact;
+    final callStartedAt = voiceLk.callStartedAt;
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTap: onNavigateToLounge,
@@ -207,7 +208,7 @@ class VoiceDock extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
-              padding: const EdgeInsets.only(bottom: 4),
+              padding: const EdgeInsets.only(bottom: 2),
               child: Container(
                 width: 8,
                 height: 8,
@@ -217,6 +218,28 @@ class VoiceDock extends ConsumerWidget {
                 ),
               ),
             ),
+            if (callStartedAt != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: ValueListenableBuilder<DateTime>(
+                  valueListenable: _voiceClock,
+                  builder: (context, now, _) {
+                    final elapsed = now.difference(callStartedAt);
+                    final label = _formatCallDuration(
+                      elapsed.isNegative ? Duration.zero : elapsed,
+                    );
+                    return Text(
+                      label,
+                      style: TextStyle(
+                        color: context.textMuted,
+                        fontSize: 9,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                      textAlign: TextAlign.center,
+                    );
+                  },
+                ),
+              ),
             _buildMuteButton(context, ref, voiceSettings, m),
             _buildDeafenButton(context, ref, voiceSettings, m),
             _buildHangupButton(ref, screenShare, conversationId, channelId, m),
