@@ -23,6 +23,12 @@ part 'livekit_voice_av_controls.dart';
 // State
 // ---------------------------------------------------------------------------
 
+/// Sentinel for [LiveKitVoiceState.copyWith.callStartedAt] so callers can
+/// explicitly reset the timestamp to `null` while a plain absent argument
+/// preserves the existing value. Required because Dart's null-default
+/// idiom collapses "not passed" and "passed null" into the same case.
+const Object _callStartedAtSentinel = Object();
+
 class LiveKitVoiceState {
   final bool isActive;
   final bool isJoining;
@@ -64,6 +70,11 @@ class LiveKitVoiceState {
   final Map<String, double> peerLatencies;
   final String? error;
 
+  /// Wall-clock timestamp when the local participant successfully joined the
+  /// LiveKit room. `null` while idle / joining. Drives the M:SS call-duration
+  /// label rendered in the voice dock (#925).
+  final DateTime? callStartedAt;
+
   const LiveKitVoiceState({
     this.isActive = false,
     this.isJoining = false,
@@ -83,6 +94,7 @@ class LiveKitVoiceState {
     this.peerConnectionStates = const {},
     this.peerLatencies = const {},
     this.error,
+    this.callStartedAt,
   });
 
   LiveKitVoiceState copyWith({
@@ -104,6 +116,7 @@ class LiveKitVoiceState {
     Map<String, String>? peerConnectionStates,
     Map<String, double>? peerLatencies,
     String? error,
+    Object? callStartedAt = _callStartedAtSentinel,
   }) {
     return LiveKitVoiceState(
       isActive: isActive ?? this.isActive,
@@ -126,6 +139,9 @@ class LiveKitVoiceState {
       peerConnectionStates: peerConnectionStates ?? this.peerConnectionStates,
       peerLatencies: peerLatencies ?? this.peerLatencies,
       error: error,
+      callStartedAt: identical(callStartedAt, _callStartedAtSentinel)
+          ? this.callStartedAt
+          : callStartedAt as DateTime?,
     );
   }
 
@@ -321,6 +337,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
         isActive: true,
         isCaptureEnabled: micEnabled,
         error: null,
+        callStartedAt: DateTime.now(),
       );
 
       _syncPeerState();
@@ -529,6 +546,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
           state = state.copyWith(
             isActive: false,
             error: 'Disconnected from voice channel',
+            callStartedAt: null,
           );
         }
       })

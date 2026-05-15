@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
@@ -11,6 +13,46 @@ import '../screens/voice_lounge/screen_share_actions.dart';
 import '../providers/theme_provider.dart' show UIDensity, uiDensityProvider;
 import '../providers/voice_settings_provider.dart';
 import '../theme/echo_theme.dart';
+
+/// 1Hz wall-clock notifier shared by every active voice dock so the call
+/// duration label can refresh without rebuilding the whole dock subtree.
+/// Started lazily on first listener attach and cancelled when the last
+/// listener detaches — no work while the user is idle.
+final _voiceClock = _SecondsClockNotifier();
+
+class _SecondsClockNotifier extends ValueNotifier<DateTime> {
+  _SecondsClockNotifier() : super(DateTime.now());
+
+  Timer? _timer;
+  int _listenerCount = 0;
+
+  @override
+  void addListener(VoidCallback listener) {
+    super.addListener(listener);
+    _listenerCount++;
+    _timer ??= Timer.periodic(const Duration(seconds: 1), (_) {
+      value = DateTime.now();
+    });
+  }
+
+  @override
+  void removeListener(VoidCallback listener) {
+    super.removeListener(listener);
+    _listenerCount--;
+    if (_listenerCount <= 0) {
+      _timer?.cancel();
+      _timer = null;
+      _listenerCount = 0;
+    }
+  }
+}
+
+String _formatCallDuration(Duration d) {
+  final totalSeconds = d.inSeconds;
+  final minutes = totalSeconds ~/ 60;
+  final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
+  return '$minutes:$seconds';
+}
 
 /// Compact voice control dock above the user status bar.
 ///
@@ -116,6 +158,7 @@ class VoiceDock extends ConsumerWidget {
               peerCount,
               channelName,
               voiceLk.localConnectionQuality,
+              voiceLk.callStartedAt,
               m,
             ),
             ..._buildControlButtons(
@@ -201,6 +244,7 @@ class VoiceDock extends ConsumerWidget {
     int peerCount,
     String channelName,
     ConnectionQuality quality,
+    DateTime? callStartedAt,
     _DockMetrics m,
   ) {
     return Expanded(
@@ -235,13 +279,12 @@ class VoiceDock extends ConsumerWidget {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                Text(
-                  '$channelName \u00b7 $peerCount ${peerCount == 1 ? 'peer' : 'peers'}',
-                  style: TextStyle(
-                    color: context.textMuted,
-                    fontSize: m.statusSmallFontSize,
-                  ),
-                  overflow: TextOverflow.ellipsis,
+                _SecondaryStatusLine(
+                  channelName: channelName,
+                  peerCount: peerCount,
+                  callStartedAt: callStartedAt,
+                  fontSize: m.statusSmallFontSize,
+                  color: context.textMuted,
                 ),
               ],
             ),
@@ -395,6 +438,52 @@ String _muteTooltip(VoiceSettingsState vs) {
   if (vs.selfDeafened) return 'Muted by deafen';
   if (vs.selfMuted) return 'Unmute';
   return 'Mute';
+}
+
+/// Secondary status row showing `channel · N peers` and, once the call has
+/// successfully connected, an M:SS call-duration tag. The duration label is
+/// driven by [_voiceClock] via a [ValueListenableBuilder] so only this small
+/// subtree rebuilds every second — the rest of the dock stays static.
+class _SecondaryStatusLine extends StatelessWidget {
+  final String channelName;
+  final int peerCount;
+  final DateTime? callStartedAt;
+  final double fontSize;
+  final Color color;
+
+  const _SecondaryStatusLine({
+    required this.channelName,
+    required this.peerCount,
+    required this.callStartedAt,
+    required this.fontSize,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final base =
+        '$channelName · $peerCount ${peerCount == 1 ? 'peer' : 'peers'}';
+    final style = TextStyle(color: color, fontSize: fontSize);
+
+    if (callStartedAt == null) {
+      return Text(base, style: style, overflow: TextOverflow.ellipsis);
+    }
+
+    return ValueListenableBuilder<DateTime>(
+      valueListenable: _voiceClock,
+      builder: (context, now, _) {
+        final elapsed = now.difference(callStartedAt!);
+        final duration = _formatCallDuration(
+          elapsed.isNegative ? Duration.zero : elapsed,
+        );
+        return Text(
+          '$base · $duration',
+          style: style,
+          overflow: TextOverflow.ellipsis,
+        );
+      },
+    );
+  }
 }
 
 class _DockIconButton extends StatelessWidget {
