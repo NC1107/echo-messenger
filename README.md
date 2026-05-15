@@ -1,18 +1,32 @@
 # Echo - Encrypted Messenger
 
+[![Release](https://img.shields.io/github/v/release/NC1107/echo-messenger?label=latest)](https://github.com/NC1107/echo-messenger/releases/latest)
+[![Release](https://github.com/NC1107/echo-messenger/actions/workflows/release.yml/badge.svg)](https://github.com/NC1107/echo-messenger/actions/workflows/release.yml)
+[![Rust CI](https://github.com/NC1107/echo-messenger/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/NC1107/echo-messenger/actions/workflows/rust-ci.yml)
+[![Flutter CI](https://github.com/NC1107/echo-messenger/actions/workflows/flutter-ci.yml/badge.svg)](https://github.com/NC1107/echo-messenger/actions/workflows/flutter-ci.yml)
+[![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue)](LICENSE)
+
 A lightweight, cross-platform messaging app with end-to-end encryption. I'm not a fan of the direction Discord is moving, and I don't think most people can set up Matrix, so this is my attempt at a replacement. It runs centralized by default, but you can always host the server yourself.
 
 ## Downloads
 
-Get the latest builds from the [Releases page](https://github.com/NC1107/echo-messenger/releases).
+Client apps and server binaries are on the [Releases page](https://github.com/NC1107/echo-messenger/releases).
+
+**Client apps**
 
 | Platform | Download |
 |----------|----------|
 | Windows | [Echo-Setup-x64.exe](https://github.com/NC1107/echo-messenger/releases/latest/download/Echo-Setup-x64.exe) (installer) |
 | Linux | [Echo-x86_64.AppImage](https://github.com/NC1107/echo-messenger/releases/latest/download/Echo-x86_64.AppImage) (single file) |
-| Web | [echo-messenger.us](https://echo-messenger.us) or [echo-web.tar.gz](https://github.com/NC1107/echo-messenger/releases/latest/download/echo-web.tar.gz) (static files) |
-| Server | [echo-server-linux-x64.tar.gz](https://github.com/NC1107/echo-messenger/releases/latest/download/echo-server-linux-x64.tar.gz) |
-| Docker | `ghcr.io/nc1107/echo-messenger/server:latest` |
+| Web | [echo-messenger.us](https://echo-messenger.us) (hosted) or [echo-web.tar.gz](https://github.com/NC1107/echo-messenger/releases/latest/download/echo-web.tar.gz) (self-host static files) |
+
+**Self-hosting the server**
+
+| Method | Source |
+|--------|--------|
+| Binary | [echo-server-linux-x64.tar.gz](https://github.com/NC1107/echo-messenger/releases/latest/download/echo-server-linux-x64.tar.gz) |
+| Docker (server) | `ghcr.io/nc1107/echo-messenger/server:latest` |
+| Docker (web) | `ghcr.io/nc1107/echo-messenger/web:latest` |
 
 ## Features
 
@@ -49,19 +63,19 @@ cd apps/client && flutter run -d linux      # Start client
 
 ## Self-Hosting
 
-Echo is designed to be self-hosted. See [docs/self-hosting.md](docs/self-hosting.md) for a step-by-step guide covering Docker Compose, Traefik, TLS, and environment configuration.
+Echo is designed to be self-hosted. See [self-hosting.md](docs/self-hosting.md) for a step-by-step guide covering Docker Compose, Traefik, TLS, and environment configuration.
 
 ## Privacy and Encryption
 
 Direct messages use the **Signal Protocol** (X3DH + Double Ratchet) -- the same encryption used by Signal and WhatsApp. Every message gets a unique key; compromising one key does not expose past or future messages. Your private keys never leave your device.
 
-For technical details -- key exchange diagrams, wire format, security properties, and key storage -- see [docs/encryption.md](docs/encryption.md).
+For technical details -- key exchange diagrams, wire format, security properties, and key storage -- see [encryption.md](docs/encryption.md).
 
-To report a vulnerability see [docs/SECURITY.md](docs/SECURITY.md).
+To report a vulnerability see [SECURITY.md](docs/SECURITY.md).
 
 ## Development
 
-See [docs/setup.md](docs/setup.md) for full environment setup.
+See [setup.md](docs/setup.md) for full environment setup.
 
 ### Prerequisites
 - Rust (edition 2024)
