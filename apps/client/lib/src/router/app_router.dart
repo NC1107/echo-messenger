@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../providers/auth_provider.dart';
+import '../screens/admin/admin_dashboard_screen.dart';
 import '../screens/contacts_screen.dart';
 import '../screens/create_group_screen.dart';
 import '../screens/discover_groups_screen.dart';
@@ -255,6 +256,17 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/saved',
         pageBuilder: (context, state) =>
             _fadePage(key: state.pageKey, child: const SavedMessagesScreen()),
+      ),
+      // Admin dashboard (issue #682). The server's `AdminUser` extractor
+      // already 403s non-admins on the underlying API calls, so even
+      // without a route-level gate the screen renders an error for them.
+      // Route-level gating on `auth.isAdmin` is deferred — see the PR
+      // description; it needs the server's login response to surface the
+      // `is_admin` flag, which is out of scope for this client-only slice.
+      GoRoute(
+        path: '/admin',
+        pageBuilder: (context, state) =>
+            _fadePage(key: state.pageKey, child: const AdminDashboardScreen()),
       ),
       GoRoute(
         path: '/safety-number/:peerId',
