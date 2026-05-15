@@ -24,6 +24,17 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # Override the image-baked HEALTHCHECK so the prod contract is visible
+    # in compose and immune to image-level drift. Uses 127.0.0.1 (not
+    # `localhost`) to dodge the glibc IPv6-first lookup that bit the web
+    # service in #prod-2026-05-08; the server binds the IPv4 wildcard
+    # only and an `::1` probe would silently fail.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.echo-api.rule=Host(`echo-messenger.us`) && (PathPrefix(`/api`) || PathPrefix(`/ws`))"

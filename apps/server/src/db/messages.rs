@@ -37,6 +37,11 @@ pub struct MessageWithSender {
     pub reply_to_content: Option<String>,
     pub reply_to_username: Option<String>,
     pub reply_count: i64,
+    /// Truncated content of the most recent reply to this message
+    /// (Slack-style inline thread preview). `None` when there are no
+    /// replies. Server truncates to 80 characters so the wire payload is
+    /// bounded; clients still render a single line with ellipsis.
+    pub last_reply_snippet: Option<String>,
     /// Reactions aggregated as a JSON array of
     /// `{message_id, user_id, username, emoji}` objects.  Public history
     /// queries (`get_messages`, `get_thread_replies`) populate this with
@@ -233,6 +238,7 @@ pub async fn get_messages(
                 rm.content AS reply_to_content, \
                 ru.username AS reply_to_username, \
                 COALESCE(rc.reply_count, 0) AS reply_count, \
+                lr.snippet AS last_reply_snippet, \
                 COALESCE(rx.reactions, '[]'::json) AS reactions \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
@@ -244,6 +250,13 @@ pub async fn get_messages(
              WHERE reply_to_id IS NOT NULL AND deleted_at IS NULL \
              GROUP BY reply_to_id \
          ) rc ON rc.reply_to_id = m.id \
+         LEFT JOIN LATERAL ( \
+             SELECT LEFT(lrm.content, 80) AS snippet \
+             FROM messages lrm \
+             WHERE lrm.reply_to_id = m.id AND lrm.deleted_at IS NULL \
+             ORDER BY lrm.created_at DESC \
+             LIMIT 1 \
+         ) lr ON true \
          LEFT JOIN LATERAL ( \
              SELECT json_agg(json_build_object( \
                  'message_id', r.message_id, \
@@ -333,6 +346,7 @@ pub async fn get_undelivered(
                 rm.content AS reply_to_content, \
                 ru.username AS reply_to_username, \
                 COALESCE(rc.reply_count, 0) AS reply_count, \
+                NULL::text AS last_reply_snippet, \
                 '[]'::json AS reactions \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
@@ -593,6 +607,7 @@ pub async fn search_messages(
                 rm.content AS reply_to_content, \
                 ru.username AS reply_to_username, \
                 COALESCE(rc.reply_count, 0) AS reply_count, \
+                NULL::text AS last_reply_snippet, \
                 '[]'::json AS reactions \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
@@ -963,6 +978,7 @@ pub async fn get_thread_replies(
                 rm.content AS reply_to_content, \
                 ru.username AS reply_to_username, \
                 COALESCE(rc.reply_count, 0) AS reply_count, \
+                NULL::text AS last_reply_snippet, \
                 COALESCE(rx.reactions, '[]'::json) AS reactions \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \

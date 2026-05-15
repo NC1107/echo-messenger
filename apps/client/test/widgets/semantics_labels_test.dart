@@ -66,7 +66,9 @@ Finder _findSemanticsContaining(String substring) {
 
 void main() {
   group('Semantic labels - MessageItem', () {
-    testWidgets('own message has button: true in semantics', (tester) async {
+    testWidgets('own message advertises long-press action in semantics', (
+      tester,
+    ) async {
       await mockNetworkImagesFor(() async {
         final msg = _makeMessage(
           isMine: true,
@@ -88,7 +90,7 @@ void main() {
         final semanticsFinder = find.byWidgetPredicate(
           (widget) =>
               widget is Semantics &&
-              widget.properties.button == true &&
+              widget.properties.onLongPress != null &&
               widget.properties.label != null &&
               widget.properties.label!.contains('From You') &&
               widget.properties.label!.contains('Long press for actions'),
@@ -97,7 +99,9 @@ void main() {
       });
     });
 
-    testWidgets('other user message also has button: true', (tester) async {
+    testWidgets('other user message also advertises long-press action', (
+      tester,
+    ) async {
       await mockNetworkImagesFor(() async {
         final msg = _makeMessage(content: 'Hello');
         await tester.pumpApp(
@@ -113,7 +117,7 @@ void main() {
         final semanticsFinder = find.byWidgetPredicate(
           (widget) =>
               widget is Semantics &&
-              widget.properties.button == true &&
+              widget.properties.onLongPress != null &&
               widget.properties.label != null &&
               widget.properties.label!.contains('From alice') &&
               widget.properties.label!.contains('Long press for actions'),
@@ -234,7 +238,7 @@ void main() {
           .widgetList<Semantics>(find.byType(Semantics))
           .where(
             (s) =>
-                s.properties.button == true &&
+                s.properties.onLongPress != null &&
                 (s.properties.label ?? '').contains('Long press for actions'),
           )
           .firstOrNull;
