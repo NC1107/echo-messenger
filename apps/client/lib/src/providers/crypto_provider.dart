@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../services/crypto_service.dart';
 import '../services/debug_log_service.dart';
@@ -8,6 +8,8 @@ import '../services/group_crypto_service.dart';
 import 'auth_provider.dart';
 import 'server_url_provider.dart';
 import 'websocket_provider.dart';
+
+part 'crypto_provider.g.dart';
 
 /// Provider for the CryptoService singleton.
 ///
@@ -60,10 +62,17 @@ class CryptoState {
   }
 }
 
-class CryptoNotifier extends StateNotifier<CryptoState> {
-  final Ref ref;
-
-  CryptoNotifier(this.ref) : super(const CryptoState());
+/// Migrated from `StateNotifier` to `@riverpod`-annotated `Notifier`
+/// (audit 2026-05-14, Riverpod modernization slice — #770). The exported
+/// provider symbol `cryptoProvider` is preserved via the auto-generated
+/// `cryptoNotifierProvider` aliased below so the ~30 existing call sites do
+/// not change.
+@Riverpod(keepAlive: true)
+class CryptoNotifier extends _$CryptoNotifier {
+  @override
+  CryptoState build() {
+    return const CryptoState();
+  }
 
   /// Attempt key upload with one automatic retry.
   /// Returns the error string on final failure, or null on success.
@@ -385,8 +394,7 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
   }
 }
 
-final cryptoProvider = StateNotifierProvider<CryptoNotifier, CryptoState>((
-  ref,
-) {
-  return CryptoNotifier(ref);
-});
+/// Back-compat alias preserving the legacy `cryptoProvider` symbol used by
+/// ~30 call sites. Riverpod codegen names the provider after the notifier
+/// class (`cryptoNotifierProvider`); we re-export the short name here.
+final cryptoProvider = cryptoNotifierProvider;

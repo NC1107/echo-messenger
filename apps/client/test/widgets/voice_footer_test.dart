@@ -15,9 +15,12 @@ import '../helpers/pump_app.dart';
 // ---------------------------------------------------------------------------
 
 class _FakeLiveKitNotifier extends LiveKitVoiceNotifier {
-  _FakeLiveKitNotifier(super.ref, {LiveKitVoiceState? initial}) {
-    if (initial != null) state = initial;
-  }
+  _FakeLiveKitNotifier({LiveKitVoiceState? initial}) : _initial = initial;
+
+  final LiveKitVoiceState? _initial;
+
+  @override
+  LiveKitVoiceState build() => _initial ?? LiveKitVoiceState.empty;
 
   int leaveCallCount = 0;
 
@@ -91,7 +94,7 @@ List<Override> _overrides({required LiveKitVoiceState voiceState}) {
   return [
     ...standardOverrides(),
     livekitVoiceProvider.overrideWith(
-      (ref) => _FakeLiveKitNotifier(ref, initial: voiceState),
+      () => _FakeLiveKitNotifier(initial: voiceState),
     ),
     channelsProvider.overrideWith(_FakeChannelsNotifier.new),
   ];
@@ -136,8 +139,8 @@ void main() {
         const VoiceFooter(),
         overrides: [
           ...standardOverrides(),
-          livekitVoiceProvider.overrideWith((ref) {
-            fakeVoice = _FakeLiveKitNotifier(ref, initial: _activeVoiceState);
+          livekitVoiceProvider.overrideWith(() {
+            fakeVoice = _FakeLiveKitNotifier(initial: _activeVoiceState);
             return fakeVoice;
           }),
           channelsProvider.overrideWith(_FakeChannelsNotifier.new),

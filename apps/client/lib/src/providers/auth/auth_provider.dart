@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../services/background_service.dart' show BackgroundService;
@@ -15,6 +15,7 @@ import '../../services/user_data_dir.dart';
 import '../../utils/friendly_error.dart';
 import '../server_url_provider.dart';
 
+part 'auth_provider.g.dart';
 part 'auth_token_storage.dart';
 part 'auth_token_refresh.dart';
 
@@ -88,13 +89,13 @@ class AuthState {
 ///   one-shot legacy migration.
 /// - `auth_token_refresh.dart` (part): auto-login, refresh flow, the
 ///   401-retrying `authenticatedRequest` helper.
-class AuthNotifier extends StateNotifier<AuthState>
+@Riverpod(keepAlive: true)
+class AuthNotifier extends _$AuthNotifier
     with AuthTokenStorageMixin, AuthTokenRefreshMixin {
-  final Ref ref;
+  @override
+  AuthState build() => const AuthState();
 
-  AuthNotifier(this.ref) : super(const AuthState());
-
-  /// Public token accessor for non-StateNotifier callers (e.g. UploadClient).
+  /// Public token accessor for non-Notifier callers (e.g. UploadClient).
   String? get currentToken => state.token;
 
   static const _keyAccessToken = 'echo_auth_access_token';
@@ -354,6 +355,7 @@ class AuthNotifier extends StateNotifier<AuthState>
   }
 }
 
-final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
-  return AuthNotifier(ref);
-});
+/// Back-compat alias preserving the legacy `authProvider` symbol used by
+/// ~50 call sites and tests. Riverpod codegen names the provider after the
+/// notifier class (`authNotifierProvider`); we re-export the short name here.
+final authProvider = authNotifierProvider;

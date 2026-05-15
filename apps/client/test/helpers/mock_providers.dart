@@ -35,13 +35,16 @@ const loadingAuthState = AuthState(isLoading: true);
 
 /// Override [authProvider] with a fixed [AuthState].
 Override authOverride([AuthState state = const AuthState()]) {
-  return authProvider.overrideWith((ref) => _FakeAuthNotifier(ref, state));
+  return authProvider.overrideWith(() => _FakeAuthNotifier(state));
 }
 
 class _FakeAuthNotifier extends AuthNotifier {
-  _FakeAuthNotifier(super.ref, AuthState initial) {
-    state = initial;
-  }
+  _FakeAuthNotifier(this._initial);
+
+  final AuthState _initial;
+
+  @override
+  AuthState build() => _initial;
 
   @override
   Future<void> login(String username, String password) async {
@@ -75,19 +78,45 @@ class _FakeAuthNotifier extends AuthNotifier {
   Future<void> logout({String? serverUrl}) async => state = const AuthState();
 }
 
+/// Test override for [AuthNotifier] that publishes a logged-in state via
+/// `build()` and disables network round-trips. Exposed publicly so individual
+/// test files can build their own overrides without re-declaring the
+/// boilerplate (previously each test file inlined `AuthNotifier(ref)` + a
+/// `state =` assignment, which no longer works after the @riverpod migration).
+class FakeLoggedInAuthNotifier extends AuthNotifier {
+  FakeLoggedInAuthNotifier(this._initial);
+
+  final AuthState _initial;
+
+  @override
+  AuthState build() => _initial;
+
+  @override
+  Future<bool> tryAutoLogin() async => false;
+
+  @override
+  Future<void> logout({String? serverUrl}) async => state = const AuthState();
+}
+
 // ---------------------------------------------------------------------------
 // Server URL
 // ---------------------------------------------------------------------------
 
 /// Override [serverUrlProvider] with a test URL.
 Override serverUrlOverride([String url = 'http://localhost:8080']) {
-  return serverUrlProvider.overrideWith((ref) => _FakeServerUrlNotifier(url));
+  return serverUrlProvider.overrideWith(() => FakeServerUrlNotifier(url));
 }
 
-class _FakeServerUrlNotifier extends ServerUrlNotifier {
-  _FakeServerUrlNotifier(String initial) {
-    state = initial;
-  }
+/// Test override for [ServerUrlNotifier] that publishes a fixed URL via
+/// `build()` and turns `load()` / `setUrl()` into no-ops (so tests don't
+/// touch SharedPreferences). Exposed publicly so per-test files can build
+/// their own overrides without re-declaring the boilerplate.
+class FakeServerUrlNotifier extends ServerUrlNotifier {
+  FakeServerUrlNotifier(this._initial);
+  final String _initial;
+
+  @override
+  String build() => _initial;
 
   @override
   Future<void> load() async {}
@@ -134,14 +163,17 @@ final sampleConversations = [
 /// Override [conversationsProvider] with a fixed list.
 Override conversationsOverride([List<Conversation> conversations = const []]) {
   return conversationsProvider.overrideWith(
-    (ref) => _FakeConversationsNotifier(ref, conversations),
+    () => _FakeConversationsNotifier(conversations),
   );
 }
 
 class _FakeConversationsNotifier extends ConversationsNotifier {
-  _FakeConversationsNotifier(super.ref, List<Conversation> initial) {
-    state = ConversationsState(conversations: initial);
-  }
+  _FakeConversationsNotifier(this._initial);
+
+  final List<Conversation> _initial;
+
+  @override
+  ConversationsState build() => ConversationsState(conversations: _initial);
 
   @override
   Future<void> loadConversations() async {}
@@ -208,19 +240,21 @@ class _FakeWebSocketNotifier extends WebSocketNotifier {
 /// use the simpler [isInitialized] flag for the common case.
 Override cryptoOverride({bool isInitialized = true, CryptoState? cryptoState}) {
   return cryptoProvider.overrideWith(
-    (ref) => FakeCryptoNotifier(
-      ref,
+    () => FakeCryptoNotifier(
       initial: cryptoState ?? CryptoState(isInitialized: isInitialized),
     ),
   );
 }
 
 class FakeCryptoNotifier extends CryptoNotifier {
-  FakeCryptoNotifier(super.ref, {CryptoState initial = const CryptoState()}) {
-    state = initial;
-  }
+  FakeCryptoNotifier({CryptoState initial = const CryptoState()})
+    : _initial = initial;
 
+  final CryptoState _initial;
   int initCallCount = 0;
+
+  @override
+  CryptoState build() => _initial;
 
   @override
   Future<void> initAndUploadKeys() async {

@@ -12,6 +12,8 @@ import 'package:echo_app/src/providers/chat_provider.dart';
 import 'package:echo_app/src/providers/conversations_provider.dart';
 import 'package:echo_app/src/providers/crypto_provider.dart';
 import 'package:echo_app/src/providers/server_url_provider.dart';
+
+import '../helpers/mock_providers.dart';
 import 'package:echo_app/src/providers/ws_message_handler.dart';
 import 'package:echo_app/src/services/crypto_service.dart';
 import 'package:echo_app/src/services/group_crypto_service.dart';
@@ -69,38 +71,45 @@ class _FakeChannelsNotifier extends Channels {
   }
 }
 
+class _SeededCryptoNotifier extends CryptoNotifier {
+  _SeededCryptoNotifier(this._initial);
+  final CryptoState _initial;
+
+  @override
+  CryptoState build() => _initial;
+}
+
 class _FakeConversationsNotifier extends ConversationsNotifier {
-  _FakeConversationsNotifier(super.ref) {
-    state = const ConversationsState(
-      conversations: [
-        Conversation(
-          id: 'conv-1',
-          isGroup: false,
-          members: [
-            ConversationMember(userId: 'peer-1', username: 'alice'),
-            ConversationMember(userId: 'my-user-id', username: 'testuser'),
-          ],
-        ),
-        Conversation(
-          id: 'group-1',
-          isGroup: true,
-          name: 'Test Group',
-          members: [
-            ConversationMember(
-              userId: 'my-user-id',
-              username: 'testuser',
-              role: 'owner',
-            ),
-            ConversationMember(
-              userId: 'peer-1',
-              username: 'alice',
-              role: 'member',
-            ),
-          ],
-        ),
-      ],
-    );
-  }
+  @override
+  ConversationsState build() => const ConversationsState(
+    conversations: [
+      Conversation(
+        id: 'conv-1',
+        isGroup: false,
+        members: [
+          ConversationMember(userId: 'peer-1', username: 'alice'),
+          ConversationMember(userId: 'my-user-id', username: 'testuser'),
+        ],
+      ),
+      Conversation(
+        id: 'group-1',
+        isGroup: true,
+        name: 'Test Group',
+        members: [
+          ConversationMember(
+            userId: 'my-user-id',
+            username: 'testuser',
+            role: 'owner',
+          ),
+          ConversationMember(
+            userId: 'peer-1',
+            username: 'alice',
+            role: 'member',
+          ),
+        ],
+      ),
+    ],
+  );
 
   @override
   Future<void> loadConversations() async {}
@@ -144,32 +153,26 @@ void _setup() {
 
   container = ProviderContainer(
     overrides: [
-      authProvider.overrideWith((ref) {
-        final n = AuthNotifier(ref);
-        n.state = const AuthState(
-          isLoggedIn: true,
-          userId: 'my-user-id',
-          username: 'testuser',
-          token: 'fake-token',
-        );
-        return n;
-      }),
-      serverUrlProvider.overrideWith((ref) {
-        final n = ServerUrlNotifier();
-        n.state = 'http://localhost:8080';
-        return n;
-      }),
+      authProvider.overrideWith(
+        () => FakeLoggedInAuthNotifier(
+          const AuthState(
+            isLoggedIn: true,
+            userId: 'my-user-id',
+            username: 'testuser',
+            token: 'fake-token',
+          ),
+        ),
+      ),
+      serverUrlProvider.overrideWith(
+        () => FakeServerUrlNotifier('http://localhost:8080'),
+      ),
       cryptoServiceProvider.overrideWithValue(fakeCrypto),
       groupCryptoServiceProvider.overrideWithValue(fakeGroupCrypto),
-      cryptoProvider.overrideWith((ref) {
-        final n = CryptoNotifier(ref);
+      cryptoProvider.overrideWith(
         // Default: crypto NOT initialized (for new_message queue tests)
-        n.state = const CryptoState(isInitialized: false);
-        return n;
-      }),
-      conversationsProvider.overrideWith(
-        (ref) => _FakeConversationsNotifier(ref),
+        () => _SeededCryptoNotifier(const CryptoState(isInitialized: false)),
       ),
+      conversationsProvider.overrideWith(_FakeConversationsNotifier.new),
       channelsProvider.overrideWith(() {
         fakeChannels = _FakeChannelsNotifier();
         return fakeChannels;

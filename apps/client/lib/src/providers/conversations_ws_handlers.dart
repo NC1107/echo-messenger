@@ -7,7 +7,7 @@ part of 'conversations_provider.dart';
 // real-time WS events and mutate local state without making HTTP calls.
 // ---------------------------------------------------------------------------
 
-mixin _ConversationsWsHandlersMixin on StateNotifier<ConversationsState> {
+mixin _ConversationsWsHandlersMixin on Notifier<ConversationsState> {
   // Dependencies implemented by ConversationsNotifier.
   Map<String, String> get _decryptedPreviews;
   void _updateTabBadge();

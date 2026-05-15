@@ -1,12 +1,14 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/push_token_service.dart';
 import 'auth_provider.dart';
 import 'websocket_provider.dart';
+
+part 'server_url_provider.g.dart';
 
 /// Default server URL for production deployment.
 const defaultServerUrl = 'https://echo-messenger.us';
@@ -91,25 +93,15 @@ class KnownServer {
   int get hashCode => Object.hash(url, lastUsername, lastSeen, serverId);
 }
 
-/// Riverpod provider holding the active server URL. Backwards-compatible:
-/// state is still a `String`, so the ~100 existing call sites continue to
-/// work unchanged. Known-server metadata lives in [knownServersProvider].
-final serverUrlProvider = StateNotifierProvider<ServerUrlNotifier, String>((
-  ref,
-) {
-  return ServerUrlNotifier(ref);
-});
-
 /// Companion provider exposing the persisted list of known servers. Updated
 /// in lockstep with [serverUrlProvider] by [ServerUrlNotifier.switchTo],
 /// [addKnownServer], [forget], and [recordLastUsername].
-final knownServersProvider =
-    StateNotifierProvider<KnownServersNotifier, List<KnownServer>>((ref) {
-      return KnownServersNotifier();
-    });
-
-class KnownServersNotifier extends StateNotifier<List<KnownServer>> {
-  KnownServersNotifier() : super(const []);
+///
+/// Migrated from `StateNotifier` to `@riverpod` codegen (#770, 2026-05-14).
+@Riverpod(keepAlive: true)
+class KnownServersNotifier extends _$KnownServersNotifier {
+  @override
+  List<KnownServer> build() => const [];
 
   /// Load from SharedPreferences. Idempotent.
   Future<void> load() async {
@@ -122,6 +114,12 @@ class KnownServersNotifier extends StateNotifier<List<KnownServer>> {
     state = List<KnownServer>.unmodifiable(servers);
     final prefs = await SharedPreferences.getInstance();
     await persistKnownServers(prefs, servers);
+  }
+
+  /// Test-only: publish a list without writing to SharedPreferences. Used by
+  /// [ServerUrlNotifier.load] when the on-disk state already matches.
+  void publish(List<KnownServer> servers) {
+    state = List<KnownServer>.unmodifiable(servers);
   }
 
   /// Read the JSON list out of SharedPreferences. Visible to the URL
@@ -151,26 +149,15 @@ class KnownServersNotifier extends StateNotifier<List<KnownServer>> {
   }
 }
 
-class ServerUrlNotifier extends StateNotifier<String> {
-  /// Ref into the running container. Optional only so legacy tests that
-  /// directly instantiate the notifier (no Riverpod scope) keep compiling --
-  /// any path that reaches into [authProvider] / [knownServersProvider]
-  /// asserts non-null below.
-  final Ref? _ref;
-
-  ServerUrlNotifier([this._ref]) : super(defaultServerUrl);
-
-  Ref get _requireRef {
-    final ref = _ref;
-    if (ref == null) {
-      throw StateError(
-        'ServerUrlNotifier was instantiated without a Ref; '
-        'switchTo / addKnownServer / forget / recordLastUsername '
-        'require the Riverpod-managed instance.',
-      );
-    }
-    return ref;
-  }
+/// Riverpod provider holding the active server URL. Backwards-compatible:
+/// state is still a `String`, so the ~100 existing call sites continue to
+/// work unchanged. Known-server metadata lives in [knownServersProvider].
+///
+/// Migrated from `StateNotifier` to `@riverpod` codegen (#770, 2026-05-14).
+@Riverpod(keepAlive: true)
+class ServerUrlNotifier extends _$ServerUrlNotifier {
+  @override
+  String build() => defaultServerUrl;
 
   /// Load the active URL + known-servers list from SharedPreferences. Runs
   /// the one-time migration that synthesises a [KnownServer] entry from
@@ -184,21 +171,16 @@ class ServerUrlNotifier extends StateNotifier<String> {
         : defaultServerUrl;
     state = url;
 
-    // Update the companion known-servers provider, if a Riverpod scope
-    // exists. Tests that instantiate this notifier directly (no container)
-    // skip this branch -- they never read knownServersProvider.
-    final ref = _ref;
-    if (ref != null) {
-      final servers = KnownServersNotifier.readKnownServers(prefs);
-      final migrated = _maybeMigrate(prefs, url, servers);
-      final notifier = ref.read(knownServersProvider.notifier);
-      if (!_listEquals(servers, migrated)) {
-        await notifier.setAll(migrated);
-      } else {
-        // Still publish the current list so widgets can read it on first
-        // build without waiting for the next mutation.
-        notifier.state = List<KnownServer>.unmodifiable(servers);
-      }
+    // Update the companion known-servers provider.
+    final servers = KnownServersNotifier.readKnownServers(prefs);
+    final migrated = _maybeMigrate(prefs, url, servers);
+    final notifier = ref.read(knownServersProvider.notifier);
+    if (!_listEquals(servers, migrated)) {
+      await notifier.setAll(migrated);
+    } else {
+      // Still publish the current list so widgets can read it on first
+      // build without waiting for the next mutation.
+      notifier.publish(servers);
     }
   }
 
@@ -236,7 +218,7 @@ class ServerUrlNotifier extends StateNotifier<String> {
   Future<void> switchTo(String url) async {
     final normalized = _normalize(url);
     final oldUrl = state;
-    final oldToken = _requireRef.read(authProvider).token ?? '';
+    final oldToken = ref.read(authProvider).token ?? '';
 
     // (0) Drop push tokens from the OLD origin while we still have a
     //     valid access token. Idempotent server-side, swallows errors.
@@ -252,7 +234,7 @@ class ServerUrlNotifier extends StateNotifier<String> {
     // (1) Logout against the OLD origin so its cookie + refresh-token row
     //     are cleared even though we are about to flip the active URL.
     try {
-      await _requireRef.read(authProvider.notifier).logout(serverUrl: oldUrl);
+      await ref.read(authProvider.notifier).logout(serverUrl: oldUrl);
     } catch (e) {
       // Logout failures must never block a server switch. The local state
       // is already cleared; the remote token will expire on its own.
@@ -265,7 +247,7 @@ class ServerUrlNotifier extends StateNotifier<String> {
     await prefs.setString(_prefsKeyServerUrl, normalized);
 
     // (3) Upsert into known-servers.
-    final knownNotifier = _requireRef.read(knownServersProvider.notifier);
+    final knownNotifier = ref.read(knownServersProvider.notifier);
     final updated = _upsert(knownNotifier.state, normalized);
     await knownNotifier.setAll(updated);
 
@@ -273,7 +255,7 @@ class ServerUrlNotifier extends StateNotifier<String> {
     //     so this is belt-and-suspenders; the explicit disconnect avoids any
     //     in-flight reconnect from talking to the old origin.
     try {
-      _requireRef.read(websocketProvider.notifier).disconnect();
+      ref.read(websocketProvider.notifier).disconnect();
     } catch (_) {
       // Websocket may not be initialised yet (e.g. switching from the login
       // screen) -- not an error.
@@ -288,7 +270,7 @@ class ServerUrlNotifier extends StateNotifier<String> {
     String? lastUsername,
   }) async {
     final normalized = _normalize(url);
-    final knownNotifier = _requireRef.read(knownServersProvider.notifier);
+    final knownNotifier = ref.read(knownServersProvider.notifier);
     final updated = _upsert(
       knownNotifier.state,
       normalized,
@@ -305,7 +287,7 @@ class ServerUrlNotifier extends StateNotifier<String> {
   /// also wiping scoped state (SecureKeyStore + Hive message cache).
   Future<void> forget(String url) async {
     final normalized = _normalize(url);
-    final knownNotifier = _requireRef.read(knownServersProvider.notifier);
+    final knownNotifier = ref.read(knownServersProvider.notifier);
     final updated = knownNotifier.state
         .where((s) => s.url != normalized)
         .toList(growable: false);
@@ -319,7 +301,7 @@ class ServerUrlNotifier extends StateNotifier<String> {
     required String username,
   }) async {
     final normalized = _normalize(url);
-    final knownNotifier = _requireRef.read(knownServersProvider.notifier);
+    final knownNotifier = ref.read(knownServersProvider.notifier);
     final updated = _upsert(
       knownNotifier.state,
       normalized,
@@ -398,6 +380,14 @@ class ServerUrlNotifier extends StateNotifier<String> {
     return true;
   }
 }
+
+/// Back-compat aliases preserving the legacy provider symbols used by the
+/// ~100 existing call sites and tests. Riverpod codegen names the providers
+/// after the notifier classes (`serverUrlNotifierProvider`,
+/// `knownServersNotifierProvider`); we re-export the short names here so
+/// nothing else needs to change.
+final serverUrlProvider = serverUrlNotifierProvider;
+final knownServersProvider = knownServersNotifierProvider;
 
 /// Derive the WebSocket URL from the HTTP server URL.
 ///

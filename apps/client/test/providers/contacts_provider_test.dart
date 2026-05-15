@@ -13,6 +13,8 @@ import 'package:echo_app/src/providers/auth_provider.dart';
 import 'package:echo_app/src/providers/contacts_provider.dart';
 import 'package:echo_app/src/providers/server_url_provider.dart';
 
+import '../helpers/mock_providers.dart';
+
 import '../helpers/mock_http_client.dart';
 
 void main() {
@@ -193,22 +195,20 @@ void main() {
 
       container = ProviderContainer(
         overrides: [
-          authProvider.overrideWith((ref) {
-            final n = AuthNotifier(ref);
-            n.state = const AuthState(
-              isLoggedIn: true,
-              userId: 'me',
-              username: 'testuser',
-              token: 'fake-token',
-              refreshToken: 'fake-refresh',
-            );
-            return n;
-          }),
-          serverUrlProvider.overrideWith((ref) {
-            final n = ServerUrlNotifier();
-            n.state = 'http://localhost:8080';
-            return n;
-          }),
+          authProvider.overrideWith(
+            () => FakeLoggedInAuthNotifier(
+              const AuthState(
+                isLoggedIn: true,
+                userId: 'me',
+                username: 'testuser',
+                token: 'fake-token',
+                refreshToken: 'fake-refresh',
+              ),
+            ),
+          ),
+          serverUrlProvider.overrideWith(
+            () => FakeServerUrlNotifier('http://localhost:8080'),
+          ),
         ],
       );
     });

@@ -4,11 +4,11 @@ part of 'auth_provider.dart';
 /// SharedPreferences, and the one-shot legacy migration that copies tokens
 /// off the old plaintext SharedPreferences slots into secure storage.
 ///
-/// Lives as a `part of 'auth_provider.dart'` and as a mixin on
-/// `StateNotifier<AuthState>` so its helpers can mutate `state` directly
-/// (the StateNotifier `state` setter is `@protected` and only visible from
-/// within mixin/subclass instance bodies — extensions can't reach it).
-mixin AuthTokenStorageMixin on StateNotifier<AuthState> {
+/// Lives as a `part of 'auth_provider.dart'` and as a mixin on the codegen
+/// `_$AuthNotifier` base so its helpers can mutate `state` directly (the
+/// Notifier `state` setter is `@protected` and only visible from within
+/// mixin/subclass instance bodies — extensions can't reach it).
+mixin AuthTokenStorageMixin on Notifier<AuthState> {
   /// The active server origin. Provided by [AuthNotifier].
   String get _serverUrl;
 
