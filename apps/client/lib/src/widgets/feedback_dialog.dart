@@ -60,6 +60,12 @@ class _FeedbackDialogState extends ConsumerState<_FeedbackDialog> {
     final body = _bodyController.text.trim();
     if (title.isEmpty || body.isEmpty) return;
 
+    // Capture the root overlay BEFORE we start awaiting so success / error
+    // toasts can still resolve an `Overlay` after the dialog pops -- using
+    // the dialog's own context after `Navigator.pop` returns a disposed
+    // overlay and the toast never renders (#928).
+    final rootOverlay = Overlay.of(context, rootOverlay: true);
+
     setState(() {
       _sending = true;
       _errorText = null;
@@ -92,6 +98,7 @@ class _FeedbackDialogState extends ConsumerState<_FeedbackDialog> {
           context,
           'Thanks — your report was sent.',
           type: ToastType.success,
+          overlay: rootOverlay,
         );
         return;
       }
@@ -101,6 +108,12 @@ class _FeedbackDialogState extends ConsumerState<_FeedbackDialog> {
           _errorText =
               "You've sent several reports recently. Please try again later.";
         });
+        ToastService.show(
+          context,
+          "You've sent several reports recently. Please try again later.",
+          type: ToastType.warning,
+          overlay: rootOverlay,
+        );
         return;
       }
 
@@ -114,9 +127,21 @@ class _FeedbackDialogState extends ConsumerState<_FeedbackDialog> {
         }
       } catch (_) {}
       setState(() => _errorText = message);
+      ToastService.show(
+        context,
+        message,
+        type: ToastType.error,
+        overlay: rootOverlay,
+      );
     } catch (_) {
       if (mounted) {
         setState(() => _errorText = 'Network error. Please try again.');
+        ToastService.show(
+          context,
+          'Network error. Please try again.',
+          type: ToastType.error,
+          overlay: rootOverlay,
+        );
       }
     } finally {
       if (mounted) setState(() => _sending = false);
