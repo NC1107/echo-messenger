@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -165,9 +166,24 @@ class Update extends _$Update {
   /// `mounted` flag has no equivalent on Notifier, so we track it manually).
   bool _disposed = false;
 
+  /// Background timer that re-checks GitHub for new releases while the app
+  /// is open. Without this, long-lived sessions (e.g. desktop users who
+  /// leave the app running) never learn about updates until they restart.
+  /// The 30-minute interval pairs with the 1h cache TTL so worst-case
+  /// GitHub-hit rate is once per hour. See [_cacheTtl].
+  Timer? _periodicTimer;
+
   @override
   UpdateState build() {
-    ref.onDispose(() => _disposed = true);
+    _periodicTimer = Timer.periodic(const Duration(minutes: 30), (_) {
+      // best-effort silent re-check; honors the same 1h cache TTL so two
+      // ticks within an hour won't both hit GitHub
+      check(force: false);
+    });
+    ref.onDispose(() {
+      _periodicTimer?.cancel();
+      _disposed = true;
+    });
     return const UpdateState();
   }
 

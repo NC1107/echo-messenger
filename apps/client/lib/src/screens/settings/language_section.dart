@@ -39,11 +39,17 @@ class LanguageSection extends ConsumerWidget {
                 height: 1.5,
               ),
             ),
+            const SizedBox(height: 16),
+            // Beta banner — translations beyond English are scaffolded but
+            // most labels still fall through to English.  Surfacing this
+            // here (#791) saves testers the "is my install broken?" loop.
+            _ComingSoonBanner(),
             const Divider(height: 24),
             ...kSupportedLocales.map(
               (entry) => _LocaleOption(
                 entry: entry,
                 isSelected: currentLocale.languageCode == entry.tag,
+                isFullyTranslated: entry.tag == 'en',
                 onTap: () => ref
                     .read(localeProvider.notifier)
                     .setLocale(Locale(entry.tag)),
@@ -70,21 +76,58 @@ class LanguageSection extends ConsumerWidget {
 // Single locale list tile
 // ---------------------------------------------------------------------------
 
+class _ComingSoonBanner extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: context.accentLight,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: context.accent, width: 1),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline, size: 18, color: context.accent),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Language support is in development. Only English is fully '
+              'translated right now — picking another language will fall '
+              'back to English for most labels.',
+              style: TextStyle(
+                color: context.textPrimary,
+                fontSize: 12.5,
+                height: 1.45,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _LocaleOption extends StatelessWidget {
   final LocaleEntry entry;
   final bool isSelected;
+  final bool isFullyTranslated;
   final VoidCallback onTap;
 
   const _LocaleOption({
     required this.entry,
     required this.isSelected,
+    required this.isFullyTranslated,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: '${entry.displayName} language option',
+      label: isFullyTranslated
+          ? '${entry.displayName} language option'
+          : '${entry.displayName} language option (coming soon)',
       button: true,
       selected: isSelected,
       child: Padding(
@@ -108,15 +151,33 @@ class _LocaleOption extends StatelessWidget {
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      entry.displayName,
-                      style: TextStyle(
-                        color: isSelected
-                            ? context.accent
-                            : context.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          entry.displayName,
+                          style: TextStyle(
+                            color: isSelected
+                                ? context.accent
+                                : isFullyTranslated
+                                ? context.textPrimary
+                                : context.textMuted,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        if (!isFullyTranslated) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            'Coming soon',
+                            style: TextStyle(
+                              color: context.textMuted,
+                              fontSize: 11.5,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                   if (isSelected)

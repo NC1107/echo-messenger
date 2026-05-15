@@ -27,6 +27,7 @@ import 'connection_status_badge.dart';
 import 'conversation_item.dart';
 import 'echo_logo_icon.dart';
 import 'empty_state.dart';
+import 'feedback_dialog.dart';
 import 'skeleton_loader.dart';
 import 'voice_footer.dart';
 
@@ -1100,8 +1101,11 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         update.updateAvailable ||
         isActive ||
         update.status == UpdateStatus.error;
-    if (!isVisible) return const SizedBox.shrink();
-    if (update.dismissed && !isActive) return const SizedBox.shrink();
+    // When no update banner is showing, fall back to a small "Report a bug"
+    // affordance so the user can reach the feedback dialog without leaving
+    // the sidebar / opening Settings.
+    if (!isVisible) return _buildBugReportRow(context);
+    if (update.dismissed && !isActive) return _buildBugReportRow(context);
 
     final String label;
     final Widget? action;
@@ -1254,6 +1258,34 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           ),
           ?progress,
         ],
+      ),
+    );
+  }
+
+  /// Small "Report a bug" affordance shown in the slot the update banner
+  /// otherwise occupies. Visible only when no update is in flight — keeps
+  /// the sidebar tight when an update is pending / installing.
+  Widget _buildBugReportRow(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: context.mainBg,
+        border: Border(top: BorderSide(color: context.border, width: 1)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          icon: const Icon(Icons.bug_report_outlined, size: 14),
+          label: const Text('Report a bug'),
+          onPressed: () => showFeedbackDialog(context),
+          style: TextButton.styleFrom(
+            foregroundColor: context.textMuted,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            textStyle: const TextStyle(fontSize: 11),
+          ),
+        ),
       ),
     );
   }
