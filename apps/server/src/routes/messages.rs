@@ -115,6 +115,11 @@ pub struct MessageDto {
     pub reply_to_content: Option<String>,
     pub reply_to_username: Option<String>,
     pub reply_count: i64,
+    /// Truncated content of the most recent reply to this message, when
+    /// `reply_count > 0`. `None` on real-time WS events; only history
+    /// queries (`get_messages`) populate it. Server truncates to 80
+    /// chars; clients render a single line with ellipsis.
+    pub last_reply_snippet: Option<String>,
     /// Reactions on this message: array of
     /// `{message_id, user_id, username, emoji}`.  Aggregated by the DB
     /// query so history reloads render reactions immediately instead of
@@ -138,6 +143,7 @@ impl From<db::messages::MessageWithSender> for MessageDto {
             reply_to_content: m.reply_to_content,
             reply_to_username: m.reply_to_username,
             reply_count: m.reply_count,
+            last_reply_snippet: m.last_reply_snippet,
             reactions: m
                 .reactions
                 .map(|j| j.0)
