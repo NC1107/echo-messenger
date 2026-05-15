@@ -267,6 +267,33 @@ void main() {
       expect(msg.replyCount, 0);
     });
 
+    test('parses last_reply_snippet into latestReplyPreview', () {
+      final msg = ChatMessage.fromServerJson({
+        'id': 'msg-1',
+        'from_user_id': 'u1',
+        'from_username': 'alice',
+        'conversation_id': 'c1',
+        'content': 'parent',
+        'timestamp': '2026-01-01T00:00:00Z',
+        'reply_count': 2,
+        'last_reply_snippet': 'hey what about this',
+      }, 'u1');
+      expect(msg.latestReplyPreview, 'hey what about this');
+    });
+
+    test('latestReplyPreview is null when snippet is absent', () {
+      final msg = ChatMessage.fromServerJson({
+        'id': 'msg-1',
+        'from_user_id': 'u1',
+        'from_username': 'alice',
+        'conversation_id': 'c1',
+        'content': 'parent',
+        'timestamp': '2026-01-01T00:00:00Z',
+        'reply_count': 0,
+      }, 'u1');
+      expect(msg.latestReplyPreview, isNull);
+    });
+
     test('uses created_at as fallback for timestamp', () {
       final msg = ChatMessage.fromServerJson({
         'id': 'msg-1',

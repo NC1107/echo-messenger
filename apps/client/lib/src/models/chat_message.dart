@@ -46,6 +46,13 @@ class ChatMessage {
   final String? replyToContent;
   final String? replyToUsername;
   final int replyCount;
+
+  /// Truncated content of the most-recent reply to this message, used for
+  /// the Slack-style inline preview row under the parent (#423). Only
+  /// populated by history loads (`get_messages`); the WS real-time path
+  /// keeps this null and relies on `message_reply_added` to bump the
+  /// count. `null` when there are no replies.
+  final String? latestReplyPreview;
   final String? pinnedById;
   final DateTime? pinnedAt;
   final DateTime? expiresAt;
@@ -75,6 +82,7 @@ class ChatMessage {
     this.replyToContent,
     this.replyToUsername,
     this.replyCount = 0,
+    this.latestReplyPreview,
     this.pinnedById,
     this.pinnedAt,
     this.expiresAt,
@@ -139,6 +147,7 @@ class ChatMessage {
       replyToContent: json['reply_to_content'] as String?,
       replyToUsername: json['reply_to_username'] as String?,
       replyCount: (json['reply_count'] as int?) ?? 0,
+      latestReplyPreview: json['last_reply_snippet'] as String?,
       pinnedById: pinnedByIdRaw,
       pinnedAt: pinnedAtRaw != null ? DateTime.tryParse(pinnedAtRaw) : null,
       expiresAt: json['expires_at'] != null
@@ -220,6 +229,7 @@ class ChatMessage {
       'reply_to_content': replyToContent,
       'reply_to_username': replyToUsername,
       'reply_count': replyCount,
+      'last_reply_snippet': latestReplyPreview,
       'pinned_by_id': pinnedById,
       'pinned_at': pinnedAt?.toIso8601String(),
       'expires_at': expiresAt?.toIso8601String(),
@@ -245,6 +255,7 @@ class ChatMessage {
     String? replyToContent,
     String? replyToUsername,
     int? replyCount,
+    Object? latestReplyPreview = _sentinel,
     Object? pinnedById = _sentinel,
     Object? pinnedAt = _sentinel,
     Object? expiresAt = _sentinel,
@@ -267,6 +278,9 @@ class ChatMessage {
       replyToContent: replyToContent ?? this.replyToContent,
       replyToUsername: replyToUsername ?? this.replyToUsername,
       replyCount: replyCount ?? this.replyCount,
+      latestReplyPreview: latestReplyPreview == _sentinel
+          ? this.latestReplyPreview
+          : latestReplyPreview as String?,
       pinnedById: pinnedById == _sentinel
           ? this.pinnedById
           : pinnedById as String?,
@@ -300,6 +314,7 @@ class ChatMessage {
             replyToContent == other.replyToContent &&
             replyToUsername == other.replyToUsername &&
             replyCount == other.replyCount &&
+            latestReplyPreview == other.latestReplyPreview &&
             pinnedById == other.pinnedById &&
             pinnedAt == other.pinnedAt &&
             expiresAt == other.expiresAt &&
@@ -307,7 +322,7 @@ class ChatMessage {
   }
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     id,
     fromUserId,
     fromUsername,
@@ -324,9 +339,10 @@ class ChatMessage {
     replyToContent,
     replyToUsername,
     replyCount,
+    latestReplyPreview,
     pinnedById,
     pinnedAt,
     expiresAt,
     failedContent,
-  );
+  ]);
 }
