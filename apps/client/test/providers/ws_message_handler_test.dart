@@ -781,24 +781,55 @@ void main() {
   });
 
   group('handleServerMessage: new_message (crypto not initialized)', () {
-    test('adds placeholder and queues for later decryption', () {
-      // Use own user ID as sender to skip _notifyIfAllowed (SoundService
-      // can't initialize in test environment).
-      handler.handleServerMessage({
-        'type': 'new_message',
-        'message_id': 'msg-1',
-        'from_user_id': _myUserId,
-        'from_username': 'testuser',
-        'conversation_id': 'conv-1',
-        'content': 'some encrypted content',
-        'timestamp': '2026-01-01T10:00:00Z',
-      }, _myUserId);
+    test(
+      'ciphertext-shaped content shows placeholder and queues for decryption',
+      () {
+        // Use own user ID as sender to skip _notifyIfAllowed (SoundService
+        // can't initialize in test environment).  The content here passes
+        // looksEncrypted() (>=20 chars, base64 alphabet only) so it gets
+        // the placeholder.  Plaintext payloads take the fast path below.
+        handler.handleServerMessage({
+          'type': 'new_message',
+          'message_id': 'msg-1',
+          'from_user_id': _myUserId,
+          'from_username': 'testuser',
+          'conversation_id': 'conv-1',
+          'content': 'aGVsbG93b3JsZGNpcGhlcnRleHQxMjM0NTY3ODkw',
+          'timestamp': '2026-01-01T10:00:00Z',
+        }, _myUserId);
 
-      final chatNotifier = container.read(chatProvider.notifier);
-      final msgs = chatNotifier.state.messagesForConversation('conv-1');
-      expect(msgs, hasLength(1));
-      expect(msgs.first.content, 'Securing message...');
-    });
+        final chatNotifier = container.read(chatProvider.notifier);
+        final msgs = chatNotifier.state.messagesForConversation('conv-1');
+        expect(msgs, hasLength(1));
+        expect(msgs.first.content, 'Securing message...');
+      },
+    );
+
+    test(
+      'plaintext content renders directly without "Securing message..." (#434)',
+      () {
+        // Regression for #434: plaintext group/DM messages received before
+        // crypto initialises must NOT be wrapped in the "Securing message..."
+        // placeholder — that previously stuck forever if crypto never came
+        // up (or if the conversation was a plaintext-only group, which is
+        // the current default per #344).
+        handler.handleServerMessage({
+          'type': 'new_message',
+          'message_id': 'msg-plain-1',
+          'from_user_id': _myUserId,
+          'from_username': 'testuser',
+          'conversation_id': 'conv-1',
+          'content': 'hi everyone',
+          'timestamp': '2026-01-01T10:00:00Z',
+        }, _myUserId);
+
+        final chatNotifier = container.read(chatProvider.notifier);
+        final msgs = chatNotifier.state.messagesForConversation('conv-1');
+        expect(msgs, hasLength(1));
+        expect(msgs.first.content, 'hi everyone');
+        expect(msgs.first.isEncrypted, isFalse);
+      },
+    );
   });
 
   group('handleServerMessage: channel events', () {
