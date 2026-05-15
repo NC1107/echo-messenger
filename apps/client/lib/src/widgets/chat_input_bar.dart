@@ -31,6 +31,7 @@ import '../theme/motion_tokens.dart';
 import '../theme/responsive.dart';
 import '../utils/clipboard_image_helper.dart';
 import 'chat_input_controller.dart';
+import 'image_annotation_editor.dart';
 import 'chat_input_bar/attach_file_button.dart';
 import 'chat_input_bar/file_pickers.dart' as pickers;
 import 'chat_input_bar/attach_option.dart';
@@ -573,6 +574,47 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     attachment.cancelled = true;
     setState(() => _pendingAttachments.remove(attachment));
     attachment.dispose();
+  }
+
+  /// Open the [ImageAnnotationEditor] on top of the composer. When the user
+  /// confirms, the original attachment is cancelled and replaced with a new
+  /// pending attachment whose bytes are the annotated PNG (#908). The new
+  /// attachment goes through the regular upload + send path — the
+  /// encrypt/wire flow is untouched.
+  Future<void> _annotatePendingAttachment(PendingAttachment attachment) async {
+    final bytes = attachment.bytes;
+    if (bytes == null) return; // External-URL attachments can't be annotated.
+
+    final navigator = Navigator.of(context);
+    Uint8List? annotated;
+    await navigator.push<void>(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => ImageAnnotationEditor(
+          imageBytes: bytes,
+          onConfirm: (Uint8List pngBytes) {
+            annotated = pngBytes;
+            Navigator.of(navigator.context).maybePop();
+          },
+        ),
+      ),
+    );
+    if (!mounted || annotated == null) return;
+
+    // Replace the original chip. Strip the source extension and force PNG
+    // since the rasterised output is always PNG-encoded.
+    final originalName = attachment.fileName;
+    final dot = originalName.lastIndexOf('.');
+    final stem = dot > 0 ? originalName.substring(0, dot) : originalName;
+    final newName = '$stem-annotated.png';
+
+    _removePendingAttachment(attachment);
+    _setPendingAttachment(
+      bytes: annotated!,
+      fileName: newName,
+      mimeType: 'image/png',
+      ext: 'png',
+    );
   }
 
   /// Stage an external-URL attachment (e.g. picked from the GIF browser).
@@ -1690,6 +1732,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                     PendingAttachmentsStrip(
                       attachments: _pendingAttachments,
                       onCancel: _removePendingAttachment,
+                      onAnnotate: _annotatePendingAttachment,
                     ),
                   // Markdown formatting toolbar (bold, italic, strike, code,
                   // quote, link) — always visible above the input row.
