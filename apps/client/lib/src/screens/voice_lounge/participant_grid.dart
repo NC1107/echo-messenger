@@ -1,6 +1,7 @@
 /// Participant grid + tile + avatar widgets used by the voice lounge.
 library;
 
+import 'dart:async';
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
@@ -104,7 +105,11 @@ class ParticipantGrid extends StatelessWidget {
     final localHasVideo =
         localVideo?.track != null && voiceState.isVideoEnabled;
 
-    final localIsSpeaking = voiceState.localAudioLevel > _attentionThreshold;
+    final localIdentity = room!.localParticipant?.identity ?? '';
+    final localIsSpeaking =
+        voiceState.localAudioLevel > _attentionThreshold ||
+        (localIdentity.isNotEmpty &&
+            voiceState.activeSpeakerIdentities.contains(localIdentity));
     final attention = attentionFor(
       isSpeaking: localIsSpeaking,
       anyoneElseSpeaking: anyoneSpeaking && !localIsSpeaking,
@@ -118,6 +123,7 @@ class ParticipantGrid extends StatelessWidget {
       videoTrack: localHasVideo ? localVideo?.track as lk.VideoTrack? : null,
       mirror: true,
       audioLevel: voiceState.localAudioLevel,
+      isSpeakingHint: localIsSpeaking,
       isMuted: !voiceState.isCaptureEnabled,
       isLocal: true,
       attention: attention,
@@ -163,6 +169,7 @@ class ParticipantGrid extends StatelessWidget {
       videoTrack: videoTrack?.track as lk.VideoTrack?,
       mirror: false,
       audioLevel: audioLevel,
+      isSpeakingHint: remoteIsSpeaking,
       isMuted: participant.isMuted,
       connectionState: voiceState.peerConnectionStates[identity],
       attention: attention,
@@ -214,13 +221,20 @@ class ParticipantGrid extends StatelessWidget {
 // Single participant tile
 // ---------------------------------------------------------------------------
 
-class ParticipantTile extends StatelessWidget {
+class ParticipantTile extends StatefulWidget {
   final String name;
   final String? avatarUrl;
   final bool hasVideo;
   final lk.VideoTrack? videoTrack;
   final bool mirror;
   final double audioLevel;
+
+  /// External speaking hint that fires off either the LiveKit
+  /// `ActiveSpeakersChangedEvent` server push OR a level-threshold check in
+  /// the parent grid — whichever lands first (#907). When true, the ring and
+  /// glow flip on immediately without waiting for [audioLevel] to climb.
+  final bool isSpeakingHint;
+
   final bool isMuted;
   final String? connectionState;
   final bool isLocal;
@@ -249,6 +263,7 @@ class ParticipantTile extends StatelessWidget {
     this.videoTrack,
     this.mirror = false,
     this.audioLevel = 0.0,
+    this.isSpeakingHint = false,
     this.isMuted = false,
     this.connectionState,
     this.isLocal = false,
@@ -261,8 +276,67 @@ class ParticipantTile extends StatelessWidget {
   });
 
   @override
+  State<ParticipantTile> createState() => _ParticipantTileState();
+}
+
+class _ParticipantTileState extends State<ParticipantTile> {
+  /// Grace period that keeps `isSpeaking` true for a brief window after the
+  /// last above-threshold sample, so the ring doesn't flicker during natural
+  /// pauses mid-sentence (#907).
+  static const Duration _speakingDecay = Duration(milliseconds: 200);
+
+  bool _isSpeaking = false;
+  Timer? _decayTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _isSpeaking = _rawSpeaking();
+  }
+
+  @override
+  void didUpdateWidget(covariant ParticipantTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final raw = _rawSpeaking();
+    if (raw) {
+      _decayTimer?.cancel();
+      _decayTimer = null;
+      if (!_isSpeaking) {
+        setState(() => _isSpeaking = true);
+      }
+    } else if (_isSpeaking && _decayTimer == null) {
+      _decayTimer = Timer(_speakingDecay, () {
+        if (!mounted) return;
+        if (!_rawSpeaking()) {
+          setState(() => _isSpeaking = false);
+        }
+        _decayTimer = null;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _decayTimer?.cancel();
+    super.dispose();
+  }
+
+  bool _rawSpeaking() => widget.isSpeakingHint || widget.audioLevel > 0.01;
+
+  @override
   Widget build(BuildContext context) {
-    final isSpeaking = audioLevel > 0.01;
+    final isSpeaking = _isSpeaking;
+    final attention = widget.attention;
+    final isLocal = widget.isLocal;
+    final remoteParticipant = widget.remoteParticipant;
+    final audioLevel = widget.audioLevel;
+    final hasVideo = widget.hasVideo;
+    final videoTrack = widget.videoTrack;
+    final mirror = widget.mirror;
+    final name = widget.name;
+    final avatarUrl = widget.avatarUrl;
+    final authToken = widget.authToken;
+    final onTap = widget.onTap;
     final reduceMotion = MediaQuery.of(context).disableAnimations;
     final double targetScale;
     final double targetOpacity;
@@ -333,7 +407,7 @@ class ParticipantTile extends StatelessWidget {
                       // Video or avatar
                       if (hasVideo && videoTrack != null)
                         lk.VideoTrackRenderer(
-                          videoTrack!,
+                          videoTrack,
                           fit: lk.VideoViewFit.cover,
                           mirrorMode: mirror
                               ? lk.VideoViewMirrorMode.mirror
@@ -359,6 +433,9 @@ class ParticipantTile extends StatelessWidget {
   }
 
   Widget _buildNameLabel(BuildContext context) {
+    final name = widget.name;
+    final isMuted = widget.isMuted;
+    final connectionState = widget.connectionState;
     return Positioned(
       bottom: 0,
       left: 0,
@@ -408,7 +485,7 @@ class ParticipantTile extends StatelessWidget {
   }
 
   void _showParticipantMenu(BuildContext context, Offset position) {
-    final participant = remoteParticipant;
+    final participant = widget.remoteParticipant;
     if (participant == null) return;
 
     final overlay =
@@ -435,8 +512,8 @@ class ParticipantTile extends StatelessWidget {
           padding: EdgeInsets.zero,
           child: _ParticipantVolumePopover(
             participant: participant,
-            name: name,
-            onToggleMute: onMuteForMe,
+            name: widget.name,
+            onToggleMute: widget.onMuteForMe,
           ),
         ),
       ],
