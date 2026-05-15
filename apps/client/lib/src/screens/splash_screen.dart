@@ -13,6 +13,7 @@ import '../providers/crypto_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/update_provider.dart';
 import '../providers/websocket_provider.dart';
+import '../services/local_network_permission_service.dart';
 import '../services/message_cache.dart';
 import '../services/push_token_service.dart';
 import '../services/update_service.dart' as update_svc;
@@ -99,6 +100,15 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     }
 
     if (!mounted) return;
+
+    // Prime the iOS/macOS local-network permission popup with an in-app
+    // explainer so beta testers don't tap "Don't Allow" by reflex and
+    // silently break server connectivity. No-op on other platforms and
+    // after the first run.
+    if (loggedIn && mounted) {
+      await LocalNetworkPermissionService.showIfNeeded(context);
+      if (!mounted) return;
+    }
 
     // On desktop, if an update is available, show the update prompt
     // instead of navigating immediately.
