@@ -22,6 +22,7 @@ class ToastService {
     String? actionLabel,
     VoidCallback? onAction,
     Duration? duration,
+    OverlayState? overlay,
   }) {
     // Mirror error and warning toasts into the debug log so they are always
     // visible in Settings > Debug Logs, even if the on-screen toast was missed.
@@ -34,7 +35,10 @@ class ToastService {
     // Remove any existing toast immediately.
     _dismiss();
 
-    final overlay = Overlay.of(context);
+    // Callers that hand in an [overlay] explicitly bypass the `Overlay.of`
+    // lookup -- needed when the trigger context (e.g. a dialog about to pop)
+    // is no longer in the tree by the time the toast fires (#928).
+    final resolved = overlay ?? Overlay.of(context);
 
     final hasAction = actionLabel != null;
     final effectiveDuration =
@@ -56,7 +60,7 @@ class ToastService {
     );
 
     _currentEntry = entry;
-    overlay.insert(entry);
+    resolved.insert(entry);
 
     _dismissTimer = Timer(effectiveDuration, _dismiss);
   }

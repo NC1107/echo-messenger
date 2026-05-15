@@ -193,6 +193,10 @@ Future<void> maybeShowWhatsNew(BuildContext context, WidgetRef ref) async {
     await showDialog<void>(
       context: context,
       barrierDismissible: true,
+      // Keep the modal inside the inner Navigator (below AppTitleBar in
+      // home_screen) so users can drag the window while reading release
+      // notes (#whats-new-titlebar-fix).
+      useRootNavigator: false,
       builder: (_) => WhatsNewModal(notes: view, isDialog: true),
     );
   } else {

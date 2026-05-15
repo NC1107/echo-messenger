@@ -55,6 +55,20 @@ class ReplyQuote extends StatelessWidget {
 
     final mineFg = context.onSentBubble;
 
+    // Themes whose sent-bubble uses a light-on-dark text token (e.g. indigo,
+    // graphite) want the inner reply-quote's tint overlay to DARKEN the
+    // bubble. Themes whose `onSentBubble` is near-black (ember's amber,
+    // sakura's pink) want the overlay to LIGHTEN it instead -- otherwise an
+    // alpha-12 near-black wash on the bubble flattens it into a near-black
+    // block and the near-black text on top reads as black-on-black (#920).
+    final mineFgIsDark = mineFg.computeLuminance() < 0.3;
+    final mineOverlay = mineFgIsDark
+        ? Colors.white.withValues(alpha: 0.18)
+        : mineFg.withValues(alpha: 0.12);
+    final mineBorder = mineFgIsDark
+        ? Colors.white.withValues(alpha: 0.55)
+        : mineFg.withValues(alpha: 0.5);
+
     return Semantics(
       label: semanticsLabel,
       child: MouseRegion(
@@ -65,13 +79,13 @@ class ReplyQuote extends StatelessWidget {
             margin: const EdgeInsets.only(bottom: 6),
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             decoration: BoxDecoration(
-              color: (isMine ? mineFg : context.accent).withValues(alpha: 0.12),
+              color: isMine
+                  ? mineOverlay
+                  : context.accent.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
               border: Border(
                 left: BorderSide(
-                  color: isMine
-                      ? mineFg.withValues(alpha: 0.5)
-                      : context.accent,
+                  color: isMine ? mineBorder : context.accent,
                   width: 3,
                 ),
               ),
@@ -86,9 +100,7 @@ class ReplyQuote extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: isMine
-                        ? mineFg.withValues(alpha: 0.8)
-                        : context.accent,
+                    color: isMine ? mineFg : context.accent,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -102,9 +114,7 @@ class ReplyQuote extends StatelessWidget {
   }
 
   Widget _buildContentPreview(BuildContext context, ReplyAttachmentKind kind) {
-    final textColor = isMine
-        ? context.onSentBubble.withValues(alpha: 0.7)
-        : context.textSecondary;
+    final textColor = isMine ? context.onSentBubble : context.textSecondary;
 
     switch (kind) {
       case ReplyAttachmentKind.image:
