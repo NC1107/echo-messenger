@@ -10,6 +10,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:echo_app/src/providers/auth_provider.dart';
 import 'package:echo_app/src/providers/server_url_provider.dart';
+
+import '../helpers/mock_providers.dart';
 import 'package:echo_app/src/theme/echo_theme.dart';
 import 'package:echo_app/src/widgets/global_search_overlay.dart';
 
@@ -61,11 +63,9 @@ Widget _wrap({
         );
         return n;
       }),
-      serverUrlProvider.overrideWith((ref) {
-        final n = ServerUrlNotifier();
-        n.state = 'http://localhost:8080';
-        return n;
-      }),
+      serverUrlProvider.overrideWith(
+        () => FakeServerUrlNotifier('http://localhost:8080'),
+      ),
     ],
     child: MaterialApp(
       theme: EchoTheme.darkTheme,
@@ -190,11 +190,10 @@ void main() {
                             );
                             return n;
                           }),
-                          serverUrlProvider.overrideWith((ref) {
-                            final n = ServerUrlNotifier();
-                            n.state = 'http://localhost:8080';
-                            return n;
-                          }),
+                          serverUrlProvider.overrideWith(
+                            () =>
+                                FakeServerUrlNotifier('http://localhost:8080'),
+                          ),
                         ],
                         child: GlobalSearchOverlay(
                           onResultTap: (_, _) {},

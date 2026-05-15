@@ -12,6 +12,8 @@ import 'package:echo_app/src/providers/chat_provider.dart';
 import 'package:echo_app/src/providers/conversations_provider.dart';
 import 'package:echo_app/src/providers/crypto_provider.dart';
 import 'package:echo_app/src/providers/server_url_provider.dart';
+
+import '../helpers/mock_providers.dart';
 import 'package:echo_app/src/providers/ws_message_handler.dart';
 import 'package:echo_app/src/services/crypto_service.dart';
 import 'package:echo_app/src/services/group_crypto_service.dart';
@@ -162,11 +164,9 @@ void _setup() {
         );
         return n;
       }),
-      serverUrlProvider.overrideWith((ref) {
-        final n = ServerUrlNotifier();
-        n.state = 'http://localhost:8080';
-        return n;
-      }),
+      serverUrlProvider.overrideWith(
+        () => FakeServerUrlNotifier('http://localhost:8080'),
+      ),
       cryptoServiceProvider.overrideWithValue(fakeCrypto),
       groupCryptoServiceProvider.overrideWithValue(fakeGroupCrypto),
       cryptoProvider.overrideWith(

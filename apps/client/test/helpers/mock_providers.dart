@@ -81,13 +81,19 @@ class _FakeAuthNotifier extends AuthNotifier {
 
 /// Override [serverUrlProvider] with a test URL.
 Override serverUrlOverride([String url = 'http://localhost:8080']) {
-  return serverUrlProvider.overrideWith((ref) => _FakeServerUrlNotifier(url));
+  return serverUrlProvider.overrideWith(() => FakeServerUrlNotifier(url));
 }
 
-class _FakeServerUrlNotifier extends ServerUrlNotifier {
-  _FakeServerUrlNotifier(String initial) {
-    state = initial;
-  }
+/// Test override for [ServerUrlNotifier] that publishes a fixed URL via
+/// `build()` and turns `load()` / `setUrl()` into no-ops (so tests don't
+/// touch SharedPreferences). Exposed publicly so per-test files can build
+/// their own overrides without re-declaring the boilerplate.
+class FakeServerUrlNotifier extends ServerUrlNotifier {
+  FakeServerUrlNotifier(this._initial);
+  final String _initial;
+
+  @override
+  String build() => _initial;
 
   @override
   Future<void> load() async {}

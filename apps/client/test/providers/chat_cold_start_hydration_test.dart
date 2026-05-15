@@ -8,6 +8,8 @@ import 'package:echo_app/src/models/chat_message.dart';
 import 'package:echo_app/src/providers/auth_provider.dart';
 import 'package:echo_app/src/providers/chat_provider.dart';
 import 'package:echo_app/src/providers/server_url_provider.dart';
+
+import '../helpers/mock_providers.dart';
 import 'package:echo_app/src/services/message_cache.dart';
 
 /// Creates a fresh [ChatNotifier] (empty state, no WS events) to simulate a
@@ -25,11 +27,9 @@ Chat _createNotifier() {
         );
         return n;
       }),
-      serverUrlProvider.overrideWith((ref) {
-        final n = ServerUrlNotifier();
-        n.state = 'http://localhost:8080';
-        return n;
-      }),
+      serverUrlProvider.overrideWith(
+        () => FakeServerUrlNotifier('http://localhost:8080'),
+      ),
     ],
   );
   return container.read(chatProvider.notifier);

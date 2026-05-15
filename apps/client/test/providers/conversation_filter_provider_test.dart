@@ -4,6 +4,8 @@ import 'package:echo_app/src/providers/conversation_filter_provider.dart';
 import 'package:echo_app/src/providers/conversations_provider.dart';
 import 'package:echo_app/src/providers/privacy_provider.dart';
 import 'package:echo_app/src/providers/server_url_provider.dart';
+
+import '../helpers/mock_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -75,11 +77,9 @@ ProviderContainer _container({
         );
         return n;
       }),
-      serverUrlProvider.overrideWith((ref) {
-        final n = ServerUrlNotifier();
-        n.state = 'http://localhost:8080';
-        return n;
-      }),
+      serverUrlProvider.overrideWith(
+        () => FakeServerUrlNotifier('http://localhost:8080'),
+      ),
       privacyProvider.overrideWith(Privacy.new),
       conversationSearchQueryProvider.overrideWith(
         () => _FakeSearchQuery(searchQuery),

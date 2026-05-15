@@ -13,6 +13,8 @@ import 'package:echo_app/src/providers/auth_provider.dart';
 import 'package:echo_app/src/providers/contacts_provider.dart';
 import 'package:echo_app/src/providers/server_url_provider.dart';
 
+import '../helpers/mock_providers.dart';
+
 import '../helpers/mock_http_client.dart';
 
 void main() {
@@ -204,11 +206,9 @@ void main() {
             );
             return n;
           }),
-          serverUrlProvider.overrideWith((ref) {
-            final n = ServerUrlNotifier();
-            n.state = 'http://localhost:8080';
-            return n;
-          }),
+          serverUrlProvider.overrideWith(
+            () => FakeServerUrlNotifier('http://localhost:8080'),
+          ),
         ],
       );
     });
