@@ -163,14 +163,17 @@ final sampleConversations = [
 /// Override [conversationsProvider] with a fixed list.
 Override conversationsOverride([List<Conversation> conversations = const []]) {
   return conversationsProvider.overrideWith(
-    (ref) => _FakeConversationsNotifier(ref, conversations),
+    () => _FakeConversationsNotifier(conversations),
   );
 }
 
 class _FakeConversationsNotifier extends ConversationsNotifier {
-  _FakeConversationsNotifier(super.ref, List<Conversation> initial) {
-    state = ConversationsState(conversations: initial);
-  }
+  _FakeConversationsNotifier(this._initial);
+
+  final List<Conversation> _initial;
+
+  @override
+  ConversationsState build() => ConversationsState(conversations: _initial);
 
   @override
   Future<void> loadConversations() async {}

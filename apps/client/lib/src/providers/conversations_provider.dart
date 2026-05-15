@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../models/conversation.dart';
 import '../services/debug_log_service.dart';
@@ -14,6 +14,7 @@ import 'chat_provider.dart';
 import 'privacy_provider.dart';
 import 'server_url_provider.dart';
 
+part 'conversations_provider.g.dart';
 part 'conversations_ws_handlers.dart';
 part 'conversations_http_actions.dart';
 
@@ -41,11 +42,9 @@ class ConversationsState {
   }
 }
 
-class ConversationsNotifier extends StateNotifier<ConversationsState>
+@Riverpod(keepAlive: true)
+class ConversationsNotifier extends _$ConversationsNotifier
     with _ConversationsWsHandlersMixin, _ConversationsHttpActionsMixin {
-  @override
-  final Ref ref;
-
   /// Cache of decrypted message previews by conversationId.
   @override
   final Map<String, String> _decryptedPreviews = {};
@@ -57,7 +56,21 @@ class ConversationsNotifier extends StateNotifier<ConversationsState>
   /// overwriting fresh state.
   int _loadGen = 0;
 
-  ConversationsNotifier(this.ref) : super(const ConversationsState());
+  /// Tracks notifier liveness so async callbacks can avoid touching `state`
+  /// after disposal (codegen Notifier has no `mounted` getter the way
+  /// StateNotifier did, so we maintain our own flag via `ref.onDispose`).
+  bool _disposed = false;
+
+  @override
+  ConversationsState build() {
+    ref.onDispose(() {
+      _disposed = true;
+    });
+    return const ConversationsState();
+  }
+
+  /// Internal alias for the StateNotifier-era `mounted` getter.
+  bool get _mounted => !_disposed;
 
   @override
   String get _serverUrl => ref.read(serverUrlProvider);
@@ -137,7 +150,7 @@ class ConversationsNotifier extends StateNotifier<ConversationsState>
       // state mutation so we don't clobber fresh data with an old payload.
       // Also bail if the notifier was disposed while we were awaiting --
       // writing to `state` after dispose throws StateError.
-      if (gen != _loadGen || !mounted) return;
+      if (gen != _loadGen || !_mounted) return;
 
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body);
@@ -193,7 +206,7 @@ class ConversationsNotifier extends StateNotifier<ConversationsState>
     } catch (e) {
       // Stale errors must not clobber a fresh success, and writing to
       // `state` on a disposed notifier throws.
-      if (gen != _loadGen || !mounted) return;
+      if (gen != _loadGen || !_mounted) return;
       state = state.copyWith(isLoading: false, error: _friendlyError(e));
     }
   }
@@ -253,10 +266,8 @@ class ConversationsNotifier extends StateNotifier<ConversationsState>
   }
 }
 
-final conversationsProvider =
-    StateNotifierProvider<ConversationsNotifier, ConversationsState>((ref) {
-      return ConversationsNotifier(ref);
-    });
+/// Back-compat alias preserving the legacy `conversationsProvider` symbol.
+final conversationsProvider = conversationsNotifierProvider;
 
 /// Thrown by [ConversationsNotifier.getOrCreateDm] when the server rejects
 /// the request or a network error occurs. [message] is safe to display to

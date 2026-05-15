@@ -7,9 +7,9 @@ part of 'conversations_provider.dart';
 // REST API calls and manage local state for CRUD operations.
 // ---------------------------------------------------------------------------
 
-mixin _ConversationsHttpActionsMixin on StateNotifier<ConversationsState> {
+mixin _ConversationsHttpActionsMixin on Notifier<ConversationsState> {
   // Dependencies implemented by ConversationsNotifier.
-  Ref get ref;
+  // `ref` is provided by the Notifier base; do not re-declare here.
   String get _serverUrl;
   Future<void> loadConversations();
   Future<http.Response> _authenticatedRequest(

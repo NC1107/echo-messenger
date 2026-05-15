@@ -80,37 +80,36 @@ class _SeededCryptoNotifier extends CryptoNotifier {
 }
 
 class _FakeConversationsNotifier extends ConversationsNotifier {
-  _FakeConversationsNotifier(super.ref) {
-    state = const ConversationsState(
-      conversations: [
-        Conversation(
-          id: 'conv-1',
-          isGroup: false,
-          members: [
-            ConversationMember(userId: 'peer-1', username: 'alice'),
-            ConversationMember(userId: 'my-user-id', username: 'testuser'),
-          ],
-        ),
-        Conversation(
-          id: 'group-1',
-          isGroup: true,
-          name: 'Test Group',
-          members: [
-            ConversationMember(
-              userId: 'my-user-id',
-              username: 'testuser',
-              role: 'owner',
-            ),
-            ConversationMember(
-              userId: 'peer-1',
-              username: 'alice',
-              role: 'member',
-            ),
-          ],
-        ),
-      ],
-    );
-  }
+  @override
+  ConversationsState build() => const ConversationsState(
+    conversations: [
+      Conversation(
+        id: 'conv-1',
+        isGroup: false,
+        members: [
+          ConversationMember(userId: 'peer-1', username: 'alice'),
+          ConversationMember(userId: 'my-user-id', username: 'testuser'),
+        ],
+      ),
+      Conversation(
+        id: 'group-1',
+        isGroup: true,
+        name: 'Test Group',
+        members: [
+          ConversationMember(
+            userId: 'my-user-id',
+            username: 'testuser',
+            role: 'owner',
+          ),
+          ConversationMember(
+            userId: 'peer-1',
+            username: 'alice',
+            role: 'member',
+          ),
+        ],
+      ),
+    ],
+  );
 
   @override
   Future<void> loadConversations() async {}
@@ -173,9 +172,7 @@ void _setup() {
         // Default: crypto NOT initialized (for new_message queue tests)
         () => _SeededCryptoNotifier(const CryptoState(isInitialized: false)),
       ),
-      conversationsProvider.overrideWith(
-        (ref) => _FakeConversationsNotifier(ref),
-      ),
+      conversationsProvider.overrideWith(_FakeConversationsNotifier.new),
       channelsProvider.overrideWith(() {
         fakeChannels = _FakeChannelsNotifier();
         return fakeChannels;
