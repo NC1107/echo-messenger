@@ -27,6 +27,8 @@ Client apps and server binaries are on the [Releases page](https://github.com/NC
 | Binary | [echo-server-linux-x64.tar.gz](https://github.com/NC1107/echo-messenger/releases/latest/download/echo-server-linux-x64.tar.gz) |
 | Docker (server) | `ghcr.io/nc1107/echo-messenger/server:latest` |
 | Docker (web) | `ghcr.io/nc1107/echo-messenger/web:latest` |
+| Docker (voice) | `livekit/livekit-server:v1.10.1` — pinned, includes bundled media/SFU libraries; check [LiveKit releases](https://github.com/livekit/livekit/releases) before upgrading |
+| Docker (DB backup) | `prodrigestivill/postgres-backup-local:17.6` — large image (~500 MB), only needed if you want automated backups |
 
 ## Features
 
