@@ -8,11 +8,11 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
 
 import '../../providers/livekit_voice_provider.dart';
 import '../../providers/screen_share_provider.dart';
+import 'echo_screen_select_dialog.dart';
 
 bool _useLiveKitPicker() {
   // macOS and Windows: keep LiveKit's ScreenSelectDialog (no native picker
@@ -86,10 +86,10 @@ Future<void> toggleScreenShare(BuildContext context, WidgetRef ref) async {
 
   if (_useLiveKitPicker()) {
     try {
-      final source = await showDialog<DesktopCapturerSource>(
-        context: context,
-        builder: (_) => lk.ScreenSelectDialog(),
-      );
+      // Use our custom picker instead of lk.ScreenSelectDialog, which has two
+      // bugs: Image.memory without errorBuilder (crashes on non-decodable
+      // thumbnail bytes) and a setState-after-dispose race on dismiss.
+      final source = await showEchoScreenSelectDialog(context);
       if (source == null || !context.mounted) return;
       final track = await lk.LocalVideoTrack.createScreenShareTrack(
         lk.ScreenShareCaptureOptions(sourceId: source.id, maxFrameRate: 15.0),
