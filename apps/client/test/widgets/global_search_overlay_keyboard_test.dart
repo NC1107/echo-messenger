@@ -10,6 +10,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:echo_app/src/providers/auth_provider.dart';
 import 'package:echo_app/src/providers/server_url_provider.dart';
+
+import '../helpers/mock_providers.dart';
 import 'package:echo_app/src/theme/echo_theme.dart';
 import 'package:echo_app/src/widgets/global_search_overlay.dart';
 
@@ -50,22 +52,20 @@ Widget _wrap({
 }) {
   return ProviderScope(
     overrides: [
-      authProvider.overrideWith((ref) {
-        final n = AuthNotifier(ref);
-        n.state = const AuthState(
-          isLoggedIn: true,
-          userId: 'me',
-          username: 'me',
-          token: 'fake-jwt',
-          refreshToken: 'refresh',
-        );
-        return n;
-      }),
-      serverUrlProvider.overrideWith((ref) {
-        final n = ServerUrlNotifier();
-        n.state = 'http://localhost:8080';
-        return n;
-      }),
+      authProvider.overrideWith(
+        () => FakeLoggedInAuthNotifier(
+          const AuthState(
+            isLoggedIn: true,
+            userId: 'me',
+            username: 'me',
+            token: 'fake-jwt',
+            refreshToken: 'refresh',
+          ),
+        ),
+      ),
+      serverUrlProvider.overrideWith(
+        () => FakeServerUrlNotifier('http://localhost:8080'),
+      ),
     ],
     child: MaterialApp(
       theme: EchoTheme.darkTheme,
@@ -179,22 +179,21 @@ void main() {
                       context: context,
                       builder: (_) => ProviderScope(
                         overrides: [
-                          authProvider.overrideWith((ref) {
-                            final n = AuthNotifier(ref);
-                            n.state = const AuthState(
-                              isLoggedIn: true,
-                              userId: 'me',
-                              username: 'me',
-                              token: 'fake-jwt',
-                              refreshToken: 'refresh',
-                            );
-                            return n;
-                          }),
-                          serverUrlProvider.overrideWith((ref) {
-                            final n = ServerUrlNotifier();
-                            n.state = 'http://localhost:8080';
-                            return n;
-                          }),
+                          authProvider.overrideWith(
+                            () => FakeLoggedInAuthNotifier(
+                              const AuthState(
+                                isLoggedIn: true,
+                                userId: 'me',
+                                username: 'me',
+                                token: 'fake-jwt',
+                                refreshToken: 'refresh',
+                              ),
+                            ),
+                          ),
+                          serverUrlProvider.overrideWith(
+                            () =>
+                                FakeServerUrlNotifier('http://localhost:8080'),
+                          ),
                         ],
                         child: GlobalSearchOverlay(
                           onResultTap: (_, _) {},

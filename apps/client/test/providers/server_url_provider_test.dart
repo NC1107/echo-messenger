@@ -13,59 +13,62 @@ void main() {
       SharedPreferences.setMockInitialValues({});
     });
 
+    /// Bare container for tests that only exercise URL-side state (no
+    /// switchTo path → no auth/websocket dependency).
+    ProviderContainer makeBareContainer() {
+      final c = ProviderContainer();
+      addTearDown(c.dispose);
+      return c;
+    }
+
     test('default URL is production', () {
-      final notifier = ServerUrlNotifier();
-      expect(notifier.state, defaultServerUrl);
-      notifier.dispose();
+      final c = makeBareContainer();
+      expect(c.read(serverUrlProvider), defaultServerUrl);
     });
 
     test('load reads stored URL from SharedPreferences', () async {
       SharedPreferences.setMockInitialValues({
         'echo_server_url': 'http://custom.example.com',
       });
-      final notifier = ServerUrlNotifier();
-      await notifier.load();
-      expect(notifier.state, 'http://custom.example.com');
-      notifier.dispose();
+      final c = makeBareContainer();
+      await c.read(serverUrlProvider.notifier).load();
+      expect(c.read(serverUrlProvider), 'http://custom.example.com');
     });
 
     test('load keeps default when SharedPreferences is empty', () async {
-      final notifier = ServerUrlNotifier();
-      await notifier.load();
-      expect(notifier.state, defaultServerUrl);
-      notifier.dispose();
+      final c = makeBareContainer();
+      await c.read(serverUrlProvider.notifier).load();
+      expect(c.read(serverUrlProvider), defaultServerUrl);
     });
 
     test('setUrl updates state and persists', () async {
-      final notifier = ServerUrlNotifier();
-      await notifier.setUrl('http://localhost:3000');
-      expect(notifier.state, 'http://localhost:3000');
+      final c = makeBareContainer();
+      await c.read(serverUrlProvider.notifier).setUrl('http://localhost:3000');
+      expect(c.read(serverUrlProvider), 'http://localhost:3000');
 
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getString('echo_server_url'), 'http://localhost:3000');
-      notifier.dispose();
     });
 
     test('setUrl strips trailing slash', () async {
-      final notifier = ServerUrlNotifier();
-      await notifier.setUrl('http://example.com/');
-      expect(notifier.state, 'http://example.com');
-      notifier.dispose();
+      final c = makeBareContainer();
+      await c.read(serverUrlProvider.notifier).setUrl('http://example.com/');
+      expect(c.read(serverUrlProvider), 'http://example.com');
     });
 
     test(
       'resetToDefault restores default and removes persisted value',
       () async {
-        final notifier = ServerUrlNotifier();
+        final c = makeBareContainer();
+        final notifier = c.read(serverUrlProvider.notifier);
         await notifier.setUrl('http://custom.example.com');
-        expect(notifier.state, 'http://custom.example.com');
+        expect(c.read(serverUrlProvider), 'http://custom.example.com');
 
         await notifier.resetToDefault();
-        expect(notifier.state, defaultServerUrl);
+        expect(c.read(serverUrlProvider), defaultServerUrl);
 
         final prefs = await SharedPreferences.getInstance();
         expect(prefs.getString('echo_server_url'), isNull);
-        notifier.dispose();
       },
     );
   });
@@ -80,8 +83,7 @@ void main() {
       return ProviderContainer(
         overrides: [
           authProvider.overrideWith(
-            (ref) => _RecordingAuthNotifier(
-              ref,
+            () => _RecordingAuthNotifier(
               initial: const AuthState(
                 isLoggedIn: true,
                 userId: 'u1',
@@ -251,9 +253,12 @@ class _LogoutCall {
 class _RecordingAuthNotifier extends AuthNotifier {
   final List<_LogoutCall> logoutCalls = [];
 
-  _RecordingAuthNotifier(super.ref, {AuthState? initial}) {
-    if (initial != null) state = initial;
-  }
+  _RecordingAuthNotifier({AuthState? initial}) : _initial = initial;
+
+  final AuthState? _initial;
+
+  @override
+  AuthState build() => _initial ?? const AuthState();
 
   @override
   Future<void> logout({String? serverUrl}) async {

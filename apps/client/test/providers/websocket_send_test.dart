@@ -9,6 +9,8 @@ import 'package:echo_app/src/providers/conversations_provider.dart';
 import 'package:echo_app/src/providers/crypto_provider.dart';
 import 'package:echo_app/src/providers/privacy_provider.dart';
 import 'package:echo_app/src/providers/server_url_provider.dart';
+
+import '../helpers/mock_providers.dart';
 import 'package:echo_app/src/providers/websocket_provider.dart';
 import 'package:echo_app/src/services/crypto_service.dart';
 import 'package:echo_app/src/services/group_crypto_service.dart';
@@ -74,9 +76,12 @@ class _TestCryptoService extends CryptoService {
 class _SpyCryptoNotifier extends CryptoNotifier {
   int retryKeyUploadCalls = 0;
 
-  _SpyCryptoNotifier(super.ref, {required CryptoState initial}) {
-    state = initial;
-  }
+  _SpyCryptoNotifier({required CryptoState initial}) : _initial = initial;
+
+  final CryptoState _initial;
+
+  @override
+  CryptoState build() => _initial;
 
   @override
   Future<void> retryKeyUpload() async {
@@ -146,32 +151,29 @@ ProviderContainer _createContainer({
 }) {
   final container = ProviderContainer(
     overrides: [
-      authProvider.overrideWith((ref) {
-        final n = AuthNotifier(ref);
-        n.state = const AuthState(
-          isLoggedIn: true,
-          userId: 'my-user-id',
-          username: 'testuser',
-          token: 'fake-jwt-token',
-        );
-        return n;
-      }),
-      serverUrlProvider.overrideWith((ref) {
-        final n = ServerUrlNotifier();
-        n.state = 'http://localhost:8080';
-        return n;
-      }),
+      authProvider.overrideWith(
+        () => FakeLoggedInAuthNotifier(
+          const AuthState(
+            isLoggedIn: true,
+            userId: 'my-user-id',
+            username: 'testuser',
+            token: 'fake-jwt-token',
+          ),
+        ),
+      ),
+      serverUrlProvider.overrideWith(
+        () => FakeServerUrlNotifier('http://localhost:8080'),
+      ),
       if (testCrypto != null)
         cryptoServiceProvider.overrideWithValue(testCrypto),
       if (testGroupCrypto != null)
         groupCryptoServiceProvider.overrideWithValue(testGroupCrypto),
       if (spyNotifier != null)
-        cryptoProvider.overrideWith((ref) => spyNotifier)
+        cryptoProvider.overrideWith(() => spyNotifier)
       else
-        cryptoProvider.overrideWith((ref) {
-          final n = _SpyCryptoNotifier(ref, initial: cryptoState);
-          return n;
-        }),
+        cryptoProvider.overrideWith(
+          () => _SpyCryptoNotifier(initial: cryptoState),
+        ),
       privacyProvider.overrideWith(
         () => _SeededPrivacy(
           PrivacyState(readReceiptsEnabled: readReceiptsEnabled),

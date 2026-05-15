@@ -6,7 +6,7 @@ part of 'theme_provider.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$appThemeHash() => r'ded610d070442924290afae9634d3b5792b06845';
+String _$appThemeHash() => r'60b5c020ddee994117998e93b703c866e519e6c8';
 
 /// Migrated from `StateNotifier` to `@riverpod` Notifier (audit 2026-04-30).
 /// Class is named `AppTheme` (not `Theme`) to avoid colliding with Flutter's

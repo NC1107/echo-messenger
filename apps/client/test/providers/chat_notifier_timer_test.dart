@@ -7,26 +7,26 @@ import 'package:echo_app/src/providers/auth_provider.dart';
 import 'package:echo_app/src/providers/chat_provider.dart';
 import 'package:echo_app/src/providers/server_url_provider.dart';
 
+import '../helpers/mock_providers.dart';
+
 /// Create a [ProviderContainer] with overrides for auth + server URL so
 /// [ChatNotifier] can be instantiated without hitting the network.
 ProviderContainer _createContainer() {
   return ProviderContainer(
     overrides: [
-      authProvider.overrideWith((ref) {
-        final n = AuthNotifier(ref);
-        n.state = const AuthState(
-          isLoggedIn: true,
-          userId: 'me',
-          username: 'testuser',
-          token: 'fake-token',
-        );
-        return n;
-      }),
-      serverUrlProvider.overrideWith((ref) {
-        final n = ServerUrlNotifier();
-        n.state = 'http://localhost:8080';
-        return n;
-      }),
+      authProvider.overrideWith(
+        () => FakeLoggedInAuthNotifier(
+          const AuthState(
+            isLoggedIn: true,
+            userId: 'me',
+            username: 'testuser',
+            token: 'fake-token',
+          ),
+        ),
+      ),
+      serverUrlProvider.overrideWith(
+        () => FakeServerUrlNotifier('http://localhost:8080'),
+      ),
     ],
   );
 }

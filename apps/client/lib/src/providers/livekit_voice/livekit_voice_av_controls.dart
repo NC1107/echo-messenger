@@ -7,7 +7,7 @@ part of 'livekit_voice_provider.dart';
 /// Mixed into [LiveKitVoiceNotifier]. Reaches the shared `_room` /
 /// `_disposed` / `_wasMutedBeforeDeafen` fields back through abstract
 /// accessors so the field declarations stay in one place on the facade.
-mixin LiveKitVoiceAvControlsMixin on StateNotifier<LiveKitVoiceState> {
+mixin LiveKitVoiceAvControlsMixin on Notifier<LiveKitVoiceState> {
   /// Active LiveKit room (null when not joined). Provided by the facade.
   Room? get _room;
 

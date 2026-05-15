@@ -10,9 +10,10 @@ import 'package:echo_app/src/theme/echo_theme.dart';
 import '../helpers/mock_providers.dart';
 
 class _FailingLoginAuthNotifier extends AuthNotifier {
-  _FailingLoginAuthNotifier(super.ref) {
-    state = const AuthState();
-  }
+  _FailingLoginAuthNotifier();
+
+  @override
+  AuthState build() => const AuthState();
 
   @override
   Future<void> login(String username, String password) async {
@@ -300,7 +301,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            authProvider.overrideWith((ref) => _FailingLoginAuthNotifier(ref)),
+            authProvider.overrideWith(() => _FailingLoginAuthNotifier()),
             serverUrlOverride(),
             accessibilityOverride(),
           ],

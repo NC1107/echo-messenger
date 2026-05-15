@@ -1,26 +1,27 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'websocket_provider.dart';
+part of 'conversations_provider.dart';
 
 // **************************************************************************
 // RiverpodGenerator
 // **************************************************************************
 
-String _$webSocketNotifierHash() => r'0cb8be6191dcdcfadc6c74791eaff2e017681877';
+String _$conversationsNotifierHash() =>
+    r'8e57a967402f5d7dedf849ef630cd995177de122';
 
-/// See also [WebSocketNotifier].
-@ProviderFor(WebSocketNotifier)
-final webSocketNotifierProvider =
-    NotifierProvider<WebSocketNotifier, WebSocketState>.internal(
-      WebSocketNotifier.new,
-      name: r'webSocketNotifierProvider',
+/// See also [ConversationsNotifier].
+@ProviderFor(ConversationsNotifier)
+final conversationsNotifierProvider =
+    NotifierProvider<ConversationsNotifier, ConversationsState>.internal(
+      ConversationsNotifier.new,
+      name: r'conversationsNotifierProvider',
       debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
           ? null
-          : _$webSocketNotifierHash,
+          : _$conversationsNotifierHash,
       dependencies: null,
       allTransitiveDependencies: null,
     );
 
-typedef _$WebSocketNotifier = Notifier<WebSocketState>;
+typedef _$ConversationsNotifier = Notifier<ConversationsState>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

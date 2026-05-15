@@ -71,10 +71,20 @@ async function apiDelete(path: string, token: string): Promise<ApiResult> {
 }
 
 async function registerUser(username: string): Promise<any> {
-  const { data } = await apiPost('/api/auth/register', {
+  const { status, data } = await apiPost('/api/auth/register', {
     username,
     password: PW,
   });
+  // On retry, the previous run already created the user — fall back to login
+  // so the same usernames work across retries (#889).
+  if (status !== 201 || !data?.access_token) {
+    const { data: loginData } = await apiPost('/api/auth/login', {
+      username,
+      password: PW,
+    });
+    console.log(`  Re-used ${username} (${loginData.user_id?.slice(0, 8)})`);
+    return loginData;
+  }
   console.log(`  Registered ${username} (${data.user_id?.slice(0, 8)})`);
   return data;
 }
@@ -338,7 +348,7 @@ test.describe('Group messaging UI', () => {
   // -----------------------------------------------------------------------
   // Test 1: Alice sends a message in the group, Bob sees it
   // -----------------------------------------------------------------------
-  test.fixme('alice sends message in group, bob receives', async ({ browser }) => { // #889
+  test.fixme('alice sends message in group, bob receives', async ({ browser }) => {
     test.setTimeout(180000);
     console.log('\n--- Test: send/receive in group ---');
 
@@ -376,7 +386,7 @@ test.describe('Group messaging UI', () => {
   // -----------------------------------------------------------------------
   // Test 2: React to a group message via API, verify pill in UI
   // -----------------------------------------------------------------------
-  test.fixme('reaction on group message', async ({ browser }) => { // #889
+  test.fixme('reaction on group message', async ({ browser }) => {
     test.setTimeout(180000);
     console.log('\n--- Test: reaction on group message ---');
 
@@ -429,7 +439,7 @@ test.describe('Group messaging UI', () => {
   // -----------------------------------------------------------------------
   // Test 3: Pin a message in the group (owner-only action)
   // -----------------------------------------------------------------------
-  test.fixme('pin message in group', async ({ browser }) => { // #889
+  test.fixme('pin message in group', async ({ browser }) => {
     test.setTimeout(180000);
     console.log('\n--- Test: pin message in group ---');
 
@@ -487,7 +497,7 @@ test.describe('Group messaging UI', () => {
   // -----------------------------------------------------------------------
   // Test 4: Owner sees "Delete Group", non-owner does not
   // -----------------------------------------------------------------------
-  test.fixme('owner sees Delete Group button, non-owner does not', async ({ // #889
+  test.fixme('owner sees Delete Group button, non-owner does not', async ({
     browser,
   }) => {
     test.setTimeout(180000);
@@ -584,7 +594,7 @@ test.describe('Group messaging UI', () => {
   // -----------------------------------------------------------------------
   // Test 5: Owner can kick a member via the API and it reflects correctly
   // -----------------------------------------------------------------------
-  test.fixme('owner can kick member', async ({ browser }) => { // #889
+  test.fixme('owner can kick member', async ({ browser }) => {
     test.setTimeout(180000);
     console.log('\n--- Test: owner kicks member ---');
 

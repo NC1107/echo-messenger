@@ -10,6 +10,8 @@ import 'package:echo_app/src/providers/auth_provider.dart';
 import 'package:echo_app/src/providers/media_ticket_provider.dart';
 import 'package:echo_app/src/providers/server_url_provider.dart';
 
+import '../helpers/mock_providers.dart';
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -20,22 +22,20 @@ ProviderContainer _makeContainer({String? token = 'fake-jwt'}) {
   SharedPreferences.setMockInitialValues({});
   return ProviderContainer(
     overrides: [
-      authProvider.overrideWith((ref) {
-        final n = AuthNotifier(ref);
-        n.state = AuthState(
-          isLoggedIn: token != null,
-          userId: 'user-1',
-          username: 'testuser',
-          token: token,
-          refreshToken: 'refresh-tok',
-        );
-        return n;
-      }),
-      serverUrlProvider.overrideWith((ref) {
-        final n = ServerUrlNotifier();
-        n.state = 'http://localhost:8080';
-        return n;
-      }),
+      authProvider.overrideWith(
+        () => FakeLoggedInAuthNotifier(
+          AuthState(
+            isLoggedIn: token != null,
+            userId: 'user-1',
+            username: 'testuser',
+            token: token,
+            refreshToken: 'refresh-tok',
+          ),
+        ),
+      ),
+      serverUrlProvider.overrideWith(
+        () => FakeServerUrlNotifier('http://localhost:8080'),
+      ),
     ],
   );
 }
