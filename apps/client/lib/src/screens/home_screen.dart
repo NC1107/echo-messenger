@@ -1208,6 +1208,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       width: animatedSidebarWidth,
       child: VoiceDock(
         width: animatedSidebarWidth,
+        collapsed: _sidebarCollapsed,
         onNavigateToLounge: () {
           setState(() {
             _showingLounge = true;

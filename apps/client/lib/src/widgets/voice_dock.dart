@@ -16,8 +16,14 @@ import '../theme/echo_theme.dart';
 class VoiceDock extends ConsumerWidget {
   final double width;
   final VoidCallback? onNavigateToLounge;
+  final bool collapsed;
 
-  const VoiceDock({super.key, this.width = 320, this.onNavigateToLounge});
+  const VoiceDock({
+    super.key,
+    this.width = 320,
+    this.onNavigateToLounge,
+    this.collapsed = false,
+  });
 
   static String _voiceStatusLabel(bool isJoining, int peerCount) {
     if (isJoining) return 'Connecting...';
@@ -55,6 +61,19 @@ class VoiceDock extends ConsumerWidget {
     final peerCount = voiceLk.peerConnectionStates.length;
     final statusColor = _statusColor(context, voiceLk.isJoining, peerCount);
 
+    if (collapsed) {
+      return _buildCollapsedDock(
+        context,
+        ref,
+        voiceLk,
+        voiceSettings,
+        screenShare,
+        conversationId,
+        channelId,
+        statusColor,
+      );
+    }
+
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTap: onNavigateToLounge,
@@ -89,6 +108,55 @@ class VoiceDock extends ConsumerWidget {
               channelId,
               m,
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Compact vertical dock for the 60px collapsed sidebar.
+  Widget _buildCollapsedDock(
+    BuildContext context,
+    WidgetRef ref,
+    LiveKitVoiceState voiceLk,
+    VoiceSettingsState voiceSettings,
+    ScreenShareState screenShare,
+    String conversationId,
+    String channelId,
+    Color statusColor,
+  ) {
+    const m = _DockMetrics.compact;
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: onNavigateToLounge,
+      child: Container(
+        width: 60,
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: context.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+          border: Border(
+            top: BorderSide(color: context.border, width: 1),
+            right: BorderSide(color: context.border, width: 1),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: statusColor,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+            _buildMuteButton(context, ref, voiceSettings, m),
+            _buildDeafenButton(context, ref, voiceSettings, m),
+            _buildHangupButton(ref, screenShare, conversationId, channelId, m),
           ],
         ),
       ),
@@ -163,7 +231,6 @@ class VoiceDock extends ConsumerWidget {
     return [
       _buildVideoButton(context, ref, voiceLk, m),
       _buildMuteButton(context, ref, voiceSettings, m),
-      _buildMicLevelIndicator(ref, voiceSettings),
       _buildDeafenButton(context, ref, voiceSettings, m),
       if (_supportsScreenShare)
         _buildScreenShareButton(context, ref, screenShare, m),
@@ -209,27 +276,6 @@ class VoiceDock extends ConsumerWidget {
             .read(voiceRtcProvider.notifier)
             .setCaptureEnabled(!nextMuted && !voiceSettings.selfDeafened);
       },
-    );
-  }
-
-  Widget _buildMicLevelIndicator(
-    WidgetRef ref,
-    VoiceSettingsState voiceSettings,
-  ) {
-    if (voiceSettings.selfMuted || voiceSettings.selfDeafened) {
-      return const SizedBox.shrink();
-    }
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 100),
-      width:
-          (ref.watch(livekitVoiceProvider.select((s) => s.localAudioLevel)) *
-                  40)
-              .clamp(0.0, 40.0),
-      height: 4,
-      decoration: BoxDecoration(
-        color: EchoTheme.online,
-        borderRadius: BorderRadius.circular(2),
-      ),
     );
   }
 
