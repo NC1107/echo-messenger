@@ -208,19 +208,21 @@ class _FakeWebSocketNotifier extends WebSocketNotifier {
 /// use the simpler [isInitialized] flag for the common case.
 Override cryptoOverride({bool isInitialized = true, CryptoState? cryptoState}) {
   return cryptoProvider.overrideWith(
-    (ref) => FakeCryptoNotifier(
-      ref,
+    () => FakeCryptoNotifier(
       initial: cryptoState ?? CryptoState(isInitialized: isInitialized),
     ),
   );
 }
 
 class FakeCryptoNotifier extends CryptoNotifier {
-  FakeCryptoNotifier(super.ref, {CryptoState initial = const CryptoState()}) {
-    state = initial;
-  }
+  FakeCryptoNotifier({CryptoState initial = const CryptoState()})
+    : _initial = initial;
 
+  final CryptoState _initial;
   int initCallCount = 0;
+
+  @override
+  CryptoState build() => _initial;
 
   @override
   Future<void> initAndUploadKeys() async {

@@ -69,6 +69,14 @@ class _FakeChannelsNotifier extends Channels {
   }
 }
 
+class _SeededCryptoNotifier extends CryptoNotifier {
+  _SeededCryptoNotifier(this._initial);
+  final CryptoState _initial;
+
+  @override
+  CryptoState build() => _initial;
+}
+
 class _FakeConversationsNotifier extends ConversationsNotifier {
   _FakeConversationsNotifier(super.ref) {
     state = const ConversationsState(
@@ -161,12 +169,10 @@ void _setup() {
       }),
       cryptoServiceProvider.overrideWithValue(fakeCrypto),
       groupCryptoServiceProvider.overrideWithValue(fakeGroupCrypto),
-      cryptoProvider.overrideWith((ref) {
-        final n = CryptoNotifier(ref);
+      cryptoProvider.overrideWith(
         // Default: crypto NOT initialized (for new_message queue tests)
-        n.state = const CryptoState(isInitialized: false);
-        return n;
-      }),
+        () => _SeededCryptoNotifier(const CryptoState(isInitialized: false)),
+      ),
       conversationsProvider.overrideWith(
         (ref) => _FakeConversationsNotifier(ref),
       ),

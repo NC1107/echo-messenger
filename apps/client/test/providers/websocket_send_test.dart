@@ -74,9 +74,12 @@ class _TestCryptoService extends CryptoService {
 class _SpyCryptoNotifier extends CryptoNotifier {
   int retryKeyUploadCalls = 0;
 
-  _SpyCryptoNotifier(super.ref, {required CryptoState initial}) {
-    state = initial;
-  }
+  _SpyCryptoNotifier({required CryptoState initial}) : _initial = initial;
+
+  final CryptoState _initial;
+
+  @override
+  CryptoState build() => _initial;
 
   @override
   Future<void> retryKeyUpload() async {
@@ -166,12 +169,11 @@ ProviderContainer _createContainer({
       if (testGroupCrypto != null)
         groupCryptoServiceProvider.overrideWithValue(testGroupCrypto),
       if (spyNotifier != null)
-        cryptoProvider.overrideWith((ref) => spyNotifier)
+        cryptoProvider.overrideWith(() => spyNotifier)
       else
-        cryptoProvider.overrideWith((ref) {
-          final n = _SpyCryptoNotifier(ref, initial: cryptoState);
-          return n;
-        }),
+        cryptoProvider.overrideWith(
+          () => _SpyCryptoNotifier(initial: cryptoState),
+        ),
       privacyProvider.overrideWith(
         () => _SeededPrivacy(
           PrivacyState(readReceiptsEnabled: readReceiptsEnabled),
