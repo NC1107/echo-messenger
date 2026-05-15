@@ -3,6 +3,9 @@
 /// entry points behavior-identical (#911).
 library;
 
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -10,6 +13,19 @@ import 'package:livekit_client/livekit_client.dart' as lk;
 
 import '../../providers/livekit_voice_provider.dart';
 import '../../providers/screen_share_provider.dart';
+
+bool _useLiveKitPicker() {
+  // macOS and Windows: keep LiveKit's ScreenSelectDialog (no native picker
+  // equivalent inside flutter_webrtc on those platforms).
+  //
+  // Linux: skip the LiveKit dialog. Its Window tab segfaults libwebrtc
+  // (#911 follow-up) and the system has xdg-desktop-portal which exposes
+  // a much better native picker. Defer to flutter_webrtc's
+  // setScreenShareEnabled which routes through the portal.
+  if (kIsWeb) return false;
+  if (Platform.isMacOS || Platform.isWindows) return true;
+  return false;
+}
 
 /// Toggle screen share for the current LiveKit room.
 ///
@@ -30,7 +46,7 @@ Future<void> toggleScreenShare(BuildContext context, WidgetRef ref) async {
     return;
   }
 
-  if (lk.lkPlatformIsDesktop()) {
+  if (_useLiveKitPicker()) {
     try {
       final source = await showDialog<DesktopCapturerSource>(
         context: context,
@@ -49,6 +65,9 @@ Future<void> toggleScreenShare(BuildContext context, WidgetRef ref) async {
       debugPrint('[ScreenShare] Desktop screen share failed: $e');
     }
   } else {
+    // Mobile / Web / Linux: let LiveKit route through the platform's
+    // native picker (xdg-desktop-portal on Linux Wayland, system sheet
+    // on iOS / Android, the browser's getDisplayMedia chooser on web).
     final ok = await lkNotifier.setScreenShareEnabled(true);
     if (ok) {
       ssNotifier.setLiveKitScreenShareActive(true);
