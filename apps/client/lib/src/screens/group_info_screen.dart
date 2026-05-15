@@ -852,6 +852,26 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
               'End-to-end encrypted · $memberLabel',
               style: TextStyle(color: context.textMuted, fontSize: 12),
             ),
+            const SizedBox(width: 8),
+            // Group E2EE is wired but session-key distribution can stall
+            // ("Securing message…", #434).  Label it so testers don't file
+            // duplicates -- remove once #591 lands server-side enforcement.
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: context.accentLight,
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: context.accent, width: 0.5),
+              ),
+              child: Text(
+                'Experimental',
+                style: TextStyle(
+                  color: context.accent,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
           ] else
             Text(
               memberLabel,
