@@ -21,32 +21,36 @@ import UserNotifications
     // Register for remote notifications (APNs)
     application.registerForRemoteNotifications()
 
-    // Configure the AVAudioSession for VoIP-style playback so CallKit and
-    // LiveKit's WebRTC engine share consistent options.
+    // Configure the AVAudioSession category for VoIP-style audio so CallKit
+    // and LiveKit's WebRTC engine share consistent options. Mode is .default
+    // rather than .voiceChat: .voiceChat aggressively claims the audio route
+    // and conflicts with the .voiceProcessingIO mode LiveKit sets internally
+    // on the native WebRTC track.
     //
-    // Mode is .default rather than .voiceChat: .voiceChat aggressively claims
-    // the audio route and, on iOS 17+, can deadlock the audio thread when
-    // LiveKit's LocalAudioTrack.create calls setActive(true) concurrently
-    // with the CallKit activation sequence.  .default lets LiveKit own the
-    // mode selection internally (it sets .voiceProcessingIO on the native
-    // WebRTC track) without a competing mode claim from the app layer.
+    // CRITICAL: do NOT call setActive(true) here. The previous version of
+    // this code did so as a "pre-warm" — but on iOS 17+ with mic permission
+    // in .notDetermined, setActive(true) on a .playAndRecord session blocks
+    // the main thread waiting for a TCC mic-permission prompt that cannot
+    // be presented yet (no UIScene up). The system watchdog then SIGKILLs
+    // the app after 20-30s. Symptom: orange mic dot appears (input route
+    // armed), no Dart breadcrumbs persist, no /api/voice/token request
+    // reaches the server — exactly what the production crash report shows.
     //
-    // setActive(true) is called here to pre-warm the session: LiveKit's
-    // subsequent setActive is then a no-op (already active) instead of a
-    // blocking reconfiguration that can race the mic-permission dialog on
-    // first launch.
+    // LiveKit's LocalAudioTrack.create activates the session itself at the
+    // right moment, AFTER a UI scene exists and after mic permission has
+    // been explicitly requested via permission_handler in joinChannel.
+    // Also dropped .mixWithOthers from the option set — it fights against
+    // .voiceProcessingIO that LiveKit installs.
     do {
       let session = AVAudioSession.sharedInstance()
       try session.setCategory(
         .playAndRecord,
         mode: .default,
-        options: [.allowBluetooth, .allowBluetoothA2DP, .mixWithOthers, .defaultToSpeaker]
+        options: [.allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker]
       )
       NSLog("[Echo] audio session category set")
-      try session.setActive(true)
-      NSLog("[Echo] audio session activated")
     } catch {
-      NSLog("[Echo] AVAudioSession setCategory/setActive failed: \(error.localizedDescription)")
+      NSLog("[Echo] AVAudioSession setCategory failed: \(error.localizedDescription)")
     }
 
     let result = super.application(application, didFinishLaunchingWithOptions: launchOptions)
