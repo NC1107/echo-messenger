@@ -166,7 +166,7 @@ jobs:
             ${{ runner.os }}-pubcache-
       - name: Build
         working-directory: apps/client
-        run: flutter build windows --release --dart-define=APP_VERSION=dev
+        run: flutter build windows --release --verbose --dart-define=APP_VERSION=dev
       - name: Package portable zip
         shell: pwsh
         run: |
