@@ -291,6 +291,43 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
 
     String? attemptedUrl;
     try {
+      // ---- breadcrumb 0: pre-request microphone permission ------------------
+      // CRITICAL: iOS must grant mic permission BEFORE LiveKit's room.connect
+      // or any audio-track creation. LiveKit server logs from a real iOS
+      // crash showed: `room.connect` succeeded in 1.2s, then 22s later the
+      // peer connection died from watchdog SIGKILL. The 22s matches iOS
+      // killing the app for a blocked main thread, which is what happens
+      // when AVAudioSession activation in `setMicrophoneEnabled` collides
+      // with a TCC mic-permission prompt presented at the same time.
+      //
+      // Requesting permission FIRST drains the prompt into a clean idle
+      // context, so by the time room.connect/setMicrophoneEnabled run the
+      // permission is already .granted or .denied — no synchronous race.
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'LiveKitVoice',
+        'joinChannel: pre-requesting microphone permission',
+      );
+      final micPermitted = await _requestMicrophonePermission();
+      if (!micPermitted) {
+        DebugLogService.instance.log(
+          LogLevel.error,
+          'LiveKitVoice',
+          'joinChannel: microphone permission denied — aborting',
+        );
+        state = state.copyWith(
+          isJoining: false,
+          isActive: false,
+          error: 'Microphone access is required to join a voice channel',
+        );
+        return;
+      }
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'LiveKitVoice',
+        'joinChannel: microphone permission granted',
+      );
+
       // ---- breadcrumb 1: token fetch ----------------------------------------
       DebugLogService.instance.log(
         LogLevel.info,
@@ -420,32 +457,8 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       }
 
       // ---- breadcrumb 4: microphone enable ------------------------------------
-      // Pre-request microphone permission BEFORE LiveKit touches the audio
-      // session.  On iOS 17+, setMicrophoneEnabled triggers the native
-      // permission dialog mid-session-activation, which can deadlock the
-      // audio thread and cause the watchdog to kill the app ~27s later.
-      // Requesting permission in a clean context avoids that race entirely.
-      DebugLogService.instance.log(
-        LogLevel.info,
-        'LiveKitVoice',
-        'joinChannel: requesting microphone permission',
-      );
-      final micPermitted = await _requestMicrophonePermission();
-      if (!micPermitted) {
-        DebugLogService.instance.log(
-          LogLevel.error,
-          'LiveKitVoice',
-          'joinChannel: microphone permission denied — aborting',
-        );
-        await _cleanupRoom();
-        state = state.copyWith(
-          isJoining: false,
-          isActive: false,
-          error: 'Microphone access is required to join a voice channel',
-        );
-        return;
-      }
-
+      // Mic permission was already granted at the top of joinChannel
+      // (breadcrumb 0) so this call is non-blocking.
       final micEnabled = !startMuted;
       DebugLogService.instance.log(
         LogLevel.info,
