@@ -11,7 +11,7 @@ use serde_json::json;
 ///
 /// Generic variants (e.g. `BadRequest`) are emitted when the plain
 /// `AppError::bad_request(msg)` constructor is used.  Domain-specific variants
-/// (e.g. `WrongPassword`) are set explicitly via `AppError::with_code`.
+/// (e.g. `InvalidCredentials`) are set explicitly via `AppError::with_code`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ErrorCode {
     // ---- Generic HTTP-status mirrors ----
@@ -27,7 +27,7 @@ pub enum ErrorCode {
 
     // ---- Auth domain ----
     /// Provided password does not match the stored hash.
-    WrongPassword,
+    InvalidCredentials,
     /// Username is already registered.
     UsernameTaken,
     /// Registration is administratively disabled.
@@ -67,7 +67,7 @@ impl ErrorCode {
             ErrorCode::Internal => "internal",
             ErrorCode::Validation => "validation",
             ErrorCode::Unsupported => "unsupported",
-            ErrorCode::WrongPassword => "wrong-password",
+            ErrorCode::InvalidCredentials => "invalid-credentials",
             ErrorCode::UsernameTaken => "username-taken",
             ErrorCode::RegistrationDisabled => "registration-disabled",
             ErrorCode::TokenExpired => "token-expired",
@@ -157,7 +157,7 @@ impl AppError {
     /// - `NotMember` → 401 (was `AppError::unauthorized` at all call sites)
     /// - `RegistrationDisabled` → 403 (was `AppError::forbidden`)
     /// - `AlreadyMember` → 409 (was `AppError::conflict`)
-    /// - `WrongPassword` / `TokenExpired` / `TokenRevoked` → 401
+    /// - `InvalidCredentials` / `TokenExpired` / `TokenRevoked` → 401
     pub fn with_code(code: ErrorCode, msg: impl Into<String>) -> Self {
         let status = match code {
             ErrorCode::BadRequest
@@ -165,7 +165,7 @@ impl AppError {
             | ErrorCode::InvalidCiphertextShape
             | ErrorCode::UnsupportedMediaType => StatusCode::BAD_REQUEST,
             ErrorCode::Unauthorized
-            | ErrorCode::WrongPassword
+            | ErrorCode::InvalidCredentials
             | ErrorCode::TokenExpired
             | ErrorCode::TokenRevoked
             // NotMember was `AppError::unauthorized` at all existing call sites;
@@ -369,9 +369,12 @@ mod tests {
 
     #[test]
     fn with_code_wrong_password_is_401() {
-        let err = AppError::with_code(ErrorCode::WrongPassword, "Invalid username or password");
+        let err = AppError::with_code(
+            ErrorCode::InvalidCredentials,
+            "Invalid username or password",
+        );
         assert_eq!(err.status, StatusCode::UNAUTHORIZED);
-        assert_eq!(err.code, ErrorCode::WrongPassword);
+        assert_eq!(err.code, ErrorCode::InvalidCredentials);
         assert_eq!(err.message, "Invalid username or password");
     }
 
@@ -410,7 +413,10 @@ mod tests {
 
     #[test]
     fn error_code_as_str_snapshot() {
-        assert_eq!(ErrorCode::WrongPassword.as_str(), "wrong-password");
+        assert_eq!(
+            ErrorCode::InvalidCredentials.as_str(),
+            "invalid-credentials"
+        );
         assert_eq!(ErrorCode::UsernameTaken.as_str(), "username-taken");
         assert_eq!(
             ErrorCode::RegistrationDisabled.as_str(),
@@ -433,12 +439,15 @@ mod tests {
 
     #[test]
     fn into_response_json_shape_includes_code_field() {
-        let err = AppError::with_code(ErrorCode::WrongPassword, "Invalid username or password");
+        let err = AppError::with_code(
+            ErrorCode::InvalidCredentials,
+            "Invalid username or password",
+        );
         let body = serde_json::json!({
             "error": err.message,
             "code": err.code.as_str(),
         });
         assert_eq!(body["error"], "Invalid username or password");
-        assert_eq!(body["code"], "wrong-password");
+        assert_eq!(body["code"], "invalid-credentials");
     }
 }
