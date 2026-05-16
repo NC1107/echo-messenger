@@ -218,15 +218,15 @@ async fn thread_replies_reply_count_zero_one_many() {
     let _ = alice_id; // silence unused
 }
 
-/// `search_messages` runs the same GROUP-BY-joined `reply_count` after the
-/// migration. With the encrypted-DM gate (#591) the search index sees only
-/// ciphertext, so we can't reliably get a search hit on a plaintext
-/// keyword. Instead we exercise the route to confirm it returns 200 with
-/// the post-migration query (a wrong query shape would 500 here, not
-/// 200), which is the gate that catches a structural mistake in the
-/// migrated SQL.
+/// `search_messages` is now gated to plaintext conversations (#350) — for
+/// encrypted DMs the route returns 400 before touching the search SQL.
+/// The reply-count migration is still exercised by the fetch_messages and
+/// thread_replies tests above which run the same GROUP-BY-joined SQL on
+/// the same DB. This test now asserts the explicit 400 guard rather than
+/// the post-migration 200 (the route would 500 if the SQL itself were
+/// broken, but it never reaches the SQL for an encrypted convo).
 #[tokio::test]
-async fn search_messages_still_returns_200_after_migration() {
+async fn search_messages_returns_400_for_encrypted_conversation() {
     let base = common::spawn_server().await;
     let client = Client::new();
 
@@ -254,18 +254,9 @@ async fn search_messages_still_returns_200_after_migration() {
         .unwrap();
     assert_eq!(
         resp.status().as_u16(),
-        200,
-        "migrated search query must still answer 200"
+        400,
+        "search on an encrypted DM must be rejected with 400"
     );
-    let body: Vec<Value> = resp.json().await.unwrap();
-    // Any returned row must carry a numeric reply_count (post-migration
-    // shape) rather than null / missing.
-    for row in &body {
-        assert!(
-            row.get("reply_count").and_then(|v| v.as_i64()).is_some(),
-            "search row missing reply_count after migration: {row}"
-        );
-    }
 
     let _ = alice_ws.close(None).await;
 }
