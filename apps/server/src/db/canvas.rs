@@ -35,15 +35,43 @@ pub async fn get(pool: &PgPool, channel_id: Uuid) -> Result<CanvasRow, sqlx::Err
     }))
 }
 
+/// Maximum number of strokes stored per canvas channel.
+///
+/// Each stroke object is a JSON value bounded by the 64 KB per-frame WS guard.
+/// 2 000 strokes caps cumulative JSONB column growth at a predictable ceiling
+/// without requiring periodic cleanup.
+pub const MAX_STROKES: i64 = 2_000;
+
+/// Maximum number of images stored per canvas channel.
+pub const MAX_IMAGES: i64 = 2_000;
+
 /// Append a drawing stroke to the channel canvas.
 ///
 /// The stroke must be a JSON object with at least `{ "id": "...", ... }`.
 /// Idempotent: if a stroke with the same `id` already exists it is ignored.
+///
+/// Returns `Err(sqlx::Error::RowNotFound)` when the canvas has reached
+/// [`MAX_STROKES`] (reusing `RowNotFound` as a sentinel; callers convert
+/// this to a user-facing error via [`CanvasCapError`]).
 pub async fn append_stroke(
     pool: &PgPool,
     channel_id: Uuid,
     stroke: serde_json::Value,
-) -> Result<(), sqlx::Error> {
+) -> Result<(), CanvasCapError> {
+    // Check current stroke count before appending to bound cumulative growth.
+    let current_len: Option<i64> = sqlx::query_scalar(
+        "SELECT jsonb_array_length(drawing_data)
+         FROM channel_canvas
+         WHERE channel_id = $1",
+    )
+    .bind(channel_id)
+    .fetch_optional(pool)
+    .await?;
+
+    if current_len.unwrap_or(0) >= MAX_STROKES {
+        return Err(CanvasCapError::CapReached);
+    }
+
     sqlx::query(
         "INSERT INTO channel_canvas (channel_id, drawing_data, images_data)
          VALUES ($1, jsonb_build_array($2::jsonb), '[]')
@@ -63,6 +91,30 @@ pub async fn append_stroke(
     .await?;
 
     Ok(())
+}
+
+/// Error type for canvas append operations that enforce a row-count cap.
+#[derive(Debug)]
+pub enum CanvasCapError {
+    /// The canvas has reached the maximum allowed number of entries.
+    CapReached,
+    /// An underlying database error occurred.
+    Db(sqlx::Error),
+}
+
+impl std::fmt::Display for CanvasCapError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CanvasCapError::CapReached => write!(f, "canvas row-count cap reached"),
+            CanvasCapError::Db(e) => write!(f, "database error: {e}"),
+        }
+    }
+}
+
+impl From<sqlx::Error> for CanvasCapError {
+    fn from(e: sqlx::Error) -> Self {
+        CanvasCapError::Db(e)
+    }
 }
 
 /// Erase all drawing strokes for a channel, keeping images intact.
@@ -99,11 +151,28 @@ pub async fn clear_all(pool: &PgPool, channel_id: Uuid) -> Result<(), sqlx::Erro
 }
 
 /// Add an image to the canvas (appends; duplicates are filtered by `id`).
+///
+/// Returns [`CanvasCapError::CapReached`] when the images array has reached
+/// [`MAX_IMAGES`].
 pub async fn add_image(
     pool: &PgPool,
     channel_id: Uuid,
     image: serde_json::Value,
-) -> Result<(), sqlx::Error> {
+) -> Result<(), CanvasCapError> {
+    // Check current image count before appending to bound cumulative growth.
+    let current_len: Option<i64> = sqlx::query_scalar(
+        "SELECT jsonb_array_length(images_data)
+         FROM channel_canvas
+         WHERE channel_id = $1",
+    )
+    .bind(channel_id)
+    .fetch_optional(pool)
+    .await?;
+
+    if current_len.unwrap_or(0) >= MAX_IMAGES {
+        return Err(CanvasCapError::CapReached);
+    }
+
     sqlx::query(
         "INSERT INTO channel_canvas (channel_id, drawing_data, images_data)
          VALUES ($1, '[]', jsonb_build_array($2::jsonb))

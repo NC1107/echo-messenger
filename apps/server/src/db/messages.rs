@@ -58,6 +58,11 @@ pub struct MessageWithSender {
 pub struct ConversationSecurityRow {
     pub kind: String,
     pub is_encrypted: bool,
+    /// Disappearing-message TTL configured on the conversation.
+    /// `None` means disappearing messages are disabled.
+    /// Folded in here so `store_and_confirm` avoids a second `get_conversation_ttl`
+    /// round-trip on every outbound message.
+    pub disappearing_ttl_seconds: Option<i32>,
 }
 
 pub async fn find_or_create_dm_conversation(
@@ -338,8 +343,32 @@ pub async fn get_undelivered(
     // device (either successfully decryptable or as an undecryptable marker).
     // Without it a device that can't decrypt a frame would receive the same
     // placeholder on every reconnect.
+    // reply_count is scoped to the specific message IDs being returned rather
+    // than a full-table GROUP BY.  The CTE `batch` captures the IDs first;
+    // the reply_count subquery filters `WHERE reply_to_id = ANY(SELECT id FROM batch)`
+    // which is O(batch_size) instead of O(total messages).
     sqlx::query_as::<_, MessageWithSender>(
-        "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
+        "WITH batch AS ( \
+             SELECT m.id \
+             FROM messages m \
+             JOIN conversation_members cm \
+                  ON cm.conversation_id = m.conversation_id \
+                 AND cm.user_id = $1 \
+                 AND cm.is_removed = false \
+             WHERE m.sender_id != $1 \
+               AND m.deleted_at IS NULL \
+               AND m.content NOT LIKE '\\_\\_system\\_\\_:%' ESCAPE '\\' \
+               AND NOT EXISTS ( \
+                   SELECT 1 FROM message_deliveries md \
+                   WHERE md.message_id = m.id \
+                     AND md.recipient_user_id = $1 \
+                     AND md.device_id = $2 \
+               ) \
+               AND ($3::timestamptz IS NULL OR (m.created_at, m.id) > ($3, $4)) \
+             ORDER BY m.created_at ASC, m.id ASC \
+             LIMIT $5 \
+         ) \
+         SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
                 m.sender_device_id, \
                 u.username AS sender_username, \
                 m.content, m.created_at, m.edited_at, m.reply_to_id, \
@@ -349,28 +378,18 @@ pub async fn get_undelivered(
                 NULL::text AS last_reply_snippet, \
                 '[]'::json AS reactions \
          FROM messages m \
+         JOIN batch ON batch.id = m.id \
          JOIN users u ON u.id = m.sender_id \
          LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id AND rm.deleted_at IS NULL \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
          LEFT JOIN ( \
              SELECT reply_to_id, COUNT(*) AS reply_count \
              FROM messages \
-             WHERE reply_to_id IS NOT NULL AND deleted_at IS NULL \
+             WHERE reply_to_id = ANY(SELECT id FROM batch) \
+               AND deleted_at IS NULL \
              GROUP BY reply_to_id \
          ) rc ON rc.reply_to_id = m.id \
-         JOIN conversation_members cm ON cm.conversation_id = m.conversation_id AND cm.user_id = $1 \
-                  AND cm.is_removed = false \
-         WHERE m.sender_id != $1 AND m.deleted_at IS NULL \
-                  AND m.content NOT LIKE '\\_\\_system\\_\\_:%' ESCAPE '\\' \
-                  AND NOT EXISTS ( \
-                      SELECT 1 FROM message_deliveries md \
-                      WHERE md.message_id = m.id \
-                        AND md.recipient_user_id = $1 \
-                        AND md.device_id = $2 \
-                  ) \
-                  AND ($3::timestamptz IS NULL OR (m.created_at, m.id) > ($3, $4)) \
-         ORDER BY m.created_at ASC, m.id ASC \
-         LIMIT $5",
+         ORDER BY m.created_at ASC, m.id ASC",
     )
     .bind(user_id)
     .bind(device_id)
@@ -699,7 +718,7 @@ pub async fn get_conversation_security(
     conversation_id: Uuid,
 ) -> Result<Option<ConversationSecurityRow>, sqlx::Error> {
     sqlx::query_as::<_, ConversationSecurityRow>(
-        "SELECT kind, is_encrypted FROM conversations WHERE id = $1",
+        "SELECT kind, is_encrypted, disappearing_ttl_seconds FROM conversations WHERE id = $1",
     )
     .bind(conversation_id)
     .fetch_optional(pool)

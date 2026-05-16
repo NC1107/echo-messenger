@@ -11,7 +11,8 @@ use uuid::Uuid;
 use crate::db;
 use crate::routes::AppState;
 use crate::types::ConversationKind;
-use crate::ws::handler::{ServerMessage, send_error};
+use crate::ws::error::send_error;
+use crate::ws::protocol::ServerMessage;
 use crate::ws::typing_service::get_member_ids_cached;
 
 pub(super) const MAX_MESSAGE_LENGTH: usize = 10_000;
@@ -372,6 +373,7 @@ pub(super) async fn handle_send_message(
         reply_to_id,
         parsed_rdc.as_ref(),
         ttl_seconds,
+        conv_security.disappearing_ttl_seconds,
         conv_security.is_encrypted,
     )
     .await
@@ -413,6 +415,10 @@ pub(super) async fn handle_send_message(
 /// a `message_sent` confirmation to the originating device, and relay the
 /// message to the sender's other devices.  Returns the stored message row
 /// on success, or `None` after sending an error to the client.
+///
+/// `conv_ttl_seconds` is the conversation-level disappearing-messages TTL
+/// already fetched by `get_conversation_security`; passing it here avoids a
+/// second `get_conversation_ttl` round-trip per outbound message.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn store_and_confirm(
     state: &AppState,
@@ -424,6 +430,7 @@ pub(super) async fn store_and_confirm(
     reply_to_id: Option<Uuid>,
     recipient_device_contents: Option<&ParsedRecipientDeviceContents>,
     ttl_seconds: Option<i64>,
+    conv_ttl_seconds: Option<i32>,
     is_encrypted: bool,
 ) -> Option<db::messages::MessageRow> {
     // Resolve TTL: use per-message override first, then fall back to conversation setting.
@@ -432,9 +439,7 @@ pub(super) async fn store_and_confirm(
     let effective_ttl = if ttl_seconds.is_some() {
         ttl_seconds
     } else {
-        db::messages::get_conversation_ttl(&state.pool, conv_id)
-            .await
-            .unwrap_or(None)
+        conv_ttl_seconds.map(|v| v as i64)
     };
 
     // Store message in DB. `RowNotFound` from `store_message` means the
