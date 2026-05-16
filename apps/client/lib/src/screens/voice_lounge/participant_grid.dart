@@ -399,31 +399,36 @@ class _ParticipantTileState extends State<ParticipantTile> {
             clipBehavior: Clip.antiAlias,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(15),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                child: Container(
-                  color: context.surface.withValues(alpha: 0.30),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      // Video or avatar
-                      if (hasVideo && videoTrack != null)
-                        lk.VideoTrackRenderer(
-                          videoTrack,
-                          fit: lk.VideoViewFit.cover,
-                          mirrorMode: mirror
-                              ? lk.VideoViewMirrorMode.mirror
-                              : lk.VideoViewMirrorMode.off,
-                        )
-                      else
-                        AvatarCircle(
-                          name: name,
-                          avatarUrl: avatarUrl,
-                          audioLevel: audioLevel,
-                          authToken: authToken,
-                        ),
-                      _buildNameLabel(context),
-                    ],
+              // RepaintBoundary isolates the blur layer so audio-level
+              // rebuilds (~10 Hz) don't re-rasterise the BackdropFilter
+              // for every tile in the grid.
+              child: RepaintBoundary(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                  child: Container(
+                    color: context.surface.withValues(alpha: 0.30),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        // Video or avatar
+                        if (hasVideo && videoTrack != null)
+                          lk.VideoTrackRenderer(
+                            videoTrack,
+                            fit: lk.VideoViewFit.cover,
+                            mirrorMode: mirror
+                                ? lk.VideoViewMirrorMode.mirror
+                                : lk.VideoViewMirrorMode.off,
+                          )
+                        else
+                          AvatarCircle(
+                            name: name,
+                            avatarUrl: avatarUrl,
+                            audioLevel: audioLevel,
+                            authToken: authToken,
+                          ),
+                        _buildNameLabel(context),
+                      ],
+                    ),
                   ),
                 ),
               ),

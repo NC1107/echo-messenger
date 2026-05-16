@@ -242,7 +242,14 @@ class VoiceDock extends ConsumerWidget {
               ),
             _buildMuteButton(context, ref, voiceSettings, m),
             _buildDeafenButton(context, ref, voiceSettings, m),
-            _buildHangupButton(ref, screenShare, conversationId, channelId, m),
+            _buildHangupButton(
+              context,
+              ref,
+              screenShare,
+              conversationId,
+              channelId,
+              m,
+            ),
           ],
         ),
       ),
@@ -335,7 +342,14 @@ class VoiceDock extends ConsumerWidget {
       _buildDeafenButton(context, ref, voiceSettings, m),
       if (_supportsScreenShare)
         _buildScreenShareButton(context, ref, screenShare, m),
-      _buildHangupButton(ref, screenShare, conversationId, channelId, m),
+      _buildHangupButton(
+        context,
+        ref,
+        screenShare,
+        conversationId,
+        channelId,
+        m,
+      ),
     ];
   }
 
@@ -422,6 +436,7 @@ class VoiceDock extends ConsumerWidget {
   }
 
   Widget _buildHangupButton(
+    BuildContext context,
     WidgetRef ref,
     ScreenShareState screenShare,
     String conversationId,
@@ -434,13 +449,13 @@ class VoiceDock extends ConsumerWidget {
       tooltip: 'Leave',
       iconSize: m.btnIconSize,
       onPressed: () async {
+        // Call the shared helper instead of bare setScreenShareEnabled(false)
+        // so that Linux portal cleanup (removePublishedTrack + track.stop +
+        // track.dispose) runs before disconnect. Guard with the sharing flag
+        // so toggleScreenShare only takes the stop-sharing branch, never the
+        // start-sharing branch.
         if (screenShare.isScreenSharing) {
-          await ref
-              .read(livekitVoiceProvider.notifier)
-              .setScreenShareEnabled(false);
-          ref
-              .read(screenShareProvider.notifier)
-              .setLiveKitScreenShareActive(false);
+          await toggleScreenShare(context, ref);
         }
         await ref
             .read(channelsProvider.notifier)

@@ -35,7 +35,13 @@ class ParticipantVolumeController {
   lk.Room? _attachedRoom;
 
   /// Returns the stored volume for [identity], or 1.0 if none is set.
-  double volumeFor(String identity) => _volumes[identity] ?? 1.0;
+  ///
+  /// Returns 1.0 immediately for an empty identity — SIDs change on every
+  /// join so we never key by SID; an empty identity means no customization.
+  double volumeFor(String identity) {
+    if (identity.isEmpty) return 1.0;
+    return _volumes[identity] ?? 1.0;
+  }
 
   /// Test-only window into the stored entries so regression tests can assert
   /// that map cleanup actually drops keys on disconnect.
@@ -88,11 +94,11 @@ class ParticipantVolumeController {
     lk.RemoteParticipant participant,
     double volume,
   ) async {
+    // SIDs change on every join so they can't reliably key the map; a
+    // participant with no stable identity gets no volume customization.
+    if (participant.identity.isEmpty) return;
     final clamped = volume.clamp(0.0, 1.0).toDouble();
-    final identity = participant.identity.isNotEmpty
-        ? participant.identity
-        : participant.sid.toString();
-    _volumes[identity] = clamped;
+    _volumes[participant.identity] = clamped;
     await _apply(participant, clamped);
   }
 
@@ -100,10 +106,10 @@ class ParticipantVolumeController {
   /// tracks. Useful after subscription changes — e.g. a track is added later
   /// than the slider was first moved.
   Future<void> reapply(lk.RemoteParticipant participant) async {
-    final identity = participant.identity.isNotEmpty
-        ? participant.identity
-        : participant.sid.toString();
-    final stored = _volumes[identity];
+    // SIDs change on every join so they can't reliably key the map; a
+    // participant with no stable identity has no stored customization.
+    if (participant.identity.isEmpty) return;
+    final stored = _volumes[participant.identity];
     if (stored == null) return;
     await _apply(participant, stored);
   }

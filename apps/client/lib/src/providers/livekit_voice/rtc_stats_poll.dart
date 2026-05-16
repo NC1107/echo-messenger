@@ -91,6 +91,9 @@ class RtcStatsPoll {
       var totalBitrate = 0;
       var rttMs = 0.0;
       var sawRtt = false;
+      // Track which outbound-rtp report ids appear this tick so stale entries
+      // (e.g. from a track that was unpublished) can be pruned from _prevBytes.
+      final currentIds = <String>{};
 
       for (final pc in pcs) {
         final List<StatsReport> reports;
@@ -145,6 +148,7 @@ class RtcStatsPoll {
           if (bytesSent is! num) continue;
           final tsMs = r.timestamp;
 
+          currentIds.add(r.id);
           final prev = _prevBytes[r.id];
           _prevBytes[r.id] = _BytesSample(bytesSent.toInt(), tsMs);
 
@@ -158,6 +162,10 @@ class RtcStatsPoll {
           totalBitrate += bps.round();
         }
       }
+
+      // Prune entries for tracks that are no longer present in the current
+      // reports — avoids unbounded growth when tracks are unpublished.
+      _prevBytes.removeWhere((id, _) => !currentIds.contains(id));
 
       if (_disposed) return;
       final next = RtcStatsSample(
