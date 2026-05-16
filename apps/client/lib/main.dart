@@ -13,6 +13,7 @@ import 'package:path_provider/path_provider.dart';
 import 'src/app.dart';
 import 'src/providers/server_url_provider.dart';
 import 'src/providers/websocket_provider.dart';
+import 'src/services/app_lifecycle_logger.dart';
 import 'src/services/debug_log_service.dart';
 import 'src/services/message_cache.dart';
 import 'src/services/notification_service.dart';
@@ -35,6 +36,14 @@ void main() {
   PaintingBinding.instance.imageCache.maximumSize = 500;
   PaintingBinding.instance.imageCache.maximumSizeBytes = 100 * 1024 * 1024;
 
+  // Register lifecycle observer early — before runApp — so it captures state
+  // changes that happen during voice-channel entry on iOS (audio session
+  // activation can trigger lifecycle events before the first frame).
+  // AppLifecycleLogger also implements didRequestAppExit to flush logs before
+  // a graceful process exit.
+  const lifecycleLogger = AppLifecycleLogger();
+  WidgetsBinding.instance.addObserver(lifecycleLogger);
+
   // Catch unhandled Flutter framework errors (widget build errors, assertion
   // failures, etc.). Using LogLevel.fatal so these stand out in the log
   // viewer — framework errors almost always indicate a crash or a broken
@@ -45,6 +54,7 @@ void main() {
       'flutter',
       '${details.exception}\n${details.stack}',
     );
+    DebugLogService.instance.forceFlush().ignore();
     FlutterError.presentError(details);
   };
 
@@ -54,6 +64,7 @@ void main() {
   // re-thrown by the engine.
   PlatformDispatcher.instance.onError = (error, stack) {
     DebugLogService.instance.log(LogLevel.fatal, 'platform', '$error\n$stack');
+    DebugLogService.instance.forceFlush().ignore();
     return true;
   };
 

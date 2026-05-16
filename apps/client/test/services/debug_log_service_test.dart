@@ -325,6 +325,42 @@ void main() {
         expect(entries, hasLength(1));
         expect(entries.first.message, 'valid entry');
       });
+
+      test(
+        'forceFlush writes to disk immediately bypassing debounce',
+        () async {
+          service.log(LogLevel.info, 'Crash', 'pre-crash breadcrumb');
+
+          // forceFlush must write without waiting for the debounce timer.
+          await service.forceFlush();
+
+          final file = File('${tempDir.path}/echo-debug.log');
+          expect(file.existsSync(), isTrue);
+          expect(file.readAsStringSync(), contains('pre-crash breadcrumb'));
+        },
+      );
+
+      test('forceFlush cancels any pending debounce timer', () async {
+        // Schedule a normal (debounced) write, then immediately force-flush.
+        // The file should contain the entry without waiting for the timer.
+        service.log(LogLevel.info, 'Flush', 'should be on disk now');
+        await service.forceFlush();
+
+        final file = File('${tempDir.path}/echo-debug.log');
+        expect(file.existsSync(), isTrue);
+        expect(file.readAsStringSync(), contains('should be on disk now'));
+      });
+    });
+
+    group('urgent debounce', () {
+      test('writeDebounceUrgent is shorter than writeDebounce', () {
+        // Verifies the constants are set correctly: urgent path (warning+)
+        // uses a much shorter window than the default info path.
+        expect(
+          DebugLogService.writeDebounceUrgent < DebugLogService.writeDebounce,
+          isTrue,
+        );
+      });
     });
   });
 }
