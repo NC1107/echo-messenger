@@ -207,18 +207,31 @@ mixin LiveKitVoiceAvControlsMixin on Notifier<LiveKitVoiceState> {
   }
 
   /// Apply the current videoBitrate / videoFps to the active camera track.
+  ///
+  /// LiveKit 2.7.x throws TrackPublishException when publishVideoTrack is
+  /// called on an already-published track, so we unpublish first and then
+  /// republish with the new encoding options via a fresh camera track.
   Future<void> _applyVideoEncoding() async {
     final room = _room;
     if (room == null || !state.isVideoEnabled || state.autoQuality) return;
 
-    final cameraPub = room.localParticipant?.videoTrackPublications
+    final localParticipant = room.localParticipant;
+    if (localParticipant == null) return;
+
+    final cameraPub = localParticipant.videoTrackPublications
         .where((pub) => pub.source == TrackSource.camera && pub.track != null)
         .firstOrNull;
 
     if (cameraPub != null) {
       try {
-        await room.localParticipant?.publishVideoTrack(
-          cameraPub.track!,
+        // Unpublish the existing track; re-publishing the same track object
+        // throws TrackPublishException('track already exists') in SDK 2.7.x.
+        await localParticipant.removePublishedTrack(cameraPub.sid);
+        final newTrack = await LocalVideoTrack.createCameraTrack(
+          room.roomOptions.defaultCameraCaptureOptions,
+        );
+        await localParticipant.publishVideoTrack(
+          newTrack,
           publishOptions: VideoPublishOptions(
             videoEncoding: VideoEncoding(
               maxBitrate: state.videoBitrate,
