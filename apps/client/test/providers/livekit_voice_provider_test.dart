@@ -13,6 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:livekit_client/livekit_client.dart';
 
 import 'package:echo_app/src/providers/livekit_voice_provider.dart';
+import 'package:echo_app/src/providers/livekit_voice/rtc_stats_poll.dart';
 
 void main() {
   group('LiveKitVoiceState', () {
@@ -34,6 +35,18 @@ void main() {
       expect(state.peerConnectionStates, isEmpty);
       expect(state.peerLatencies, isEmpty);
       expect(state.error, isNull);
+      expect(state.audioBitrateBps, 0);
+      expect(state.rttMs, 0);
+    });
+
+    test('copyWith updates rtc stats fields (#937)', () {
+      const state = LiveKitVoiceState();
+      final updated = state.copyWith(audioBitrateBps: 32000, rttMs: 47.5);
+      expect(updated.audioBitrateBps, 32000);
+      expect(updated.rttMs, 47.5);
+      // unchanged fields preserved
+      expect(updated.isActive, isFalse);
+      expect(updated.videoBitrate, 1500000);
     });
 
     test('copyWith updates individual fields', () {
@@ -64,6 +77,22 @@ void main() {
   // and produces the expected constant — if someone reverts the fix the
   // analysis step will surface "undefined_named_parameter" and
   // "undefined_identifier" errors for AudioPreset.
+  group('RtcStatsSample (#937)', () {
+    test('empty sentinel is zeroed', () {
+      expect(RtcStatsSample.empty.audioBitrateBps, 0);
+      expect(RtcStatsSample.empty.rttMs, 0);
+    });
+
+    test('equality compares both fields', () {
+      const a = RtcStatsSample(audioBitrateBps: 32000, rttMs: 50.0);
+      const b = RtcStatsSample(audioBitrateBps: 32000, rttMs: 50.0);
+      const c = RtcStatsSample(audioBitrateBps: 32000, rttMs: 51.0);
+      expect(a, equals(b));
+      expect(a.hashCode, equals(b.hashCode));
+      expect(a, isNot(equals(c)));
+    });
+  });
+
   group('livekit_client v2.7 AudioPublishOptions API', () {
     test(
       'AudioPublishOptions accepts encoding with AudioEncoding.presetMusic',

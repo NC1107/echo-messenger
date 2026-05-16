@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
@@ -387,61 +389,15 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     String? activeVoiceChannelId,
     UIDensity density,
   ) {
-    final participantCount = participants.length;
     final isActive = _isVoiceChannelActive(channel.id, activeVoiceChannelId);
-    final m = _chipMetrics(density);
-    return Semantics(
-      label: 'voice channel: ${channel.name}',
-      button: true,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(m.radius),
-          onTap: () => _handleVoiceChipTap(channel, isActive, voiceSettings),
-          child: Container(
-            padding: m.padding,
-            decoration: BoxDecoration(
-              color: isActive
-                  ? context.accent.withValues(alpha: 0.15)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(m.radius),
-              border: Border.all(
-                color: isActive
-                    ? context.accent.withValues(alpha: 0.4)
-                    : context.border.withValues(alpha: 0.5),
-              ),
-            ),
-            child: Tooltip(
-              message: participants.isEmpty
-                  ? 'No one in voice'
-                  : participants.map((p) => p.username).join('\n'),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.volume_up_outlined,
-                    size: m.iconSize,
-                    color: isActive ? context.accent : context.textMuted,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    channel.name,
-                    style: TextStyle(
-                      color: isActive ? context.accent : context.textSecondary,
-                      fontSize: m.labelSize,
-                      fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-                    ),
-                  ),
-                  if (participantCount > 0) ...[
-                    const SizedBox(width: 6),
-                    _buildMiniAvatarStack(participants),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
+    return _VoicePeekChip(
+      key: ValueKey('voice-peek-${channel.id}'),
+      channel: channel,
+      participants: participants,
+      isActive: isActive,
+      metrics: _chipMetrics(density),
+      onTap: () => _handleVoiceChipTap(channel, isActive, voiceSettings),
+      miniAvatarStackBuilder: (ps) => _buildMiniAvatarStack(ps),
     );
   }
 
@@ -861,6 +817,361 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
               iAmConnected: iAmConnected,
               participants: participants,
             ),
+    );
+  }
+}
+
+/// Per-density chip metrics, shared between [_ChannelBarState._chipMetrics]
+/// and [_VoicePeekChip].
+typedef _ChipMetrics = ({
+  EdgeInsets padding,
+  double iconSize,
+  double labelSize,
+  double radius,
+  double gap,
+});
+
+/// Maximum width of the voice-channel peek popover.
+const double _kVoicePeekMaxWidth = 240.0;
+
+/// Horizontal padding kept clear of the viewport edge for the peek popover.
+const double _kVoicePeekViewportPadding = 8.0;
+
+/// Grace period before the popover hides after the mouse leaves the trigger,
+/// so a user can mouse from the chip into the popover without it dismissing.
+const Duration _kVoicePeekHoverGrace = Duration(milliseconds: 120);
+
+/// A voice-channel chip in the sidebar that supports a peek popover (hover
+/// on desktop / long-press on touch) listing current participants without
+/// having to join the channel (#926).
+class _VoicePeekChip extends StatefulWidget {
+  final GroupChannel channel;
+  final List<VoiceSessionMember> participants;
+  final bool isActive;
+  final _ChipMetrics metrics;
+  final VoidCallback onTap;
+  final Widget Function(List<VoiceSessionMember>) miniAvatarStackBuilder;
+
+  const _VoicePeekChip({
+    super.key,
+    required this.channel,
+    required this.participants,
+    required this.isActive,
+    required this.metrics,
+    required this.onTap,
+    required this.miniAvatarStackBuilder,
+  });
+
+  @override
+  State<_VoicePeekChip> createState() => _VoicePeekChipState();
+}
+
+class _VoicePeekChipState extends State<_VoicePeekChip> {
+  final OverlayPortalController _popoverController = OverlayPortalController();
+  final GlobalKey _triggerKey = GlobalKey();
+  Timer? _hideTimer;
+
+  @override
+  void dispose() {
+    _hideTimer?.cancel();
+    if (_popoverController.isShowing) {
+      _popoverController.hide();
+    }
+    super.dispose();
+  }
+
+  void _showPopover() {
+    _hideTimer?.cancel();
+    if (!_popoverController.isShowing) {
+      _popoverController.show();
+    }
+  }
+
+  void _scheduleHide() {
+    _hideTimer?.cancel();
+    _hideTimer = Timer(_kVoicePeekHoverGrace, () {
+      if (mounted && _popoverController.isShowing) {
+        _popoverController.hide();
+      }
+    });
+  }
+
+  void _togglePopover() {
+    _hideTimer?.cancel();
+    if (_popoverController.isShowing) {
+      _popoverController.hide();
+    } else {
+      _popoverController.show();
+    }
+  }
+
+  String _peekSemanticsLabel() {
+    final n = widget.participants.length;
+    if (n == 0) {
+      return 'voice channel: ${widget.channel.name}, no one in voice';
+    }
+    if (n == 1) {
+      return 'voice channel: ${widget.channel.name}, 1 participant';
+    }
+    return 'voice channel: ${widget.channel.name}, $n participants';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final m = widget.metrics;
+    final isActive = widget.isActive;
+    final participants = widget.participants;
+
+    final chip = Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(m.radius),
+        onTap: widget.onTap,
+        child: Container(
+          key: _triggerKey,
+          padding: m.padding,
+          decoration: BoxDecoration(
+            color: isActive
+                ? context.accent.withValues(alpha: 0.15)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(m.radius),
+            border: Border.all(
+              color: isActive
+                  ? context.accent.withValues(alpha: 0.4)
+                  : context.border.withValues(alpha: 0.5),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.volume_up_outlined,
+                size: m.iconSize,
+                color: isActive ? context.accent : context.textMuted,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                widget.channel.name,
+                style: TextStyle(
+                  color: isActive ? context.accent : context.textSecondary,
+                  fontSize: m.labelSize,
+                  fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                ),
+              ),
+              if (participants.isNotEmpty) ...[
+                const SizedBox(width: 6),
+                widget.miniAvatarStackBuilder(participants),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+
+    return OverlayPortal(
+      controller: _popoverController,
+      overlayChildBuilder: (overlayContext) {
+        return _VoicePeekOverlay(
+          triggerKey: _triggerKey,
+          onMouseEnter: _showPopover,
+          onMouseExit: _scheduleHide,
+          child: _VoicePeekPopover(
+            channelName: widget.channel.name,
+            participants: participants,
+          ),
+        );
+      },
+      child: Semantics(
+        button: true,
+        label: _peekSemanticsLabel(),
+        child: MouseRegion(
+          onEnter: (_) => _showPopover(),
+          onExit: (_) => _scheduleHide(),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onLongPress: _togglePopover,
+            child: chip,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Positions the voice-peek popover beneath the chip and clamps to the
+/// viewport.  Renders an inner [MouseRegion] so the user can mouse from the
+/// chip into the popover without it dismissing.
+class _VoicePeekOverlay extends StatelessWidget {
+  final GlobalKey triggerKey;
+  final VoidCallback onMouseEnter;
+  final VoidCallback onMouseExit;
+  final Widget child;
+
+  const _VoicePeekOverlay({
+    required this.triggerKey,
+    required this.onMouseEnter,
+    required this.onMouseExit,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final triggerCtx = triggerKey.currentContext;
+    if (triggerCtx == null) return const SizedBox.shrink();
+    final box = triggerCtx.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return const SizedBox.shrink();
+    final offset = box.localToGlobal(Offset.zero);
+    final size = box.size;
+    final screen = MediaQuery.sizeOf(context);
+
+    final preferredLeft = offset.dx;
+    final maxLeft =
+        screen.width - _kVoicePeekMaxWidth - _kVoicePeekViewportPadding;
+    final clampedLeft = preferredLeft.clamp(
+      _kVoicePeekViewportPadding,
+      maxLeft < _kVoicePeekViewportPadding
+          ? _kVoicePeekViewportPadding
+          : maxLeft,
+    );
+    final top = offset.dy + size.height + 6;
+
+    return Positioned(
+      left: clampedLeft.toDouble(),
+      top: top,
+      child: MouseRegion(
+        onEnter: (_) => onMouseEnter(),
+        onExit: (_) => onMouseExit(),
+        child: child,
+      ),
+    );
+  }
+}
+
+/// The popover body: channel name header + avatar/name list, or an empty
+/// state if no one is in the channel.
+class _VoicePeekPopover extends StatelessWidget {
+  final String channelName;
+  final List<VoiceSessionMember> participants;
+
+  const _VoicePeekPopover({
+    required this.channelName,
+    required this.participants,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: _kVoicePeekMaxWidth),
+        decoration: BoxDecoration(
+          color: context.surface,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: context.border, width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.25),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.volume_up_outlined,
+                  size: 14,
+                  color: context.textMuted,
+                ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    channelName,
+                    style: TextStyle(
+                      color: context.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (participants.isEmpty)
+              Text(
+                'No one in voice yet',
+                style: TextStyle(
+                  color: context.textMuted,
+                  fontSize: 12,
+                  fontStyle: FontStyle.italic,
+                ),
+              )
+            else
+              ...participants.map((p) => _VoicePeekRow(participant: p)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A single avatar + username row inside the peek popover.
+class _VoicePeekRow extends StatelessWidget {
+  final VoiceSessionMember participant;
+
+  const _VoicePeekRow({required this.participant});
+
+  @override
+  Widget build(BuildContext context) {
+    final initial = participant.username.isNotEmpty
+        ? participant.username[0].toUpperCase()
+        : '?';
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 10,
+            backgroundColor: context.accent.withValues(alpha: 0.7),
+            child: Text(
+              initial,
+              style: TextStyle(
+                fontSize: 10,
+                color: Theme.of(context).colorScheme.onPrimary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              participant.username,
+              style: TextStyle(color: context.textPrimary, fontSize: 12),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (participant.isMuted)
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: Icon(Icons.mic_off, size: 12, color: context.textMuted),
+            ),
+          if (participant.isDeafened)
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: Icon(
+                Icons.headset_off,
+                size: 12,
+                color: context.textMuted,
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

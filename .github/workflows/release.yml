@@ -624,9 +624,16 @@ jobs:
         run: |
           @"
           [Setup]
-          AppName=Echo
+          AppId={{B2F5B7D4-9F4A-4E2C-9D71-EC1107EC1107}}
+          AppName=Echo Messenger
           AppVersion=${{ needs.version.outputs.version }}
-          AppPublisher=Echo Contributors
+          AppPublisher=Echo Messenger (NC1107)
+          AppPublisherURL=https://github.com/NC1107/echo-messenger
+          AppSupportURL=https://github.com/NC1107/echo-messenger/issues
+          AppUpdatesURL=https://github.com/NC1107/echo-messenger/releases
+          AppCopyright=Copyright (C) 2026 NC1107
+          VersionInfoCompany=Echo Messenger (NC1107)
+          VersionInfoProductName=Echo Messenger
           DefaultDirName={autopf}\Echo
           DefaultGroupName=Echo
           OutputDir=.
@@ -653,6 +660,25 @@ jobs:
         shell: cmd
         run: |
           "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" echo-setup.iss
+      # Code-signing placeholder. Skipped until WINDOWS_CERT_PFX_BASE64 secret is configured.
+      # Once a code-signing cert is acquired, set repository secrets:
+      #   WINDOWS_CERT_PFX_BASE64      -- base64-encoded .pfx contents
+      #   WINDOWS_CERT_PFX_PASSWORD    -- password for the .pfx
+      # See docs/SMARTSCREEN_WORKAROUND.md for context (#903).
+      - name: Sign installer (if cert available)
+        if: env.WINDOWS_CERT_PFX_BASE64 != ''
+        shell: pwsh
+        env:
+          WINDOWS_CERT_PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          WINDOWS_CERT_PFX_PASSWORD: ${{ secrets.WINDOWS_CERT_PFX_PASSWORD }}
+        run: |
+          [System.IO.File]::WriteAllBytes("cert.pfx", [Convert]::FromBase64String($env:WINDOWS_CERT_PFX_BASE64))
+          $signtool = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe"
+          if (-not (Test-Path $signtool)) {
+            $signtool = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter signtool.exe | Where-Object { $_.FullName -like "*x64*" } | Select-Object -First 1).FullName
+          }
+          & $signtool sign /f cert.pfx /p $env:WINDOWS_CERT_PFX_PASSWORD /tr http://timestamp.digicert.com /td sha256 /fd sha256 Echo-Setup-x64.exe
+          Remove-Item cert.pfx
       - name: Package zip
         shell: pwsh
         run: |
@@ -704,20 +730,22 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('apps/client/android/**/*.gradle*', 'apps/client/android/**/gradle-wrapper.properties') }}
           restore-keys: |
             ${{ runner.os }}-gradle-
-      - name: Check signing secrets
-        id: signing
+      - name: Verify Android signing secrets present
+        # Release context only — this job runs solely on push to `main` (see
+        # the workflow-level `on:` block) and on `workflow_dispatch`. In that
+        # context an unsigned APK is never acceptable: Play Store rejects it
+        # and side-loaded users get a confusing install-blocked dialog. Hard
+        # fail so a missing secret surfaces as a release error instead of a
+        # silently-skipped platform (#357).
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEY_PROPERTIES: ${{ secrets.ANDROID_KEY_PROPERTIES }}
         run: |
           if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$ANDROID_KEY_PROPERTIES" ]; then
-            echo "::warning::Android signing secrets missing. Skipping Android build (no unsigned APKs will be produced)."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Android signing secrets (ANDROID_KEYSTORE_BASE64, ANDROID_KEY_PROPERTIES) are missing. Refusing to ship an unsigned release APK."
+            exit 1
           fi
       - name: Set up signing
-        if: steps.signing.outputs.skip != 'true'
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEY_PROPERTIES: ${{ secrets.ANDROID_KEY_PROPERTIES }}
@@ -725,16 +753,13 @@ jobs:
           echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > apps/client/android/echo-release.jks
           echo "$ANDROID_KEY_PROPERTIES" > apps/client/android/key.properties
       - name: Build APK
-        if: steps.signing.outputs.skip != 'true'
         working-directory: apps/client
         run: flutter build apk --release --dart-define=APP_VERSION=${{ needs.version.outputs.version }}
       - name: Rename APK
-        if: steps.signing.outputs.skip != 'true'
         run: |
           cp apps/client/build/app/outputs/flutter-apk/app-release.apk \
              echo-android-${{ needs.version.outputs.version }}.apk
       - name: Upload Android artifact
-        if: steps.signing.outputs.skip != 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-android

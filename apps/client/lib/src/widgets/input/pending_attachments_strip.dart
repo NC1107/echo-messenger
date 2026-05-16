@@ -47,14 +47,20 @@ class PendingAttachment {
 /// Horizontal-scrolling row of staged attachment chips rendered above the
 /// chat input. Each chip shows a thumbnail (or generic icon), filename,
 /// human-readable size, an upload progress bar, and a cancel button.
+///
+/// When [onAnnotate] is supplied, image attachments (mime `image/*` with
+/// local [PendingAttachment.bytes]) also render a brush icon that lets the
+/// user open the [ImageAnnotationEditor] (#908) before sending.
 class PendingAttachmentsStrip extends StatelessWidget {
   final List<PendingAttachment> attachments;
   final void Function(PendingAttachment) onCancel;
+  final void Function(PendingAttachment)? onAnnotate;
 
   const PendingAttachmentsStrip({
     super.key,
     required this.attachments,
     required this.onCancel,
+    this.onAnnotate,
   });
 
   @override
@@ -68,8 +74,11 @@ class PendingAttachmentsStrip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
         itemCount: attachments.length,
         separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (ctx, i) =>
-            _AttachmentChip(attachment: attachments[i], onCancel: onCancel),
+        itemBuilder: (ctx, i) => _AttachmentChip(
+          attachment: attachments[i],
+          onCancel: onCancel,
+          onAnnotate: onAnnotate,
+        ),
       ),
     );
   }
@@ -78,8 +87,13 @@ class PendingAttachmentsStrip extends StatelessWidget {
 class _AttachmentChip extends StatelessWidget {
   final PendingAttachment attachment;
   final void Function(PendingAttachment) onCancel;
+  final void Function(PendingAttachment)? onAnnotate;
 
-  const _AttachmentChip({required this.attachment, required this.onCancel});
+  const _AttachmentChip({
+    required this.attachment,
+    required this.onCancel,
+    this.onAnnotate,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -132,6 +146,22 @@ class _AttachmentChip extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 4),
+            if (_canAnnotate)
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: Semantics(
+                  label: 'annotate ${attachment.fileName}',
+                  button: true,
+                  child: GestureDetector(
+                    onTap: () => onAnnotate!(attachment),
+                    child: Icon(
+                      Icons.brush_outlined,
+                      size: 16,
+                      color: context.textMuted,
+                    ),
+                  ),
+                ),
+              ),
             Semantics(
               label: 'remove ${attachment.fileName}',
               button: true,
@@ -145,6 +175,13 @@ class _AttachmentChip extends StatelessWidget {
       ),
     );
   }
+
+  /// Only image attachments with local bytes can be annotated. External-URL
+  /// attachments (GIFs) and non-image files are skipped.
+  bool get _canAnnotate =>
+      onAnnotate != null &&
+      attachment.bytes != null &&
+      attachment.mimeType.startsWith('image/');
 
   Widget _buildThumbnail(BuildContext context, bool isImage) {
     final isAudio = attachment.mimeType.startsWith('audio/');

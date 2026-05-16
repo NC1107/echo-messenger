@@ -74,14 +74,22 @@ class _AnimatedGradientBackgroundState
     // Re-check reduce-motion at build time so live changes apply.
     final reduceMotion = ref.watch(accessibilityProvider).reducedMotion;
 
-    if (reduceMotion || _controller == null) {
+    // Capture the controller in a local so the AnimatedBuilder closure binds
+    // to a non-null reference even if `_controller` is later nulled out by
+    // `_maybeStartController` (e.g. user toggles reduce-motion while a tick
+    // microtask is already in flight). Without this capture the builder body
+    // re-read `_controller!.value` on every tick and threw
+    // "Null check operator used on a null value" from inside the framework
+    // microtask loop. See #915.
+    final controller = _controller;
+    if (reduceMotion || controller == null) {
       return const _StaticGradient();
     }
 
     return AnimatedBuilder(
-      animation: _controller!,
+      animation: controller,
       builder: (context, _) {
-        final t = _controller!.value; // 0..1 cycling
+        final t = controller.value; // 0..1 cycling
 
         // Map t across the three stop pairs with smooth crossfade.
         final segmentCount = _stops.length;

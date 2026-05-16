@@ -61,13 +61,18 @@ class ReplyQuote extends StatelessWidget {
     // sakura's pink) want the overlay to LIGHTEN it instead -- otherwise an
     // alpha-12 near-black wash on the bubble flattens it into a near-black
     // block and the near-black text on top reads as black-on-black (#920).
+    //
+    // `context.sentBubbleTint` resolves to the correct contrast color
+    // (white for ember-class themes, mineFg for indigo-class) so this file
+    // never has to reach for a hardcoded `Colors.white` (#830 F7+F8).
     final mineFgIsDark = mineFg.computeLuminance() < 0.3;
+    final tint = context.sentBubbleTint;
     final mineOverlay = mineFgIsDark
-        ? Colors.white.withValues(alpha: 0.18)
-        : mineFg.withValues(alpha: 0.12);
+        ? tint.withValues(alpha: 0.18)
+        : tint.withValues(alpha: 0.12);
     final mineBorder = mineFgIsDark
-        ? Colors.white.withValues(alpha: 0.55)
-        : mineFg.withValues(alpha: 0.5);
+        ? tint.withValues(alpha: 0.55)
+        : tint.withValues(alpha: 0.5);
 
     return Semantics(
       label: semanticsLabel,

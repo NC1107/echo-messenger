@@ -1,14 +1,58 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:livekit_client/livekit_client.dart' show ConnectionQuality;
 
 import '../providers/channels_provider.dart';
 import '../providers/livekit_voice_provider.dart';
 import '../providers/screen_share_provider.dart';
+import '../screens/voice_lounge/screen_share_actions.dart';
 import '../providers/theme_provider.dart' show UIDensity, uiDensityProvider;
 import '../providers/voice_settings_provider.dart';
 import '../theme/echo_theme.dart';
+
+/// 1Hz wall-clock notifier shared by every active voice dock so the call
+/// duration label can refresh without rebuilding the whole dock subtree.
+/// Started lazily on first listener attach and cancelled when the last
+/// listener detaches — no work while the user is idle.
+final _voiceClock = _SecondsClockNotifier();
+
+class _SecondsClockNotifier extends ValueNotifier<DateTime> {
+  _SecondsClockNotifier() : super(DateTime.now());
+
+  Timer? _timer;
+  int _listenerCount = 0;
+
+  @override
+  void addListener(VoidCallback listener) {
+    super.addListener(listener);
+    _listenerCount++;
+    _timer ??= Timer.periodic(const Duration(seconds: 1), (_) {
+      value = DateTime.now();
+    });
+  }
+
+  @override
+  void removeListener(VoidCallback listener) {
+    super.removeListener(listener);
+    _listenerCount--;
+    assert(_listenerCount >= 0);
+    if (_listenerCount == 0) {
+      _timer?.cancel();
+      _timer = null;
+    }
+  }
+}
+
+String _formatCallDuration(Duration d) {
+  final totalSeconds = d.inSeconds;
+  final minutes = totalSeconds ~/ 60;
+  final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
+  return '$minutes:$seconds';
+}
 
 /// Compact voice control dock above the user status bar.
 ///
@@ -16,8 +60,31 @@ import '../theme/echo_theme.dart';
 class VoiceDock extends ConsumerWidget {
   final double width;
   final VoidCallback? onNavigateToLounge;
+  final bool collapsed;
 
-  const VoiceDock({super.key, this.width = 320, this.onNavigateToLounge});
+  const VoiceDock({
+    super.key,
+    this.width = 320,
+    this.onNavigateToLounge,
+    this.collapsed = false,
+  });
+
+  static String _qualityLabel(ConnectionQuality q) => switch (q) {
+    ConnectionQuality.excellent => 'Excellent',
+    ConnectionQuality.good => 'Good',
+    ConnectionQuality.poor => 'Poor',
+    ConnectionQuality.lost => 'Lost',
+    ConnectionQuality.unknown => 'Unknown',
+  };
+
+  static Color _qualityColor(BuildContext context, ConnectionQuality q) =>
+      switch (q) {
+        ConnectionQuality.excellent => EchoTheme.online,
+        ConnectionQuality.good => context.accent,
+        ConnectionQuality.poor => EchoTheme.warning,
+        ConnectionQuality.lost => EchoTheme.danger,
+        ConnectionQuality.unknown => context.textMuted,
+      };
 
   static String _voiceStatusLabel(bool isJoining, int peerCount) {
     if (isJoining) return 'Connecting...';
@@ -55,6 +122,19 @@ class VoiceDock extends ConsumerWidget {
     final peerCount = voiceLk.peerConnectionStates.length;
     final statusColor = _statusColor(context, voiceLk.isJoining, peerCount);
 
+    if (collapsed) {
+      return _buildCollapsedDock(
+        context,
+        ref,
+        voiceLk,
+        voiceSettings,
+        screenShare,
+        conversationId,
+        channelId,
+        statusColor,
+      );
+    }
+
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTap: onNavigateToLounge,
@@ -77,6 +157,8 @@ class VoiceDock extends ConsumerWidget {
               voiceLk.isJoining,
               peerCount,
               channelName,
+              voiceLk.localConnectionQuality,
+              voiceLk.callStartedAt,
               m,
             ),
             ..._buildControlButtons(
@@ -89,6 +171,78 @@ class VoiceDock extends ConsumerWidget {
               channelId,
               m,
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Compact vertical dock for the 60px collapsed sidebar.
+  Widget _buildCollapsedDock(
+    BuildContext context,
+    WidgetRef ref,
+    LiveKitVoiceState voiceLk,
+    VoiceSettingsState voiceSettings,
+    ScreenShareState screenShare,
+    String conversationId,
+    String channelId,
+    Color statusColor,
+  ) {
+    const m = _DockMetrics.compact;
+    final callStartedAt = voiceLk.callStartedAt;
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: onNavigateToLounge,
+      child: Container(
+        width: 60,
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: context.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+          border: Border(
+            top: BorderSide(color: context.border, width: 1),
+            right: BorderSide(color: context.border, width: 1),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: statusColor,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+            if (callStartedAt != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: ValueListenableBuilder<DateTime>(
+                  valueListenable: _voiceClock,
+                  builder: (context, now, _) {
+                    final elapsed = now.difference(callStartedAt);
+                    final label = _formatCallDuration(
+                      elapsed.isNegative ? Duration.zero : elapsed,
+                    );
+                    return Text(
+                      label,
+                      style: TextStyle(
+                        color: context.textMuted,
+                        fontSize: 9,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                      textAlign: TextAlign.center,
+                    );
+                  },
+                ),
+              ),
+            _buildMuteButton(context, ref, voiceSettings, m),
+            _buildDeafenButton(context, ref, voiceSettings, m),
+            _buildHangupButton(ref, screenShare, conversationId, channelId, m),
           ],
         ),
       ),
@@ -112,12 +266,28 @@ class VoiceDock extends ConsumerWidget {
     bool isJoining,
     int peerCount,
     String channelName,
+    ConnectionQuality quality,
+    DateTime? callStartedAt,
     _DockMetrics m,
   ) {
     return Expanded(
       child: Row(
         children: [
           Icon(Icons.graphic_eq, size: m.statusIconSize, color: statusColor),
+          if (quality != ConnectionQuality.unknown) ...[
+            const SizedBox(width: 4),
+            Tooltip(
+              message: 'Connection: ${_qualityLabel(quality)}',
+              child: Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: _qualityColor(context, quality),
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+          ],
           SizedBox(width: m.gap),
           Expanded(
             child: Column(
@@ -132,13 +302,12 @@ class VoiceDock extends ConsumerWidget {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                Text(
-                  '$channelName \u00b7 $peerCount ${peerCount == 1 ? 'peer' : 'peers'}',
-                  style: TextStyle(
-                    color: context.textMuted,
-                    fontSize: m.statusSmallFontSize,
-                  ),
-                  overflow: TextOverflow.ellipsis,
+                _SecondaryStatusLine(
+                  channelName: channelName,
+                  peerCount: peerCount,
+                  callStartedAt: callStartedAt,
+                  fontSize: m.statusSmallFontSize,
+                  color: context.textMuted,
                 ),
               ],
             ),
@@ -163,7 +332,6 @@ class VoiceDock extends ConsumerWidget {
     return [
       _buildVideoButton(context, ref, voiceLk, m),
       _buildMuteButton(context, ref, voiceSettings, m),
-      _buildMicLevelIndicator(ref, voiceSettings),
       _buildDeafenButton(context, ref, voiceSettings, m),
       if (_supportsScreenShare)
         _buildScreenShareButton(context, ref, screenShare, m),
@@ -212,27 +380,6 @@ class VoiceDock extends ConsumerWidget {
     );
   }
 
-  Widget _buildMicLevelIndicator(
-    WidgetRef ref,
-    VoiceSettingsState voiceSettings,
-  ) {
-    if (voiceSettings.selfMuted || voiceSettings.selfDeafened) {
-      return const SizedBox.shrink();
-    }
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 100),
-      width:
-          (ref.watch(livekitVoiceProvider.select((s) => s.localAudioLevel)) *
-                  40)
-              .clamp(0.0, 40.0),
-      height: 4,
-      decoration: BoxDecoration(
-        color: EchoTheme.online,
-        borderRadius: BorderRadius.circular(2),
-      ),
-    );
-  }
-
   Widget _buildDeafenButton(
     BuildContext context,
     WidgetRef ref,
@@ -270,19 +417,7 @@ class VoiceDock extends ConsumerWidget {
           : context.textSecondary,
       tooltip: screenShare.isScreenSharing ? 'Stop sharing' : 'Share screen',
       iconSize: m.btnIconSize,
-      onPressed: () async {
-        final lkNotifier = ref.read(livekitVoiceProvider.notifier);
-        final ssNotifier = ref.read(screenShareProvider.notifier);
-        if (screenShare.isScreenSharing) {
-          await lkNotifier.setScreenShareEnabled(false);
-          ssNotifier.setLiveKitScreenShareActive(false);
-        } else {
-          final ok = await lkNotifier.setScreenShareEnabled(true);
-          if (ok) {
-            ssNotifier.setLiveKitScreenShareActive(true);
-          }
-        }
-      },
+      onPressed: () => toggleScreenShare(context, ref),
     );
   }
 
@@ -326,6 +461,52 @@ String _muteTooltip(VoiceSettingsState vs) {
   if (vs.selfDeafened) return 'Muted by deafen';
   if (vs.selfMuted) return 'Unmute';
   return 'Mute';
+}
+
+/// Secondary status row showing `channel · N peers` and, once the call has
+/// successfully connected, an M:SS call-duration tag. The duration label is
+/// driven by [_voiceClock] via a [ValueListenableBuilder] so only this small
+/// subtree rebuilds every second — the rest of the dock stays static.
+class _SecondaryStatusLine extends StatelessWidget {
+  final String channelName;
+  final int peerCount;
+  final DateTime? callStartedAt;
+  final double fontSize;
+  final Color color;
+
+  const _SecondaryStatusLine({
+    required this.channelName,
+    required this.peerCount,
+    required this.callStartedAt,
+    required this.fontSize,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final base =
+        '$channelName · $peerCount ${peerCount == 1 ? 'peer' : 'peers'}';
+    final style = TextStyle(color: color, fontSize: fontSize);
+
+    if (callStartedAt == null) {
+      return Text(base, style: style, overflow: TextOverflow.ellipsis);
+    }
+
+    return ValueListenableBuilder<DateTime>(
+      valueListenable: _voiceClock,
+      builder: (context, now, _) {
+        final elapsed = now.difference(callStartedAt!);
+        final duration = _formatCallDuration(
+          elapsed.isNegative ? Duration.zero : elapsed,
+        );
+        return Text(
+          '$base · $duration',
+          style: style,
+          overflow: TextOverflow.ellipsis,
+        );
+      },
+    );
+  }
 }
 
 class _DockIconButton extends StatelessWidget {

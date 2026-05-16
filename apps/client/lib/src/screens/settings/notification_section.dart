@@ -37,6 +37,7 @@ class NotificationSection extends StatefulWidget {
 
 class _NotificationSectionState extends State<NotificationSection> {
   NotificationSound _notificationSound = SoundService().notificationSound;
+  bool _soundEnabled = SoundService().enabled;
   bool _notificationsEnabled = true;
   bool _dmNotifications = true;
   bool _groupNotifications = true;
@@ -132,6 +133,11 @@ class _NotificationSectionState extends State<NotificationSection> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kQuietHoursEnd, _formatTime(picked));
     NotificationService().refreshPreferences();
+  }
+
+  void _setSoundEnabled(bool value) {
+    setState(() => _soundEnabled = value);
+    SoundService().enabled = value;
   }
 
   Future<void> _setNotificationSound(NotificationSound sound) async {
@@ -345,6 +351,24 @@ class _NotificationSectionState extends State<NotificationSection> {
               ),
             ],
             const Divider(height: 32),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              secondary: Icon(
+                Icons.volume_up_outlined,
+                color: _soundEnabled ? context.accent : context.textSecondary,
+                size: 22,
+              ),
+              title: Text(
+                'Enable Sound Effects',
+                style: TextStyle(color: context.textPrimary, fontSize: 14),
+              ),
+              subtitle: Text(
+                'Play sounds for messages, voice, and other app events.',
+                style: TextStyle(color: context.textMuted, fontSize: 12),
+              ),
+              value: _soundEnabled,
+              onChanged: _setSoundEnabled,
+            ),
             _SoundPickerRow(
               selected: _notificationSound,
               onChanged: _setNotificationSound,

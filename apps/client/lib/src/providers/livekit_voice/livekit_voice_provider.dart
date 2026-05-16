@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:livekit_client/livekit_client.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../screens/voice_lounge/participant_volume_controller.dart';
 import '../../services/background_service.dart';
 import '../../services/debug_log_service.dart';
 import '../../services/pip_controller.dart';
@@ -15,6 +16,7 @@ import '../auth_provider.dart';
 import '../channels_provider.dart';
 import '../server_url_provider.dart';
 import '../voice_settings_provider.dart';
+import 'rtc_stats_poll.dart';
 
 part 'livekit_voice_provider.g.dart';
 part 'livekit_voice_av_controls.dart';
@@ -22,6 +24,12 @@ part 'livekit_voice_av_controls.dart';
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
+
+/// Sentinel for [LiveKitVoiceState.copyWith.callStartedAt] so callers can
+/// explicitly reset the timestamp to `null` while a plain absent argument
+/// preserves the existing value. Required because Dart's null-default
+/// idiom collapses "not passed" and "passed null" into the same case.
+const Object _callStartedAtSentinel = Object();
 
 class LiveKitVoiceState {
   final bool isActive;
@@ -43,6 +51,18 @@ class LiveKitVoiceState {
   final Map<String, double> peerAudioLevels;
   final double localAudioLevel;
 
+  /// Identities currently flagged as active speakers by LiveKit's
+  /// server-side detector. Push-based via `ActiveSpeakersChangedEvent`,
+  /// so the speaker outline reacts within network RTT (~30-50ms) rather
+  /// than waiting for the local audio-level poll to ramp up (#907).
+  final Set<String> activeSpeakerIdentities;
+
+  /// LiveKit's coarse connection-quality measurement for the local
+  /// participant. Updated via `ParticipantConnectionQualityUpdatedEvent`.
+  /// Surfaces as a colored badge in the voice dock so beta testers can
+  /// diagnose call quality at a glance (#906).
+  final ConnectionQuality localConnectionQuality;
+
   /// Number of remote participants currently in the room.
   final int peerCount;
 
@@ -51,6 +71,21 @@ class LiveKitVoiceState {
   final Map<String, String> peerConnectionStates;
   final Map<String, double> peerLatencies;
   final String? error;
+
+  /// Wall-clock timestamp when the local participant successfully joined the
+  /// LiveKit room. `null` while idle / joining. Drives the M:SS call-duration
+  /// label rendered in the voice dock (#925).
+  final DateTime? callStartedAt;
+
+  /// Most recent outbound audio bitrate (bits per second) sampled from the
+  /// LiveKit peer connections via `RtcStatsPoll`. `0` while idle or before
+  /// the first poll tick.  Surfaced in the dock connection-quality tooltip
+  /// (#937, follow-up to #906).
+  final int audioBitrateBps;
+
+  /// Most recent round-trip time (milliseconds) for the selected ICE
+  /// candidate pair. `0` while idle or before the first poll tick.
+  final double rttMs;
 
   const LiveKitVoiceState({
     this.isActive = false,
@@ -65,10 +100,15 @@ class LiveKitVoiceState {
     this.channelId,
     this.peerAudioLevels = const {},
     this.localAudioLevel = 0.0,
+    this.activeSpeakerIdentities = const {},
+    this.localConnectionQuality = ConnectionQuality.unknown,
     this.peerCount = 0,
     this.peerConnectionStates = const {},
     this.peerLatencies = const {},
     this.error,
+    this.callStartedAt,
+    this.audioBitrateBps = 0,
+    this.rttMs = 0,
   });
 
   LiveKitVoiceState copyWith({
@@ -84,10 +124,15 @@ class LiveKitVoiceState {
     String? channelId,
     Map<String, double>? peerAudioLevels,
     double? localAudioLevel,
+    Set<String>? activeSpeakerIdentities,
+    ConnectionQuality? localConnectionQuality,
     int? peerCount,
     Map<String, String>? peerConnectionStates,
     Map<String, double>? peerLatencies,
     String? error,
+    Object? callStartedAt = _callStartedAtSentinel,
+    int? audioBitrateBps,
+    double? rttMs,
   }) {
     return LiveKitVoiceState(
       isActive: isActive ?? this.isActive,
@@ -102,10 +147,19 @@ class LiveKitVoiceState {
       channelId: channelId ?? this.channelId,
       peerAudioLevels: peerAudioLevels ?? this.peerAudioLevels,
       localAudioLevel: localAudioLevel ?? this.localAudioLevel,
+      activeSpeakerIdentities:
+          activeSpeakerIdentities ?? this.activeSpeakerIdentities,
+      localConnectionQuality:
+          localConnectionQuality ?? this.localConnectionQuality,
       peerCount: peerCount ?? this.peerCount,
       peerConnectionStates: peerConnectionStates ?? this.peerConnectionStates,
       peerLatencies: peerLatencies ?? this.peerLatencies,
       error: error,
+      callStartedAt: identical(callStartedAt, _callStartedAtSentinel)
+          ? this.callStartedAt
+          : callStartedAt as DateTime?,
+      audioBitrateBps: audioBitrateBps ?? this.audioBitrateBps,
+      rttMs: rttMs ?? this.rttMs,
     );
   }
 
@@ -128,6 +182,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
   Room? _room;
   EventsListener<RoomEvent>? _roomListener;
   Timer? _audioLevelTimer;
+  RtcStatsPoll? _rtcStatsPoll;
   @override
   bool _disposed = false;
 
@@ -301,10 +356,12 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
         isActive: true,
         isCaptureEnabled: micEnabled,
         error: null,
+        callStartedAt: DateTime.now(),
       );
 
       _syncPeerState();
       _startAudioLevelPolling();
+      _startRtcStatsPolling(room);
       SoundService().playVoiceJoin();
 
       // Promote the foreground service to voice mode (Android) and report
@@ -476,6 +533,29 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
         _syncPeerState();
         _syncRemoteScreenShareForPip();
       })
+      ..on<ParticipantConnectionQualityUpdatedEvent>((event) {
+        if (_disposed) return;
+        // Only the local participant's quality is surfaced in the dock —
+        // remote participants' quality is shown via individual presence
+        // dots elsewhere.
+        if (event.participant.identity == room.localParticipant?.identity) {
+          state = state.copyWith(
+            localConnectionQuality: event.connectionQuality,
+          );
+        }
+      })
+      ..on<ActiveSpeakersChangedEvent>((event) {
+        if (_disposed) return;
+        // Push-based: reacts within ~RTT to the server-side detector,
+        // rather than waiting for the 100ms local audio-level poll to
+        // ramp past the static threshold (#907).
+        final ids = <String>{};
+        for (final p in event.speakers) {
+          final id = p.identity.isNotEmpty ? p.identity : p.sid.toString();
+          ids.add(id);
+        }
+        state = state.copyWith(activeSpeakerIdentities: ids);
+      })
       ..on<RoomDisconnectedEvent>((_) {
         DebugLogService.instance.log(
           LogLevel.warning,
@@ -486,6 +566,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
           state = state.copyWith(
             isActive: false,
             error: 'Disconnected from voice channel',
+            callStartedAt: null,
           );
         }
       })
@@ -585,6 +666,31 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     _audioLevelTimer = null;
   }
 
+  // -------------------------------------------------------------------------
+  // RTC stats polling (bitrate + RTT for the dock tooltip — #937)
+  // -------------------------------------------------------------------------
+
+  void _startRtcStatsPolling(Room room) {
+    _rtcStatsPoll?.dispose();
+    final poll = RtcStatsPoll(
+      room,
+      onSample: (sample) {
+        if (_disposed) return;
+        state = state.copyWith(
+          audioBitrateBps: sample.audioBitrateBps,
+          rttMs: sample.rttMs,
+        );
+      },
+    );
+    _rtcStatsPoll = poll;
+    poll.start();
+  }
+
+  void _stopRtcStatsPolling() {
+    _rtcStatsPoll?.dispose();
+    _rtcStatsPoll = null;
+  }
+
   void _pollAudioLevels() {
     final room = _room;
     if (room == null || _disposed) return;
@@ -614,12 +720,29 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
 
   Future<void> _cleanupRoom() async {
     _stopAudioLevelPolling();
+    _stopRtcStatsPolling();
     _roomListener?.dispose();
     _roomListener = null;
 
     final room = _room;
     _room = null;
     if (room != null) {
+      // #927: restore per-participant track volumes to 1.0 BEFORE disconnect
+      // so the underlying MediaStreamTrack handles are still alive when the
+      // `Helper.setVolume` calls land. On Windows the per-track gain is
+      // applied via WASAPI session volume, which Windows persists across
+      // process lifetime — exiting with a reduced gain leaves the app
+      // visibly pinned at the lower level in the system mixer until the
+      // user manually re-adjusts it. Harmless no-op on other platforms.
+      try {
+        await ParticipantVolumeController.instance.restoreAll(room);
+      } catch (e) {
+        DebugLogService.instance.log(
+          LogLevel.warning,
+          'LiveKitVoice',
+          'Volume restore failed during cleanup (ignored): $e',
+        );
+      }
       try {
         await room.disconnect();
       } catch (_) {
@@ -639,6 +762,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
   void _handleDispose() {
     _disposed = true;
     _stopAudioLevelPolling();
+    _stopRtcStatsPolling();
     _detachNotificationActionListener();
     unawaited(BackgroundService.instance.stopVoice());
     unawaited(VoiceCallKitService.instance.endCall());
@@ -652,8 +776,17 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     _room = null;
     listener?.dispose();
     if (room != null) {
+      // #927: chain the volume restore before disconnect so per-track gain is
+      // returned to 1.0 while tracks are still alive. See `_cleanupRoom` for
+      // the long-form rationale. Fire-and-forget by design — dispose is
+      // synchronous from the framework's POV.
       unawaited(
-        room.disconnect().then((_) => room.dispose()).catchError((_) => false),
+        ParticipantVolumeController.instance
+            .restoreAll(room)
+            .catchError((_) {})
+            .then((_) => room.disconnect())
+            .then((_) => room.dispose())
+            .catchError((_) => false),
       );
     }
   }

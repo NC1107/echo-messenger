@@ -6,9 +6,6 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart';
-import 'package:livekit_client/livekit_client.dart' as lk;
-
 import '../../providers/channels_provider.dart';
 import '../../providers/livekit_voice_provider.dart';
 import '../../providers/screen_share_provider.dart';
@@ -16,6 +13,7 @@ import '../../providers/voice_settings_provider.dart';
 import '../../theme/echo_theme.dart';
 import '../../theme/motion_tokens.dart';
 import 'lounge_constants.dart';
+import 'screen_share_actions.dart';
 
 class FloatingDock extends ConsumerWidget {
   final LiveKitVoiceState voiceState;
@@ -143,52 +141,7 @@ class FloatingDock extends ConsumerWidget {
                         : 'Share screen',
                     isActive: screenShare.isScreenSharing,
                     activeColor: EchoTheme.online,
-                    onPressed: () async {
-                      final lkNotifier = ref.read(
-                        livekitVoiceProvider.notifier,
-                      );
-                      final ssNotifier = ref.read(screenShareProvider.notifier);
-                      if (screenShare.isScreenSharing) {
-                        await lkNotifier.setScreenShareEnabled(false);
-                        ssNotifier.setLiveKitScreenShareActive(false);
-                      } else {
-                        if (lk.lkPlatformIsDesktop()) {
-                          try {
-                            final source =
-                                await showDialog<DesktopCapturerSource>(
-                                  context: context,
-                                  builder: (_) => lk.ScreenSelectDialog(),
-                                );
-                            if (source == null || !context.mounted) return;
-                            final track =
-                                await lk.LocalVideoTrack.createScreenShareTrack(
-                                  lk.ScreenShareCaptureOptions(
-                                    sourceId: source.id,
-                                    maxFrameRate: 15.0,
-                                  ),
-                                );
-                            final room = lkNotifier.room;
-                            if (room != null) {
-                              await room.localParticipant?.publishVideoTrack(
-                                track,
-                              );
-                              ssNotifier.setLiveKitScreenShareActive(true);
-                            }
-                          } catch (e) {
-                            debugPrint(
-                              '[VoiceLounge] Desktop screen share failed: $e',
-                            );
-                          }
-                        } else {
-                          final ok = await lkNotifier.setScreenShareEnabled(
-                            true,
-                          );
-                          if (ok) {
-                            ssNotifier.setLiveKitScreenShareActive(true);
-                          }
-                        }
-                      }
-                    },
+                    onPressed: () => toggleScreenShare(context, ref),
                     onSubmenuTap: () =>
                         onToggleSubmenu(DockSubmenu.screenShare),
                     submenuActive: activeSubmenu == DockSubmenu.screenShare,

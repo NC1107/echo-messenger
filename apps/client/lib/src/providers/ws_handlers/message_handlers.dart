@@ -82,10 +82,12 @@ extension MessageHandlersOn on WsMessageHandler {
     final cryptoState = ref.read(cryptoProvider);
 
     // Check if this conversation is already known locally
-    final isKnownConversation = ref
+    final conversation = ref
         .read(conversationsProvider)
         .conversations
-        .any((c) => c.id == conversationId);
+        .where((c) => c.id == conversationId)
+        .firstOrNull;
+    final isKnownConversation = conversation != null;
 
     // #557: server marks replay frames `undecryptable: true` when this device
     // has no per-device ciphertext row.  Render an explicit placeholder
@@ -110,6 +112,47 @@ extension MessageHandlersOn on WsMessageHandler {
           );
       if (!isKnownConversation) {
         ref.read(conversationsProvider.notifier).loadConversations();
+      }
+      return;
+    }
+
+    // #434: detect plaintext payloads up-front so the "Securing message..."
+    // placeholder is never shown for content that doesn't need decryption.
+    // Plaintext group messages (the current default — group E2EE is gated
+    // behind `is_encrypted=true` per #344) used to get stuck on the
+    // placeholder forever when crypto hadn't initialised yet.  A payload
+    // is plaintext when it lacks the `GRP1:` group-cipher prefix AND does
+    // not look like base64 ciphertext AND the conversation is either a
+    // known plaintext group or a 1:1 with a clearly plaintext body.
+    final isGroupEncryptedWire = rawContent.startsWith(groupEncryptedPrefix);
+    final isPlaintextGroup =
+        (conversation?.isGroup ?? false) &&
+        !(conversation?.isEncrypted ?? false) &&
+        !isGroupEncryptedWire;
+    final isObviouslyPlaintext =
+        !isGroupEncryptedWire && !looksEncrypted(rawContent);
+
+    if (isPlaintextGroup ||
+        (isObviouslyPlaintext && !cryptoState.isInitialized)) {
+      // Render plaintext directly. No placeholder, no queue.
+      final msg = ChatMessage.fromServerJson(json, myUserId);
+      ref.read(chatProvider.notifier).addMessage(msg);
+      if (!msg.id.startsWith('pending_')) {
+        MessageCache.cacheMessages(conversationId, [msg]);
+      }
+      ref
+          .read(conversationsProvider.notifier)
+          .onNewMessage(
+            conversationId: conversationId,
+            content: rawContent,
+            timestamp: timestamp,
+            senderUsername: senderUsername,
+          );
+      if (!isKnownConversation) {
+        ref.read(conversationsProvider.notifier).loadConversations();
+      }
+      if (fromUserId != myUserId) {
+        _notifyIfAllowed(conversationId, senderUsername, rawContent);
       }
       return;
     }
@@ -140,8 +183,10 @@ extension MessageHandlersOn on WsMessageHandler {
       }, myUserId).copyWith(isEncrypted: true);
       ref.read(chatProvider.notifier).addMessage(placeholder);
 
-      // Queue the raw JSON so it can be decrypted once crypto initializes
-      _pendingDecryptQueue.add(json);
+      // Queue the raw JSON so it can be decrypted once crypto initializes.
+      // Bind the entry to the current user so a logout + re-login cannot
+      // leak this ciphertext into another account's state (#830 finding 4).
+      _enqueuePendingDecrypt(json, myUserId);
 
       ref
           .read(conversationsProvider.notifier)

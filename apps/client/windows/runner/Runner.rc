@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.echo" "\0"
-            VALUE "FileDescription", "echo_app" "\0"
+            VALUE "CompanyName", "Echo Messenger (NC1107)" "\0"
+            VALUE "FileDescription", "Echo Messenger" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "echo_app" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.echo. All rights reserved." "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 NC1107. All rights reserved." "\0"
             VALUE "OriginalFilename", "echo_app.exe" "\0"
-            VALUE "ProductName", "echo_app" "\0"
+            VALUE "ProductName", "Echo Messenger" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

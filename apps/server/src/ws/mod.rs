@@ -1,5 +1,9 @@
 pub mod broadcast;
+pub(crate) mod error;
+pub(crate) mod events;
 pub mod handler;
 pub mod hub;
 pub(crate) mod message_service;
+pub(crate) mod protocol;
+pub(crate) mod rate_limit;
 pub mod typing_service;

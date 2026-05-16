@@ -399,66 +399,18 @@ async fn cleanup_orphan_media_files(pool: &PgPool) {
     }
 }
 
-/// Delete all dependent rows for a group conversation, then the conversation
-/// itself, atomically. Migration 20260412000000 added ON DELETE CASCADE on
-/// a subset of child tables; the rest are cleaned explicitly until a
-/// follow-up migration extends CASCADE.
+/// Delete a group conversation and every dependent row atomically.
+///
+/// #785: migration 20260515100000 extended `ON DELETE CASCADE` to the last
+/// remaining child FK (`media.conversation_id`), so every direct child and
+/// transitive grandchild of `conversations` now cascades at the database
+/// level. The historical 9-statement transactional cleanup has been
+/// replaced by a single call to `force_delete_conversation`, which issues
+/// `DELETE FROM conversations WHERE id = $1` and lets Postgres handle the
+/// cascade. See `apps/server/tests/api_groups_cascade_delete.rs` for the
+/// integration test that pins this contract.
 async fn delete_group_dependents(pool: &PgPool, gid: uuid::Uuid) {
-    let mut tx = match pool.begin().await {
-        Ok(tx) => tx,
-        Err(e) => {
-            tracing::error!(group_id = %gid, "begin tx for group cleanup failed: {e}");
-            return;
-        }
-    };
-
-    let tables = [
-        (
-            "voice_sessions",
-            "DELETE FROM voice_sessions WHERE channel_id IN (SELECT id FROM channels WHERE conversation_id = $1)",
-        ),
-        (
-            "channels",
-            "DELETE FROM channels WHERE conversation_id = $1",
-        ),
-        (
-            "messages",
-            "DELETE FROM messages WHERE conversation_id = $1",
-        ),
-        (
-            "group_key_envelopes",
-            "DELETE FROM group_key_envelopes WHERE conversation_id = $1",
-        ),
-        (
-            "group_keys",
-            "DELETE FROM group_keys WHERE conversation_id = $1",
-        ),
-        (
-            "banned_members",
-            "DELETE FROM banned_members WHERE conversation_id = $1",
-        ),
-        (
-            "read_receipts",
-            "DELETE FROM read_receipts WHERE conversation_id = $1",
-        ),
-        ("media", "DELETE FROM media WHERE conversation_id = $1"),
-        ("conversations", "DELETE FROM conversations WHERE id = $1"),
-    ];
-    for (table, sql) in tables {
-        if let Err(e) = sqlx::query(sql).bind(gid).execute(&mut *tx).await {
-            tracing::error!(
-                group_id = %gid,
-                table = table,
-                "group cleanup failed at {table}: {e} -- rolling back"
-            );
-            if let Err(rb) = tx.rollback().await {
-                tracing::error!(group_id = %gid, "rollback failed: {rb}");
-            }
-            return;
-        }
-    }
-
-    if let Err(e) = tx.commit().await {
-        tracing::error!(group_id = %gid, "commit group cleanup failed: {e}");
+    if let Err(e) = db::groups::force_delete_conversation(pool, gid).await {
+        tracing::error!(group_id = %gid, "force_delete_conversation failed: {e}");
     }
 }

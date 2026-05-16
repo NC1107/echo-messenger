@@ -1,8 +1,11 @@
 /// Participant grid + tile + avatar widgets used by the voice lounge.
 library;
 
+import 'dart:async';
 import 'dart:ui' show ImageFilter;
 
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
@@ -13,6 +16,7 @@ import '../../theme/motion_tokens.dart';
 import '../../utils/canvas_utils.dart';
 import '../../widgets/voice/participant_attention.dart';
 import '../../widgets/voice_speaking_ring.dart';
+import 'participant_volume_controller.dart';
 
 class ParticipantGrid extends StatelessWidget {
   final lk.Room? room;
@@ -42,6 +46,7 @@ class ParticipantGrid extends StatelessWidget {
   static const double _attentionThreshold = 0.05;
 
   bool get _anyoneSpeaking {
+    if (voiceState.activeSpeakerIdentities.isNotEmpty) return true;
     if (voiceState.localAudioLevel > _attentionThreshold) return true;
     for (final level in voiceState.peerAudioLevels.values) {
       if (level > _attentionThreshold) return true;
@@ -102,7 +107,11 @@ class ParticipantGrid extends StatelessWidget {
     final localHasVideo =
         localVideo?.track != null && voiceState.isVideoEnabled;
 
-    final localIsSpeaking = voiceState.localAudioLevel > _attentionThreshold;
+    final localIdentity = room!.localParticipant?.identity ?? '';
+    final localIsSpeaking =
+        voiceState.localAudioLevel > _attentionThreshold ||
+        (localIdentity.isNotEmpty &&
+            voiceState.activeSpeakerIdentities.contains(localIdentity));
     final attention = attentionFor(
       isSpeaking: localIsSpeaking,
       anyoneElseSpeaking: anyoneSpeaking && !localIsSpeaking,
@@ -116,6 +125,7 @@ class ParticipantGrid extends StatelessWidget {
       videoTrack: localHasVideo ? localVideo?.track as lk.VideoTrack? : null,
       mirror: true,
       audioLevel: voiceState.localAudioLevel,
+      isSpeakingHint: localIsSpeaking,
       isMuted: !voiceState.isCaptureEnabled,
       isLocal: true,
       attention: attention,
@@ -143,7 +153,11 @@ class ParticipantGrid extends StatelessWidget {
         : participant.sid.toString();
     final audioLevel = voiceState.peerAudioLevels[identity] ?? 0.0;
 
-    final remoteIsSpeaking = audioLevel > _attentionThreshold;
+    // Speaker outline reacts to whichever fires first: the server-push
+    // ActiveSpeakersChangedEvent OR the local audio-level threshold (#907).
+    final remoteIsSpeaking =
+        audioLevel > _attentionThreshold ||
+        voiceState.activeSpeakerIdentities.contains(identity);
     final attention = attentionFor(
       isSpeaking: remoteIsSpeaking,
       anyoneElseSpeaking: anyoneSpeaking && !remoteIsSpeaking,
@@ -157,6 +171,7 @@ class ParticipantGrid extends StatelessWidget {
       videoTrack: videoTrack?.track as lk.VideoTrack?,
       mirror: false,
       audioLevel: audioLevel,
+      isSpeakingHint: remoteIsSpeaking,
       isMuted: participant.isMuted,
       connectionState: voiceState.peerConnectionStates[identity],
       attention: attention,
@@ -175,6 +190,8 @@ class ParticipantGrid extends StatelessWidget {
           }
         }
       },
+      remoteParticipant: participant,
+      identity: identity,
       authToken: authToken,
     );
   }
@@ -206,19 +223,34 @@ class ParticipantGrid extends StatelessWidget {
 // Single participant tile
 // ---------------------------------------------------------------------------
 
-class ParticipantTile extends StatelessWidget {
+class ParticipantTile extends StatefulWidget {
   final String name;
   final String? avatarUrl;
   final bool hasVideo;
   final lk.VideoTrack? videoTrack;
   final bool mirror;
   final double audioLevel;
+
+  /// External speaking hint that fires off either the LiveKit
+  /// `ActiveSpeakersChangedEvent` server push OR a level-threshold check in
+  /// the parent grid — whichever lands first (#907). When true, the ring and
+  /// glow flip on immediately without waiting for [audioLevel] to climb.
+  final bool isSpeakingHint;
+
   final bool isMuted;
   final String? connectionState;
   final bool isLocal;
   final VoidCallback? onTap;
   final VoidCallback? onMuteForMe;
   final String? authToken;
+
+  /// Remote participant handle — required for the per-peer volume slider in
+  /// the secondary-tap / long-press popover. Null for the local tile (which
+  /// has no slider — you can't adjust your own outgoing volume from here).
+  final lk.RemoteParticipant? remoteParticipant;
+
+  /// Stable identity used as the key into [ParticipantVolumeController].
+  final String? identity;
 
   /// Phase 3c: room-level attention (speaking / faded / idle).
   /// Drives the tile's scale + opacity so non-speakers fade back when
@@ -233,6 +265,7 @@ class ParticipantTile extends StatelessWidget {
     this.videoTrack,
     this.mirror = false,
     this.audioLevel = 0.0,
+    this.isSpeakingHint = false,
     this.isMuted = false,
     this.connectionState,
     this.isLocal = false,
@@ -240,11 +273,72 @@ class ParticipantTile extends StatelessWidget {
     this.onTap,
     this.onMuteForMe,
     this.authToken,
+    this.remoteParticipant,
+    this.identity,
   });
 
   @override
+  State<ParticipantTile> createState() => _ParticipantTileState();
+}
+
+class _ParticipantTileState extends State<ParticipantTile> {
+  /// Grace period that keeps `isSpeaking` true for a brief window after the
+  /// last above-threshold sample, so the ring doesn't flicker during natural
+  /// pauses mid-sentence (#907).
+  static const Duration _speakingDecay = Duration(milliseconds: 200);
+
+  bool _isSpeaking = false;
+  Timer? _decayTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _isSpeaking = _rawSpeaking();
+  }
+
+  @override
+  void didUpdateWidget(covariant ParticipantTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final raw = _rawSpeaking();
+    if (raw) {
+      _decayTimer?.cancel();
+      _decayTimer = null;
+      if (!_isSpeaking) {
+        setState(() => _isSpeaking = true);
+      }
+    } else if (_isSpeaking && _decayTimer == null) {
+      _decayTimer = Timer(_speakingDecay, () {
+        if (!mounted) return;
+        if (!_rawSpeaking()) {
+          setState(() => _isSpeaking = false);
+        }
+        _decayTimer = null;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _decayTimer?.cancel();
+    super.dispose();
+  }
+
+  bool _rawSpeaking() => widget.isSpeakingHint || widget.audioLevel > 0.01;
+
+  @override
   Widget build(BuildContext context) {
-    final isSpeaking = audioLevel > 0.01;
+    final isSpeaking = _isSpeaking;
+    final attention = widget.attention;
+    final isLocal = widget.isLocal;
+    final remoteParticipant = widget.remoteParticipant;
+    final audioLevel = widget.audioLevel;
+    final hasVideo = widget.hasVideo;
+    final videoTrack = widget.videoTrack;
+    final mirror = widget.mirror;
+    final name = widget.name;
+    final avatarUrl = widget.avatarUrl;
+    final authToken = widget.authToken;
+    final onTap = widget.onTap;
     final reduceMotion = MediaQuery.of(context).disableAnimations;
     final double targetScale;
     final double targetOpacity;
@@ -275,11 +369,14 @@ class ParticipantTile extends StatelessWidget {
         curve: MotionCurves.emphasis,
         child: GestureDetector(
           onTap: onTap,
-          onSecondaryTapUp: !isLocal && onMuteForMe != null
+          onSecondaryTapUp: !isLocal && remoteParticipant != null
               ? (details) =>
                     _showParticipantMenu(context, details.globalPosition)
               : null,
-          onLongPress: !isLocal && onMuteForMe != null ? onMuteForMe : null,
+          onLongPressStart: !isLocal && remoteParticipant != null
+              ? (details) =>
+                    _showParticipantMenu(context, details.globalPosition)
+              : null,
           child: AnimatedContainer(
             duration: MotionDurations.standard,
             curve: MotionCurves.entrance,
@@ -312,7 +409,7 @@ class ParticipantTile extends StatelessWidget {
                       // Video or avatar
                       if (hasVideo && videoTrack != null)
                         lk.VideoTrackRenderer(
-                          videoTrack!,
+                          videoTrack,
                           fit: lk.VideoViewFit.cover,
                           mirrorMode: mirror
                               ? lk.VideoViewMirrorMode.mirror
@@ -338,6 +435,9 @@ class ParticipantTile extends StatelessWidget {
   }
 
   Widget _buildNameLabel(BuildContext context) {
+    final name = widget.name;
+    final isMuted = widget.isMuted;
+    final connectionState = widget.connectionState;
     return Positioned(
       bottom: 0,
       left: 0,
@@ -387,37 +487,217 @@ class ParticipantTile extends StatelessWidget {
   }
 
   void _showParticipantMenu(BuildContext context, Offset position) {
-    showMenu<String>(
+    final participant = widget.remoteParticipant;
+    if (participant == null) return;
+
+    final overlay =
+        Overlay.of(context, rootOverlay: true).context.findRenderObject()
+            as RenderBox?;
+    final overlaySize = overlay?.size ?? MediaQuery.of(context).size;
+
+    showMenu<void>(
       context: context,
       position: RelativeRect.fromLTRB(
         position.dx,
         position.dy,
-        position.dx + 1,
-        position.dy + 1,
+        overlaySize.width - position.dx,
+        overlaySize.height - position.dy,
       ),
       color: context.surface,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
         side: BorderSide(color: context.border),
       ),
       items: [
-        PopupMenuItem(
-          value: 'mute',
-          child: Row(
-            children: [
-              Icon(Icons.volume_off, size: 16, color: context.textSecondary),
-              const SizedBox(width: 8),
-              Text(
-                'Toggle mute for me',
-                style: TextStyle(color: context.textPrimary, fontSize: 13),
-              ),
-            ],
+        PopupMenuItem<void>(
+          // enabled: true (default) keeps the slider track + thumb rendered in
+          // their normal theme colors. We override [onTap] to null so tapping
+          // the slider doesn't dismiss the menu — the popover handles its own
+          // dismissal via the "Toggle mute for me" row.
+          onTap: null,
+          padding: EdgeInsets.zero,
+          child: _ParticipantVolumePopover(
+            participant: participant,
+            name: widget.name,
+            onToggleMute: widget.onMuteForMe,
           ),
         ),
       ],
-    ).then((value) {
-      if (value == 'mute') onMuteForMe?.call();
-    });
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Volume slider popover (per-participant)
+// ---------------------------------------------------------------------------
+
+class _ParticipantVolumePopover extends StatefulWidget {
+  final lk.RemoteParticipant participant;
+  final String name;
+  final VoidCallback? onToggleMute;
+
+  const _ParticipantVolumePopover({
+    required this.participant,
+    required this.name,
+    this.onToggleMute,
+  });
+
+  @override
+  State<_ParticipantVolumePopover> createState() =>
+      _ParticipantVolumePopoverState();
+}
+
+class _ParticipantVolumePopoverState extends State<_ParticipantVolumePopover> {
+  late double _volume;
+
+  /// `flutter_webrtc`'s `Helper.setVolume` is a no-op on the Windows native
+  /// backend (#909). We keep the slider visible so users can see the control
+  /// exists, but render it disabled with a tooltip explaining why.
+  bool get _perUserVolumeSupported {
+    if (kIsWeb) return true;
+    return defaultTargetPlatform != TargetPlatform.windows;
+  }
+
+  static const String _windowsTooltip =
+      'Per-user volume is not supported on Windows yet (flutter_webrtc limitation)';
+
+  @override
+  void initState() {
+    super.initState();
+    final identity = widget.participant.identity.isNotEmpty
+        ? widget.participant.identity
+        : widget.participant.sid.toString();
+    _volume = ParticipantVolumeController.instance.volumeFor(identity);
+  }
+
+  /// Visual-only update while the user is dragging. We deliberately do NOT
+  /// call [ParticipantVolumeController.setVolume] from here — overlapping
+  /// async slider events can resolve out of order and leave the WebRTC track
+  /// gain at a stale value. The commit happens once on [_onChangeEnd].
+  void _onChanged(double next) {
+    setState(() => _volume = next);
+  }
+
+  Future<void> _onChangeEnd(double next) async {
+    await ParticipantVolumeController.instance.setVolume(
+      widget.participant,
+      next,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final percent = (_volume * 100).round();
+    final sliderTheme = SliderTheme.of(context).copyWith(
+      trackHeight: 4,
+      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+      overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+      activeTrackColor: context.accent,
+      inactiveTrackColor: context.border,
+      thumbColor: context.accent,
+      overlayColor: context.accent.withValues(alpha: 0.18),
+    );
+
+    // Vertical slider: rotate a horizontal Slider 90° counter-clockwise so
+    // the high end sits at the top. SfSlider isn't a project dep, and a
+    // hand-rolled GestureDetector slider would skip a11y/keyboard support
+    // — rotating the framework Slider keeps semantics intact.
+    final supported = _perUserVolumeSupported;
+    Widget verticalSlider = SizedBox(
+      width: 36,
+      height: 140,
+      child: RotatedBox(
+        quarterTurns: 3,
+        child: SliderTheme(
+          data: sliderTheme,
+          child: Slider(
+            value: _volume,
+            min: 0,
+            max: 1,
+            onChanged: supported ? _onChanged : null,
+            onChangeEnd: supported ? _onChangeEnd : null,
+          ),
+        ),
+      ),
+    );
+    if (!supported) {
+      verticalSlider = Tooltip(message: _windowsTooltip, child: verticalSlider);
+    }
+
+    return SizedBox(
+      width: 180,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: double.infinity,
+              child: Text(
+                widget.name,
+                style: TextStyle(
+                  color: context.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '$percent%',
+              style: TextStyle(color: context.textMuted, fontSize: 11),
+            ),
+            const SizedBox(height: 4),
+            Icon(Icons.volume_up, size: 16, color: context.textMuted),
+            verticalSlider,
+            Icon(
+              _volume <= 0.001 ? Icons.volume_off : Icons.volume_down,
+              size: 16,
+              color: context.textMuted,
+            ),
+            if (widget.onToggleMute != null) ...[
+              const SizedBox(height: 6),
+              const Divider(height: 1),
+              const SizedBox(height: 4),
+              InkWell(
+                onTap: () {
+                  Navigator.of(context).pop();
+                  widget.onToggleMute?.call();
+                },
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 8,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.volume_off,
+                        size: 16,
+                        color: context.textSecondary,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Toggle mute for me',
+                        style: TextStyle(
+                          color: context.textPrimary,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }
 

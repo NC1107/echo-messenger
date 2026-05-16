@@ -71,8 +71,10 @@ class SoundService {
 
   /// Update and persist the notification sound selection.
   ///
-  /// Only changes the notification sound — does not affect the global [enabled]
-  /// flag (which also gates sent-message sounds and voice join/leave sounds).
+  /// Independent of the global [enabled] flag — picking "None" here only
+  /// silences message-received pings, NOT sent / voice / other UI sounds.
+  /// Conversely, picking "Default" or "Subtle" doesn't force-enable sounds
+  /// globally; the caller still needs the [enabled] master switch on.
   Future<void> setNotificationSound(NotificationSound sound) async {
     _notificationSound = sound;
     try {
@@ -90,15 +92,17 @@ class SoundService {
     _initialized = true;
     try {
       final prefs = await SharedPreferences.getInstance();
+      // Master enable flag — independent of the notification-sound choice
+      // (previously this was derived from the sound choice, which had the
+      // user-visible effect of silencing the app forever once 'None' was
+      // ever picked — see #924).
+      _enabled = prefs.getBool(_prefKey) ?? true;
       final soundValue = prefs.getString(_notificationSoundPrefKey);
       if (soundValue != null) {
         _notificationSound = NotificationSound.fromPrefValue(soundValue);
-        _enabled = _notificationSound != NotificationSound.none;
       } else {
-        // Migrate from old boolean pref.
-        final legacyEnabled = prefs.getBool(_prefKey) ?? true;
-        _enabled = legacyEnabled;
-        _notificationSound = legacyEnabled
+        // Fresh install or legacy-only install: default to the ding.
+        _notificationSound = _enabled
             ? NotificationSound.defaultSound
             : NotificationSound.none;
       }

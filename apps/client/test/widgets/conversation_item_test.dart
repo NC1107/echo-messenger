@@ -1022,5 +1022,6 @@ class _MutableChatNotifier extends Chat {
   ChatState build() => _initial;
 
   @override
-  void addMessage(ChatMessage msg) => state = state.withMessage(msg);
+  void addMessage(ChatMessage msg, {bool bumpReplyCount = true}) =>
+      state = state.withMessage(msg);
 }
