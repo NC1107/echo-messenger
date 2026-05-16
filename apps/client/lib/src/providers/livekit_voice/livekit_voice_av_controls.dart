@@ -27,7 +27,23 @@ mixin LiveKitVoiceAvControlsMixin on Notifier<LiveKitVoiceState> {
       'LiveKitVoice',
       'setCaptureEnabled($enabled)',
     );
-    _room?.localParticipant?.setMicrophoneEnabled(enabled);
+    // Wrap the setMicrophoneEnabled call so a native audio-session error
+    // (e.g. AVAudioSession activation race on iOS) doesn't surface as an
+    // unhandled exception into the Riverpod error boundary.  State is still
+    // updated optimistically so the UI reflects the intended mute state;
+    // if the underlying track fails, LiveKit will emit a disconnect or
+    // error event through the room listener.
+    final future = _room?.localParticipant?.setMicrophoneEnabled(enabled);
+    if (future != null) {
+      // ignore: unawaited_futures
+      future.then((_) {}).catchError((Object e) {
+        DebugLogService.instance.log(
+          LogLevel.error,
+          'LiveKitVoice',
+          'setCaptureEnabled($enabled): setMicrophoneEnabled threw: $e',
+        );
+      });
+    }
     state = state.copyWith(isCaptureEnabled: enabled);
   }
 

@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:livekit_client/livekit_client.dart';
+import 'package:record/record.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../screens/voice_lounge/participant_volume_controller.dart';
@@ -404,6 +405,32 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       }
 
       // ---- breadcrumb 4: microphone enable ------------------------------------
+      // Pre-request microphone permission BEFORE LiveKit touches the audio
+      // session.  On iOS 17+, setMicrophoneEnabled triggers the native
+      // permission dialog mid-session-activation, which can deadlock the
+      // audio thread and cause the watchdog to kill the app ~27s later.
+      // Requesting permission in a clean context avoids that race entirely.
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'LiveKitVoice',
+        'joinChannel: requesting microphone permission',
+      );
+      final micPermitted = await _requestMicrophonePermission();
+      if (!micPermitted) {
+        DebugLogService.instance.log(
+          LogLevel.error,
+          'LiveKitVoice',
+          'joinChannel: microphone permission denied — aborting',
+        );
+        await _cleanupRoom();
+        state = state.copyWith(
+          isJoining: false,
+          isActive: false,
+          error: 'Microphone access is required to join a voice channel',
+        );
+        return;
+      }
+
       final micEnabled = !startMuted;
       DebugLogService.instance.log(
         LogLevel.info,
@@ -522,6 +549,62 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
   /// Access the LiveKit [Room] directly for advanced widget rendering
   /// (e.g. [VideoTrackRenderer]).
   Room? get room => _room;
+
+  // -------------------------------------------------------------------------
+  // Mic permission
+  // -------------------------------------------------------------------------
+
+  /// Request microphone permission before handing off to LiveKit.
+  ///
+  /// On iOS the first call to `setMicrophoneEnabled` triggers the system
+  /// mic-permission dialog *while* the AVAudioSession is mid-activation.
+  /// If the user has never granted mic permission, iOS presents the dialog,
+  /// the audio thread blocks waiting for the dialog result, and the
+  /// AVAudioSession setActive call can deadlock — manifesting as a 27-second
+  /// hang after which the watchdog kills the app.
+  ///
+  /// Pre-requesting permission here via the `record` package ensures the
+  /// dialog fires in a clean, idle context.  If the user denies, we surface
+  /// the error and abort before LiveKit ever touches the audio session.
+  ///
+  /// Returns `true` if mic is available (granted or already authorised),
+  /// `false` if denied / permanently denied.
+  Future<bool> _requestMicrophonePermission() async {
+    // Web and non-mobile platforms handle permissions differently; the
+    // WebRTC stack requests them inline and the dialog is browser-native.
+    // Skip the explicit check on those platforms to avoid pulling record's
+    // platform channel into a path that doesn't need it.
+    if (kIsWeb ||
+        defaultTargetPlatform == TargetPlatform.linux ||
+        defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.macOS) {
+      return true;
+    }
+
+    final recorder = AudioRecorder();
+    try {
+      final granted = await recorder.hasPermission();
+      if (!granted) {
+        DebugLogService.instance.log(
+          LogLevel.error,
+          'LiveKitVoice',
+          'Microphone permission denied — cannot join voice channel',
+        );
+      }
+      return granted;
+    } catch (e) {
+      // Permission check itself threw (unusual). Log and proceed optimistically
+      // so a spurious error doesn't lock out users who already have permission.
+      DebugLogService.instance.log(
+        LogLevel.warning,
+        'LiveKitVoice',
+        'Microphone permission check threw (proceeding optimistically): $e',
+      );
+      return true;
+    } finally {
+      await recorder.dispose();
+    }
+  }
 
   // -------------------------------------------------------------------------
   // Token fetching
