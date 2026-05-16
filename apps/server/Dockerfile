@@ -14,11 +14,12 @@ COPY apps/server/Cargo.toml apps/server/Cargo.toml
 # main" stage; we keep stderr (instead of the previous `2>/dev/null`)
 # so real failures surface in CI, and drop the `|| true` soft-fail that
 # previously swallowed broken-manifest errors (#356).
-RUN mkdir -p core/rust-core/src apps/server/src \
+RUN mkdir -p core/rust-core/src core/rust-core/benches apps/server/src \
     && echo "pub fn lib() {}" > core/rust-core/src/lib.rs \
+    && echo "fn main() {}" > core/rust-core/benches/crypto.rs \
     && echo "fn main() {}" > apps/server/src/main.rs \
     && cargo build --release --package echo-server \
-    && rm -rf core/rust-core/src apps/server/src
+    && rm -rf core/rust-core/src core/rust-core/benches apps/server/src
 
 # Copy real source
 COPY core/ core/
