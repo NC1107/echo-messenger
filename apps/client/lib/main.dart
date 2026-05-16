@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io' show Directory, Platform;
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show SemanticsBinding;
@@ -36,18 +35,31 @@ void main() {
   PaintingBinding.instance.imageCache.maximumSize = 500;
   PaintingBinding.instance.imageCache.maximumSizeBytes = 100 * 1024 * 1024;
 
-  // Global error boundary: catch unhandled Flutter framework errors so that
-  // the red error screen is never shown in production.
+  // Catch unhandled Flutter framework errors (widget build errors, assertion
+  // failures, etc.). Using LogLevel.fatal so these stand out in the log
+  // viewer — framework errors almost always indicate a crash or a broken
+  // widget tree.
   FlutterError.onError = (details) {
-    FlutterError.presentError(details);
     DebugLogService.instance.log(
-      LogLevel.error,
-      'FlutterError',
-      '${details.exceptionAsString()}\n${details.stack}',
+      LogLevel.fatal,
+      'flutter',
+      '${details.exception}\n${details.stack}',
     );
+    FlutterError.presentError(details);
   };
 
-  // Catch async errors not handled by the Flutter framework.
+  // Catch uncaught async errors that escape the Flutter framework (Dart
+  // Isolate, dart:async Future chains, platform channel callbacks).
+  // Returns true to signal that the error was handled and should not be
+  // re-thrown by the engine.
+  PlatformDispatcher.instance.onError = (error, stack) {
+    DebugLogService.instance.log(LogLevel.fatal, 'platform', '$error\n$stack');
+    return true;
+  };
+
+  // Catch async errors not handled by either of the two handlers above.
+  // runZonedGuarded provides a final safety net for errors thrown inside
+  // the zone but outside a Flutter frame (e.g. timers, streams).
   runZonedGuarded(
     () async {
       await _initAndRun();
@@ -55,8 +67,8 @@ void main() {
     (error, stack) {
       debugPrint('[Unhandled] $error\n$stack');
       DebugLogService.instance.log(
-        LogLevel.error,
-        'Unhandled',
+        LogLevel.fatal,
+        'platform',
         '$error\n$stack',
       );
     },

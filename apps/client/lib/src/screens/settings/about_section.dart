@@ -865,6 +865,7 @@ class _DebugLogsSubpageState extends State<_DebugLogsSubpage> {
         LogLevel.info => 'INF',
         LogLevel.warning => 'WRN',
         LogLevel.error => 'ERR',
+        LogLevel.fatal => 'FTL',
       };
       buffer.writeln('$h:$m:$s [$level] ${e.source}: ${e.message}');
     }
@@ -1069,6 +1070,7 @@ class _DebugLevelBadge extends StatelessWidget {
       LogLevel.info => ('INF', EchoTheme.online),
       LogLevel.warning => ('WRN', EchoTheme.warning),
       LogLevel.error => ('ERR', EchoTheme.danger),
+      LogLevel.fatal => ('FTL', EchoTheme.danger),
     };
 
     return Container(
