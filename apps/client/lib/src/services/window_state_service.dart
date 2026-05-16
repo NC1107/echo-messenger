@@ -33,11 +33,23 @@ class WindowStateService {
   ///
   /// Position is clamped on restore to stay on-screen; here we just store
   /// whatever the user last positioned the window to.
+  ///
+  /// Skips saving when the window is in splash state (smaller than the
+  /// minimum restore thresholds of 720×480). Without this guard, closing the
+  /// app during the 300×300 splash would write the splash's top-left position
+  /// — which sits near the center of the monitor — and on the next launch
+  /// [restore] would apply those center-screen coordinates to the full-size
+  /// window, pushing it off the bottom-right edge.
   static Future<void> save() async {
     if (!_isDesktop) return;
     try {
       final prefs = await SharedPreferences.getInstance();
       final size = await windowManager.getSize();
+      // Do not persist geometry while the window is in the small splash state.
+      // The splash is 300×300; the minimum restore size is 720×480. Any window
+      // smaller than those thresholds means we are still in (or were left in)
+      // the splash phase and the coordinates would corrupt the next launch.
+      if (size.width < 720.0 || size.height < 480.0) return;
       await prefs.setDouble(_kWidthKey, size.width);
       await prefs.setDouble(_kHeightKey, size.height);
       try {
