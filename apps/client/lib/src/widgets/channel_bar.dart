@@ -10,6 +10,7 @@ import '../providers/channels_provider.dart';
 import '../providers/livekit_voice_provider.dart';
 import '../providers/theme_provider.dart' show UIDensity, uiDensityProvider;
 import '../providers/voice_settings_provider.dart';
+import '../services/debug_log_service.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
 
@@ -312,10 +313,37 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
       final shouldJoin = await _confirmVoiceJoin(channel.name);
       if (!shouldJoin) return;
     }
+
+    // Breadcrumb: write and force-flush to disk before the LiveKit join so
+    // any iOS crash inside joinChannel still leaves a clear trail. Fire and
+    // forget the flush — the 50 ms urgent debounce gives crash safety
+    // without making the production path block on file I/O, and awaiting it
+    // here stalls widget tests where path_provider isn't mocked.
+    DebugLogService.instance.log(
+      LogLevel.info,
+      'VoiceLoungeUI',
+      'voice channel selected: ${channel.name} id=${channel.id}',
+    );
+    unawaited(DebugLogService.instance.forceFlush());
+
     final success = await ref
         .read(channelsProvider.notifier)
         .joinVoiceChannel(widget.conversationId, channel.id);
+
+    DebugLogService.instance.log(
+      LogLevel.info,
+      'VoiceLoungeUI',
+      'joinVoiceChannel result: $success channelId=${channel.id}',
+    );
+
     if (success && mounted) {
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'VoiceLoungeUI',
+        'calling livekitVoiceProvider.joinChannel conversationId=${widget.conversationId} channelId=${channel.id}',
+      );
+      unawaited(DebugLogService.instance.forceFlush());
+
       await ref
           .read(livekitVoiceProvider.notifier)
           .joinChannel(

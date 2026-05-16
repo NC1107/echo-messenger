@@ -17,6 +17,7 @@ import '../providers/screen_share_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/voice_lounge_background_provider.dart';
 import '../providers/voice_settings_provider.dart';
+import '../services/debug_log_service.dart';
 import '../services/pip_controller.dart';
 import '../theme/echo_theme.dart';
 import '../utils/canvas_utils.dart';
@@ -64,6 +65,35 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   /// Defaults to true so users land in the familiar grid view; the canvas
   /// (vertex mesh + draggable pucks) is opt-in via the dock toggle.
   bool _spotlightMode = true;
+
+  @override
+  void initState() {
+    super.initState();
+    // Breadcrumb: VoiceLoungeScreen mounted. This fires immediately after
+    // joinChannel succeeds and the route transitions to the lounge. If the
+    // app crashes before this appears in logs, the crash is in joinChannel
+    // itself (captured by channel_bar.dart breadcrumbs). If it appears but
+    // no further breadcrumbs follow, the crash is inside the lounge build.
+    final voiceLk = ref.read(livekitVoiceProvider);
+    DebugLogService.instance.log(
+      LogLevel.info,
+      'VoiceLoungeUI',
+      'VoiceLoungeScreen mounted '
+          'channelId=${voiceLk.channelId ?? "none"} '
+          'conversationId=${voiceLk.conversationId ?? "none"}',
+    );
+    DebugLogService.instance.forceFlush().ignore();
+  }
+
+  @override
+  void dispose() {
+    DebugLogService.instance.log(
+      LogLevel.info,
+      'VoiceLoungeUI',
+      'VoiceLoungeScreen disposed',
+    );
+    super.dispose();
+  }
 
   String? _buildAvatarUrl() {
     final avatarPath = ref.read(authProvider).avatarUrl;

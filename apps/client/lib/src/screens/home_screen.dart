@@ -19,6 +19,7 @@ import '../providers/update_provider.dart';
 import '../providers/livekit_voice_provider.dart';
 import '../providers/release_notes_provider.dart';
 import '../providers/websocket_provider.dart';
+import '../services/debug_log_service.dart';
 import '../services/notification_service.dart';
 import '../services/tray_service.dart';
 import '../theme/echo_theme.dart';
@@ -1063,7 +1064,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void _autoShowLoungeOnJoin(bool voiceActive) {
     if (voiceActive && !_showingLounge && !_userDismissedLounge) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() => _showingLounge = true);
+        if (mounted) {
+          final voiceLk = ref.read(voiceRtcProvider);
+          DebugLogService.instance.log(
+            LogLevel.info,
+            'HomeScreen',
+            'auto-showing lounge: '
+                'channelId=${voiceLk.channelId ?? "none"} '
+                'conversationId=${voiceLk.conversationId ?? "none"}',
+          );
+          setState(() => _showingLounge = true);
+        }
       });
     }
     if (!voiceActive && _userDismissedLounge) {

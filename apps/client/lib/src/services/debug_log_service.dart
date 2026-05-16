@@ -80,7 +80,12 @@ class DebugLogService with ChangeNotifier {
 
   /// File write is debounced by this duration to coalesce rapid log bursts
   /// (e.g., 50 voice-join breadcrumbs) into a single I/O operation.
-  static const _writeDebounce = Duration(milliseconds: 500);
+  static const writeDebounce = Duration(milliseconds: 500);
+
+  /// Shorter debounce applied when the log level is [LogLevel.warning] or
+  /// above so elevated-severity breadcrumbs reach disk faster and survive
+  /// a crash that occurs shortly after logging.
+  static const writeDebounceUrgent = Duration(milliseconds: 50);
 
   Timer? _writeTimer;
 
@@ -155,11 +160,13 @@ class DebugLogService with ChangeNotifier {
   /// Write the current in-memory buffer to disk, replacing the file.
   ///
   /// Uses a debounce so rapid bursts of log calls only cause one I/O round
-  /// trip.  No-op on web.
-  void _scheduleWrite() {
+  /// trip.  No-op on web.  [urgent] uses [_writeDebounceUrgent] (50 ms)
+  /// instead of the normal 500 ms window.
+  void _scheduleWrite({bool urgent = false}) {
     if (kIsWeb) return;
     _writeTimer?.cancel();
-    _writeTimer = Timer(_writeDebounce, _flushToDisk);
+    final delay = urgent ? writeDebounceUrgent : writeDebounce;
+    _writeTimer = Timer(delay, _flushToDisk);
   }
 
   Future<void> _flushToDisk() async {
@@ -185,6 +192,10 @@ class DebugLogService with ChangeNotifier {
   ///
   /// UUIDs in [message] are automatically truncated to prevent leaking full
   /// identifiers into the log.
+  ///
+  /// For [LogLevel.warning] and above the write debounce is shortened to 50 ms
+  /// so elevated-severity breadcrumbs reach disk quickly and survive a crash
+  /// that happens in the window immediately after logging.
   void log(LogLevel level, String source, String message) {
     // Kick off a one-time file load so that any entries already on disk
     // appear in the in-memory buffer before we start evicting.  This is
@@ -207,8 +218,22 @@ class DebugLogService with ChangeNotifier {
     while (_entries.length > maxEntries) {
       _entries.removeAt(0);
     }
-    _scheduleWrite();
+    _scheduleWrite(urgent: level.index >= LogLevel.warning.index);
     notifyListeners();
+  }
+
+  /// Force an immediate, synchronous-style flush of the in-memory buffer to
+  /// disk with no debounce.  Intended to be called immediately before any
+  /// operation that is known to risk crashing (e.g. entering a voice channel
+  /// on iOS), guaranteeing that breadcrumbs written just before the call are
+  /// on disk even if the process dies within milliseconds.
+  ///
+  /// Returns a [Future] that completes when the write finishes (or is skipped
+  /// on web).  Callers that cannot await should use `.ignore()`.
+  Future<void> forceFlush() async {
+    _writeTimer?.cancel();
+    _writeTimer = null;
+    await _flushToDisk();
   }
 
   /// Read all persisted entries from the log file.
