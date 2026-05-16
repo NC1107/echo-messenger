@@ -42,6 +42,12 @@ struct VideoGrant {
     room_join: bool,
     can_publish: bool,
     can_subscribe: bool,
+    /// Required so `LocalParticipant.setName(username)` can update the
+    /// display name on the SFU. Without this the client's metadata update
+    /// fails with NOT_ALLOWED, which then closes the signal channel and
+    /// makes every subsequent operation (setMicrophoneEnabled, publish)
+    /// fail — surfacing as an "iOS crash on voice lounge join" report.
+    can_update_own_metadata: bool,
 }
 
 /// Full LiveKit JWT claims.
@@ -133,6 +139,7 @@ pub async fn generate_token(
             room_join: true,
             can_publish: true,
             can_subscribe: true,
+            can_update_own_metadata: true,
         },
     };
 
@@ -201,6 +208,7 @@ mod tests {
                 room_join: true,
                 can_publish: true,
                 can_subscribe: true,
+                can_update_own_metadata: true,
             },
         };
 
@@ -210,6 +218,7 @@ mod tests {
         assert_eq!(json["video"]["room"], "room:channel");
         assert_eq!(json["video"]["roomJoin"], true);
         assert_eq!(json["video"]["canPublish"], true);
+        assert_eq!(json["video"]["canUpdateOwnMetadata"], true);
         assert_eq!(json["video"]["canSubscribe"], true);
     }
 
