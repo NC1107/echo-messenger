@@ -259,3 +259,65 @@ async fn canvas_avatar_move_relayed_but_not_persisted() {
     let _ = alice_ws.close(None).await;
     let _ = bob_ws.close(None).await;
 }
+
+/// Sending a canvas event to a text channel (not a voice channel) returns an
+/// error frame and does NOT fan out the event.  Exercises the channel-kind guard
+/// added by audit fix 1.
+#[tokio::test]
+async fn canvas_event_to_text_channel_returns_error() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (alice_token, _, _) =
+        common::register_and_login(&client, &base, "cvs_textguard_alice").await;
+    let group_id = common::create_group(&client, &base, &alice_token, "CanvasTextGuardGroup").await;
+
+    // Find the default "general" text channel.
+    let resp = client
+        .get(format!("{base}/api/groups/{group_id}/channels"))
+        .header("Authorization", format!("Bearer {alice_token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+    let channels: Vec<Value> = resp.json().await.unwrap();
+    let text_channel_id = channels
+        .iter()
+        .find(|c| c["kind"] == "text")
+        .expect("default text channel must exist")["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Connect Alice.
+    let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
+    let mut alice_ws = connect_ws(&base, &alice_ticket).await;
+    common::drain_pending(&mut alice_ws).await;
+
+    // Send a canvas_event to the text channel.
+    alice_ws
+        .send(Message::Text(
+            serde_json::json!({
+                "type": "canvas_event",
+                "channel_id": text_channel_id,
+                "kind": "stroke",
+                "payload": {"id": "s1"},
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("alice canvas send failed");
+
+    // The server must reply with an error frame.
+    let error_frame = common::recv_until_event(&mut alice_ws, &["error"]).await;
+    assert!(
+        error_frame["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("voice"),
+        "error message should mention voice channels, got: {error_frame}"
+    );
+
+    let _ = alice_ws.close(None).await;
+}

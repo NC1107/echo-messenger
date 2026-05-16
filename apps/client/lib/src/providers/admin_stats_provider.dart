@@ -98,11 +98,13 @@ class AdminDashboardData {
 }
 
 final adminDashboardProvider =
-    AsyncNotifierProvider<AdminDashboardNotifier, AdminDashboardData>(
-      AdminDashboardNotifier.new,
-    );
+    AsyncNotifierProvider.autoDispose<
+      AdminDashboardNotifier,
+      AdminDashboardData
+    >(AdminDashboardNotifier.new);
 
-class AdminDashboardNotifier extends AsyncNotifier<AdminDashboardData> {
+class AdminDashboardNotifier
+    extends AutoDisposeAsyncNotifier<AdminDashboardData> {
   @override
   Future<AdminDashboardData> build() => _load();
 

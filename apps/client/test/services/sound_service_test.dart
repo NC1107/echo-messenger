@@ -173,4 +173,43 @@ void main() {
       expect(identical(a, b), isTrue);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // #924: _enabled and _notificationSound are independent.
+  //
+  // Before #924 the enabled flag was derived from the notification-sound
+  // selection: picking "None" set enabled=false, which also silenced sent /
+  // voice-join / voice-leave sounds permanently.  The fix decoupled the two
+  // fields.  This test locks in that contract: setting the notification sound
+  // to "none" must leave the master enabled flag untouched.
+  // ---------------------------------------------------------------------------
+
+  group('SoundService decoupled switches (#924)', () {
+    setUp(() {
+      // Restore known state before each case.  The singleton persists across
+      // tests so we must reset both fields explicitly.
+      SoundService().enabled = true;
+    });
+
+    test(
+      'setNotificationSound(none) leaves enabled=true (#924 regression)',
+      () async {
+        // Master switch is on.
+        expect(SoundService().enabled, isTrue);
+
+        // Pick "None" for notification sounds only.
+        await SoundService().setNotificationSound(NotificationSound.none);
+
+        // The master switch must remain on — the UI sounds (sent, voice) are
+        // unaffected by the notification-sound choice.
+        expect(
+          SoundService().enabled,
+          isTrue,
+          reason:
+              'setNotificationSound(none) must not disable the master '
+              'sound switch (regression guard for #924).',
+        );
+      },
+    );
+  });
 }

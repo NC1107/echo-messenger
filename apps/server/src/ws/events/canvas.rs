@@ -50,6 +50,17 @@ pub(in crate::ws) async fn handle_canvas_event(
         }
     };
 
+    // Reject canvas events sent to non-voice channels (canvas is a sub-feature
+    // of voice lounges; text channels do not have a canvas).
+    if channel.kind != "voice" {
+        send_error(
+            state,
+            sender_id,
+            "Canvas events are only valid for voice channels",
+        );
+        return;
+    }
+
     let conversation_id = channel.conversation_id;
 
     // Verify sender is a member.
@@ -68,10 +79,17 @@ pub(in crate::ws) async fn handle_canvas_event(
     // Persist state for non-ephemeral kinds.
     match kind.as_str() {
         "stroke" => {
-            if let Err(e) =
-                db::canvas::append_stroke(&state.pool, channel_id, payload.clone()).await
-            {
-                tracing::error!("canvas: failed to persist stroke for channel {channel_id}: {e:?}");
+            match db::canvas::append_stroke(&state.pool, channel_id, payload.clone()).await {
+                Ok(()) => {}
+                Err(db::canvas::CanvasCapError::CapReached) => {
+                    send_error(state, sender_id, "Canvas stroke limit reached");
+                    return;
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "canvas: failed to persist stroke for channel {channel_id}: {e:?}"
+                    );
+                }
             }
         }
         "clear" => {
@@ -80,8 +98,17 @@ pub(in crate::ws) async fn handle_canvas_event(
             }
         }
         "image_add" => {
-            if let Err(e) = db::canvas::add_image(&state.pool, channel_id, payload.clone()).await {
-                tracing::error!("canvas: failed to persist image for channel {channel_id}: {e:?}");
+            match db::canvas::add_image(&state.pool, channel_id, payload.clone()).await {
+                Ok(()) => {}
+                Err(db::canvas::CanvasCapError::CapReached) => {
+                    send_error(state, sender_id, "Canvas image limit reached");
+                    return;
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "canvas: failed to persist image for channel {channel_id}: {e:?}"
+                    );
+                }
             }
         }
         "image_move" => {

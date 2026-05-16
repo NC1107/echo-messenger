@@ -290,9 +290,30 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
 
     String? attemptedUrl;
     try {
-      // 1. Fetch a LiveKit JWT from the Echo server.
-      final tokenResult = await _fetchLiveKitToken(conversationId, channelId);
+      // ---- breadcrumb 1: token fetch ----------------------------------------
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'LiveKitVoice',
+        'joinChannel: fetching LiveKit token for channel $channelId',
+      );
+      _LiveKitTokenResult? tokenResult;
+      try {
+        tokenResult = await _fetchLiveKitToken(conversationId, channelId);
+      } catch (e) {
+        DebugLogService.instance.log(
+          LogLevel.error,
+          'LiveKitVoice',
+          'joinChannel: token fetch threw: $e',
+        );
+        rethrow;
+      }
+
       if (tokenResult == null) {
+        DebugLogService.instance.log(
+          LogLevel.error,
+          'LiveKitVoice',
+          'joinChannel: token fetch returned null — aborting',
+        );
         state = state.copyWith(
           isJoining: false,
           error: 'Failed to obtain voice token',
@@ -306,40 +327,75 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       DebugLogService.instance.log(
         LogLevel.info,
         'LiveKitVoice',
-        'Connecting to $livekitUrl (token len=${livekitToken.length})',
+        'joinChannel: token obtained, url=$livekitUrl token_len=${livekitToken.length}',
       );
 
-      // 2. Create and connect a LiveKit Room.
+      // ---- breadcrumb 2: room creation ----------------------------------------
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'LiveKitVoice',
+        'joinChannel: creating Room object',
+      );
       final voiceSettings = ref.read(voiceSettingsProvider);
-      final room = Room(
-        roomOptions: RoomOptions(
-          adaptiveStream: true,
-          dynacast: true,
-          defaultAudioCaptureOptions: AudioCaptureOptions(
-            noiseSuppression: voiceSettings.noiseSuppression,
-            echoCancellation: voiceSettings.echoCancellation,
-            autoGainControl: voiceSettings.autoGainControl,
-          ),
-          defaultAudioPublishOptions: const AudioPublishOptions(
-            encoding: AudioEncoding.presetMusic,
-            dtx: true,
-          ),
-          defaultCameraCaptureOptions: const CameraCaptureOptions(
-            params: VideoParametersPresets.h720_169,
-          ),
-          defaultVideoPublishOptions: VideoPublishOptions(
-            videoEncoding: VideoEncoding(
-              maxBitrate: state.videoBitrate,
-              maxFramerate: state.videoFps,
+      late final Room room;
+      try {
+        room = Room(
+          roomOptions: RoomOptions(
+            adaptiveStream: true,
+            dynacast: true,
+            defaultAudioCaptureOptions: AudioCaptureOptions(
+              noiseSuppression: voiceSettings.noiseSuppression,
+              echoCancellation: voiceSettings.echoCancellation,
+              autoGainControl: voiceSettings.autoGainControl,
+            ),
+            defaultAudioPublishOptions: const AudioPublishOptions(
+              encoding: AudioEncoding.presetMusic,
+              dtx: true,
+            ),
+            defaultCameraCaptureOptions: const CameraCaptureOptions(
+              params: VideoParametersPresets.h720_169,
+            ),
+            defaultVideoPublishOptions: VideoPublishOptions(
+              videoEncoding: VideoEncoding(
+                maxBitrate: state.videoBitrate,
+                maxFramerate: state.videoFps,
+              ),
             ),
           ),
-        ),
-      );
+        );
+      } catch (e) {
+        DebugLogService.instance.log(
+          LogLevel.error,
+          'LiveKitVoice',
+          'joinChannel: Room() constructor threw: $e',
+        );
+        rethrow;
+      }
       _room = room;
 
       _attachRoomListeners(room);
 
-      await room.connect(livekitUrl, livekitToken);
+      // ---- breadcrumb 3: room.connect -----------------------------------------
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'LiveKitVoice',
+        'joinChannel: calling room.connect($livekitUrl)',
+      );
+      try {
+        await room.connect(livekitUrl, livekitToken);
+      } catch (e) {
+        DebugLogService.instance.log(
+          LogLevel.error,
+          'LiveKitVoice',
+          'joinChannel: room.connect threw: $e',
+        );
+        rethrow;
+      }
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'LiveKitVoice',
+        'joinChannel: room.connect succeeded',
+      );
 
       // Set display name so peers see a username instead of a UUID identity.
       final username = ref.read(authProvider).username;
@@ -347,9 +403,28 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
         room.localParticipant?.setName(username);
       }
 
-      // 3. Enable microphone (unless starting muted).
+      // ---- breadcrumb 4: microphone enable ------------------------------------
       final micEnabled = !startMuted;
-      await room.localParticipant?.setMicrophoneEnabled(micEnabled);
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'LiveKitVoice',
+        'joinChannel: calling setMicrophoneEnabled($micEnabled)',
+      );
+      try {
+        await room.localParticipant?.setMicrophoneEnabled(micEnabled);
+      } catch (e) {
+        DebugLogService.instance.log(
+          LogLevel.error,
+          'LiveKitVoice',
+          'joinChannel: setMicrophoneEnabled threw: $e',
+        );
+        rethrow;
+      }
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'LiveKitVoice',
+        'joinChannel: microphone enabled=$micEnabled',
+      );
 
       state = state.copyWith(
         isJoining: false,
@@ -364,14 +439,20 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       _startRtcStatsPolling(room);
       SoundService().playVoiceJoin();
 
-      // Promote the foreground service to voice mode (Android) and report
-      // an outgoing CallKit call (iOS) so the OS keeps the mic + audio
-      // session alive when the app is backgrounded.  Listen for Mute /
-      // Leave / End taps coming back from either UI.
+      // ---- breadcrumb 5: foreground service + CallKit -------------------------
       final resolvedChannelName = _resolveChannelName(
         conversationId,
         channelId,
       );
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'LiveKitVoice',
+        'joinChannel: starting background service / CallKit for "$resolvedChannelName"',
+      );
+      // Promote the foreground service to voice mode (Android) and report
+      // an outgoing CallKit call (iOS) so the OS keeps the mic + audio
+      // session alive when the app is backgrounded.  Listen for Mute /
+      // Leave / End taps coming back from either UI.
       _attachNotificationActionListener();
       unawaited(
         BackgroundService.instance.startVoice(
@@ -393,7 +474,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       DebugLogService.instance.log(
         LogLevel.info,
         'LiveKitVoice',
-        'Joined room for channel $channelId',
+        'joinChannel: join complete for channel $channelId',
       );
     } catch (e) {
       // Surface the URL we tried so a 404 / DNS failure points ops at the
@@ -403,7 +484,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       DebugLogService.instance.log(
         LogLevel.error,
         'LiveKitVoice',
-        'Join failed at $tried: $e',
+        'joinChannel: failed at $tried: $e',
       );
       await _cleanupRoom();
       state = state.copyWith(

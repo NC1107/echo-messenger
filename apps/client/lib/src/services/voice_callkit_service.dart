@@ -94,6 +94,16 @@ class VoiceCallKitService {
     // a hard-crash trigger when CallKit tries to resolve the asset) and
     // audioSessionMode is reset to 'default' to match the upstream
     // example.
+    //
+    // audioSessionActive: false — LiveKit's WebRTC stack already calls
+    // AVAudioSession.setActive(true) during room.connect() and again when
+    // setMicrophoneEnabled creates the LocalAudioTrack. CallKit asking to
+    // (re-)activate the session was racing those calls and producing a
+    // native EXC_BAD_ACCESS in the audio render thread on iOS 17+ — a
+    // crash outside any Dart try/catch, so the user just saw the app
+    // disappear when joining a voice lounge. Setting this to false makes
+    // CallKit observe the session LiveKit established rather than fight
+    // for it.
     final params = CallKitParams(
       id: callId,
       nameCaller: channelName,
@@ -105,7 +115,7 @@ class VoiceCallKitService {
         maximumCallGroups: 1,
         maximumCallsPerCallGroup: 1,
         audioSessionMode: 'default',
-        audioSessionActive: true,
+        audioSessionActive: false,
         supportsDTMF: false,
         supportsHolding: false,
         supportsGrouping: false,

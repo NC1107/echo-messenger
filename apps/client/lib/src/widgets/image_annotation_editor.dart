@@ -39,45 +39,73 @@ class _Stroke {
 }
 
 class _ImageAnnotationEditorState extends State<ImageAnnotationEditor> {
-  /// All completed + the in-progress stroke. The last entry is mutated
-  /// in-place while the user is dragging.
-  final List<_Stroke> _strokes = <_Stroke>[];
+  /// Completed strokes. Only mutated (via setState) on pan-start and pan-end,
+  /// not on every pan-update frame.
+  final List<_Stroke> _committedStrokes = <_Stroke>[];
+
+  /// Points of the stroke currently being drawn. Updated at 60Hz during a
+  /// pan gesture; drives a [ValueListenableBuilder] so only the live-stroke
+  /// layer repaints instead of the whole scaffold.
+  final ValueNotifier<List<Offset>?> _livePoints = ValueNotifier<List<Offset>?>(
+    null,
+  );
 
   /// True while a `toImage` rasterisation is running, so the Send button
   /// is debounced.
   bool _exporting = false;
 
-  /// Pinned to the RepaintBoundary so we can grab pixels on Send.
+  /// Pinned to the outer RepaintBoundary so we can grab pixels on Send.
   final GlobalKey _boundaryKey = GlobalKey();
+
+  /// Stable image provider created once in [initState] so [Image] does not
+  /// re-decode the bytes on every rebuild.
+  late final ImageProvider _imageProvider;
 
   static const double _strokeWidth = 4.0;
 
+  @override
+  void initState() {
+    super.initState();
+    _imageProvider = MemoryImage(widget.imageBytes);
+  }
+
+  @override
+  void dispose() {
+    _livePoints.dispose();
+    super.dispose();
+  }
+
   void _onPanStart(DragStartDetails details) {
-    setState(() {
-      _strokes.add(_Stroke(<Offset>[details.localPosition]));
-    });
+    // Start a new live stroke. This setState is cheap — it only updates
+    // the toolbar button enabled-state via hasStrokes.
+    _livePoints.value = <Offset>[details.localPosition];
   }
 
   void _onPanUpdate(DragUpdateDetails details) {
-    if (_strokes.isEmpty) return;
-    setState(() {
-      _strokes.last.points.add(details.localPosition);
-    });
+    final live = _livePoints.value;
+    if (live == null) return;
+    // Mutate a fresh list so ValueNotifier listeners see the change.
+    _livePoints.value = List<Offset>.of(live)..add(details.localPosition);
   }
 
   void _onPanEnd(DragEndDetails details) {
-    // Strokes are already finalised on each update. Nothing to do here,
-    // but keep the hook for future palm-rejection / coalescing logic.
+    final live = _livePoints.value;
+    if (live == null || live.isEmpty) return;
+    // Commit the finished stroke and clear the live notifier.
+    setState(() {
+      _committedStrokes.add(_Stroke(live));
+      _livePoints.value = null;
+    });
   }
 
   void _undo() {
-    if (_strokes.isEmpty) return;
-    setState(() => _strokes.removeLast());
+    if (_committedStrokes.isEmpty) return;
+    setState(() => _committedStrokes.removeLast());
   }
 
   void _clear() {
-    if (_strokes.isEmpty) return;
-    setState(() => _strokes.clear());
+    if (_committedStrokes.isEmpty) return;
+    setState(() => _committedStrokes.clear());
   }
 
   Future<void> _confirm() async {
@@ -88,7 +116,15 @@ class _ImageAnnotationEditorState extends State<ImageAnnotationEditor> {
           _boundaryKey.currentContext?.findRenderObject()
               as RenderRepaintBoundary?;
       if (boundary == null) {
-        // No render object — bail without confirming.
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Failed to export image. Try a smaller image or close other apps.',
+              ),
+            ),
+          );
+        }
         return;
       }
       // Match device pixel ratio so the exported image has the same
@@ -99,7 +135,18 @@ class _ImageAnnotationEditorState extends State<ImageAnnotationEditor> {
         format: ui.ImageByteFormat.png,
       );
       image.dispose();
-      if (byteData == null) return;
+      if (byteData == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Failed to export image. Try a smaller image or close other apps.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
       final Uint8List pngBytes = byteData.buffer.asUint8List();
       if (!mounted) return;
       widget.onConfirm(pngBytes);
@@ -113,7 +160,9 @@ class _ImageAnnotationEditorState extends State<ImageAnnotationEditor> {
   @override
   Widget build(BuildContext context) {
     final color = Theme.of(context).colorScheme.primary;
-    final hasStrokes = _strokes.isNotEmpty;
+    // hasStrokes is derived only from committed strokes because the live
+    // stroke is tracked separately via ValueNotifier.
+    final hasStrokes = _committedStrokes.isNotEmpty;
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -153,6 +202,7 @@ class _ImageAnnotationEditorState extends State<ImageAnnotationEditor> {
         ],
       ),
       body: SizedBox.expand(
+        // Outer RepaintBoundary is keyed so _confirm can capture all layers.
         child: RepaintBoundary(
           key: _boundaryKey,
           child: GestureDetector(
@@ -163,23 +213,45 @@ class _ImageAnnotationEditorState extends State<ImageAnnotationEditor> {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                // Image fit-to-screen. BoxFit.contain keeps aspect ratio so
-                // the user always sees the full image without cropping.
+                // Image: uses a stable MemoryImage provider (created once in
+                // initState) so the codec is not re-instantiated on rebuilds.
                 Positioned.fill(
-                  child: Image.memory(
-                    widget.imageBytes,
+                  child: Image(
+                    image: _imageProvider,
                     fit: BoxFit.contain,
                     gaplessPlayback: true,
                   ),
                 ),
+                // Committed strokes — wrapped in a RepaintBoundary so Flutter
+                // can cache the rasterised layer between pan frames.
                 Positioned.fill(
                   child: IgnorePointer(
-                    child: CustomPaint(
-                      painter: _StrokesPainter(
-                        strokes: _strokes,
-                        color: color,
-                        strokeWidth: _strokeWidth,
+                    child: RepaintBoundary(
+                      child: CustomPaint(
+                        painter: _StrokesPainter(
+                          strokes: _committedStrokes,
+                          color: color,
+                          strokeWidth: _strokeWidth,
+                        ),
                       ),
+                    ),
+                  ),
+                ),
+                // Live stroke — repaints on every pan frame without touching
+                // the committed-strokes layer or the image.
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: ValueListenableBuilder<List<Offset>?>(
+                      valueListenable: _livePoints,
+                      builder: (context, points, _) {
+                        return CustomPaint(
+                          painter: _LiveStrokePainter(
+                            points: points,
+                            color: color,
+                            strokeWidth: _strokeWidth,
+                          ),
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -192,7 +264,7 @@ class _ImageAnnotationEditorState extends State<ImageAnnotationEditor> {
   }
 }
 
-/// Renders the accumulated [_Stroke] polylines as anti-aliased lines.
+/// Renders the accumulated committed [_Stroke] polylines as anti-aliased lines.
 class _StrokesPainter extends CustomPainter {
   final List<_Stroke> strokes;
   final Color color;
@@ -215,26 +287,7 @@ class _StrokesPainter extends CustomPainter {
       ..isAntiAlias = true;
 
     for (final stroke in strokes) {
-      final pts = stroke.points;
-      if (pts.isEmpty) continue;
-      if (pts.length == 1) {
-        // Single-tap dot — render as a small filled circle so taps leave
-        // a visible mark.
-        canvas.drawCircle(
-          pts.first,
-          strokeWidth / 2,
-          Paint()
-            ..color = color
-            ..style = PaintingStyle.fill
-            ..isAntiAlias = true,
-        );
-        continue;
-      }
-      final path = Path()..moveTo(pts.first.dx, pts.first.dy);
-      for (var i = 1; i < pts.length; i++) {
-        path.lineTo(pts[i].dx, pts[i].dy);
-      }
-      canvas.drawPath(path, paint);
+      _paintPoints(canvas, stroke.points, paint);
     }
   }
 
@@ -244,4 +297,64 @@ class _StrokesPainter extends CustomPainter {
         old.color != color ||
         old.strokeWidth != strokeWidth;
   }
+}
+
+/// Renders the single in-progress stroke during a pan gesture.
+///
+/// Separated from [_StrokesPainter] so the [ValueListenableBuilder] driving
+/// this layer does not trigger repaints on the committed-strokes layer.
+class _LiveStrokePainter extends CustomPainter {
+  final List<Offset>? points;
+  final Color color;
+  final double strokeWidth;
+
+  const _LiveStrokePainter({
+    required this.points,
+    required this.color,
+    required this.strokeWidth,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final pts = points;
+    if (pts == null || pts.isEmpty) return;
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..style = PaintingStyle.stroke
+      ..isAntiAlias = true;
+    _paintPoints(canvas, pts, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _LiveStrokePainter old) {
+    return old.points != points ||
+        old.color != color ||
+        old.strokeWidth != strokeWidth;
+  }
+}
+
+/// Shared drawing logic for a list of [Offset] points.
+void _paintPoints(Canvas canvas, List<Offset> pts, Paint paint) {
+  if (pts.isEmpty) return;
+  if (pts.length == 1) {
+    // Single-tap dot — render as a small filled circle so taps leave
+    // a visible mark.
+    canvas.drawCircle(
+      pts.first,
+      paint.strokeWidth / 2,
+      Paint()
+        ..color = paint.color
+        ..style = PaintingStyle.fill
+        ..isAntiAlias = true,
+    );
+    return;
+  }
+  final path = Path()..moveTo(pts.first.dx, pts.first.dy);
+  for (var i = 1; i < pts.length; i++) {
+    path.lineTo(pts[i].dx, pts[i].dy);
+  }
+  canvas.drawPath(path, paint);
 }
