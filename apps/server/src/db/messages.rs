@@ -643,6 +643,10 @@ pub struct GlobalSearchResult {
 
 /// Search messages across ALL conversations the user is a member of.
 /// Uses the existing GIN full-text search index on `messages.content`.
+///
+/// Encrypted conversations are excluded: their `content` column holds
+/// E2E ciphertext, so a full-text match against it is meaningless and
+/// leaks metadata (hit/miss) to the server without revealing plaintexts.
 pub async fn search_messages_global(
     pool: &PgPool,
     user_id: Uuid,
@@ -655,6 +659,7 @@ pub async fn search_messages_global(
                 m.content, m.created_at \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
+         JOIN conversations c ON c.id = m.conversation_id AND c.is_encrypted = false \
          JOIN conversation_members cm ON cm.conversation_id = m.conversation_id \
               AND cm.user_id = $1 AND cm.is_removed = false \
          WHERE m.deleted_at IS NULL \

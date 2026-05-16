@@ -357,7 +357,7 @@ pub async fn get_messages(
         }
     }
 
-    let limit = params.limit.unwrap_or(50).min(100);
+    let limit = params.limit.unwrap_or(50).clamp(1, 100);
     let messages = db::messages::get_messages(
         &state.pool,
         conversation_id,
@@ -546,7 +546,7 @@ pub async fn get_thread_replies(
         ));
     }
 
-    let limit = params.limit.unwrap_or(50).min(100);
+    let limit = params.limit.unwrap_or(50).clamp(1, 100);
     // Scope to the parent's conversation so cross-conversation replies cannot
     // leak content across DMs.
     let replies = db::messages::get_thread_replies(
@@ -593,11 +593,23 @@ pub async fn search_messages(
         ));
     }
 
+    // Server-side full-text search is meaningless on encrypted conversations:
+    // the content column holds ciphertext, so matches would be false positives
+    // and the server should not attempt to index or scan E2E-encrypted content.
+    let security = db::messages::get_conversation_security(&state.pool, conversation_id)
+        .await
+        .db_ctx("search_messages/security")?;
+    if security.is_some_and(|s| s.is_encrypted) {
+        return Err(AppError::bad_request(
+            "Server-side search is not available for encrypted conversations",
+        ));
+    }
+
     let messages = db::messages::search_messages(
         &state.pool,
         conversation_id,
         &params.q,
-        params.limit.min(50),
+        params.limit.clamp(1, 50),
     )
     .await
     .db_ctx("search_messages")?;
