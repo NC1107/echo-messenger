@@ -43,6 +43,11 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
   bool _voiceCleanupInFlight = false;
   late final LiveKitVoiceNotifier _voiceRtcNotifier;
 
+  /// Channel ID currently in the process of being joined (HTTP call +
+  /// room.connect + setMicrophoneEnabled). Cleared in a `finally` block so
+  /// the chip always reverts to its normal icon on success or failure.
+  String? _joiningChannelId;
+
   @override
   void initState() {
     super.initState();
@@ -314,46 +319,53 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
       if (!shouldJoin) return;
     }
 
-    // Breadcrumb: write and force-flush to disk synchronously before the
-    // LiveKit join so any iOS SIGKILL inside joinChannel still leaves a clear
-    // trail.  The blocking write completes in <5 ms on iOS flash storage
-    // (buffer is capped at 5000 NDJSON lines, well under 1 MB).
-    DebugLogService.instance.log(
-      LogLevel.info,
-      'VoiceLoungeUI',
-      'voice channel selected: ${channel.name} id=${channel.id}',
-    );
-    DebugLogService.instance.forceFlushSync();
+    // Show the per-chip spinner for the duration of the join sequence.
+    if (mounted) setState(() => _joiningChannelId = channel.id);
 
-    final success = await ref
-        .read(channelsProvider.notifier)
-        .joinVoiceChannel(widget.conversationId, channel.id);
-
-    DebugLogService.instance.log(
-      LogLevel.info,
-      'VoiceLoungeUI',
-      'joinVoiceChannel result: $success channelId=${channel.id}',
-    );
-
-    if (success && mounted) {
+    try {
+      // Breadcrumb: write and force-flush to disk synchronously before the
+      // LiveKit join so any iOS SIGKILL inside joinChannel still leaves a clear
+      // trail.  The blocking write completes in <5 ms on iOS flash storage
+      // (buffer is capped at 5000 NDJSON lines, well under 1 MB).
       DebugLogService.instance.log(
         LogLevel.info,
         'VoiceLoungeUI',
-        'calling livekitVoiceProvider.joinChannel conversationId=${widget.conversationId} channelId=${channel.id}',
+        'voice channel selected: ${channel.name} id=${channel.id}',
       );
       DebugLogService.instance.forceFlushSync();
 
-      await ref
-          .read(livekitVoiceProvider.notifier)
-          .joinChannel(
-            conversationId: widget.conversationId,
-            channelId: channel.id,
-            startMuted: voiceSettings.selfMuted || voiceSettings.selfDeafened,
-          );
-      if (!mounted) return;
-      widget.onVoiceChannelChanged(channel.id);
-      // The voice dock + auto-show-lounge already give the user clear visual
-      // feedback that the join succeeded; the snackbar was redundant noise.
+      final success = await ref
+          .read(channelsProvider.notifier)
+          .joinVoiceChannel(widget.conversationId, channel.id);
+
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'VoiceLoungeUI',
+        'joinVoiceChannel result: $success channelId=${channel.id}',
+      );
+
+      if (success && mounted) {
+        DebugLogService.instance.log(
+          LogLevel.info,
+          'VoiceLoungeUI',
+          'calling livekitVoiceProvider.joinChannel conversationId=${widget.conversationId} channelId=${channel.id}',
+        );
+        DebugLogService.instance.forceFlushSync();
+
+        await ref
+            .read(livekitVoiceProvider.notifier)
+            .joinChannel(
+              conversationId: widget.conversationId,
+              channelId: channel.id,
+              startMuted: voiceSettings.selfMuted || voiceSettings.selfDeafened,
+            );
+        if (!mounted) return;
+        widget.onVoiceChannelChanged(channel.id);
+        // The voice dock + auto-show-lounge already give the user clear visual
+        // feedback that the join succeeded; the snackbar was redundant noise.
+      }
+    } finally {
+      if (mounted) setState(() => _joiningChannelId = null);
     }
   }
 
@@ -417,11 +429,13 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     UIDensity density,
   ) {
     final isActive = _isVoiceChannelActive(channel.id, activeVoiceChannelId);
+    final isJoining = _joiningChannelId == channel.id;
     return _VoicePeekChip(
       key: ValueKey('voice-peek-${channel.id}'),
       channel: channel,
       participants: participants,
       isActive: isActive,
+      isJoining: isJoining,
       metrics: _chipMetrics(density),
       onTap: () => _handleVoiceChipTap(channel, isActive, voiceSettings),
       miniAvatarStackBuilder: (ps) => _buildMiniAvatarStack(ps),
@@ -875,6 +889,12 @@ class _VoicePeekChip extends StatefulWidget {
   final GroupChannel channel;
   final List<VoiceSessionMember> participants;
   final bool isActive;
+
+  /// True while the join sequence (HTTP call + room.connect + mic enable) is
+  /// in flight for THIS specific channel. Renders a small spinner in place of
+  /// the volume icon so the user knows the tap was registered.
+  final bool isJoining;
+
   final _ChipMetrics metrics;
   final VoidCallback onTap;
   final Widget Function(List<VoiceSessionMember>) miniAvatarStackBuilder;
@@ -884,6 +904,7 @@ class _VoicePeekChip extends StatefulWidget {
     required this.channel,
     required this.participants,
     required this.isActive,
+    this.isJoining = false,
     required this.metrics,
     required this.onTap,
     required this.miniAvatarStackBuilder,
@@ -947,6 +968,7 @@ class _VoicePeekChipState extends State<_VoicePeekChip> {
   Widget build(BuildContext context) {
     final m = widget.metrics;
     final isActive = widget.isActive;
+    final isJoining = widget.isJoining;
     final participants = widget.participants;
 
     final chip = Material(
@@ -971,11 +993,21 @@ class _VoicePeekChipState extends State<_VoicePeekChip> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.volume_up_outlined,
-                size: m.iconSize,
-                color: isActive ? context.accent : context.textMuted,
-              ),
+              if (isJoining)
+                SizedBox(
+                  width: m.iconSize,
+                  height: m.iconSize,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: context.accent,
+                  ),
+                )
+              else
+                Icon(
+                  Icons.volume_up_outlined,
+                  size: m.iconSize,
+                  color: isActive ? context.accent : context.textMuted,
+                ),
               const SizedBox(width: 4),
               Text(
                 widget.channel.name,
