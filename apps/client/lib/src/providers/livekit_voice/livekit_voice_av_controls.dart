@@ -22,6 +22,11 @@ mixin LiveKitVoiceAvControlsMixin on Notifier<LiveKitVoiceState> {
 
   /// Enable or disable the local microphone.
   void setCaptureEnabled(bool enabled) {
+    DebugLogService.instance.log(
+      LogLevel.info,
+      'LiveKitVoice',
+      'setCaptureEnabled($enabled)',
+    );
     _room?.localParticipant?.setMicrophoneEnabled(enabled);
     state = state.copyWith(isCaptureEnabled: enabled);
   }
@@ -67,9 +72,19 @@ mixin LiveKitVoiceAvControlsMixin on Notifier<LiveKitVoiceState> {
     if (room == null) return;
 
     final enabled = !state.isVideoEnabled;
+    DebugLogService.instance.log(
+      LogLevel.info,
+      'LiveKitVoice',
+      'toggleVideo: setCameraEnabled($enabled)',
+    );
     try {
       await room.localParticipant?.setCameraEnabled(enabled);
       state = state.copyWith(isVideoEnabled: enabled);
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'LiveKitVoice',
+        'toggleVideo: camera enabled=$enabled',
+      );
     } catch (e) {
       debugPrint('[LiveKitVoice] toggleVideo failed: $e');
       DebugLogService.instance.log(
@@ -131,6 +146,11 @@ mixin LiveKitVoiceAvControlsMixin on Notifier<LiveKitVoiceState> {
     final room = _room;
     if (room == null) return false;
 
+    DebugLogService.instance.log(
+      LogLevel.info,
+      'LiveKitVoice',
+      'setScreenShareEnabled($enabled) on ${defaultTargetPlatform.name}',
+    );
     try {
       if (defaultTargetPlatform == TargetPlatform.iOS) {
         // iOS requires a ReplayKit Broadcast Upload Extension for screen
@@ -167,13 +187,18 @@ mixin LiveKitVoiceAvControlsMixin on Notifier<LiveKitVoiceState> {
           ),
         );
       }
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'LiveKitVoice',
+        'setScreenShareEnabled($enabled): screen share toggled successfully',
+      );
       return true;
     } catch (e) {
       debugPrint('[LiveKitVoice] setScreenShareEnabled($enabled) failed: $e');
       DebugLogService.instance.log(
         LogLevel.error,
         'LiveKitVoice',
-        'Screen share toggle failed: $e',
+        'setScreenShareEnabled($enabled) failed: $e',
       );
       state = state.copyWith(error: _friendlyMediaError(e, 'screen share'));
       return false;
