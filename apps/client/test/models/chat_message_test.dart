@@ -407,6 +407,43 @@ void main() {
       expect(msg.content, '__system__:unknown_kind:abc');
     });
 
+    // Regression: Hive returns nested maps as Map<dynamic, dynamic>, not
+    // Map<String, dynamic>.  A direct `as Map<String, dynamic>` cast on each
+    // reaction entry throws a TypeError on every conversation open in
+    // production iOS (#ios-hive-map-cast).
+    test(
+      'reactions survive Hive Map<dynamic,dynamic> round-trip without crashing',
+      () {
+        // Simulate what Hive hands back after decoding a stored JSON blob:
+        // the top-level map has been shallow-converted by MessageCache
+        // (Map<String, dynamic>.from(raw)), but each element inside the
+        // 'reactions' list is still Map<dynamic, dynamic>.
+        final hiveReaction = <dynamic, dynamic>{
+          'message_id': 'msg-1',
+          'user_id': 'user-xyz',
+          'username': 'bob',
+          'emoji': '👍',
+        };
+        final json = <String, dynamic>{
+          'message_id': 'msg-1',
+          'from_user_id': 'user-abc',
+          'from_username': 'alice',
+          'conversation_id': 'conv-1',
+          'content': 'hello',
+          'timestamp': '2026-03-31T12:00:00Z',
+          'reactions': [hiveReaction],
+        };
+
+        // Must not throw '_Map<dynamic, dynamic>' is not a subtype of
+        // 'Map<String, dynamic>' in type cast.
+        final msg = ChatMessage.fromServerJson(json, 'user-abc');
+
+        expect(msg.reactions, hasLength(1));
+        expect(msg.reactions.first.emoji, '👍');
+        expect(msg.reactions.first.userId, 'user-xyz');
+      },
+    );
+
     test('value equality differs when key field changes', () {
       const first = ChatMessage(
         id: 'msg-1',

@@ -95,7 +95,7 @@ class ChatMessage {
   ) {
     final reactionsList =
         (json['reactions'] as List?)
-            ?.map((e) => Reaction.fromJson(e as Map<String, dynamic>))
+            ?.map((e) => Reaction.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList() ??
         [];
 

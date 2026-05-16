@@ -20,20 +20,29 @@ import UserNotifications
     application.registerForRemoteNotifications()
 
     // Configure the AVAudioSession for VoIP-style playback so CallKit and
-    // LiveKit's WebRTC engine share consistent options.  We don't activate
-    // it here — CallKit owns activation when an outgoing call starts and
-    // releases it on end.  Setting category up front avoids first-frame
-    // audio drops when LiveKit grabs the session ahead of CallKit on a
-    // cold-start join.
+    // LiveKit's WebRTC engine share consistent options.
+    //
+    // Mode is .default rather than .voiceChat: .voiceChat aggressively claims
+    // the audio route and, on iOS 17+, can deadlock the audio thread when
+    // LiveKit's LocalAudioTrack.create calls setActive(true) concurrently
+    // with the CallKit activation sequence.  .default lets LiveKit own the
+    // mode selection internally (it sets .voiceProcessingIO on the native
+    // WebRTC track) without a competing mode claim from the app layer.
+    //
+    // setActive(true) is called here to pre-warm the session: LiveKit's
+    // subsequent setActive is then a no-op (already active) instead of a
+    // blocking reconfiguration that can race the mic-permission dialog on
+    // first launch.
     do {
       let session = AVAudioSession.sharedInstance()
       try session.setCategory(
         .playAndRecord,
-        mode: .voiceChat,
+        mode: .default,
         options: [.allowBluetooth, .allowBluetoothA2DP, .mixWithOthers, .defaultToSpeaker]
       )
+      try session.setActive(true)
     } catch {
-      NSLog("[Echo] AVAudioSession setCategory failed: \(error.localizedDescription)")
+      NSLog("[Echo] AVAudioSession setCategory/setActive failed: \(error.localizedDescription)")
     }
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
