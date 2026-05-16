@@ -507,13 +507,14 @@ async fn get_unmuted_user_ids_excludes_muted_member() {
 // Search messages
 // ---------------------------------------------------------------------------
 
-/// Search returns 200 and an array (possibly empty) for member queries.
-/// Server-side full-text search across encrypted ciphertext is mostly a
-/// no-op now that the gate (#591) requires wire-shaped content; but the
-/// route must still answer cleanly. (Pre-#591 this asserted a hit on the
-/// plaintext message we used to send.)
+/// Search rejects encrypted DMs with 400. Server-side FTS across
+/// ciphertext would index/scan random bytes and could leak presence
+/// metadata via hit/miss timings, so the route (#350) returns
+/// `400 Bad Request` rather than scanning. The auth/member check runs
+/// first; an unauthenticated or non-member request still gets the
+/// usual 401/403 (see `search_messages_non_member_returns_401`).
 #[tokio::test]
-async fn search_messages_returns_array_for_member() {
+async fn search_messages_rejects_encrypted_conversation() {
     let base = common::spawn_server().await;
     let (client, alice_token, _, _, _, conv_id, _) = setup_dm_with_message(&base).await;
 
@@ -524,8 +525,7 @@ async fn search_messages_returns_array_for_member() {
         .await
         .unwrap();
 
-    assert_eq!(resp.status().as_u16(), 200);
-    let _results: Vec<Value> = resp.json().await.unwrap();
+    assert_eq!(resp.status().as_u16(), 400);
 }
 
 #[tokio::test]
