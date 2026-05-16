@@ -25,6 +25,7 @@ jobs:
   paths:
     name: Detect changed paths
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       client-shared: ${{ steps.filter.outputs.client-shared }}
       linux: ${{ steps.filter.outputs.linux }}
@@ -102,6 +103,7 @@ jobs:
   build-linux:
     name: Build Linux AppImage
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     needs: [paths]
     if: needs.paths.outputs.linux == 'true' || needs.paths.outputs.dev-build-workflow == 'true'
     steps:
@@ -181,6 +183,7 @@ jobs:
   build-android:
     name: Build Android Debug APK
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     needs: [paths]
     if: needs.paths.outputs.android == 'true' || needs.paths.outputs.dev-build-workflow == 'true'
     steps:
@@ -233,6 +236,7 @@ jobs:
     # explicit workflow_dispatch OR a `[ci-ios]` marker in the commit
     # message to avoid burning minutes on every iOS-adjacent push.
     runs-on: macos-15
+    timeout-minutes: 90
     needs: [paths]
     if: |
       (needs.paths.outputs.ios == 'true' || needs.paths.outputs.dev-build-workflow == 'true')
@@ -271,6 +275,7 @@ jobs:
     # macOS runners are 10x cost — keep behind manual dispatch in addition
     # to the path gate.
     runs-on: macos-15
+    timeout-minutes: 90
     needs: [paths]
     if: |
       github.event_name == 'workflow_dispatch'
@@ -329,6 +334,7 @@ jobs:
   build-web:
     name: Build Web
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [paths]
     if: needs.paths.outputs.web == 'true' || needs.paths.outputs.dev-build-workflow == 'true'
     steps:
@@ -364,6 +370,7 @@ jobs:
   build-server:
     name: Build Server (cargo build + test)
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     needs: [paths]
     if: needs.paths.outputs.server == 'true' || needs.paths.outputs.dev-build-workflow == 'true'
     services:
@@ -410,6 +417,7 @@ jobs:
   docker-build-dev-server:
     name: Build Server :dev image
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [paths]
     if: needs.paths.outputs.server == 'true' || needs.paths.outputs.dev-build-workflow == 'true'
     permissions:
@@ -451,6 +459,7 @@ jobs:
   docker-build-dev-web:
     name: Build Web :dev image
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [paths]
     if: needs.paths.outputs.web == 'true' || needs.paths.outputs.dev-build-workflow == 'true'
     permissions:

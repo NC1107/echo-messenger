@@ -6,7 +6,16 @@ updates:
       interval: weekly
     labels:
       - dependencies
+    commit-message:
+      prefix: "chore(deps)"
     open-pull-requests-limit: 10
+    groups:
+      cargo-patch:
+        update-types:
+          - patch
+      cargo-minor:
+        update-types:
+          - minor
 
   - package-ecosystem: npm
     directory: /
@@ -14,7 +23,16 @@ updates:
       interval: weekly
     labels:
       - dependencies
+    commit-message:
+      prefix: "chore(deps)"
     open-pull-requests-limit: 10
+    groups:
+      npm-patch:
+        update-types:
+          - patch
+      npm-minor:
+        update-types:
+          - minor
 
   - package-ecosystem: pub
     directory: /apps/client
@@ -22,7 +40,16 @@ updates:
       interval: weekly
     labels:
       - dependencies
+    commit-message:
+      prefix: "chore(deps)"
     open-pull-requests-limit: 10
+    groups:
+      pub-patch:
+        update-types:
+          - patch
+      pub-minor:
+        update-types:
+          - minor
 
   - package-ecosystem: github-actions
     directory: /
@@ -30,4 +57,10 @@ updates:
       interval: weekly
     labels:
       - dependencies
+    commit-message:
+      prefix: "ci(deps)"
     open-pull-requests-limit: 10
+    groups:
+      actions-all:
+        patterns:
+          - "*"
