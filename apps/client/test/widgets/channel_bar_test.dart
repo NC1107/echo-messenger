@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -111,6 +113,27 @@ class _FakeVoiceSettingsConfirm extends VoiceSettings {
   @override
   VoiceSettingsState build() =>
       const VoiceSettingsState(confirmBeforeJoinVoice: true);
+}
+
+/// Slow fake: joinChannel completes only after the completer is released.
+/// Used to assert that the joining spinner is visible mid-flight.
+class _SlowVoiceRtcNotifier extends LiveKitVoiceNotifier {
+  _SlowVoiceRtcNotifier();
+
+  final _joinCompleter = Completer<void>();
+
+  @override
+  LiveKitVoiceState build() => LiveKitVoiceState.empty;
+
+  @override
+  Future<void> joinChannel({
+    required String conversationId,
+    required String channelId,
+    bool startMuted = false,
+  }) => _joinCompleter.future;
+
+  @override
+  Future<void> leaveChannel() async {}
 }
 
 /// Static UIDensity notifier used by Phase 2 density-tier tests
@@ -298,6 +321,50 @@ void main() {
       expect(fakeChannels.leaveCalls, 0);
       expect(fakeVoiceRtc.leaveCalls, 0);
       expect(activeVoice, 'voice-1');
+    });
+
+    testWidgets('shows spinner on voice chip while join is in flight', (
+      tester,
+    ) async {
+      late _SlowVoiceRtcNotifier slowVoiceRtc;
+
+      await tester.pumpApp(
+        ChannelBar(
+          conversationId: 'conv-1',
+          onTextChannelChanged: (_) {},
+          onVoiceChannelChanged: (_) {},
+        ),
+        overrides: [
+          authOverride(loggedInAuthState),
+          webSocketOverride(),
+          channelsProvider.overrideWith(_FakeChannelsNotifier.new),
+          voiceRtcProvider.overrideWith(() {
+            slowVoiceRtc = _SlowVoiceRtcNotifier();
+            return slowVoiceRtc;
+          }),
+          voiceSettingsProvider.overrideWith(_FakeVoiceSettings.new),
+        ],
+      );
+      await tester.pumpAndSettle();
+
+      // No spinner before tapping.
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+
+      // Tap the voice chip — the join is in flight but not yet complete.
+      await tester.tap(find.text('lounge').first);
+
+      // One frame so the setState(_joiningChannelId = channel.id) is applied.
+      await tester.pump();
+
+      // Spinner must be visible while join is pending.
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+      // Release the join future and let the widget settle.
+      slowVoiceRtc._joinCompleter.complete();
+      await tester.pumpAndSettle();
+
+      // Spinner is gone after join completes.
+      expect(find.byType(CircularProgressIndicator), findsNothing);
     });
   });
 }

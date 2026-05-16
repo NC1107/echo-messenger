@@ -54,7 +54,9 @@ void main() {
       'flutter',
       '${details.exception}\n${details.stack}',
     );
-    DebugLogService.instance.forceFlush().ignore();
+    // Synchronous write — async forceFlush risks losing the fatal entry to
+    // SIGKILL on iOS hard-crashes before the microtask runs.
+    DebugLogService.instance.forceFlushSync();
     FlutterError.presentError(details);
   };
 
@@ -64,7 +66,7 @@ void main() {
   // re-thrown by the engine.
   PlatformDispatcher.instance.onError = (error, stack) {
     DebugLogService.instance.log(LogLevel.fatal, 'platform', '$error\n$stack');
-    DebugLogService.instance.forceFlush().ignore();
+    DebugLogService.instance.forceFlushSync();
     return true;
   };
 
@@ -82,6 +84,7 @@ void main() {
         'platform',
         '$error\n$stack',
       );
+      DebugLogService.instance.forceFlushSync();
     },
   );
 }

@@ -340,6 +340,32 @@ void main() {
         },
       );
 
+      test('forceFlushSync writes to file synchronously', () {
+        // Resolve the path ahead of time so forceFlushSync finds it
+        // (normally resolved by the async _resolveLogFilePath; the
+        // resetForTest override sets it directly).
+        service.log(LogLevel.info, 'SyncFlush', 'sync breadcrumb');
+
+        final sw = Stopwatch()..start();
+        service.forceFlushSync();
+        sw.stop();
+
+        // The file must exist and contain the entry immediately — no await.
+        final file = File('${tempDir.path}/echo-debug.log');
+        expect(file.existsSync(), isTrue);
+        expect(file.readAsStringSync(), contains('sync breadcrumb'));
+
+        // Write cost must be well under 200 ms (target <5 ms on device;
+        // 200 ms is a generous ceiling for slow CI runners).
+        expect(
+          sw.elapsedMilliseconds,
+          lessThan(200),
+          reason:
+              'sync write took ${sw.elapsedMilliseconds} ms — '
+              'expected <200 ms',
+        );
+      });
+
       test('forceFlush cancels any pending debounce timer', () async {
         // Schedule a normal (debounced) write, then immediately force-flush.
         // The file should contain the entry without waiting for the timer.

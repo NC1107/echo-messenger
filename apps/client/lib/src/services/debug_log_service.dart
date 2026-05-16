@@ -236,6 +236,41 @@ class DebugLogService with ChangeNotifier {
     await _flushToDisk();
   }
 
+  /// Write the in-memory buffer to disk using a **blocking** synchronous call.
+  ///
+  /// This is intentionally blocking I/O.  With [maxEntries] capped at 5000
+  /// NDJSON lines the file is well under 1 MB and writes complete in <5 ms on
+  /// iOS flash storage — an acceptable cost when the alternative is losing all
+  /// breadcrumbs to a SIGKILL that fires before an async write round-trip can
+  /// complete.
+  ///
+  /// Call order guarantees:
+  /// 1. Any pending debounce timer is cancelled first to prevent a stale async
+  ///    write from racing with this call and overwriting the file.
+  /// 2. The write uses [_logFilePath] directly; if the path has not been
+  ///    resolved yet (i.e. [_resolveLogFilePath] hasn't completed) the call
+  ///    is a no-op — we cannot await in a sync context.
+  /// 3. [IOException]s are swallowed silently: logging a log-write failure
+  ///    would cause infinite recursion and the in-memory buffer remains intact.
+  ///
+  /// No-op on web ([kIsWeb] guard).
+  void forceFlushSync() {
+    if (kIsWeb) return;
+    // Cancel the pending debounce timer so a later async write does not race.
+    _writeTimer?.cancel();
+    _writeTimer = null;
+    // If the path hasn't been resolved yet we cannot block-wait for it.
+    final path = _logFilePath;
+    if (path == null) return;
+    try {
+      final snapshot = List<DebugLogEntry>.from(_entries);
+      final lines = snapshot.map((e) => e.toJsonLine()).join('\n');
+      File(path).writeAsStringSync('$lines\n');
+    } on IOException catch (_) {
+      // Swallow silently — see doc comment above.
+    }
+  }
+
   /// Read all persisted entries from the log file.
   ///
   /// Triggers the initial file load if it hasn't happened yet, then returns
