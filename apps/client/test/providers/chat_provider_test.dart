@@ -1,3 +1,4 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:echo_app/src/providers/chat_provider.dart';
 import 'package:echo_app/src/models/chat_message.dart';
@@ -356,6 +357,115 @@ void main() {
       );
       expect(updated.isLoadingHistory('conv1'), isTrue);
       expect(updated.conversationHasMore('conv1'), isFalse);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Chat notifier — addMessage bumpReplyCount: false regression (#919)
+  //
+  // Historical thread seeders call addMessage with bumpReplyCount: false so
+  // that re-opening the thread panel doesn't inflate the reply badge every
+  // time.  The existing suite only tested the ChatState data model; this group
+  // exercises the notifier method directly.
+  // ---------------------------------------------------------------------------
+
+  group('Chat notifier — addMessage bumpReplyCount (#919)', () {
+    ProviderContainer makeContainer() {
+      final c = ProviderContainer();
+      addTearDown(c.dispose);
+      return c;
+    }
+
+    test('bumpReplyCount: false does not increment parent replyCount', () {
+      final container = makeContainer();
+      final notifier = container.read(chatProvider.notifier);
+
+      // Seed the parent message with replyCount already at 2 (server value).
+      const parent = ChatMessage(
+        id: 'parent-1',
+        fromUserId: 'u1',
+        fromUsername: 'alice',
+        conversationId: 'conv1',
+        content: 'parent message',
+        timestamp: '2026-01-01T00:00:00Z',
+        isMine: false,
+        replyCount: 2,
+      );
+      notifier.addMessage(parent, bumpReplyCount: false);
+
+      // Seed a historical reply with bumpReplyCount: false (the thread-panel
+      // path).  The parent's replyCount must stay at 2.
+      const reply = ChatMessage(
+        id: 'reply-1',
+        fromUserId: 'u2',
+        fromUsername: 'bob',
+        conversationId: 'conv1',
+        content: 'a reply',
+        timestamp: '2026-01-01T00:01:00Z',
+        isMine: false,
+        replyToId: 'parent-1',
+        replyCount: 0,
+      );
+      notifier.addMessage(reply, bumpReplyCount: false);
+
+      final messages = container
+          .read(chatProvider)
+          .messagesForConversation('conv1');
+      final parentAfter = messages.firstWhere((m) => m.id == 'parent-1');
+
+      expect(
+        parentAfter.replyCount,
+        2,
+        reason:
+            'addMessage(bumpReplyCount: false) must not increment the '
+            'parent replyCount — re-opening the thread panel would '
+            'otherwise inflate the badge on every open (#919).',
+      );
+    });
+
+    test('bumpReplyCount: true (default) does increment parent replyCount', () {
+      final container = makeContainer();
+      final notifier = container.read(chatProvider.notifier);
+
+      // Seed parent.
+      const parent = ChatMessage(
+        id: 'parent-2',
+        fromUserId: 'u1',
+        fromUsername: 'alice',
+        conversationId: 'conv2',
+        content: 'parent message',
+        timestamp: '2026-01-01T00:00:00Z',
+        isMine: false,
+        replyCount: 0,
+      );
+      notifier.addMessage(parent);
+
+      // Live WS path — default bumpReplyCount: true.
+      const reply = ChatMessage(
+        id: 'reply-2',
+        fromUserId: 'u2',
+        fromUsername: 'bob',
+        conversationId: 'conv2',
+        content: 'live reply',
+        timestamp: '2026-01-01T00:01:00Z',
+        isMine: false,
+        replyToId: 'parent-2',
+        replyCount: 0,
+      );
+      notifier.addMessage(reply);
+
+      final messages = container
+          .read(chatProvider)
+          .messagesForConversation('conv2');
+      final parentAfter = messages.firstWhere((m) => m.id == 'parent-2');
+
+      expect(
+        parentAfter.replyCount,
+        1,
+        reason:
+            'Live WS path (bumpReplyCount: true) must optimistically '
+            'increment the parent replyCount by 1.',
+      );
     });
   });
 }
