@@ -88,10 +88,18 @@ if(PLUGIN_BUNDLED_LIBRARIES)
 endif()
 
 # Copy the native assets provided by the build.dart from all packages.
+# Guarded against newer Flutter versions that emit a YAML manifest at this
+# path instead of a directory — the stock scaffolding's install(DIRECTORY)
+# fails with "file INSTALL cannot find ... File exists" when the path is a
+# regular file. Resolve at install-time (not configure-time) because the
+# path is produced during the build step.
 set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/windows/")
-install(DIRECTORY "${NATIVE_ASSETS_DIR}"
-   DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
-   COMPONENT Runtime)
+install(CODE "
+  if(IS_DIRECTORY \"${NATIVE_ASSETS_DIR}\")
+    file(INSTALL DESTINATION \"\${CMAKE_INSTALL_PREFIX}/${INSTALL_BUNDLE_LIB_DIR}\"
+         TYPE DIRECTORY FILES \"${NATIVE_ASSETS_DIR}\")
+  endif()
+" COMPONENT Runtime)
 
 # Fully re-copy the assets directory on each build to avoid having stale files
 # from a previous install.
