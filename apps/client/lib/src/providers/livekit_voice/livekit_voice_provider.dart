@@ -399,9 +399,24 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       );
 
       // Set display name so peers see a username instead of a UUID identity.
+      // Wrap in try/catch: setName triggers an UpdateOwnMetadata signal request
+      // that needs the `canUpdateOwnMetadata` grant in the LiveKit token. If
+      // the server-issued token is missing it, the SFU returns NOT_ALLOWED
+      // which closes the signal channel and cascades into every subsequent
+      // call (setMicrophoneEnabled, publish) failing. Server fix lives in
+      // routes/voice.rs but this guard stops a future grant regression from
+      // bricking the whole join flow.
       final username = ref.read(authProvider).username;
       if (username != null && username.isNotEmpty) {
-        room.localParticipant?.setName(username);
+        try {
+          room.localParticipant?.setName(username);
+        } catch (e) {
+          DebugLogService.instance.log(
+            LogLevel.warning,
+            'LiveKitVoice',
+            'joinChannel: setName failed (non-fatal): $e',
+          );
+        }
       }
 
       // ---- breadcrumb 4: microphone enable ------------------------------------
