@@ -13,6 +13,8 @@ import UserNotifications
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    NSLog("[Echo] didFinishLaunching start")
+
     // Set up push notification delegate
     UNUserNotificationCenter.current().delegate = self
 
@@ -40,12 +42,16 @@ import UserNotifications
         mode: .default,
         options: [.allowBluetooth, .allowBluetoothA2DP, .mixWithOthers, .defaultToSpeaker]
       )
+      NSLog("[Echo] audio session category set")
       try session.setActive(true)
+      NSLog("[Echo] audio session activated")
     } catch {
       NSLog("[Echo] AVAudioSession setCategory/setActive failed: \(error.localizedDescription)")
     }
 
-    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    let result = super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    NSLog("[Echo] didFinishLaunching done result=\(result)")
+    return result
   }
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
