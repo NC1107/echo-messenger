@@ -257,7 +257,7 @@ pub async fn login(
         Some(u) if valid => u,
         _ => {
             return Err(AppError::with_code(
-                ErrorCode::WrongPassword,
+                ErrorCode::InvalidCredentials,
                 "Invalid username or password",
             ));
         }

@@ -514,7 +514,7 @@ async fn refresh_cookie_rotation_invalidates_prior_body_token() {
 // ErrorCode field assertions (#633)
 // ---------------------------------------------------------------------------
 
-/// Login with wrong password should return code="wrong-password".
+/// Login with wrong password should return code="invalid-credentials".
 #[tokio::test]
 async fn login_wrong_password_returns_wrong_password_code() {
     let base = common::spawn_server().await;
@@ -528,8 +528,8 @@ async fn login_wrong_password_returns_wrong_password_code() {
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(
         body["code"].as_str(),
-        Some("wrong-password"),
-        "wrong-password error must carry code=wrong-password; got: {body}"
+        Some("invalid-credentials"),
+        "invalid-credentials error must carry code=invalid-credentials; got: {body}"
     );
     // Original "error" field still present for backward compat.
     assert!(
