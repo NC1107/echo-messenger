@@ -314,17 +314,16 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
       if (!shouldJoin) return;
     }
 
-    // Breadcrumb: write and force-flush to disk before the LiveKit join so
-    // any iOS crash inside joinChannel still leaves a clear trail. Fire and
-    // forget the flush — the 50 ms urgent debounce gives crash safety
-    // without making the production path block on file I/O, and awaiting it
-    // here stalls widget tests where path_provider isn't mocked.
+    // Breadcrumb: write and force-flush to disk synchronously before the
+    // LiveKit join so any iOS SIGKILL inside joinChannel still leaves a clear
+    // trail.  The blocking write completes in <5 ms on iOS flash storage
+    // (buffer is capped at 5000 NDJSON lines, well under 1 MB).
     DebugLogService.instance.log(
       LogLevel.info,
       'VoiceLoungeUI',
       'voice channel selected: ${channel.name} id=${channel.id}',
     );
-    unawaited(DebugLogService.instance.forceFlush());
+    DebugLogService.instance.forceFlushSync();
 
     final success = await ref
         .read(channelsProvider.notifier)
@@ -342,7 +341,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
         'VoiceLoungeUI',
         'calling livekitVoiceProvider.joinChannel conversationId=${widget.conversationId} channelId=${channel.id}',
       );
-      unawaited(DebugLogService.instance.forceFlush());
+      DebugLogService.instance.forceFlushSync();
 
       await ref
           .read(livekitVoiceProvider.notifier)
