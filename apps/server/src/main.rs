@@ -303,6 +303,40 @@ async fn cleanup_expired_messages(pool: &PgPool, hub: &ws::hub::Hub) {
     }
 }
 
+/// Validate and extract UUID from a media file path.
+/// Returns None if the file is not a recognized media format or UUID parsing fails.
+fn extract_media_uuid(path: &std::path::Path) -> Option<uuid::Uuid> {
+    const KNOWN_EXTENSIONS: &[&str] = &[
+        "jpg", "png", "gif", "webp", "heic", "mp4", "mov", "webm", "avi", "mp3", "ogg", "wav",
+        "m4a", "aac", "flac", "pdf", "txt", "doc", "docx", "xls", "xlsx", "zip", "7z", "tar", "gz",
+        "bin",
+    ];
+
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    if !KNOWN_EXTENSIONS.contains(&ext.as_str()) {
+        return None;
+    }
+
+    let stem = path.file_stem().and_then(|s| s.to_str())?;
+    let uuid_str = stem.trim_end_matches(".thumb");
+    uuid::Uuid::parse_str(uuid_str).ok()
+}
+
+/// Check if a file is too new to reap (in-flight uploads within 5 minutes).
+async fn is_file_too_new(entry: &tokio::fs::DirEntry, cutoff: std::time::SystemTime) -> bool {
+    entry
+        .metadata()
+        .await
+        .and_then(|m| m.modified())
+        .map(|mtime| mtime > cutoff)
+        .unwrap_or(true)
+}
+
 /// Scan `./uploads/` and remove files whose name UUID is absent from the
 /// `media` table. Files younger than 5 minutes are skipped so in-flight
 /// uploads not yet committed to the DB are never reaped.
@@ -327,12 +361,6 @@ async fn cleanup_orphan_media_files(pool: &PgPool) {
         .checked_sub(std::time::Duration::from_secs(300))
         .unwrap_or(std::time::UNIX_EPOCH);
 
-    const KNOWN_EXTENSIONS: &[&str] = &[
-        "jpg", "png", "gif", "webp", "heic", "mp4", "mov", "webm", "avi", "mp3", "ogg", "wav",
-        "m4a", "aac", "flac", "pdf", "txt", "doc", "docx", "xls", "xlsx", "zip", "7z", "tar", "gz",
-        "bin",
-    ];
-
     let mut reaped: u32 = 0;
 
     loop {
@@ -347,43 +375,15 @@ async fn cleanup_orphan_media_files(pool: &PgPool) {
 
         let path = entry.path();
 
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_ascii_lowercase();
-
-        if !KNOWN_EXTENSIONS.contains(&ext.as_str()) {
+        let Some(file_uuid) = extract_media_uuid(&path) else {
             continue;
-        }
-
-        let stem = match path.file_stem().and_then(|s| s.to_str()) {
-            Some(s) => s,
-            None => continue,
-        };
-
-        // Thumbnails are stored as `{uuid}.thumb.jpg`; strip the `.thumb` suffix
-        // to resolve back to the owning UUID.
-        let uuid_str = stem.trim_end_matches(".thumb");
-
-        let file_uuid = match uuid::Uuid::parse_str(uuid_str) {
-            Ok(u) => u,
-            Err(_) => continue,
         };
 
         if known_ids.contains(&file_uuid) {
             continue;
         }
 
-        // Skip files that may still be part of an in-flight upload.
-        let too_new = entry
-            .metadata()
-            .await
-            .and_then(|m| m.modified())
-            .map(|mtime| mtime > cutoff)
-            .unwrap_or(true);
-
-        if too_new {
+        if is_file_too_new(&entry, cutoff).await {
             continue;
         }
 
