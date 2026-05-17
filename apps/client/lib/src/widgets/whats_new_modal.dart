@@ -180,6 +180,10 @@ class WhatsNewModal extends ConsumerWidget {
   }
 }
 
+/// Height of the integrated [AppTitleBar] in `window_chrome.dart` — kept in
+/// sync so the dialog barrier leaves the title-bar drag region uncovered.
+const double _kTitleBarHeight = 36;
+
 /// Convenience wrapper called by `home_screen` once after login.  Shows
 /// the modal if-and-only-if [releaseNotesProvider] has populated
 /// [ReleaseNotesView] data (i.e. the user updated since they last saw
@@ -190,14 +194,44 @@ Future<void> maybeShowWhatsNew(BuildContext context, WidgetRef ref) async {
   if (!context.mounted) return;
   final isDesktop = MediaQuery.sizeOf(context).width >= 600;
   if (isDesktop) {
-    await showDialog<void>(
+    // showGeneralDialog with a transparent system barrier + our own dim
+    // overlay positioned BELOW the title bar. Otherwise the dialog blocks
+    // the window-drag region and a user whose "Got it" button is offscreen
+    // can't move the window to reach it.
+    await showGeneralDialog<void>(
       context: context,
+      barrierLabel: "What's New",
       barrierDismissible: true,
-      // Keep the modal inside the inner Navigator (below AppTitleBar in
-      // home_screen) so users can drag the window while reading release
-      // notes (#whats-new-titlebar-fix).
-      useRootNavigator: false,
-      builder: (_) => WhatsNewModal(notes: view, isDialog: true),
+      barrierColor: Colors.transparent,
+      pageBuilder: (ctx, _, _) {
+        return Stack(
+          children: [
+            // Manual dim layer that leaves the top title-bar strip clickable.
+            Positioned(
+              left: 0,
+              right: 0,
+              top: _kTitleBarHeight,
+              bottom: 0,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () async {
+                  await ref.read(releaseNotesProvider.notifier).markShown();
+                  if (ctx.mounted) Navigator.of(ctx).pop();
+                },
+                child: Container(color: Colors.black54),
+              ),
+            ),
+            // Center the actual modal inside the body region.
+            Positioned(
+              left: 0,
+              right: 0,
+              top: _kTitleBarHeight,
+              bottom: 0,
+              child: Center(child: WhatsNewModal(notes: view, isDialog: true)),
+            ),
+          ],
+        );
+      },
     );
   } else {
     await showModalBottomSheet<void>(

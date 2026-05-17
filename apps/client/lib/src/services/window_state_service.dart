@@ -2,6 +2,7 @@ import 'dart:io' show Platform;
 import 'dart:ui' show Offset, Size;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:screen_retriever/screen_retriever.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -83,17 +84,15 @@ class WindowStateService {
         height.clamp(480.0, 10000.0),
       );
       await windowManager.setSize(size);
-      // Restore saved (x, y) if present and within a sane range. Falls back
-      // to centre when no position is saved OR the saved coordinates look
-      // off-screen (multi-monitor disconnect, resolution change, garbage
-      // stored from an older build).
+      // Restore saved (x, y) only when both axes land inside the current
+      // primary display.  A multi-monitor disconnect or resolution change
+      // can park a previously valid coordinate halfway off-screen, leaving
+      // the user with a window they can barely grab (#whats-new-titlebar).
       final savedX = prefs.getDouble(_kXKey);
       final savedY = prefs.getDouble(_kYKey);
-      const sanityMin = -10000.0;
-      const sanityMax = 10000.0;
-      final saneX = savedX != null && savedX > sanityMin && savedX < sanityMax;
-      final saneY = savedY != null && savedY > -50.0 && savedY < sanityMax;
-      if (saneX && saneY) {
+      if (savedX != null &&
+          savedY != null &&
+          await _isOnScreen(savedX, savedY, size)) {
         await windowManager.setPosition(Offset(savedX, savedY));
       } else {
         await windowManager.center();
@@ -103,14 +102,43 @@ class WindowStateService {
     }
   }
 
+  /// True when at least 200 px of the window's top-left corner stays inside
+  /// the primary display's work area, so the user can always grab the
+  /// integrated title bar to drag the window back into view.
+  static Future<bool> _isOnScreen(double x, double y, Size size) async {
+    try {
+      final display = await screenRetriever.getPrimaryDisplay();
+      final screenSize = display.size;
+      const minVisible = 200.0;
+      final maxX = screenSize.width - minVisible;
+      final maxY = screenSize.height - minVisible;
+      // Allow slight negative for stacked-window managers that report the
+      // titlebar above the work area, but never more than 50 px.
+      return x > -50.0 && y > -50.0 && x < maxX && y < maxY;
+    } catch (_) {
+      // If we can't introspect the display, prefer center() over a stale
+      // saved coordinate.
+      return false;
+    }
+  }
+
   /// Shrink the window to a 300×300 chromeless splash and center it on
   /// screen — matches Discord's boot flow. The title bar is removed via
   /// [TitleBarStyle.hidden] and re-attached by [restore] on completion.
+  ///
+  /// Centering is done AFTER the size change and again after a short
+  /// settle so window managers that snap the resize against the old anchor
+  /// don't leave the splash hanging off the edge of the display.
   static Future<void> enterSplash() async {
     if (!_isDesktop) return;
     try {
       await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
       await windowManager.setSize(const Size(300, 300));
+      await windowManager.center();
+      // Some Wayland/X11 compositors apply the size change asynchronously,
+      // so the first center() can race against the resize. Re-center on
+      // the next frame to land where the user expects.
+      await Future<void>.delayed(const Duration(milliseconds: 16));
       await windowManager.center();
     } catch (_) {
       // Splash-size failures are non-fatal; the user just sees the default
