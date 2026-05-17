@@ -229,6 +229,103 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     });
   }
 
+  Future<void> _handleContextMenuSelection(
+    String? value,
+    Conversation conv,
+  ) async {
+    if (value == 'pin') {
+      _togglePin(conv.id);
+    } else if (value == 'mute') {
+      final ok = await ref
+          .read(conversationsProvider.notifier)
+          .toggleMute(conv.id);
+      if (!ok && mounted) {
+        ToastService.show(
+          context,
+          'Failed to update mute settings',
+          type: ToastType.error,
+        );
+      }
+    } else if (value == 'leave_group') {
+      _leaveGroup(conv);
+    } else if (value == 'delete_dm') {
+      _deleteDm(conv);
+    }
+  }
+
+  List<PopupMenuEntry<String>> _buildContextMenuItems(
+    BuildContext context,
+    Conversation conv,
+    bool isPinned,
+  ) {
+    return [
+      PopupMenuItem<String>(
+        value: 'pin',
+        child: Row(
+          children: [
+            Icon(
+              isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+              size: 16,
+              color: context.textSecondary,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              isPinned ? 'Unpin' : 'Pin to top',
+              style: TextStyle(color: context.textPrimary, fontSize: 13),
+            ),
+          ],
+        ),
+      ),
+      PopupMenuItem<String>(
+        value: 'mute',
+        child: Row(
+          children: [
+            Icon(
+              conv.isMuted
+                  ? Icons.notifications_outlined
+                  : Icons.notifications_off_outlined,
+              size: 16,
+              color: context.textSecondary,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              conv.isMuted ? 'Unmute' : 'Mute',
+              style: TextStyle(color: context.textPrimary, fontSize: 13),
+            ),
+          ],
+        ),
+      ),
+      if (conv.isGroup)
+        const PopupMenuItem<String>(
+          value: 'leave_group',
+          child: Row(
+            children: [
+              Icon(Icons.exit_to_app, size: 16, color: EchoTheme.danger),
+              SizedBox(width: 8),
+              Text(
+                'Leave Group',
+                style: TextStyle(color: EchoTheme.danger, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+      if (!conv.isGroup)
+        const PopupMenuItem<String>(
+          value: 'delete_dm',
+          child: Row(
+            children: [
+              Icon(Icons.delete_outline, size: 16, color: EchoTheme.danger),
+              SizedBox(width: 8),
+              Text(
+                'Delete Conversation',
+                style: TextStyle(color: EchoTheme.danger, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+    ];
+  }
+
   void _showConversationContextMenu(
     BuildContext context,
     Conversation conv,
@@ -249,92 +346,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         borderRadius: BorderRadius.circular(8),
         side: BorderSide(color: context.border),
       ),
-      items: [
-        PopupMenuItem<String>(
-          value: 'pin',
-          child: Row(
-            children: [
-              Icon(
-                isPinned ? Icons.push_pin : Icons.push_pin_outlined,
-                size: 16,
-                color: context.textSecondary,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                isPinned ? 'Unpin' : 'Pin to top',
-                style: TextStyle(color: context.textPrimary, fontSize: 13),
-              ),
-            ],
-          ),
-        ),
-        PopupMenuItem<String>(
-          value: 'mute',
-          child: Row(
-            children: [
-              Icon(
-                conv.isMuted
-                    ? Icons.notifications_outlined
-                    : Icons.notifications_off_outlined,
-                size: 16,
-                color: context.textSecondary,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                conv.isMuted ? 'Unmute' : 'Mute',
-                style: TextStyle(color: context.textPrimary, fontSize: 13),
-              ),
-            ],
-          ),
-        ),
-        if (conv.isGroup)
-          const PopupMenuItem<String>(
-            value: 'leave_group',
-            child: Row(
-              children: [
-                Icon(Icons.exit_to_app, size: 16, color: EchoTheme.danger),
-                SizedBox(width: 8),
-                Text(
-                  'Leave Group',
-                  style: TextStyle(color: EchoTheme.danger, fontSize: 13),
-                ),
-              ],
-            ),
-          ),
-        if (!conv.isGroup)
-          const PopupMenuItem<String>(
-            value: 'delete_dm',
-            child: Row(
-              children: [
-                Icon(Icons.delete_outline, size: 16, color: EchoTheme.danger),
-                SizedBox(width: 8),
-                Text(
-                  'Delete Conversation',
-                  style: TextStyle(color: EchoTheme.danger, fontSize: 13),
-                ),
-              ],
-            ),
-          ),
-      ],
-    ).then((value) async {
-      if (value == 'pin') {
-        _togglePin(conv.id);
-      } else if (value == 'mute') {
-        final ok = await ref
-            .read(conversationsProvider.notifier)
-            .toggleMute(conv.id);
-        if (!ok && context.mounted) {
-          ToastService.show(
-            context,
-            'Failed to update mute settings',
-            type: ToastType.error,
-          );
-        }
-      } else if (value == 'leave_group') {
-        _leaveGroup(conv);
-      } else if (value == 'delete_dm') {
-        _deleteDm(conv);
-      }
-    });
+      items: _buildContextMenuItems(context, conv, isPinned),
+    ).then((value) => _handleContextMenuSelection(value, conv));
   }
 
   Future<void> _leaveGroup(Conversation conv) async {
@@ -1104,6 +1117,130 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     );
   }
 
+  /// Resolves the visible label, optional action button, dismiss flag, and
+  /// optional progress bar for the current update state.
+  ({String label, Widget? action, bool showDismiss, Widget? progress})
+  _resolveUpdateBannerState(BuildContext context, UpdateState update) {
+    switch (update.status) {
+      case UpdateStatus.downloading:
+        final pct = (update.downloadProgress * 100).toInt();
+        return (
+          label: 'Downloading update... $pct%',
+          action: TextButton(
+            onPressed: () => ref.read(updateProvider.notifier).cancelDownload(),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: context.textMuted, fontSize: 11),
+            ),
+          ),
+          showDismiss: false,
+          progress: LinearProgressIndicator(
+            value: update.downloadProgress,
+            color: context.accent,
+            backgroundColor: context.border,
+            minHeight: 2,
+          ),
+        );
+      case UpdateStatus.readyToInstall:
+        return (
+          label: 'v${update.latestVersion} ready',
+          action: TextButton(
+            onPressed: () => ref.read(updateProvider.notifier).applyUpdate(),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Text(
+              'Restart',
+              style: TextStyle(
+                color: context.accent,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          showDismiss: true,
+          progress: null,
+        );
+      case UpdateStatus.installing:
+        return (
+          label: 'Installing update...',
+          action: const SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          showDismiss: false,
+          progress: null,
+        );
+      case UpdateStatus.error:
+        return (
+          label: 'Update failed',
+          action: TextButton(
+            onPressed: () => ref.read(updateProvider.notifier).downloadUpdate(),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Text(
+              'Retry',
+              style: TextStyle(color: context.accent, fontSize: 11),
+            ),
+          ),
+          showDismiss: true,
+          progress: null,
+        );
+      default: // idle, update available
+        return _resolveAvailableUpdateState(context, update);
+    }
+  }
+
+  /// Resolves banner state for the idle / update-available case.
+  ({String label, Widget? action, bool showDismiss, Widget? progress})
+  _resolveAvailableUpdateState(BuildContext context, UpdateState update) {
+    if (kIsWeb) {
+      return (
+        label: 'New version available',
+        action: null,
+        showDismiss: true,
+        progress: null,
+      );
+    }
+    return (
+      label: 'v${update.latestVersion} available',
+      action: TextButton(
+        onPressed: update.assetDownloadUrl != null
+            ? () => ref.read(updateProvider.notifier).downloadUpdate()
+            : () {
+                final url = update.downloadUrl;
+                if (url != null) launchUrl(Uri.parse(url));
+              },
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        child: Text(
+          update.assetDownloadUrl != null ? 'Update' : 'Download',
+          style: TextStyle(
+            color: context.accent,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+      showDismiss: true,
+      progress: null,
+    );
+  }
+
   Widget _buildSidebarUpdateBanner(BuildContext context) {
     final update = ref.watch(updateProvider);
 
@@ -1123,110 +1260,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     if (!isVisible) return _buildBugReportRow(context);
     if (update.dismissed && !isActive) return _buildBugReportRow(context);
 
-    final String label;
-    final Widget? action;
-    final bool showDismiss;
-    Widget? progress;
-
-    switch (update.status) {
-      case UpdateStatus.downloading:
-        final pct = (update.downloadProgress * 100).toInt();
-        label = 'Downloading update... $pct%';
-        action = TextButton(
-          onPressed: () => ref.read(updateProvider.notifier).cancelDownload(),
-          style: TextButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            minimumSize: Size.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-          child: Text(
-            'Cancel',
-            style: TextStyle(color: context.textMuted, fontSize: 11),
-          ),
-        );
-        showDismiss = false;
-        progress = LinearProgressIndicator(
-          value: update.downloadProgress,
-          color: context.accent,
-          backgroundColor: context.border,
-          minHeight: 2,
-        );
-      case UpdateStatus.readyToInstall:
-        label = 'v${update.latestVersion} ready';
-        action = TextButton(
-          onPressed: () => ref.read(updateProvider.notifier).applyUpdate(),
-          style: TextButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            minimumSize: Size.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-          child: Text(
-            'Restart',
-            style: TextStyle(
-              color: context.accent,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        );
-        showDismiss = true;
-        progress = null;
-      case UpdateStatus.installing:
-        label = 'Installing update...';
-        action = const SizedBox(
-          width: 12,
-          height: 12,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        );
-        showDismiss = false;
-        progress = null;
-      case UpdateStatus.error:
-        label = 'Update failed';
-        action = TextButton(
-          onPressed: () => ref.read(updateProvider.notifier).downloadUpdate(),
-          style: TextButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            minimumSize: Size.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-          child: Text(
-            'Retry',
-            style: TextStyle(color: context.accent, fontSize: 11),
-          ),
-        );
-        showDismiss = true;
-        progress = null;
-      default: // idle, update available
-        if (kIsWeb) {
-          label = 'New version available';
-          action = null;
-        } else {
-          label = 'v${update.latestVersion} available';
-          action = TextButton(
-            onPressed: update.assetDownloadUrl != null
-                ? () => ref.read(updateProvider.notifier).downloadUpdate()
-                : () {
-                    final url = update.downloadUrl;
-                    if (url != null) launchUrl(Uri.parse(url));
-                  },
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: Text(
-              update.assetDownloadUrl != null ? 'Update' : 'Download',
-              style: TextStyle(
-                color: context.accent,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          );
-        }
-        showDismiss = true;
-        progress = null;
-    }
+    final (:label, :action, :showDismiss, :progress) =
+        _resolveUpdateBannerState(context, update);
 
     return Container(
       decoration: BoxDecoration(
@@ -1739,6 +1774,18 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
 
     if (!isMobile) return item;
 
+    return _buildSlidableTile(context, conv, isPinned, item);
+  }
+
+  /// Wraps [item] in a [Slidable] with mute / pin / delete swipe actions.
+  /// Extracted to keep [_buildConversationTile] under the cognitive-complexity
+  /// budget — the action callbacks each capture state-mutating closures.
+  Widget _buildSlidableTile(
+    BuildContext context,
+    Conversation conv,
+    bool isPinned,
+    Widget item,
+  ) {
     return Slidable(
       key: ValueKey(conv.id),
       // Shared groupTag so SlidableAutoCloseBehavior knows these rows
@@ -1749,18 +1796,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         extentRatio: 0.6,
         children: [
           SlidableAction(
-            onPressed: (_) async {
-              final ok = await ref
-                  .read(conversationsProvider.notifier)
-                  .toggleMute(conv.id);
-              if (!ok && mounted) {
-                ToastService.show(
-                  context,
-                  'Failed to update mute settings',
-                  type: ToastType.error,
-                );
-              }
-            },
+            onPressed: (_) => _toggleMuteWithFeedback(conv.id),
             icon: conv.isMuted ? Icons.volume_up : Icons.volume_off,
             backgroundColor: Colors.blueGrey,
             label: conv.isMuted ? 'Unmute' : 'Mute',
@@ -1782,6 +1818,19 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       ),
       child: item,
     );
+  }
+
+  Future<void> _toggleMuteWithFeedback(String conversationId) async {
+    final ok = await ref
+        .read(conversationsProvider.notifier)
+        .toggleMute(conversationId);
+    if (!ok && mounted) {
+      ToastService.show(
+        context,
+        'Failed to update mute settings',
+        type: ToastType.error,
+      );
+    }
   }
 }
 

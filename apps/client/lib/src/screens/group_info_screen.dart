@@ -115,51 +115,33 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     }
   }
 
-  Future<void> _addMember() async {
-    // Load contacts for selection
-    await ref.read(contactsProvider.notifier).loadContacts();
-    if (!mounted) return;
-
-    final contacts = ref.read(contactsProvider).contacts;
-    final existingMemberIds =
-        _conversation?.members.map((m) => m.userId).toSet() ?? {};
-    final available = contacts
-        .where((c) => !existingMemberIds.contains(c.userId))
-        .toList();
-
-    if (available.isEmpty) {
-      ToastService.show(
-        context,
-        'All contacts are already in this group',
-        type: ToastType.info,
-      );
-      return;
+  /// Filters available contacts by fuzzy-search query.
+  List<Contact> _filterAvailableContacts(
+    List<Contact> available,
+    String query,
+  ) {
+    if (query.isEmpty) return available;
+    final scored = <({Contact contact, double score})>[];
+    for (final c in available) {
+      final nameScore = fuzzyScore(query, c.displayName ?? c.username);
+      final handleScore = fuzzyScore(query, c.username);
+      final best = nameScore > handleScore ? nameScore : handleScore;
+      if (best > 0.2) scored.add((contact: c, score: best));
     }
+    scored.sort((a, b) => b.score.compareTo(a.score));
+    return scored.map((e) => e.contact).toList();
+  }
 
-    final selected = await showDialog<String>(
+  /// Builds a dialog for member selection with search functionality.
+  Future<String?> _showAddMemberDialog(List<Contact> available) {
+    final searchController = TextEditingController();
+    return showDialog<String>(
       context: context,
       builder: (dialogContext) {
-        final searchController = TextEditingController();
         return StatefulBuilder(
           builder: (ctx, setDialogState) {
             final query = searchController.text.trim();
-            List<Contact> filtered;
-            if (query.isEmpty) {
-              filtered = available;
-            } else {
-              final scored = <({Contact contact, double score})>[];
-              for (final c in available) {
-                final nameScore = fuzzyScore(
-                  query,
-                  c.displayName ?? c.username,
-                );
-                final handleScore = fuzzyScore(query, c.username);
-                final best = nameScore > handleScore ? nameScore : handleScore;
-                if (best > 0.2) scored.add((contact: c, score: best));
-              }
-              scored.sort((a, b) => b.score.compareTo(a.score));
-              filtered = scored.map((e) => e.contact).toList();
-            }
+            final filtered = _filterAvailableContacts(available, query);
             final serverUrl = ref.read(serverUrlProvider);
             return SimpleDialog(
               title: Column(
@@ -212,9 +194,10 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         );
       },
     );
+  }
 
-    if (selected == null) return;
-
+  /// Sends the add-member request to the server.
+  Future<void> _submitAddMember(String userId) async {
     final token = ref.read(authProvider).token;
     if (token == null) return;
 
@@ -223,7 +206,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       final response = await http.post(
         Uri.parse('$serverUrl/api/groups/${widget.conversationId}/members'),
         headers: {'Authorization': 'Bearer $token', ..._kJsonHeaders},
-        body: jsonEncode({'user_id': selected}),
+        body: jsonEncode({'user_id': userId}),
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -234,7 +217,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         }
       }
     } catch (e) {
-      debugPrint('[GroupInfo] _addMember failed: $e');
+      debugPrint('[GroupInfo] _submitAddMember failed: $e');
       if (mounted) {
         ToastService.show(
           context,
@@ -243,6 +226,33 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         );
       }
     }
+  }
+
+  Future<void> _addMember() async {
+    // Load contacts for selection
+    await ref.read(contactsProvider.notifier).loadContacts();
+    if (!mounted) return;
+
+    final contacts = ref.read(contactsProvider).contacts;
+    final existingMemberIds =
+        _conversation?.members.map((m) => m.userId).toSet() ?? {};
+    final available = contacts
+        .where((c) => !existingMemberIds.contains(c.userId))
+        .toList();
+
+    if (available.isEmpty) {
+      ToastService.show(
+        context,
+        'All contacts are already in this group',
+        type: ToastType.info,
+      );
+      return;
+    }
+
+    final selected = await _showAddMemberDialog(available);
+    if (selected == null) return;
+
+    await _submitAddMember(selected);
   }
 
   Future<void> _deleteGroup() async {

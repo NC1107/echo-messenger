@@ -153,50 +153,7 @@ class ConversationsNotifier extends _$ConversationsNotifier
       if (gen != _loadGen || !_mounted) return;
 
       if (response.statusCode == 200) {
-        final body = jsonDecode(response.body);
-        final List<dynamic> list = body is List
-            ? body
-            : (body['conversations'] as List? ?? []);
-        final conversations = list
-            .map((e) => Conversation.fromJson(e as Map<String, dynamic>))
-            .toList();
-
-        // Replace encrypted previews with cached decrypted text or placeholder
-        for (var i = 0; i < conversations.length; i++) {
-          final conv = conversations[i];
-          if (conv.lastMessage != null && looksEncrypted(conv.lastMessage!)) {
-            var cached = _decryptedPreviews[conv.id];
-            if (cached == null) {
-              cached = await MessageCache.getLatestCachedPreview(conv.id);
-              if (cached != null) _decryptedPreviews[conv.id] = cached;
-            }
-            conversations[i] = conv.copyWith(
-              lastMessage: cached ?? 'Encrypted message',
-            );
-          }
-        }
-
-        // Sort by last activity (most recent first)
-        conversations.sort((a, b) {
-          final aTime = a.lastMessageTimestamp ?? '';
-          final bTime = b.lastMessageTimestamp ?? '';
-          return bTime.compareTo(aTime);
-        });
-
-        state = state.copyWith(conversations: conversations, isLoading: false);
-        _updateTabBadge();
-
-        // Hydrate last-message status from Hive so conversation tiles show
-        // the correct tick on cold start, before WS read_receipt events
-        // arrive (#573). Fire-and-forget: failures are non-fatal.
-        final myUserId = ref.read(authProvider).userId;
-        if (myUserId != null) {
-          final ids = conversations.map((c) => c.id).toList();
-          ref
-              .read(chatProvider.notifier)
-              .hydrateStatusFromCache(ids, myUserId)
-              .ignore();
-        }
+        await _handleSuccessResponse(response);
       } else {
         state = state.copyWith(
           isLoading: false,
@@ -208,6 +165,64 @@ class ConversationsNotifier extends _$ConversationsNotifier
       // `state` on a disposed notifier throws.
       if (gen != _loadGen || !_mounted) return;
       state = state.copyWith(isLoading: false, error: _friendlyError(e));
+    }
+  }
+
+  /// Parse, decrypt, sort, and persist conversations from a successful response.
+  Future<void> _handleSuccessResponse(http.Response response) async {
+    final body = jsonDecode(response.body);
+    final List<dynamic> list = body is List
+        ? body
+        : (body['conversations'] as List? ?? []);
+    final conversations = list
+        .map((e) => Conversation.fromJson(e as Map<String, dynamic>))
+        .toList();
+
+    await _decryptPreviews(conversations);
+    _sortByLastActivity(conversations);
+
+    state = state.copyWith(conversations: conversations, isLoading: false);
+    _updateTabBadge();
+    await _hydrateStatusFromCache(conversations);
+  }
+
+  /// Replace encrypted previews with cached decrypted text or placeholder.
+  Future<void> _decryptPreviews(List<Conversation> conversations) async {
+    for (var i = 0; i < conversations.length; i++) {
+      final conv = conversations[i];
+      if (conv.lastMessage != null && looksEncrypted(conv.lastMessage!)) {
+        var cached = _decryptedPreviews[conv.id];
+        if (cached == null) {
+          cached = await MessageCache.getLatestCachedPreview(conv.id);
+          if (cached != null) _decryptedPreviews[conv.id] = cached;
+        }
+        conversations[i] = conv.copyWith(
+          lastMessage: cached ?? 'Encrypted message',
+        );
+      }
+    }
+  }
+
+  /// Sort conversations by last activity (most recent first).
+  void _sortByLastActivity(List<Conversation> conversations) {
+    conversations.sort((a, b) {
+      final aTime = a.lastMessageTimestamp ?? '';
+      final bTime = b.lastMessageTimestamp ?? '';
+      return bTime.compareTo(aTime);
+    });
+  }
+
+  /// Hydrate last-message status from cache so conversation tiles show
+  /// the correct tick on cold start, before WS read_receipt events arrive (#573).
+  /// Fire-and-forget: failures are non-fatal.
+  Future<void> _hydrateStatusFromCache(List<Conversation> conversations) async {
+    final myUserId = ref.read(authProvider).userId;
+    if (myUserId != null) {
+      final ids = conversations.map((c) => c.id).toList();
+      ref
+          .read(chatProvider.notifier)
+          .hydrateStatusFromCache(ids, myUserId)
+          .ignore();
     }
   }
 

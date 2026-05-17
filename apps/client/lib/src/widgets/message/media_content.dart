@@ -328,326 +328,214 @@ class MediaContentState extends State<MediaContent> {
       context: context,
       barrierDismissible: true,
       barrierColor: Colors.black.withValues(alpha: 0.9),
-      builder: (dialogContext) {
-        // Decode at most the screen-sized resolution so the image cache
-        // doesn't hold a 4K JPEG in RAM for a 1920px viewport (#639).
-        final dpr = MediaQuery.devicePixelRatioOf(dialogContext);
-        final viewerCacheWidth = (MediaQuery.sizeOf(dialogContext).width * dpr)
-            .round();
-        return Stack(
-          children: [
-            // Dismiss layer — tapping black region closes the viewer.
-            Positioned.fill(
-              child: GestureDetector(
-                onTap: () => Navigator.of(dialogContext).pop(),
-                behavior: HitTestBehavior.opaque,
-                child: const SizedBox.expand(),
-              ),
-            ),
-            Center(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: MediaQuery.of(dialogContext).size.width * 0.85,
-                  maxHeight: MediaQuery.of(dialogContext).size.height * 0.85,
-                ),
-                child: InteractiveViewer(
-                  minScale: 0.8,
-                  maxScale: 4,
-                  child: GestureDetector(
-                    // Tap on the image (or its letterbox padding) dismisses
-                    // the viewer. Pinch / pan are different gesture kinds
-                    // and still flow up to InteractiveViewer.
-                    onTap: () => Navigator.of(dialogContext).pop(),
-                    behavior: HitTestBehavior.opaque,
-                    child: imageUrl.endsWith('.gif')
-                        ? Image(
-                            // ResizeImage caps decode resolution to the
-                            // viewport (#639) — cheaper than holding a
-                            // 4K GIF in RAM for a 1920px viewer.
-                            image: ResizeImage(
-                              CachedNetworkImageProvider(
-                                imageUrl,
-                                cacheKey: stableMediaCacheKey(imageUrl),
-                                cacheManager: chatMediaCacheManager,
-                                headers: headers,
-                              ),
-                              width: viewerCacheWidth,
-                              policy: ResizeImagePolicy.fit,
-                            ),
-                            fit: BoxFit.contain,
-                            gaplessPlayback: true,
-                            errorBuilder: (_, _, _) => const Center(
-                              child: Icon(
-                                Icons.broken_image_outlined,
-                                color: Colors.white54,
-                                size: 48,
-                              ),
-                            ),
-                          )
-                        : CachedNetworkImage(
-                            imageUrl: imageUrl,
-                            cacheKey: stableMediaCacheKey(imageUrl),
-                            cacheManager: chatMediaCacheManager,
-                            httpHeaders: headers,
-                            fit: BoxFit.contain,
-                            // Cap decode resolution to the viewport (#639).
-                            memCacheWidth: viewerCacheWidth,
-                            placeholder: (_, _) => const SizedBox(
-                              width: 320,
-                              height: 240,
-                              child: Center(
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                            errorWidget: (_, _, _) => const Center(
-                              child: Icon(
-                                Icons.broken_image_outlined,
-                                color: Colors.white54,
-                                size: 48,
-                              ),
-                            ),
-                          ),
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              top: 16,
-              right: 16,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.download_outlined),
-                    color: Colors.white,
-                    tooltip: 'Download',
-                    onPressed: () => downloadMedia(imageUrl),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    color: Colors.white,
-                    tooltip: 'Close',
-                    onPressed: () => Navigator.of(dialogContext).pop(),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        );
-      },
+      builder: (dialogContext) => _ImageViewerDialog(
+        imageUrl: imageUrl,
+        headers: headers,
+        onDownload: () => downloadMedia(imageUrl),
+      ),
     );
   }
 
   /// Builds the media widget, or returns null if the content is not media.
   Widget? buildMedia() {
     final content = widget.content;
-    final headers = _headers();
-
     final standaloneUrl = isStandaloneMediaUrl(content) ? content.trim() : null;
 
-    // --- Image ---
-    final imageMatch = _imgRegex.firstMatch(content);
-    final imageUrl =
-        imageMatch?.group(1) ??
+    final imageRawUrl =
+        _imgRegex.firstMatch(content)?.group(1) ??
         (standaloneUrl != null && isImageUrl(standaloneUrl)
             ? standaloneUrl
             : null);
-    if (imageUrl != null) {
-      final rawUrl = imageUrl;
-      final fullUrl = _resolveUrl(rawUrl);
+    if (imageRawUrl != null) return _buildImageWidget(imageRawUrl);
 
-      return Semantics(
-        label: 'Image attachment. Tap to view full size.',
-        image: true,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: GestureDetector(
-            onTap: () => widget.onImageTap != null
-                ? widget.onImageTap!(fullUrl)
-                : showImageViewer(imageUrl: fullUrl),
-            child: Stack(
-              children: [
-                fullUrl.startsWith('http') && urlExtension(rawUrl) == 'gif'
-                    ? Consumer(
-                        builder: (ctx, ref, _) {
-                          final gif = ref.watch(gifPlaybackProvider);
-                          if (gif.isAnimating) {
-                            // Route GIF playback through the disk cache so
-                            // switching conversations doesn't re-fetch the
-                            // animation each time (#562).
-                            // Cap decode at 300px * DPR so a 4K GIF
-                            // doesn't get fully decoded for a 300px
-                            // bubble (#639).
-                            final dpr = MediaQuery.devicePixelRatioOf(ctx);
-                            return Image(
-                              image: ResizeImage(
-                                CachedNetworkImageProvider(
-                                  fullUrl,
-                                  cacheKey: stableMediaCacheKey(rawUrl),
-                                  cacheManager: chatMediaCacheManager,
-                                  headers: _headers(),
-                                ),
-                                width: (300 * dpr).round(),
-                                policy: ResizeImagePolicy.fit,
-                              ),
-                              width: 300,
-                              fit: BoxFit.cover,
-                              gaplessPlayback: true,
-                              errorBuilder: (_, e, st) => _gifErrorPlaceholder(
-                                context,
-                                'GIF failed to load',
-                              ),
-                            );
-                          }
-                          return _PausedGifPlaceholder(
-                            width: 300,
-                            onTap: () => widget.onImageTap != null
-                                ? widget.onImageTap!(fullUrl)
-                                : showImageViewer(imageUrl: fullUrl),
-                          );
-                        },
-                      )
-                    : ImageAttachment(
-                        imageUrl: fullUrl,
-                        headers: headers,
-                        // Cap decode at 300px * DPR so a 4K JPEG isn't
-                        // held in RAM at full size for a 300px inline
-                        // bubble (#639).
-                        memCacheWidth:
-                            (300 * MediaQuery.devicePixelRatioOf(context))
-                                .round(),
-                      ),
-                Positioned(
-                  right: 8,
-                  bottom: 8,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(
-                      Icons.open_in_full,
-                      size: 14,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    // --- Video ---
-    final videoMatch = _videoRegex.firstMatch(content);
-    final videoUrl =
-        videoMatch?.group(1) ??
+    final videoRawUrl =
+        _videoRegex.firstMatch(content)?.group(1) ??
         (standaloneUrl != null && isVideoUrl(standaloneUrl)
             ? standaloneUrl
             : null);
-    if (videoUrl != null) {
-      final rawUrl = videoUrl;
-      // Build thumbUrl from rawUrl (not the already-resolved videoUrl) so that
-      // on web the ?ticket= is appended after /thumb, not before it (#411).
-      final rawThumbUrl = '$rawUrl/thumb';
-      return InlineVideoPlayer(
-        videoUrl: _resolveUrl(rawUrl),
-        thumbUrl: _resolveUrl(rawThumbUrl),
-        rawUrl: rawUrl,
-        headers: _headers(),
-        surface: context.surface,
-        mainBg: context.mainBg,
-        border: context.border,
-        onOpen: () => openMedia(rawUrl),
-      );
-    }
+    if (videoRawUrl != null) return _buildVideoWidget(videoRawUrl);
 
-    // --- File ---
-    final fileMatch = _fileRegex.firstMatch(content);
-    final fileUrl =
-        fileMatch?.group(1) ??
+    final fileRawUrl =
+        _fileRegex.firstMatch(content)?.group(1) ??
         (standaloneUrl != null && isFileUrl(standaloneUrl)
             ? standaloneUrl
             : null);
-    if (fileUrl != null) {
-      final rawUrl = fileUrl;
-      final displayName = _filenameFromUrl(rawUrl);
-      return Semantics(
-        label: 'File attachment: $displayName',
-        child: Container(
-          width: 300,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: context.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: context.border),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: context.mainBg,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  Icons.insert_drive_file_outlined,
-                  color: context.textMuted,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  displayName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: context.textPrimary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.download_outlined, size: 18),
-                onPressed: () => downloadMedia(rawUrl),
-                tooltip: 'Download',
-              ),
-            ],
-          ),
-        ),
-      );
-    }
+    if (fileRawUrl != null) return _buildFileWidget(fileRawUrl);
 
-    // --- Audio ---
-    final audioMatch = _audioRegex.firstMatch(content);
-    final audioUrl =
-        audioMatch?.group(1) ??
+    final audioRawUrl =
+        _audioRegex.firstMatch(content)?.group(1) ??
         (standaloneUrl != null && isAudioUrl(standaloneUrl)
             ? standaloneUrl
             : null);
-    if (audioUrl != null) {
-      final rawUrl = audioUrl;
-      final fullUrl = _resolveUrl(rawUrl);
-      return Semantics(
-        label: 'Voice message',
-        child: VoiceMessageWidget(
-          audioUrl: fullUrl,
-          headers: _headers(),
-          isMine: widget.isMine,
-        ),
-      );
-    }
+    if (audioRawUrl != null) return _buildAudioWidget(audioRawUrl);
 
     return null;
+  }
+
+  Widget _buildImageWidget(String rawUrl) {
+    final fullUrl = _resolveUrl(rawUrl);
+    final isGif = fullUrl.startsWith('http') && urlExtension(rawUrl) == 'gif';
+    return Semantics(
+      label: 'Image attachment. Tap to view full size.',
+      image: true,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: GestureDetector(
+          onTap: () => widget.onImageTap != null
+              ? widget.onImageTap!(fullUrl)
+              : showImageViewer(imageUrl: fullUrl),
+          child: Stack(
+            children: [
+              isGif
+                  ? _buildGifWidget(rawUrl: rawUrl, fullUrl: fullUrl)
+                  : ImageAttachment(
+                      imageUrl: fullUrl,
+                      headers: _headers(),
+                      // Cap decode at 300px * DPR so a 4K JPEG isn't
+                      // held in RAM at full size for a 300px inline
+                      // bubble (#639).
+                      memCacheWidth:
+                          (300 * MediaQuery.devicePixelRatioOf(context))
+                              .round(),
+                    ),
+              _buildExpandOverlay(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGifWidget({required String rawUrl, required String fullUrl}) {
+    return Consumer(
+      builder: (ctx, ref, _) {
+        final gif = ref.watch(gifPlaybackProvider);
+        if (gif.isAnimating) {
+          // Route GIF playback through the disk cache so
+          // switching conversations doesn't re-fetch the
+          // animation each time (#562).
+          // Cap decode at 300px * DPR so a 4K GIF
+          // doesn't get fully decoded for a 300px
+          // bubble (#639).
+          final dpr = MediaQuery.devicePixelRatioOf(ctx);
+          return Image(
+            image: ResizeImage(
+              CachedNetworkImageProvider(
+                fullUrl,
+                cacheKey: stableMediaCacheKey(rawUrl),
+                cacheManager: chatMediaCacheManager,
+                headers: _headers(),
+              ),
+              width: (300 * dpr).round(),
+              policy: ResizeImagePolicy.fit,
+            ),
+            width: 300,
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+            errorBuilder: (_, e, st) =>
+                _gifErrorPlaceholder(context, 'GIF failed to load'),
+          );
+        }
+        return _PausedGifPlaceholder(
+          width: 300,
+          onTap: () => widget.onImageTap != null
+              ? widget.onImageTap!(fullUrl)
+              : showImageViewer(imageUrl: fullUrl),
+        );
+      },
+    );
+  }
+
+  Widget _buildExpandOverlay() {
+    return Positioned(
+      right: 8,
+      bottom: 8,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(Icons.open_in_full, size: 14, color: Colors.white),
+      ),
+    );
+  }
+
+  Widget _buildVideoWidget(String rawUrl) {
+    // Build thumbUrl from rawUrl (not the already-resolved videoUrl) so that
+    // on web the ?ticket= is appended after /thumb, not before it (#411).
+    final rawThumbUrl = '$rawUrl/thumb';
+    return InlineVideoPlayer(
+      videoUrl: _resolveUrl(rawUrl),
+      thumbUrl: _resolveUrl(rawThumbUrl),
+      rawUrl: rawUrl,
+      headers: _headers(),
+      surface: context.surface,
+      mainBg: context.mainBg,
+      border: context.border,
+      onOpen: () => openMedia(rawUrl),
+    );
+  }
+
+  Widget _buildFileWidget(String rawUrl) {
+    final displayName = _filenameFromUrl(rawUrl);
+    return Semantics(
+      label: 'File attachment: $displayName',
+      child: Container(
+        width: 300,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: context.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: context.border),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: context.mainBg,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.insert_drive_file_outlined,
+                color: context.textMuted,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                displayName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: context.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.download_outlined, size: 18),
+              onPressed: () => downloadMedia(rawUrl),
+              tooltip: 'Download',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAudioWidget(String rawUrl) {
+    return Semantics(
+      label: 'Voice message',
+      child: VoiceMessageWidget(
+        audioUrl: _resolveUrl(rawUrl),
+        headers: _headers(),
+        isMine: widget.isMine,
+      ),
+    );
   }
 
   @override
@@ -751,7 +639,132 @@ class _PausedGifPlaceholder extends StatelessWidget {
   }
 }
 
-// Added by Claude
+/// Full-screen image viewer dialog.
+///
+/// Extracted from [MediaContentState.showImageViewer] to keep that method's
+/// complexity low. Supports both GIF and static images, with download and
+/// close actions in the top-right corner.
+class _ImageViewerDialog extends StatelessWidget {
+  final String imageUrl;
+  final Map<String, String> headers;
+  final VoidCallback onDownload;
+
+  const _ImageViewerDialog({
+    required this.imageUrl,
+    required this.headers,
+    required this.onDownload,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Decode at most the screen-sized resolution so the image cache
+    // doesn't hold a 4K JPEG in RAM for a 1920px viewport (#639).
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final viewerCacheWidth = (MediaQuery.sizeOf(context).width * dpr).round();
+    return Stack(
+      children: [
+        // Dismiss layer — tapping black region closes the viewer.
+        Positioned.fill(
+          child: GestureDetector(
+            onTap: () => Navigator.of(context).pop(),
+            behavior: HitTestBehavior.opaque,
+            child: const SizedBox.expand(),
+          ),
+        ),
+        Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.85,
+              maxHeight: MediaQuery.of(context).size.height * 0.85,
+            ),
+            child: InteractiveViewer(
+              minScale: 0.8,
+              maxScale: 4,
+              child: GestureDetector(
+                // Tap on the image (or its letterbox padding) dismisses
+                // the viewer. Pinch / pan are different gesture kinds
+                // and still flow up to InteractiveViewer.
+                onTap: () => Navigator.of(context).pop(),
+                behavior: HitTestBehavior.opaque,
+                child: _buildViewerImage(viewerCacheWidth),
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          top: 16,
+          right: 16,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.download_outlined),
+                color: Colors.white,
+                tooltip: 'Download',
+                onPressed: onDownload,
+              ),
+              IconButton(
+                icon: const Icon(Icons.close),
+                color: Colors.white,
+                tooltip: 'Close',
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildViewerImage(int viewerCacheWidth) {
+    if (imageUrl.endsWith('.gif')) {
+      return Image(
+        // ResizeImage caps decode resolution to the viewport (#639) —
+        // cheaper than holding a 4K GIF in RAM for a 1920px viewer.
+        image: ResizeImage(
+          CachedNetworkImageProvider(
+            imageUrl,
+            cacheKey: stableMediaCacheKey(imageUrl),
+            cacheManager: chatMediaCacheManager,
+            headers: headers,
+          ),
+          width: viewerCacheWidth,
+          policy: ResizeImagePolicy.fit,
+        ),
+        fit: BoxFit.contain,
+        gaplessPlayback: true,
+        errorBuilder: (_, _, _) => const Center(
+          child: Icon(
+            Icons.broken_image_outlined,
+            color: Colors.white54,
+            size: 48,
+          ),
+        ),
+      );
+    }
+    return CachedNetworkImage(
+      imageUrl: imageUrl,
+      cacheKey: stableMediaCacheKey(imageUrl),
+      cacheManager: chatMediaCacheManager,
+      httpHeaders: headers,
+      fit: BoxFit.contain,
+      // Cap decode resolution to the viewport (#639).
+      memCacheWidth: viewerCacheWidth,
+      placeholder: (_, _) => const SizedBox(
+        width: 320,
+        height: 240,
+        child: Center(child: CircularProgressIndicator(color: Colors.white)),
+      ),
+      errorWidget: (_, _, _) => const Center(
+        child: Icon(
+          Icons.broken_image_outlined,
+          color: Colors.white54,
+          size: 48,
+        ),
+      ),
+    );
+  }
+}
 
 /// The kind of attachment a message content string represents.
 enum ReplyAttachmentKind { image, gif, video, audio, file, none }

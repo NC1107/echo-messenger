@@ -12,6 +12,38 @@ import '../../utils/semantics_preview.dart';
 import '../chat_panel_controller.dart';
 import 'message_actions.dart' show fullMonthName;
 
+/// Find the topmost rendered message by querying RenderBox positions.
+String? _findTopmostMessageId(Map<String, GlobalKey> messageKeys) {
+  String? topmostId;
+  double closestY = double.infinity;
+  for (final entry in messageKeys.entries) {
+    final ctx = entry.value.currentContext;
+    if (ctx == null) continue;
+    final box = ctx.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) continue;
+    final y = box.localToGlobal(Offset.zero).dy;
+    if (y < closestY) {
+      closestY = y;
+      topmostId = entry.key;
+    }
+  }
+  return topmostId;
+}
+
+/// Format a date as "Today", "Yesterday", or "Month Day, Year".
+String _formatDateLabel(DateTime dt, DateTime now) {
+  final yesterday = now.subtract(const Duration(days: 1));
+  if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
+    return 'Today';
+  } else if (dt.year == yesterday.year &&
+      dt.month == yesterday.month &&
+      dt.day == yesterday.day) {
+    return 'Yesterday';
+  } else {
+    return '${fullMonthName(dt.month)} ${dt.day}, ${dt.year}';
+  }
+}
+
 /// Update the floating date pill so it reflects the date of the topmost
 /// rendered message. Cancels and reschedules the 2s fade-out timer.
 void updateFloatingDate({
@@ -39,22 +71,7 @@ void updateFloatingDate({
   );
   if (messages.isEmpty) return;
 
-  // Find the topmost rendered message by querying each message's RenderBox
-  // position in the viewport. This is accurate for any message height
-  // (images, reactions, multi-line text) and avoids the old 60px estimate.
-  String? topmostId;
-  double closestY = double.infinity;
-  for (final entry in messageKeys.entries) {
-    final ctx = entry.value.currentContext;
-    if (ctx == null) continue;
-    final box = ctx.findRenderObject();
-    if (box is! RenderBox || !box.hasSize) continue;
-    final y = box.localToGlobal(Offset.zero).dy;
-    if (y < closestY) {
-      closestY = y;
-      topmostId = entry.key;
-    }
-  }
+  final topmostId = _findTopmostMessageId(messageKeys);
   final msgIndex = topmostId == null
       ? 0
       : messages
@@ -64,17 +81,7 @@ void updateFloatingDate({
   try {
     final dt = DateTime.parse(messages[msgIndex].timestamp).toLocal();
     final now = DateTime.now();
-    final yesterday = now.subtract(const Duration(days: 1));
-    String label;
-    if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
-      label = 'Today';
-    } else if (dt.year == yesterday.year &&
-        dt.month == yesterday.month &&
-        dt.day == yesterday.day) {
-      label = 'Yesterday';
-    } else {
-      label = '${fullMonthName(dt.month)} ${dt.day}, ${dt.year}';
-    }
+    final label = _formatDateLabel(dt, now);
 
     if (label != controller.floatingDate || !controller.floatingDateVisible) {
       setState(() {
@@ -209,6 +216,105 @@ void scrollToMessage({
   });
 }
 
+/// Handle unread boundary capture when messages first load.
+void _handleInitialMessageLoad(
+  int prevCount,
+  int nextCount,
+  ChatPanelController controller,
+  void Function() onCaptureUnreadBoundary,
+  void Function() onScrollToUnreadBoundary,
+) {
+  if (prevCount == 0 &&
+      nextCount > 0 &&
+      controller.unreadBoundaryMessageId == null) {
+    onCaptureUnreadBoundary();
+    if (controller.unreadBoundaryMessageId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        onScrollToUnreadBoundary();
+      });
+    }
+  }
+}
+
+/// Announce new message to assistive tech and manage timer.
+void _announceNewMessage(
+  ChatMessage newest,
+  String? lastAnnouncedId,
+  String myUserId,
+  Timer? Function() getLiveRegionClearTimer,
+  void Function(String?) setLastAnnouncedMessageId,
+  void Function(String) setLiveRegionAnnouncement,
+  void Function(Timer?) setLiveRegionClearTimer,
+  void Function(VoidCallback) setState,
+  bool Function() mounted,
+) {
+  if (newest.id == lastAnnouncedId ||
+      newest.fromUserId == myUserId ||
+      newest.isSystemEvent) {
+    return;
+  }
+  setLastAnnouncedMessageId(newest.id);
+  final preview = previewForSemantics(newest.content);
+  setState(() {
+    setLiveRegionAnnouncement(
+      preview.isEmpty
+          ? 'New message from ${newest.fromUsername}'
+          : 'New message from ${newest.fromUsername}: $preview',
+    );
+  });
+  getLiveRegionClearTimer()?.cancel();
+  setLiveRegionClearTimer(
+    Timer(const Duration(seconds: 3), () {
+      if (!mounted()) return;
+      setState(() => setLiveRegionAnnouncement(''));
+    }),
+  );
+}
+
+/// Handle auto-scroll and new message notification for incoming messages.
+void _handleIncomingMessages(
+  int prevCount,
+  int nextCount,
+  ChatState next,
+  Conversation conv,
+  WidgetRef ref,
+  String? Function() getLastAnnouncedMessageId,
+  void Function(String?) setLastAnnouncedMessageId,
+  void Function(String) setLiveRegionAnnouncement,
+  Timer? Function() getLiveRegionClearTimer,
+  void Function(Timer?) setLiveRegionClearTimer,
+  bool Function() isNearBottom,
+  void Function() scrollToBottom,
+  ChatPanelController controller,
+  void Function(VoidCallback) setState,
+  bool Function() mounted,
+) {
+  final myUserId = ref.read(authProvider.select((s) => s.userId)) ?? '';
+  final newest = next.messagesForConversation(conv.id).lastOrNull;
+  if (newest != null && prevCount > 0) {
+    _announceNewMessage(
+      newest,
+      getLastAnnouncedMessageId(),
+      myUserId,
+      getLiveRegionClearTimer,
+      setLastAnnouncedMessageId,
+      setLiveRegionAnnouncement,
+      setLiveRegionClearTimer,
+      setState,
+      mounted,
+    );
+  }
+
+  if (isNearBottom()) {
+    scrollToBottom();
+  } else {
+    setState(() {
+      controller.hasNewMessagesBelow = true;
+      controller.newMessagesBelowCount += nextCount - prevCount;
+    });
+  }
+}
+
 /// Wire up the per-channel-session `ref.listen<ChatState>(chatProvider)`
 /// that drives auto-scroll on incoming messages and the assistive-tech
 /// live-region announcement (#495).
@@ -249,57 +355,32 @@ void setupAutoScroll({
     final prevCount = prev == null ? 0 : visibleCount(prev);
     final nextCount = visibleCount(next);
 
-    // Attempt to capture unread boundary when messages first arrive
-    // (e.g. history loaded asynchronously after conversation opened).
-    if (prevCount == 0 &&
-        nextCount > 0 &&
-        controller.unreadBoundaryMessageId == null) {
-      onCaptureUnreadBoundary();
-      if (controller.unreadBoundaryMessageId != null) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          onScrollToUnreadBoundary();
-        });
-        return;
-      }
-    }
+    _handleInitialMessageLoad(
+      prevCount,
+      nextCount,
+      controller,
+      onCaptureUnreadBoundary,
+      onScrollToUnreadBoundary,
+    );
 
     if (nextCount > prevCount) {
-      // Live-region announcement for assistive tech (#495). Skip the
-      // initial history load (prevCount == 0), own messages, system
-      // events, and duplicates of the last announced id.
-      final myUserId = ref.read(authProvider.select((s) => s.userId)) ?? '';
-      final newest = next.messagesForConversation(conv.id).lastOrNull;
-      if (newest != null &&
-          newest.id != getLastAnnouncedMessageId() &&
-          newest.fromUserId != myUserId &&
-          !newest.isSystemEvent &&
-          prevCount > 0) {
-        setLastAnnouncedMessageId(newest.id);
-        final preview = previewForSemantics(newest.content);
-        setState(() {
-          setLiveRegionAnnouncement(
-            preview.isEmpty
-                ? 'New message from ${newest.fromUsername}'
-                : 'New message from ${newest.fromUsername}: $preview',
-          );
-        });
-        getLiveRegionClearTimer()?.cancel();
-        setLiveRegionClearTimer(
-          Timer(const Duration(seconds: 3), () {
-            if (!mounted()) return;
-            setState(() => setLiveRegionAnnouncement(''));
-          }),
-        );
-      }
-
-      if (isNearBottom()) {
-        scrollToBottom();
-      } else {
-        setState(() {
-          controller.hasNewMessagesBelow = true;
-          controller.newMessagesBelowCount += nextCount - prevCount;
-        });
-      }
+      _handleIncomingMessages(
+        prevCount,
+        nextCount,
+        next,
+        conv,
+        ref,
+        getLastAnnouncedMessageId,
+        setLastAnnouncedMessageId,
+        setLiveRegionAnnouncement,
+        getLiveRegionClearTimer,
+        setLiveRegionClearTimer,
+        isNearBottom,
+        scrollToBottom,
+        controller,
+        setState,
+        mounted,
+      );
     }
   });
 }
