@@ -74,6 +74,11 @@ reqwest = { version = "0.13", features = ["json", "stream"] }
 # File type detection (magic bytes)
 infer = "0.19"
 
+# CIDR matching for trusted-proxy IP resolution in rate limiting.
+# Already a transitive dep (via reqwest → hickory-resolver); pinned explicitly
+# so the import is tracked and version bumps are deliberate.
+ipnet = "2"
+
 [dev-dependencies]
 tokio-tungstenite = "0.29"
 reqwest = { version = "0.13", features = ["json", "multipart"] }

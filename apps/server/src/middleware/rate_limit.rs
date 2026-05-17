@@ -6,6 +6,7 @@ use axum::http::{Request, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use dashmap::DashMap;
+use ipnet::IpNet;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -53,10 +54,10 @@ pub struct RateLimiter {
     entries: Arc<DashMap<IpAddr, RateBucket>>,
     max_requests: u32,
     window_secs: u64,
-    /// IPs of reverse proxies whose `X-Real-IP` / `X-Forwarded-For`
-    /// headers we trust.  When empty, proxy headers are ignored and the
-    /// peer (ConnectInfo) IP is used directly.
-    trusted_proxies: Arc<Vec<IpAddr>>,
+    /// CIDRs (or host routes for bare IPs) of trusted reverse proxies whose
+    /// `X-Real-IP` / `X-Forwarded-For` headers we trust.  When empty, proxy
+    /// headers are ignored and the peer (ConnectInfo) IP is used directly.
+    trusted_proxies: Arc<Vec<IpNet>>,
     sweep: Arc<SweepState>,
 }
 
@@ -79,7 +80,7 @@ impl RateLimiter {
     }
 
     /// Create a rate limiter that honours proxy headers from `proxies`.
-    pub fn with_trusted_proxies(max_requests: u32, window_secs: u64, proxies: Vec<IpAddr>) -> Self {
+    pub fn with_trusted_proxies(max_requests: u32, window_secs: u64, proxies: Vec<IpNet>) -> Self {
         Self {
             entries: Arc::new(DashMap::new()),
             max_requests,
@@ -95,7 +96,7 @@ impl RateLimiter {
     pub fn with_shared_proxies(
         max_requests: u32,
         window_secs: u64,
-        proxies: Arc<Vec<IpAddr>>,
+        proxies: Arc<Vec<IpNet>>,
     ) -> Self {
         Self {
             entries: Arc::new(DashMap::new()),
@@ -163,7 +164,8 @@ fn peer_ip(req: &Request<Body>) -> IpAddr {
 }
 
 /// Extract client IP from request, honouring proxy headers **only** when
-/// the direct peer is in `trusted_proxies`.
+/// the direct peer falls within one of the `trusted_proxies` CIDRs (or host
+/// routes for bare IPs).
 ///
 /// When the peer is trusted:
 ///   X-Real-IP > X-Forwarded-For (last non-private) > peer IP
@@ -174,11 +176,11 @@ fn peer_ip(req: &Request<Body>) -> IpAddr {
 /// **Security note**: X-Forwarded-For can be forged by clients.  We use
 /// the LAST IP in the chain because Traefik *appends* the real client IP.
 /// The first IP is whatever the client sent and cannot be trusted.
-fn extract_ip(req: &Request<Body>, trusted_proxies: &[IpAddr]) -> IpAddr {
+fn extract_ip(req: &Request<Body>, trusted_proxies: &[IpNet]) -> IpAddr {
     let direct = peer_ip(req);
 
-    // Only honour proxy headers when the immediate peer is a trusted proxy
-    if trusted_proxies.is_empty() || !trusted_proxies.contains(&direct) {
+    // Only honour proxy headers when the immediate peer falls within a trusted CIDR.
+    if trusted_proxies.is_empty() || !trusted_proxies.iter().any(|net| net.contains(&direct)) {
         return direct;
     }
 
@@ -237,27 +239,27 @@ pub fn make_rate_limit_layer(
 }
 
 /// Login rate limiter: 5 attempts per 60 seconds per IP.
-pub fn login_limiter(trusted_proxies: Arc<Vec<IpAddr>>) -> RateLimiter {
+pub fn login_limiter(trusted_proxies: Arc<Vec<IpNet>>) -> RateLimiter {
     RateLimiter::with_shared_proxies(5, 60, trusted_proxies)
 }
 
 /// Register rate limiter: 3 attempts per 60 seconds per IP.
-pub fn register_limiter(trusted_proxies: Arc<Vec<IpAddr>>) -> RateLimiter {
+pub fn register_limiter(trusted_proxies: Arc<Vec<IpNet>>) -> RateLimiter {
     RateLimiter::with_shared_proxies(3, 60, trusted_proxies)
 }
 
 /// Refresh token rate limiter: 10 attempts per 60 seconds per IP.
-pub fn refresh_limiter(trusted_proxies: Arc<Vec<IpAddr>>) -> RateLimiter {
+pub fn refresh_limiter(trusted_proxies: Arc<Vec<IpNet>>) -> RateLimiter {
     RateLimiter::with_shared_proxies(10, 60, trusted_proxies)
 }
 
 /// WebSocket ticket rate limiter: 10 tickets per 60 seconds per IP.
-pub fn ticket_limiter(trusted_proxies: Arc<Vec<IpAddr>>) -> RateLimiter {
+pub fn ticket_limiter(trusted_proxies: Arc<Vec<IpNet>>) -> RateLimiter {
     RateLimiter::with_shared_proxies(10, 60, trusted_proxies)
 }
 
 /// Media upload rate limiter: 30 uploads per 60 seconds per IP.
-pub fn media_upload_limiter(trusted_proxies: Arc<Vec<IpAddr>>) -> RateLimiter {
+pub fn media_upload_limiter(trusted_proxies: Arc<Vec<IpNet>>) -> RateLimiter {
     RateLimiter::with_shared_proxies(30, 60, trusted_proxies)
 }
 
@@ -265,42 +267,42 @@ pub fn media_upload_limiter(trusted_proxies: Arc<Vec<IpAddr>>) -> RateLimiter {
 /// Tighter than media uploads — avatars rarely change, and the small
 /// per-request body (avatars cap at a few MB) makes cheap-to-issue
 /// floods more attractive without a tight cap (#831).
-pub fn avatar_upload_limiter(trusted_proxies: Arc<Vec<IpAddr>>) -> RateLimiter {
+pub fn avatar_upload_limiter(trusted_proxies: Arc<Vec<IpNet>>) -> RateLimiter {
     RateLimiter::with_shared_proxies(6, 60, trusted_proxies)
 }
 
 /// Link preview rate limiter: 20 requests per 60 seconds per IP.
-pub fn link_preview_limiter(trusted_proxies: Arc<Vec<IpAddr>>) -> RateLimiter {
+pub fn link_preview_limiter(trusted_proxies: Arc<Vec<IpNet>>) -> RateLimiter {
     RateLimiter::with_shared_proxies(20, 60, trusted_proxies)
 }
 
 /// Key reset rate limiter: 3 attempts per 300 seconds per IP.
 /// Tight limit since this is a password-guessing vector.
-pub fn key_reset_limiter(trusted_proxies: Arc<Vec<IpAddr>>) -> RateLimiter {
+pub fn key_reset_limiter(trusted_proxies: Arc<Vec<IpNet>>) -> RateLimiter {
     RateLimiter::with_shared_proxies(3, 300, trusted_proxies)
 }
 
 /// Revoke-others rate limiter: 3 requests per 60 seconds per IP.
 /// Revoking every other device is a disruptive op -- cap it tightly so
 /// stolen tokens can't wipe a user's whole device list in a loop.
-pub fn revoke_others_limiter(trusted_proxies: Arc<Vec<IpAddr>>) -> RateLimiter {
+pub fn revoke_others_limiter(trusted_proxies: Arc<Vec<IpNet>>) -> RateLimiter {
     RateLimiter::with_shared_proxies(3, 60, trusted_proxies)
 }
 
 /// Edit message rate limiter: 30 edits per 60 seconds per IP.
-pub fn edit_message_limiter(trusted_proxies: Arc<Vec<IpAddr>>) -> RateLimiter {
+pub fn edit_message_limiter(trusted_proxies: Arc<Vec<IpNet>>) -> RateLimiter {
     RateLimiter::with_shared_proxies(30, 60, trusted_proxies)
 }
 
 /// Forgot-password rate limiter: 3 requests per 300 seconds per IP.
 /// Tight limit to slow brute-force username enumeration attempts.
-pub fn forgot_password_limiter(trusted_proxies: Arc<Vec<IpAddr>>) -> RateLimiter {
+pub fn forgot_password_limiter(trusted_proxies: Arc<Vec<IpNet>>) -> RateLimiter {
     RateLimiter::with_shared_proxies(3, 300, trusted_proxies)
 }
 
 /// Reset-password rate limiter: 5 requests per 300 seconds per IP.
 /// Limits token-guessing without blocking legitimate multi-tab usage.
-pub fn reset_password_limiter(trusted_proxies: Arc<Vec<IpAddr>>) -> RateLimiter {
+pub fn reset_password_limiter(trusted_proxies: Arc<Vec<IpNet>>) -> RateLimiter {
     RateLimiter::with_shared_proxies(5, 300, trusted_proxies)
 }
 
@@ -323,6 +325,13 @@ fn is_private(ip: IpAddr) -> bool {
 mod tests {
     use super::*;
     use std::net::{Ipv4Addr, Ipv6Addr};
+
+    /// Parse a bare IP or CIDR string into an `IpNet` (host route for bare IPs).
+    fn net(s: &str) -> IpNet {
+        s.parse::<IpNet>()
+            .or_else(|_| s.parse::<IpAddr>().map(IpNet::from))
+            .unwrap()
+    }
 
     #[test]
     fn test_allows_within_limit() {
@@ -437,8 +446,8 @@ mod tests {
 
     #[test]
     fn test_proxy_headers_ignored_from_untrusted_peer() {
-        let trusted = vec![IpAddr::V4(Ipv4Addr::new(172, 17, 0, 1))];
-        // Peer is NOT the trusted proxy
+        let trusted = vec![net("172.17.0.1")];
+        // Peer is NOT in any trusted CIDR
         let peer: SocketAddr = "203.0.113.99:1234".parse().unwrap();
         let mut req = req_with_peer(peer);
         req.headers_mut()
@@ -453,8 +462,7 @@ mod tests {
 
     #[test]
     fn test_x_real_ip_honoured_from_trusted_proxy() {
-        let proxy_ip = IpAddr::V4(Ipv4Addr::new(172, 17, 0, 1));
-        let trusted = vec![proxy_ip];
+        let trusted = vec![net("172.17.0.1")];
         let peer: SocketAddr = "172.17.0.1:1234".parse().unwrap();
         let mut req = req_with_peer(peer);
         req.headers_mut()
@@ -469,8 +477,7 @@ mod tests {
 
     #[test]
     fn test_xff_honoured_from_trusted_proxy() {
-        let proxy_ip = IpAddr::V4(Ipv4Addr::new(172, 17, 0, 1));
-        let trusted = vec![proxy_ip];
+        let trusted = vec![net("172.17.0.1")];
         let peer: SocketAddr = "172.17.0.1:1234".parse().unwrap();
         let mut req = req_with_peer(peer);
         req.headers_mut()
@@ -481,8 +488,7 @@ mod tests {
 
     #[test]
     fn test_xff_private_ip_rejected_even_from_trusted_proxy() {
-        let proxy_ip = IpAddr::V4(Ipv4Addr::new(172, 17, 0, 1));
-        let trusted = vec![proxy_ip];
+        let trusted = vec![net("172.17.0.1")];
         let peer: SocketAddr = "172.17.0.1:1234".parse().unwrap();
         let mut req = req_with_peer(peer);
         req.headers_mut()
@@ -498,8 +504,7 @@ mod tests {
 
     #[test]
     fn test_x_real_ip_preferred_over_xff_from_trusted_proxy() {
-        let proxy_ip = IpAddr::V4(Ipv4Addr::new(172, 17, 0, 1));
-        let trusted = vec![proxy_ip];
+        let trusted = vec![net("172.17.0.1")];
         let peer: SocketAddr = "172.17.0.1:1234".parse().unwrap();
         let mut req = req_with_peer(peer);
         req.headers_mut()
@@ -512,11 +517,90 @@ mod tests {
 
     #[test]
     fn test_with_trusted_proxies_constructor() {
-        let proxies = vec![IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))];
+        let proxies = vec![net("10.0.0.1")];
         let limiter = RateLimiter::with_trusted_proxies(5, 60, proxies.clone());
         assert_eq!(limiter.max_requests, 5);
         assert_eq!(limiter.window_secs, 60);
         assert_eq!(*limiter.trusted_proxies, proxies);
+    }
+
+    // -----------------------------------------------------------------------
+    // CIDR matching tests
+    // -----------------------------------------------------------------------
+
+    /// A peer whose IP falls inside a trusted CIDR should have its X-Real-IP
+    /// header honoured, even when the CIDR contains many addresses.
+    #[test]
+    fn test_cidr_match_honours_x_real_ip() {
+        // Trust the entire Docker default bridge subnet 172.17.0.0/16.
+        let trusted = vec!["172.17.0.0/16".parse::<IpNet>().unwrap()];
+        // Peer at 172.17.42.1 is inside that subnet.
+        let peer: SocketAddr = "172.17.42.1:1234".parse().unwrap();
+        let mut req = req_with_peer(peer);
+        req.headers_mut()
+            .insert("x-real-ip", "203.0.113.77".parse().unwrap());
+        let ip = extract_ip(&req, &trusted);
+        assert_eq!(
+            ip,
+            IpAddr::V4(Ipv4Addr::new(203, 0, 113, 77)),
+            "peer inside trusted CIDR should have X-Real-IP honoured"
+        );
+    }
+
+    /// A peer just outside the trusted CIDR must not have its proxy headers
+    /// honoured, even if the CIDR is otherwise very broad.
+    #[test]
+    fn test_cidr_mismatch_ignores_proxy_headers() {
+        // Trust only 172.17.0.0/16.
+        let trusted = vec!["172.17.0.0/16".parse::<IpNet>().unwrap()];
+        // Peer at 172.18.0.1 is outside the /16.
+        let peer: SocketAddr = "172.18.0.1:1234".parse().unwrap();
+        let mut req = req_with_peer(peer);
+        req.headers_mut()
+            .insert("x-real-ip", "203.0.113.77".parse().unwrap());
+        let ip = extract_ip(&req, &trusted);
+        assert_eq!(
+            ip,
+            IpAddr::V4(Ipv4Addr::new(172, 18, 0, 1)),
+            "peer outside trusted CIDR must not have X-Real-IP honoured"
+        );
+    }
+
+    /// With TRUSTED_PROXIES set to a CIDR, two requests arriving from the
+    /// proxy address carrying different X-Real-IP values must hit independent
+    /// rate-limit buckets.
+    #[test]
+    fn test_cidr_trusted_proxy_different_xff_get_different_buckets() {
+        // Use 127.0.0.0/8 so the test's loopback peer (127.0.0.1) is trusted.
+        let proxies: Arc<Vec<IpNet>> = Arc::new(vec!["127.0.0.0/8".parse().unwrap()]);
+        let limiter = RateLimiter::with_shared_proxies(1, 60, proxies);
+
+        let client_a: IpAddr = "203.0.113.10".parse().unwrap();
+        let client_b: IpAddr = "203.0.113.20".parse().unwrap();
+
+        // Both clients get their first request allowed because their buckets are
+        // independent.
+        assert!(limiter.check(client_a), "client_a first request allowed");
+        assert!(limiter.check(client_b), "client_b first request allowed");
+
+        // Second requests are blocked for each independently.
+        assert!(!limiter.check(client_a), "client_a second request blocked");
+        assert!(!limiter.check(client_b), "client_b second request blocked");
+    }
+
+    /// With TRUSTED_PROXIES unset (empty list), requests from different claimed
+    /// X-Real-IP values that share the same peer IP all share one bucket,
+    /// enabling DoS lockout of all users if not fixed.
+    #[test]
+    fn test_no_trusted_proxies_same_bucket_regardless_of_x_real_ip() {
+        let limiter = RateLimiter::new(1, 60);
+        // The loopback peer IP is the effective key when no proxies are trusted.
+        let peer_ip: IpAddr = "127.0.0.1".parse().unwrap();
+
+        // First request uses the peer bucket -- allowed.
+        assert!(limiter.check(peer_ip), "first check allowed");
+        // Second check on the same peer IP is blocked.
+        assert!(!limiter.check(peer_ip), "second check blocked");
     }
 
     /// With 1000 expired buckets already in the map, a `check()` for a fresh
