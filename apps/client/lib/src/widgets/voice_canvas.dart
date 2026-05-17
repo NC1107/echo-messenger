@@ -172,13 +172,38 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
     String myUserId,
     AuthState authState,
   ) {
+    final participants = _gatherParticipants(myUserId, authState);
+    final anyoneSpeaking = participants.any((p) => p.isSpeaking);
+    final size = _canvasSize();
     final widgets = <Widget>[];
+
+    for (int i = 0; i < participants.length; i++) {
+      final participant = participants[i];
+      widgets.add(
+        _buildAvatarWidget(
+          canvas,
+          participant,
+          i,
+          participants.length,
+          size,
+          anyoneSpeaking,
+          authState,
+        ),
+      );
+    }
+
+    return widgets;
+  }
+
+  List<_ParticipantInfo> _gatherParticipants(
+    String myUserId,
+    AuthState authState,
+  ) {
+    final participants = <_ParticipantInfo>[];
     final room = widget.room;
     final voiceState = widget.voiceState;
-    final size = _canvasSize();
 
-    final participants = <_ParticipantInfo>[];
-
+    // Add local participant
     final localName = authState.username ?? 'You';
     lk.VideoTrack? localVideoTrack;
     if (room != null && voiceState.isVideoEnabled) {
@@ -199,6 +224,7 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
       ),
     );
 
+    // Add remote participants
     if (room != null) {
       for (final p in room.remoteParticipants.values) {
         final uid = p.identity;
@@ -225,75 +251,72 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
       }
     }
 
-    // Phase 3c: room-level attention context computed once and passed
-    // to every puck so non-speakers fade back when someone else is on
-    // the air.  `_ParticipantInfo.isSpeaking` already does the
-    // threshold check at audioLevel > 0.05.
-    final anyoneSpeaking = participants.any((p) => p.isSpeaking);
+    return participants;
+  }
 
-    for (int i = 0; i < participants.length; i++) {
-      final participant = participants[i];
-      final pos = canvas.avatarPositions[participant.userId];
+  Widget _buildAvatarWidget(
+    CanvasState canvas,
+    _ParticipantInfo participant,
+    int index,
+    int totalParticipants,
+    Size canvasSize,
+    bool anyoneSpeaking,
+    AuthState authState,
+  ) {
+    final pos = canvas.avatarPositions[participant.userId];
+    final defaultPos = _defaultAvatarPos(
+      participant.userId,
+      totalParticipants,
+      index,
+    );
+    final normalized = pos ?? defaultPos;
+    final offset = _toLocal(CanvasPoint(x: normalized.x, y: normalized.y));
 
-      final defaultPos = _defaultAvatarPos(
-        participant.userId,
-        participants.length,
-        i,
-      );
+    final left = (offset.dx - _kAvatarHalfSize).clamp(
+      0.0,
+      canvasSize.width > _kAvatarSize ? canvasSize.width - _kAvatarSize : 0.0,
+    );
+    final top = (offset.dy - _kAvatarHalfSize).clamp(
+      0.0,
+      canvasSize.height > _kAvatarSize ? canvasSize.height - _kAvatarSize : 0.0,
+    );
 
-      final normalized = pos ?? defaultPos;
-      final offset = _toLocal(CanvasPoint(x: normalized.x, y: normalized.y));
+    final attention = attentionFor(
+      isSpeaking: participant.isSpeaking,
+      anyoneElseSpeaking: anyoneSpeaking && !participant.isSpeaking,
+    );
 
-      final left = (offset.dx - _kAvatarHalfSize).clamp(
-        0.0,
-        size.width > _kAvatarSize ? size.width - _kAvatarSize : 0.0,
-      );
-      final top = (offset.dy - _kAvatarHalfSize).clamp(
-        0.0,
-        size.height > _kAvatarSize ? size.height - _kAvatarSize : 0.0,
-      );
-
-      final attention = attentionFor(
-        isSpeaking: participant.isSpeaking,
-        anyoneElseSpeaking: anyoneSpeaking && !participant.isSpeaking,
-      );
-
-      widgets.add(
-        Positioned(
-          left: left,
-          top: top,
-          child: _DraggableAvatar(
-            key: ValueKey('avatar-${participant.userId}'),
-            participant: participant,
-            canvasSize: size,
-            currentPos: CanvasPoint(x: normalized.x, y: normalized.y),
-            attention: attention,
-            httpHeaders: authState.token != null
-                ? {'Authorization': 'Bearer ${authState.token}'}
-                : null,
-            onDrag: (norm) {
-              ref
-                  .read(canvasProvider.notifier)
-                  .moveLocalAvatar(participant.userId, norm);
-            },
-            onDragEnd: (norm) {
-              ref
-                  .read(canvasProvider.notifier)
-                  .commitLocalAvatarMove(participant.userId, norm);
-            },
-            draggable: true,
-            onDoubleTap: participant.videoTrack != null
-                ? () => widget.onVideoDoubleTap?.call(
-                    participant.videoTrack!,
-                    participant.mirror,
-                  )
-                : null,
-          ),
-        ),
-      );
-    }
-
-    return widgets;
+    return Positioned(
+      left: left,
+      top: top,
+      child: _DraggableAvatar(
+        key: ValueKey('avatar-${participant.userId}'),
+        participant: participant,
+        canvasSize: canvasSize,
+        currentPos: CanvasPoint(x: normalized.x, y: normalized.y),
+        attention: attention,
+        httpHeaders: authState.token != null
+            ? {'Authorization': 'Bearer ${authState.token}'}
+            : null,
+        onDrag: (norm) {
+          ref
+              .read(canvasProvider.notifier)
+              .moveLocalAvatar(participant.userId, norm);
+        },
+        onDragEnd: (norm) {
+          ref
+              .read(canvasProvider.notifier)
+              .commitLocalAvatarMove(participant.userId, norm);
+        },
+        draggable: true,
+        onDoubleTap: participant.videoTrack != null
+            ? () => widget.onVideoDoubleTap?.call(
+                participant.videoTrack!,
+                participant.mirror,
+              )
+            : null,
+      ),
+    );
   }
 
   AvatarPosition _defaultAvatarPos(String userId, int total, int index) {
@@ -652,55 +675,63 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
   @override
   Widget build(BuildContext context) {
     final info = widget.participant;
+    final initial = info.name.isNotEmpty ? info.name[0].toUpperCase() : '?';
+    final scales = _computeAttentionScales();
+    final hasVideo = info.videoTrack != null;
+    final innerContent = _buildInnerContent(info, initial);
+    final tile = _buildAvatarTile(info, innerContent, hasVideo);
+    final avatar = _buildAnimatedAvatar(info, tile, scales);
+    final avatarWithTrail = _buildAvatarWithTrail(avatar);
+    final content = _buildContent(info, avatarWithTrail);
+
+    if (!widget.draggable) return content;
+
+    return _buildDraggableWrapper(content);
+  }
+
+  ({double scale, double opacity}) _computeAttentionScales() {
+    if (_reduceMotion) {
+      return (scale: 1.0, opacity: 1.0);
+    }
+    return switch (widget.attention) {
+      ParticipantAttention.speaking => (scale: 1.16, opacity: 1.0),
+      ParticipantAttention.faded => (scale: 0.92, opacity: 0.62),
+      ParticipantAttention.idle => (scale: 1.0, opacity: 1.0),
+    };
+  }
+
+  Widget _buildInnerContent(_ParticipantInfo info, String initial) {
+    final hasVideo = info.videoTrack != null;
+    if (hasVideo) {
+      return lk.VideoTrackRenderer(
+        info.videoTrack!,
+        fit: lk.VideoViewFit.cover,
+        mirrorMode: info.mirror
+            ? lk.VideoViewMirrorMode.mirror
+            : lk.VideoViewMirrorMode.off,
+      );
+    }
+    if (info.avatarUrl != null) {
+      return CachedNetworkImage(
+        imageUrl: info.avatarUrl!,
+        httpHeaders: widget.httpHeaders,
+        fit: BoxFit.cover,
+        placeholder: (_, _) => _initialsWidget(initial),
+        errorWidget: (_, _, _) => _initialsWidget(initial),
+      );
+    }
+    return _initialsWidget(initial);
+  }
+
+  Widget _buildAvatarTile(
+    _ParticipantInfo info,
+    Widget innerContent,
+    bool hasVideo,
+  ) {
     final hue = (info.userId.hashCode % 360).abs().toDouble();
     final avatarColor = HSLColor.fromAHSL(1.0, hue, 0.5, 0.35).toColor();
-    final initial = info.name.isNotEmpty ? info.name[0].toUpperCase() : '?';
 
-    // Phase 3c: scale + opacity follow the room-level attention so
-    // non-speakers fade back when someone else has the floor.  Reduce-
-    // motion users get the flat 1.0/1.0 baseline; the speaking ring
-    // alone carries the elevation signal in that mode.
-    final attention = widget.attention;
-    final double targetScale;
-    final double targetOpacity;
-    if (_reduceMotion) {
-      targetScale = 1.0;
-      targetOpacity = 1.0;
-    } else {
-      switch (attention) {
-        case ParticipantAttention.speaking:
-          targetScale = 1.16;
-          targetOpacity = 1.0;
-        case ParticipantAttention.faded:
-          targetScale = 0.92;
-          targetOpacity = 0.62;
-        case ParticipantAttention.idle:
-          targetScale = 1.0;
-          targetOpacity = 1.0;
-      }
-    }
-
-    final hasVideo = info.videoTrack != null;
-
-    final innerContent = hasVideo
-        ? lk.VideoTrackRenderer(
-            info.videoTrack!,
-            fit: lk.VideoViewFit.cover,
-            mirrorMode: info.mirror
-                ? lk.VideoViewMirrorMode.mirror
-                : lk.VideoViewMirrorMode.off,
-          )
-        : info.avatarUrl != null
-        ? CachedNetworkImage(
-            imageUrl: info.avatarUrl!,
-            httpHeaders: widget.httpHeaders,
-            fit: BoxFit.cover,
-            placeholder: (_, _) => _initialsWidget(initial),
-            errorWidget: (_, _, _) => _initialsWidget(initial),
-          )
-        : _initialsWidget(initial);
-
-    final tile = Container(
+    return Container(
       width: _kAvatarSize,
       height: _kAvatarSize,
       decoration: BoxDecoration(
@@ -720,13 +751,19 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
               ],
             ),
     );
+  }
 
-    final avatar = AnimatedOpacity(
-      opacity: targetOpacity,
+  Widget _buildAnimatedAvatar(
+    _ParticipantInfo info,
+    Widget tile,
+    ({double scale, double opacity}) scales,
+  ) {
+    return AnimatedOpacity(
+      opacity: scales.opacity,
       duration: MotionDurations.standard,
       curve: MotionCurves.entrance,
       child: AnimatedScale(
-        scale: targetScale,
+        scale: scales.scale,
         duration: MotionDurations.quick,
         curve: MotionCurves.emphasis,
         child: VoiceSpeakingRing(
@@ -749,12 +786,9 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
         ),
       ),
     );
+  }
 
-    // Phase 3a sub-slice 2: paint the presence trail BEHIND the
-    // avatar circle.  CustomPaint is sized to the avatar but draws
-    // freely (negative offsets) — the surrounding `Stack(Clip.none)`
-    // lets ghost circles render to the left/right/up/down of the
-    // puck without being clipped at the immediate stack bounds.
+  Widget _buildAvatarWithTrail(Widget avatar) {
     final trailSamples = _reduceMotion
         ? const <RenderedTrailSample>[]
         : _trail.render(
@@ -762,27 +796,32 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
             canvasSize: widget.canvasSize,
             now: DateTime.now(),
           );
-    final avatarWithTrail = trailSamples.isEmpty
-        ? avatar
-        : Stack(
-            clipBehavior: Clip.none,
-            alignment: Alignment.center,
-            children: [
-              IgnorePointer(
-                child: CustomPaint(
-                  size: const Size(_kAvatarSize, _kAvatarSize),
-                  painter: _TrailPainter(
-                    samples: trailSamples,
-                    color: EchoTheme.online,
-                    radius: _kAvatarHalfSize * 0.45,
-                  ),
-                ),
-              ),
-              avatar,
-            ],
-          );
 
-    final content = Column(
+    if (trailSamples.isEmpty) {
+      return avatar;
+    }
+
+    return Stack(
+      clipBehavior: Clip.none,
+      alignment: Alignment.center,
+      children: [
+        IgnorePointer(
+          child: CustomPaint(
+            size: const Size(_kAvatarSize, _kAvatarSize),
+            painter: _TrailPainter(
+              samples: trailSamples,
+              color: EchoTheme.online,
+              radius: _kAvatarHalfSize * 0.45,
+            ),
+          ),
+        ),
+        avatar,
+      ],
+    );
+  }
+
+  Widget _buildContent(_ParticipantInfo info, Widget avatarWithTrail) {
+    return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         avatarWithTrail,
@@ -805,9 +844,9 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
         ),
       ],
     );
+  }
 
-    if (!widget.draggable) return content;
-
+  Widget _buildDraggableWrapper(Widget content) {
     return MouseRegion(
       cursor: SystemMouseCursors.grab,
       child: GestureDetector(
@@ -822,9 +861,6 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
             x: (base.x + dx).clamp(0.0, 1.0),
             y: (base.y + dy).clamp(0.0, 1.0),
           );
-          // Record where the puck *was* before this update so the
-          // trail tracks the actual motion path; `_localPos` becomes
-          // the new "current" used by the trail painter.
           _pushTrailSample(base);
           _localPos = newPos;
           widget.onDrag(newPos);

@@ -80,8 +80,6 @@ extension MessageHandlersOn on WsMessageHandler {
     }
 
     final cryptoState = ref.read(cryptoProvider);
-
-    // Check if this conversation is already known locally
     final conversation = ref
         .read(conversationsProvider)
         .conversations
@@ -90,79 +88,48 @@ extension MessageHandlersOn on WsMessageHandler {
     final isKnownConversation = conversation != null;
 
     // #557: server marks replay frames `undecryptable: true` when this device
-    // has no per-device ciphertext row.  Render an explicit placeholder
-    // instead of running decrypt over a foreign-device wire (which would
-    // poison the local ratchet state and produce a generic "out of sync"
-    // banner).  Skip the Hive cache write so a future fix-up can replace it.
-    // The literal '[Encrypted for another device of this account]' string is
-    // recognised by chat_provider.dart's `_placeholderContents` (#430).
+    // has no per-device ciphertext row. Handle as device-mismatch placeholder.
     if (json['undecryptable'] == true) {
-      final placeholder = ChatMessage.fromServerJson({
-        ...json,
-        'content': '[Encrypted for another device of this account]',
-      }, myUserId).copyWith(isEncrypted: true);
-      ref.read(chatProvider.notifier).addMessage(placeholder);
-      ref
-          .read(conversationsProvider.notifier)
-          .onNewMessage(
-            conversationId: conversationId,
-            content: 'Encrypted message',
-            timestamp: timestamp,
-            senderUsername: senderUsername,
-          );
-      if (!isKnownConversation) {
-        ref.read(conversationsProvider.notifier).loadConversations();
-      }
+      _handleUndecryptableFrame(
+        json,
+        myUserId,
+        conversationId,
+        timestamp,
+        senderUsername,
+        isKnownConversation,
+      );
       return;
     }
 
     // #434: detect plaintext payloads up-front so the "Securing message..."
     // placeholder is never shown for content that doesn't need decryption.
-    // Plaintext group messages (the current default — group E2EE is gated
-    // behind `is_encrypted=true` per #344) used to get stuck on the
-    // placeholder forever when crypto hadn't initialised yet.  A payload
-    // is plaintext when it lacks the `GRP1:` group-cipher prefix AND does
-    // not look like base64 ciphertext AND the conversation is either a
-    // known plaintext group or a 1:1 with a clearly plaintext body.
     final isGroupEncryptedWire = rawContent.startsWith(groupEncryptedPrefix);
-    final isPlaintextGroup =
-        (conversation?.isGroup ?? false) &&
-        !(conversation?.isEncrypted ?? false) &&
-        !isGroupEncryptedWire;
-    final isObviouslyPlaintext =
-        !isGroupEncryptedWire && !looksEncrypted(rawContent);
+    final isPlaintextGroup = _detectPlaintextGroup(
+      conversation,
+      isGroupEncryptedWire,
+    );
+    final isObviouslyPlaintext = _detectObviouslyPlaintext(
+      isGroupEncryptedWire,
+      rawContent,
+    );
 
     if (isPlaintextGroup ||
         (isObviouslyPlaintext && !cryptoState.isInitialized)) {
-      // Render plaintext directly. No placeholder, no queue.
-      final msg = ChatMessage.fromServerJson(json, myUserId);
-      ref.read(chatProvider.notifier).addMessage(msg);
-      if (!msg.id.startsWith('pending_')) {
-        MessageCache.cacheMessages(conversationId, [msg]);
-      }
-      ref
-          .read(conversationsProvider.notifier)
-          .onNewMessage(
-            conversationId: conversationId,
-            content: rawContent,
-            timestamp: timestamp,
-            senderUsername: senderUsername,
-          );
-      if (!isKnownConversation) {
-        ref.read(conversationsProvider.notifier).loadConversations();
-      }
-      if (fromUserId != myUserId) {
-        _notifyIfAllowed(conversationId, senderUsername, rawContent);
-      }
+      _deliverPlaintextMessage(
+        json,
+        myUserId,
+        rawContent,
+        conversationId,
+        timestamp,
+        senderUsername,
+        fromUserId,
+        isKnownConversation,
+      );
       return;
     }
 
     if (cryptoState.isInitialized) {
-      final crypto = ref.read(cryptoServiceProvider);
-      final token = ref.read(authProvider).token ?? '';
-      crypto.setToken(token);
-      _decryptAndDeliverWithPreview(
-        crypto,
+      _deliverEncryptedMessageNow(
         json,
         rawContent,
         fromUserId,
@@ -170,32 +137,16 @@ extension MessageHandlersOn on WsMessageHandler {
         conversationId,
         timestamp,
         senderUsername,
-        fromDeviceId: fromDeviceId,
+        fromDeviceId,
       );
     } else {
-      // Crypto not ready yet — show a placeholder and queue for decryption.
-      // The literal 'Securing message...' string is recognised by
-      // chat_provider.dart's `_placeholderContents` so the decrypted
-      // version replaces it in place when the queue drains (#430).
-      final placeholder = ChatMessage.fromServerJson({
-        ...json,
-        'content': 'Securing message...',
-      }, myUserId).copyWith(isEncrypted: true);
-      ref.read(chatProvider.notifier).addMessage(placeholder);
-
-      // Queue the raw JSON so it can be decrypted once crypto initializes.
-      // Bind the entry to the current user so a logout + re-login cannot
-      // leak this ciphertext into another account's state (#830 finding 4).
-      _enqueuePendingDecrypt(json, myUserId);
-
-      ref
-          .read(conversationsProvider.notifier)
-          .onNewMessage(
-            conversationId: conversationId,
-            content: 'Encrypted message',
-            timestamp: timestamp,
-            senderUsername: senderUsername,
-          );
+      _queueEncryptedMessageForLater(
+        json,
+        myUserId,
+        conversationId,
+        timestamp,
+        senderUsername,
+      );
     }
 
     // Only do a full HTTP reload if this is a new conversation we don't have
@@ -205,12 +156,139 @@ extension MessageHandlersOn on WsMessageHandler {
     }
 
     // When crypto is NOT initialized, notify with raw content (it's plaintext
-    // in that case).  When crypto IS initialized, the notification fires AFTER
-    // decryption inside _decryptAndDeliverWithPreview so users never see
-    // encrypted ciphertext in their notifications.
+    // in that case). When crypto IS initialized, the notification fires AFTER
+    // decryption inside _decryptAndDeliverWithPreview.
     if (!cryptoState.isInitialized && fromUserId != myUserId) {
       _notifyIfAllowed(conversationId, senderUsername, rawContent);
     }
+  }
+
+  bool _detectPlaintextGroup(
+    Conversation? conversation,
+    bool isGroupEncryptedWire,
+  ) {
+    return (conversation?.isGroup ?? false) &&
+        !(conversation?.isEncrypted ?? false) &&
+        !isGroupEncryptedWire;
+  }
+
+  bool _detectObviouslyPlaintext(bool isGroupEncryptedWire, String rawContent) {
+    return !isGroupEncryptedWire && !looksEncrypted(rawContent);
+  }
+
+  void _handleUndecryptableFrame(
+    Map<String, dynamic> json,
+    String myUserId,
+    String conversationId,
+    String timestamp,
+    String senderUsername,
+    bool isKnownConversation,
+  ) {
+    final placeholder = ChatMessage.fromServerJson({
+      ...json,
+      'content': '[Encrypted for another device of this account]',
+    }, myUserId).copyWith(isEncrypted: true);
+    ref.read(chatProvider.notifier).addMessage(placeholder);
+    ref
+        .read(conversationsProvider.notifier)
+        .onNewMessage(
+          conversationId: conversationId,
+          content: 'Encrypted message',
+          timestamp: timestamp,
+          senderUsername: senderUsername,
+        );
+    if (!isKnownConversation) {
+      ref.read(conversationsProvider.notifier).loadConversations();
+    }
+  }
+
+  void _deliverPlaintextMessage(
+    Map<String, dynamic> json,
+    String myUserId,
+    String rawContent,
+    String conversationId,
+    String timestamp,
+    String senderUsername,
+    String fromUserId,
+    bool isKnownConversation,
+  ) {
+    final msg = ChatMessage.fromServerJson(json, myUserId);
+    ref.read(chatProvider.notifier).addMessage(msg);
+    if (!msg.id.startsWith('pending_')) {
+      MessageCache.cacheMessages(conversationId, [msg]);
+    }
+    ref
+        .read(conversationsProvider.notifier)
+        .onNewMessage(
+          conversationId: conversationId,
+          content: rawContent,
+          timestamp: timestamp,
+          senderUsername: senderUsername,
+        );
+    if (!isKnownConversation) {
+      ref.read(conversationsProvider.notifier).loadConversations();
+    }
+    if (fromUserId != myUserId) {
+      _notifyIfAllowed(conversationId, senderUsername, rawContent);
+    }
+  }
+
+  void _deliverEncryptedMessageNow(
+    Map<String, dynamic> json,
+    String rawContent,
+    String fromUserId,
+    String myUserId,
+    String conversationId,
+    String timestamp,
+    String senderUsername,
+    int? fromDeviceId,
+  ) {
+    final crypto = ref.read(cryptoServiceProvider);
+    final token = ref.read(authProvider).token ?? '';
+    crypto.setToken(token);
+    _decryptAndDeliverWithPreview(
+      crypto,
+      json,
+      rawContent,
+      fromUserId,
+      myUserId,
+      conversationId,
+      timestamp,
+      senderUsername,
+      fromDeviceId: fromDeviceId,
+    );
+  }
+
+  void _queueEncryptedMessageForLater(
+    Map<String, dynamic> json,
+    String myUserId,
+    String conversationId,
+    String timestamp,
+    String senderUsername,
+  ) {
+    // Crypto not ready yet — show a placeholder and queue for decryption.
+    // The literal 'Securing message...' string is recognised by
+    // chat_provider.dart's `_placeholderContents` so the decrypted
+    // version replaces it in place when the queue drains (#430).
+    final placeholder = ChatMessage.fromServerJson({
+      ...json,
+      'content': 'Securing message...',
+    }, myUserId).copyWith(isEncrypted: true);
+    ref.read(chatProvider.notifier).addMessage(placeholder);
+
+    // Queue the raw JSON so it can be decrypted once crypto initializes.
+    // Bind the entry to the current user so a logout + re-login cannot
+    // leak this ciphertext into another account's state (#830 finding 4).
+    _enqueuePendingDecrypt(json, myUserId);
+
+    ref
+        .read(conversationsProvider.notifier)
+        .onNewMessage(
+          conversationId: conversationId,
+          content: 'Encrypted message',
+          timestamp: timestamp,
+          senderUsername: senderUsername,
+        );
   }
 
   /// Handle a `self_message` event: an outgoing message sent from another
