@@ -518,9 +518,16 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       );
       unawaited(
         VoiceCallKitService.instance.startCall(
-          // CallKit identifies the call by id; use the room's conversation
-          // + channel pair so a future "rejoin same room" call is a no-op.
-          callId: '$conversationId:$channelId',
+          // CallKit's iOS CXCall ID is required to be a valid UUID.
+          // flutter_callkit_incoming's Swift handler does
+          // `UUID(uuidString: params.id)!` and force-unwraps — passing the
+          // previous `"$conversationId:$channelId"` composite was not a
+          // valid UUID, so the force-unwrap crashed with EXC_BREAKPOINT
+          // (Swift fatal error) inside CallManager.startCall, killing the
+          // app every iOS voice join. channelId is already a UUID and is
+          // unique per voice room, which preserves the "rejoin same room
+          // is a no-op" dedup semantic.
+          callId: channelId,
           channelName: resolvedChannelName,
           isMuted: !micEnabled,
         ),

@@ -613,32 +613,22 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           Expanded(
             child: Row(
               children: [
-                if (!isMobile) ...[
-                  const ConnectionStatusBadge(child: EchoLogoIcon(size: 22)),
-                  const SizedBox(width: 8),
-                ],
-                if (isMobile)
-                  ConnectionStatusBadge(
-                    child: Text(
-                      'Chats',
-                      style: TextStyle(
-                        color: context.textPrimary,
-                        fontSize: titleSize,
-                        fontWeight: titleWeight,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                  )
-                else
-                  Text(
-                    'Echo',
-                    style: TextStyle(
-                      color: context.textPrimary,
-                      fontSize: titleSize,
-                      fontWeight: titleWeight,
-                      letterSpacing: 0,
-                    ),
+                // Anchor the connection status dot to a small fixed-size
+                // icon on every layout. Wrapping it around the large
+                // "Chats" text on mobile placed the dot at the lower-right
+                // of the "s" — visually awkward; the icon variant matches
+                // desktop and gives the dot a predictable anchor.
+                const ConnectionStatusBadge(child: EchoLogoIcon(size: 22)),
+                const SizedBox(width: 10),
+                Text(
+                  isMobile ? 'Chats' : 'Echo',
+                  style: TextStyle(
+                    color: context.textPrimary,
+                    fontSize: titleSize,
+                    fontWeight: titleWeight,
+                    letterSpacing: isMobile ? -0.5 : 0,
                   ),
+                ),
               ],
             ),
           ),
