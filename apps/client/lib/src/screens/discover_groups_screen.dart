@@ -41,7 +41,11 @@ class _PublicGroup {
 }
 
 class DiscoverGroupsScreen extends ConsumerStatefulWidget {
-  const DiscoverGroupsScreen({super.key});
+  /// Optional callback invoked when the user taps the "New group" FAB.
+  /// When null the FAB is hidden.
+  final VoidCallback? onCreateGroup;
+
+  const DiscoverGroupsScreen({super.key, this.onCreateGroup});
 
   @override
   ConsumerState<DiscoverGroupsScreen> createState() =>
@@ -364,6 +368,17 @@ class _DiscoverGroupsScreenState extends ConsumerState<DiscoverGroupsScreen> {
     final canPop = Navigator.of(context).canPop();
     return Scaffold(
       backgroundColor: context.mainBg,
+      floatingActionButton: widget.onCreateGroup != null
+          ? Semantics(
+              label: 'Create new group',
+              button: true,
+              child: FloatingActionButton(
+                onPressed: widget.onCreateGroup,
+                tooltip: 'Create new group',
+                child: const Icon(Icons.group_add_outlined),
+              ),
+            )
+          : null,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,

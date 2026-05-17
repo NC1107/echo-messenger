@@ -129,11 +129,17 @@ class SettingsRootView extends ConsumerWidget {
   final void Function(SettingsSection) onTap;
   final VoidCallback onLogout;
 
+  /// When provided, a "Saved Messages" row is shown in the account
+  /// preferences section that calls this callback instead of navigating
+  /// to a settings sub-section.
+  final VoidCallback? onSavedMessages;
+
   const SettingsRootView({
     super.key,
     this.selected,
     required this.onTap,
     required this.onLogout,
+    this.onSavedMessages,
   });
 
   @override
@@ -158,6 +164,13 @@ class SettingsRootView extends ConsumerWidget {
                 iconColor: const Color(0xFF22C55E),
                 section: SettingsSection.status,
               ),
+              if (onSavedMessages != null)
+                CardRow(
+                  icon: Icons.bookmark_outline,
+                  iconColor: const Color(0xFF0EA5E9),
+                  label: 'Saved Messages',
+                  onTap: onSavedMessages!,
+                ),
               _row(
                 context,
                 icon: Icons.palette_outlined,
@@ -396,6 +409,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (mounted) context.go('/login');
   }
 
+  void _openSavedMessages() {
+    context.push('/saved');
+  }
+
   bool get _isMobile => Responsive.isMobile(context);
 
   @override
@@ -476,6 +493,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onTap: (section) =>
                     setState(() => _mobileDetailSection = section),
                 onLogout: _logout,
+                onSavedMessages: _openSavedMessages,
               ),
             ),
           ],
@@ -527,6 +545,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     onTap: (section) =>
                         setState(() => _selectedSection = section),
                     onLogout: _logout,
+                    onSavedMessages: _openSavedMessages,
                   ),
                 ),
               ],

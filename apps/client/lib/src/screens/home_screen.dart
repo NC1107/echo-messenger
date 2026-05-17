@@ -61,7 +61,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   Conversation? _selectedConversation;
   String? _pendingMessageId;
   // Slice 7: members panel defaults to on so group context (roles, online
@@ -109,6 +109,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   @override
   void initState() {
     super.initState();
+    _swipeSnapController =
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 150),
+        )..addListener(() {
+          if (mounted) {
+            setState(() => _swipeProgress = _swipeSnapController.value);
+          }
+        });
     _voiceRtcNotifier = ref.read(voiceRtcProvider.notifier);
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -131,6 +140,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     unregisterBeforeUnload();
     _pendingRefreshTimer?.cancel();
     _searchFocusNode.dispose();
+    _swipeSnapController.dispose();
     super.dispose();
   }
 
@@ -480,7 +490,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             height: (size.height * 0.7).clamp(400, 720).toDouble(),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: const DiscoverGroupsScreen(),
+              child: DiscoverGroupsScreen(onCreateGroup: _openCreateGroup),
             ),
           ),
         );
@@ -1338,18 +1348,81 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           child: GestureDetector(
             onHorizontalDragStart: (startDetails) {
               _swipeStartX = startDetails.globalPosition.dx;
+              _swipeSnapController.stop();
             },
             onHorizontalDragUpdate: (details) {
-              if (_swipeStartX != null &&
-                  _swipeStartX! < _edgeSwipeZone &&
-                  details.globalPosition.dx - _swipeStartX! >
-                      _edgeSwipeThreshold) {
+              if (_swipeStartX == null) return;
+              if (_swipeStartX! >= _edgeSwipeZone) return;
+
+              final deltaX = details.globalPosition.dx - _swipeStartX!;
+
+              if (deltaX > _edgeSwipeThreshold) {
+                // Threshold crossed — complete navigation and reset.
                 _swipeStartX = null;
-                setState(() => _narrowPanelIndex = 0);
+                setState(() {
+                  _swipeProgress = 0.0;
+                  _narrowPanelIndex = 0;
+                });
+                return;
               }
+
+              // Update in-progress feedback.
+              final progress =
+                  (deltaX.clamp(0.0, _edgeSwipeThreshold) /
+                  _edgeSwipeThreshold);
+              setState(() => _swipeProgress = progress);
             },
-            onHorizontalDragEnd: (_) {},
-            child: chatContent,
+            onHorizontalDragEnd: (_) {
+              if (_swipeProgress > 0.0) {
+                // Snap back from current progress to 0 over 150 ms.
+                _swipeSnapController.value = _swipeProgress;
+                _swipeSnapController.animateBack(0.0, curve: Curves.easeOut);
+              }
+              _swipeStartX = null;
+            },
+            child: Stack(
+              children: [
+                chatContent,
+                // Left-edge peek panel: a narrow strip that slides in from the
+                // left proportionally to swipe progress.  At progress=1 it is
+                // 80 px wide and fully visible; it fades out as progress falls.
+                if (_swipeProgress > 0.0)
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: 80,
+                    child: Transform.translate(
+                      offset: Offset((1.0 - _swipeProgress) * -80.0, 0),
+                      child: Opacity(
+                        opacity: _swipeProgress,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.surface,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(
+                                  alpha: 0.18 * _swipeProgress,
+                                ),
+                                blurRadius: 12,
+                                offset: const Offset(4, 0),
+                              ),
+                            ],
+                          ),
+                          child: Center(
+                            child: Icon(
+                              Icons.chevron_right_rounded,
+                              color: Theme.of(context).colorScheme.onSurface
+                                  .withValues(alpha: 0.6 * _swipeProgress),
+                              size: 28,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1390,7 +1463,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final Widget body;
     switch (_mobileTabIndex) {
       case 1:
-        body = const DiscoverGroupsScreen();
+        body = DiscoverGroupsScreen(onCreateGroup: _openCreateGroup);
       case 2:
         body = const ContactsScreen();
       case 3:
@@ -1547,6 +1620,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   double? _swipeStartX;
+
+  // Progress of the in-flight edge swipe: 0.0 (idle) → 1.0 (threshold reached).
+  // Drives the left-edge peek panel translation feedback.
+  double _swipeProgress = 0.0;
+
+  // Snap-back animation: plays from current _swipeProgress down to 0.0 when
+  // the drag ends without crossing the threshold.  Initialized in initState.
+  late final AnimationController _swipeSnapController;
 
   Widget _buildEmptyState() {
     return Container(
