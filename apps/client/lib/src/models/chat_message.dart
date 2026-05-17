@@ -175,22 +175,25 @@ class ChatMessage {
       return (uuid, username);
     }
 
-    const joinedTag = '__system__:member_joined:';
-    if (sentinel.startsWith(joinedTag)) {
-      final parts = parseUuidUsername(joinedTag);
-      if (parts == null) return null;
+    // Helper to format a system event message with first-person handling.
+    String formatEvent(String tag, String verbPhrase) {
+      final parts = parseUuidUsername(tag);
+      if (parts == null) return '';
       final (uuid, username) = parts;
       final isMe = myUserId != null && uuid == myUserId;
-      return '${isMe ? 'You' : username} joined the group';
+      return '${isMe ? 'You' : username} $verbPhrase';
+    }
+
+    const joinedTag = '__system__:member_joined:';
+    if (sentinel.startsWith(joinedTag)) {
+      final result = formatEvent(joinedTag, 'joined the group');
+      return result.isNotEmpty ? result : null;
     }
 
     const leftTag = '__system__:member_left:';
     if (sentinel.startsWith(leftTag)) {
-      final parts = parseUuidUsername(leftTag);
-      if (parts == null) return null;
-      final (uuid, username) = parts;
-      final isMe = myUserId != null && uuid == myUserId;
-      return '${isMe ? 'You' : username} left the group';
+      final result = formatEvent(leftTag, 'left the group');
+      return result.isNotEmpty ? result : null;
     }
 
     const removedTag = '__system__:member_removed:';

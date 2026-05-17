@@ -189,109 +189,112 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
-                  child: Text(
-                    displayName,
-                    style: GoogleFonts.inter(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: context.textPrimary,
-                    ),
-                  ),
-                ),
-                Divider(color: context.border, height: 8),
-                // Pin / Unpin
-                if (widget.onTogglePin != null)
-                  ListTile(
-                    leading: Icon(
-                      widget.isPinned
-                          ? Icons.push_pin
-                          : Icons.push_pin_outlined,
-                      color: context.textSecondary,
-                    ),
-                    title: Text(
-                      widget.isPinned ? 'Unpin' : 'Pin to top',
-                      style: GoogleFonts.inter(
-                        color: context.textPrimary,
-                        fontSize: 14,
-                      ),
-                    ),
-                    onTap: () {
-                      Navigator.of(sheetContext).pop();
-                      widget.onTogglePin!();
-                    },
-                  ),
-                // Mute / Unmute
-                Consumer(
-                  builder: (ctx, sheetRef, _) {
-                    final live = sheetRef
-                        .watch(conversationsProvider)
-                        .conversations
-                        .where((c) => c.id == conv.id)
-                        .firstOrNull;
-                    final currentMuted = live?.isMuted ?? conv.isMuted;
-                    return ListTile(
-                      leading: Icon(
-                        currentMuted
-                            ? Icons.notifications_outlined
-                            : Icons.notifications_off_outlined,
-                        color: context.textSecondary,
-                      ),
-                      title: Text(
-                        currentMuted ? 'Unmute' : 'Mute',
-                        style: GoogleFonts.inter(
-                          color: context.textPrimary,
-                          fontSize: 14,
-                        ),
-                      ),
-                      onTap: () async {
-                        Navigator.of(sheetContext).pop();
-                        final success = await ref
-                            .read(conversationsProvider.notifier)
-                            .toggleMute(conv.id);
-                        if (!success && mounted) {
-                          ToastService.show(
-                            context,
-                            'Failed to update mute settings',
-                            type: ToastType.error,
-                          );
-                        }
-                      },
-                    );
-                  },
-                ),
-                // Leave (group) / Delete (DM)
-                if (widget.onLeave != null)
-                  ListTile(
-                    leading: Icon(
-                      conv.isGroup ? Icons.exit_to_app : Icons.delete_outline,
-                      color: EchoTheme.danger,
-                    ),
-                    title: Text(
-                      conv.isGroup ? 'Leave Group' : 'Delete Conversation',
-                      style: GoogleFonts.inter(
-                        color: EchoTheme.danger,
-                        fontSize: 14,
-                      ),
-                    ),
-                    onTap: () {
-                      Navigator.of(sheetContext).pop();
-                      widget.onLeave!();
-                    },
-                  ),
-              ],
-            ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildSheetHeader(context, displayName),
+              Divider(color: context.border, height: 8),
+              if (widget.onTogglePin != null) _buildPinTile(sheetContext),
+              _buildMuteTile(conv, sheetContext),
+              if (widget.onLeave != null) _buildLeaveTile(conv, sheetContext),
+            ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSheetHeader(BuildContext context, String displayName) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+      child: Text(
+        displayName,
+        style: GoogleFonts.inter(
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+          color: context.textPrimary,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPinTile(BuildContext sheetContext) {
+    return ListTile(
+      leading: Icon(
+        widget.isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+        color: context.textSecondary,
+      ),
+      title: Text(
+        widget.isPinned ? 'Unpin' : 'Pin to top',
+        style: GoogleFonts.inter(color: context.textPrimary, fontSize: 14),
+      ),
+      onTap: () {
+        Navigator.of(sheetContext).pop();
+        widget.onTogglePin!();
+      },
+    );
+  }
+
+  Widget _buildMuteTile(Conversation conv, BuildContext sheetContext) {
+    return Consumer(
+      builder: (ctx, sheetRef, _) {
+        final live = sheetRef
+            .watch(conversationsProvider)
+            .conversations
+            .where((c) => c.id == conv.id)
+            .firstOrNull;
+        final currentMuted = live?.isMuted ?? conv.isMuted;
+        return ListTile(
+          leading: Icon(
+            currentMuted
+                ? Icons.notifications_outlined
+                : Icons.notifications_off_outlined,
+            color: context.textSecondary,
+          ),
+          title: Text(
+            currentMuted ? 'Unmute' : 'Mute',
+            style: GoogleFonts.inter(color: context.textPrimary, fontSize: 14),
+          ),
+          onTap: () => _onMuteTileTap(conv, sheetContext),
         );
+      },
+    );
+  }
+
+  Future<void> _onMuteTileTap(
+    Conversation conv,
+    BuildContext sheetContext,
+  ) async {
+    Navigator.of(sheetContext).pop();
+    final success = await ref
+        .read(conversationsProvider.notifier)
+        .toggleMute(conv.id);
+    if (!success && mounted) {
+      ToastService.show(
+        context,
+        'Failed to update mute settings',
+        type: ToastType.error,
+      );
+    }
+  }
+
+  Widget _buildLeaveTile(Conversation conv, BuildContext sheetContext) {
+    return ListTile(
+      leading: Icon(
+        conv.isGroup ? Icons.exit_to_app : Icons.delete_outline,
+        color: EchoTheme.danger,
+      ),
+      title: Text(
+        conv.isGroup ? 'Leave Group' : 'Delete Conversation',
+        style: GoogleFonts.inter(color: EchoTheme.danger, fontSize: 14),
+      ),
+      onTap: () {
+        Navigator.of(sheetContext).pop();
+        widget.onLeave!();
       },
     );
   }
@@ -625,62 +628,9 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
     bool hasUnread, {
     UIDensity density = UIDensity.normal,
   }) {
-    // On desktop (non-web, non-mobile), show a ... button on hover so users
-    // who don't right-click can still discover the context menu.
-    final showMoreButton =
-        _isHovered &&
-        widget.onContextMenu != null &&
-        !kIsWeb &&
-        defaultTargetPlatform != TargetPlatform.android &&
-        defaultTargetPlatform != TargetPlatform.iOS;
-
     final conv = widget.conversation;
     final showGroupOnline = conv.isGroup && widget.onlineMemberCount > 0;
-
-    // Right side: timestamp or hover-action button. Natural width (no fixed
-    // SizedBox) so the expanded name fills exactly the remaining space and
-    // the timestamp sits flush at the right edge without a "floating" gap.
-    final Widget rightSlot;
-    if (showMoreButton) {
-      rightSlot = Semantics(
-        label: 'More options for $displayName',
-        button: true,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(4),
-          onTapDown: (details) {
-            widget.onContextMenu?.call(details.globalPosition);
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-            child: Icon(Icons.more_horiz, size: 16, color: context.textMuted),
-          ),
-        ),
-      );
-    } else if (widget.timestamp.isNotEmpty) {
-      // If the conversation's latest message is one we sent, show a Signal-
-      // style status tick next to the timestamp (#507). Falls back silently
-      // when local chat state hasn't loaded the conversation yet.
-      final tick = _buildOwnStatusTick(context);
-      rightSlot = Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (tick != null) ...[tick, const SizedBox(width: 4)],
-          Text(
-            widget.timestamp,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              color: widget.conversation.isMuted
-                  ? context.mutedSurface
-                  : (hasUnread ? context.accent : context.textMuted),
-            ),
-          ),
-        ],
-      );
-    } else {
-      rightSlot = const SizedBox.shrink();
-    }
+    final rightSlot = _buildNameRowRightSlot(context, displayName, hasUnread);
 
     return Row(
       children: [
@@ -727,39 +677,104 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
         if (showGroupOnline)
           Padding(
             padding: const EdgeInsets.only(left: 4),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-              decoration: BoxDecoration(
-                color: EchoTheme.online.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 6,
-                    height: 6,
-                    decoration: const BoxDecoration(
-                      color: EchoTheme.online,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 3),
-                  Text(
-                    '${widget.onlineMemberCount}',
-                    style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: EchoTheme.online,
-                      height: 1,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            child: _buildGroupOnlineBadge(),
           ),
         Padding(padding: const EdgeInsets.only(left: 6), child: rightSlot),
       ],
+    );
+  }
+
+  /// Right-side slot of the name row: "more" button on hover (desktop) or
+  /// timestamp with optional status tick.
+  Widget _buildNameRowRightSlot(
+    BuildContext context,
+    String displayName,
+    bool hasUnread,
+  ) {
+    // On desktop (non-web, non-mobile), show a ... button on hover so users
+    // who don't right-click can still discover the context menu.
+    final showMoreButton =
+        _isHovered &&
+        widget.onContextMenu != null &&
+        !kIsWeb &&
+        defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.iOS;
+
+    if (showMoreButton) {
+      return Semantics(
+        label: 'More options for $displayName',
+        button: true,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(4),
+          onTapDown: (details) {
+            widget.onContextMenu?.call(details.globalPosition);
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            child: Icon(Icons.more_horiz, size: 16, color: context.textMuted),
+          ),
+        ),
+      );
+    }
+
+    if (widget.timestamp.isNotEmpty) {
+      // If the conversation's latest message is one we sent, show a Signal-
+      // style status tick next to the timestamp (#507). Falls back silently
+      // when local chat state hasn't loaded the conversation yet.
+      final tick = _buildOwnStatusTick(context);
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (tick != null) ...[tick, const SizedBox(width: 4)],
+          Text(
+            widget.timestamp,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              color: widget.conversation.isMuted
+                  ? context.mutedSurface
+                  : (hasUnread ? context.accent : context.textMuted),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return const SizedBox.shrink();
+  }
+
+  /// Green pill badge showing how many group members are currently online.
+  Widget _buildGroupOnlineBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: EchoTheme.online.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: const BoxDecoration(
+              color: EchoTheme.online,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 3),
+          Text(
+            '${widget.onlineMemberCount}',
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: EchoTheme.online,
+              height: 1,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -797,52 +812,10 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
     Conversation conv, {
     UIDensity density = UIDensity.normal,
   }) {
-    final showDraft = _draft != null && !hasUnread;
-    final snippetWeight = hasUnread ? FontWeight.w500 : FontWeight.normal;
-    final double snippetFontSize = switch (density) {
-      UIDensity.cozy => 14,
-      UIDensity.normal => 13,
-      UIDensity.compact => 11,
-    };
     return Row(
       children: [
         Expanded(
-          child: showDraft
-              ? RichText(
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  text: TextSpan(
-                    children: [
-                      TextSpan(
-                        text: 'Draft: ',
-                        style: GoogleFonts.inter(
-                          fontSize: snippetFontSize,
-                          color: EchoTheme.warning,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      TextSpan(
-                        text: _draft,
-                        style: GoogleFonts.inter(
-                          fontSize: snippetFontSize,
-                          color: context.textMuted,
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              : Text(
-                  snippet,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(
-                    fontSize: snippetFontSize,
-                    color: conv.isMuted
-                        ? context.mutedSurface
-                        : context.textMuted,
-                    fontWeight: snippetWeight,
-                  ),
-                ),
+          child: _buildSnippetText(context, snippet, hasUnread, conv, density),
         ),
         if (conv.isMuted)
           Padding(
@@ -882,41 +855,104 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
               ),
             ),
           ),
-        if (hasUnread)
-          Semantics(
-            label: '${widget.conversation.unreadCount} unread messages',
-            child: Container(
-              margin: const EdgeInsets.only(left: 8),
-              // 20×20 for cozy/normal density, 16×16 for compact, per the
-              // design canvas. Muted conversations keep the dim grey style.
-              constraints: BoxConstraints(
-                minWidth: density == UIDensity.compact ? 16 : 20,
-                minHeight: density == UIDensity.compact ? 16 : 20,
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 5),
-              decoration: BoxDecoration(
-                color: conv.isMuted ? context.surfaceHover : context.accent,
-                shape: BoxShape.circle,
-              ),
-              alignment: Alignment.center,
-              child: ExcludeSemantics(
-                child: Text(
-                  widget.conversation.unreadCount > 99
-                      ? '99+'
-                      : '${widget.conversation.unreadCount}',
-                  style: GoogleFonts.inter(
-                    color: conv.isMuted
-                        ? context.textMuted
-                        : Theme.of(context).colorScheme.onPrimary,
-                    fontSize: density == UIDensity.compact ? 10 : 11,
-                    fontWeight: FontWeight.w700,
-                    height: 1,
-                  ),
-                ),
+        if (hasUnread) _buildUnreadBadge(context, conv, density),
+      ],
+    );
+  }
+
+  /// The text (or draft RichText) portion of the snippet row.
+  Widget _buildSnippetText(
+    BuildContext context,
+    String snippet,
+    bool hasUnread,
+    Conversation conv,
+    UIDensity density,
+  ) {
+    final showDraft = _draft != null && !hasUnread;
+    final snippetWeight = hasUnread ? FontWeight.w500 : FontWeight.normal;
+    final double snippetFontSize = switch (density) {
+      UIDensity.cozy => 14,
+      UIDensity.normal => 13,
+      UIDensity.compact => 11,
+    };
+
+    if (showDraft) {
+      return RichText(
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        text: TextSpan(
+          children: [
+            TextSpan(
+              text: 'Draft: ',
+              style: GoogleFonts.inter(
+                fontSize: snippetFontSize,
+                color: EchoTheme.warning,
+                fontWeight: FontWeight.w600,
               ),
             ),
+            TextSpan(
+              text: _draft,
+              style: GoogleFonts.inter(
+                fontSize: snippetFontSize,
+                color: context.textMuted,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Text(
+      snippet,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: GoogleFonts.inter(
+        fontSize: snippetFontSize,
+        color: conv.isMuted ? context.mutedSurface : context.textMuted,
+        fontWeight: snippetWeight,
+      ),
+    );
+  }
+
+  /// Circular unread-count badge. 20×20 for cozy/normal, 16×16 for compact.
+  Widget _buildUnreadBadge(
+    BuildContext context,
+    Conversation conv,
+    UIDensity density,
+  ) {
+    final isCompact = density == UIDensity.compact;
+    return Semantics(
+      label: '${widget.conversation.unreadCount} unread messages',
+      child: Container(
+        margin: const EdgeInsets.only(left: 8),
+        // 20×20 for cozy/normal density, 16×16 for compact, per the
+        // design canvas. Muted conversations keep the dim grey style.
+        constraints: BoxConstraints(
+          minWidth: isCompact ? 16 : 20,
+          minHeight: isCompact ? 16 : 20,
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 5),
+        decoration: BoxDecoration(
+          color: conv.isMuted ? context.surfaceHover : context.accent,
+          shape: BoxShape.circle,
+        ),
+        alignment: Alignment.center,
+        child: ExcludeSemantics(
+          child: Text(
+            widget.conversation.unreadCount > 99
+                ? '99+'
+                : '${widget.conversation.unreadCount}',
+            style: GoogleFonts.inter(
+              color: conv.isMuted
+                  ? context.textMuted
+                  : Theme.of(context).colorScheme.onPrimary,
+              fontSize: isCompact ? 10 : 11,
+              fontWeight: FontWeight.w700,
+              height: 1,
+            ),
           ),
-      ],
+        ),
+      ),
     );
   }
 }

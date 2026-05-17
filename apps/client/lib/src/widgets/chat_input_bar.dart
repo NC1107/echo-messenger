@@ -358,25 +358,8 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     }
 
     // If there are uploaded attachments, send them as separate messages.
-    // Caption goes on the FIRST attachment so it stays attached visually;
-    // the rest are bare media markers. Matches Discord / iMessage.
     if (_hasPendingAttachment && _allPendingAttachmentsReady) {
-      final attachments = List<PendingAttachment>.from(_pendingAttachments);
-      _clearAllPendingAttachments();
-      _messageController.clear();
-      _saveDraftImmediate(widget.conversation.id, '');
-      for (var i = 0; i < attachments.length; i++) {
-        final att = attachments[i];
-        final marker = buildMediaMarker(
-          extension: att.ext,
-          url: att.uploadedUrl!,
-        );
-        await _doSend(marker);
-        if (i == 0 && caption.isNotEmpty) {
-          await _doSend(caption);
-        }
-      }
-      widget.onMessageSent();
+      await _sendAttachments(caption);
       return;
     }
 
@@ -396,39 +379,77 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     if (text.isEmpty) return;
 
     // Slash-command interception: parse before encrypting/sending.
-    final slashCmd = parseSlashCommand(text);
-    if (slashCmd != null) {
-      String? rewrittenText;
-      final handled = await dispatchSlashCommand(
-        slashCmd,
-        widget.conversation,
-        ref,
-        context,
-        onRewrite: (newText) {
-          rewrittenText = newText;
-        },
-      );
-      if (handled) {
-        _messageController.clear();
-        _saveDraftImmediate(widget.conversation.id, '');
-        // If a fun command rewrote the text, send the rewritten version
-        if (rewrittenText != null) {
-          await _doSend(rewrittenText!);
-          if (_showMediaPicker) setState(() => _showMediaPicker = false);
-          if (_showInlinePicker) setState(() => _showInlinePicker = false);
-          widget.onMessageSent();
-        }
-        return;
-      }
-      // Unknown command — fall through and send as plain text.
-    }
+    final handled = await _tryHandleSlashCommand(text);
+    if (handled) return;
 
     await _doSend(text);
+    _clearInputAndNotify();
+  }
+
+  /// Sends all pending attachments as separate messages.
+  /// Caption goes on the FIRST attachment so it stays attached visually;
+  /// the rest are bare media markers. Matches Discord / iMessage.
+  Future<void> _sendAttachments(String caption) async {
+    final attachments = List<PendingAttachment>.from(_pendingAttachments);
+    _clearAllPendingAttachments();
     _messageController.clear();
     _saveDraftImmediate(widget.conversation.id, '');
+    for (var i = 0; i < attachments.length; i++) {
+      final att = attachments[i];
+      final marker = buildMediaMarker(
+        extension: att.ext,
+        url: att.uploadedUrl!,
+      );
+      await _doSend(marker);
+      if (i == 0 && caption.isNotEmpty) {
+        await _doSend(caption);
+      }
+    }
+    widget.onMessageSent();
+  }
+
+  /// Tries to dispatch [text] as a slash command.
+  /// Returns true if the command was handled (caller should return early).
+  Future<bool> _tryHandleSlashCommand(String text) async {
+    final slashCmd = parseSlashCommand(text);
+    if (slashCmd == null) return false;
+
+    String? rewrittenText;
+    final handled = await dispatchSlashCommand(
+      slashCmd,
+      widget.conversation,
+      ref,
+      context,
+      onRewrite: (newText) {
+        rewrittenText = newText;
+      },
+    );
+    if (!handled) return false;
+
+    _messageController.clear();
+    _saveDraftImmediate(widget.conversation.id, '');
+    // If a fun command rewrote the text, send the rewritten version.
+    if (rewrittenText != null) {
+      await _doSend(rewrittenText!);
+      _dismissPickers();
+      widget.onMessageSent();
+    }
+    return true;
+  }
+
+  /// Clears the text field, saves an empty draft, dismisses pickers,
+  /// and fires the onMessageSent callback.
+  void _clearInputAndNotify() {
+    _messageController.clear();
+    _saveDraftImmediate(widget.conversation.id, '');
+    _dismissPickers();
+    widget.onMessageSent();
+  }
+
+  /// Hides the media/inline pickers if they are currently open.
+  void _dismissPickers() {
     if (_showMediaPicker) setState(() => _showMediaPicker = false);
     if (_showInlinePicker) setState(() => _showInlinePicker = false);
-    widget.onMessageSent();
   }
 
   Future<void> _doSend(String text) async {
@@ -1638,22 +1659,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   /// above the message list (not inside the input bar's Stack).
   Widget buildMediaPickerPanel() {
     return MediaPickerPanel(
-      onEmojiSelected: (category, emoji) {
-        final text = _messageController.text;
-        final selection = _messageController.selection;
-        final cursorPos = selection.baseOffset >= 0
-            ? selection.baseOffset
-            : text.length;
-        final newText =
-            text.substring(0, cursorPos) +
-            emoji.emoji +
-            text.substring(cursorPos);
-        _messageController.text = newText;
-        final newCursor = cursorPos + emoji.emoji.length;
-        _messageController.selection = TextSelection.collapsed(
-          offset: newCursor,
-        );
-      },
+      onEmojiSelected: (category, emoji) => _insertEmoji(emoji.emoji),
       onGifSelected: (gifUrl, slug) {
         setState(() => _showMediaPicker = false);
         // GIF is an external URL -- no upload needed.
@@ -1668,6 +1674,21 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         setState(() => _showMediaPicker = false);
         _inputFocusNode.requestFocus();
       },
+    );
+  }
+
+  /// Inserts [emojiStr] at the current cursor position in the text field.
+  void _insertEmoji(String emojiStr) {
+    final text = _messageController.text;
+    final selection = _messageController.selection;
+    final cursorPos = selection.baseOffset >= 0
+        ? selection.baseOffset
+        : text.length;
+    final newText =
+        text.substring(0, cursorPos) + emojiStr + text.substring(cursorPos);
+    _messageController.text = newText;
+    _messageController.selection = TextSelection.collapsed(
+      offset: cursorPos + emojiStr.length,
     );
   }
 
@@ -1726,27 +1747,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Mention autocomplete picker
-            if (_mentionController.showPicker)
-              MentionAutocomplete(
-                members: _filteredMentionMembers,
-                mentionQuery: _mentionController.query,
-                onMentionSelected: _handleMentionSelected,
-              ),
-            // Slash-command autocomplete picker — only when mention picker is
-            // hidden (the two are mutually exclusive: `@` triggers mention,
-            // `/` as the first character triggers this one).
-            if (!_mentionController.showPicker)
-              SlashCommandAutocomplete(
-                inputText: _messageController.text,
-                userIsGroupAdmin: _currentUserIsGroupAdmin,
-                onSelect: (template) {
-                  _messageController.text = template;
-                  _messageController.selection = TextSelection.collapsed(
-                    offset: template.length,
-                  );
-                },
-              ),
+            _buildAutocompletePickers(),
             // Input area
             Container(
               padding: EdgeInsets.fromLTRB(20, 8, 20, bottomPadding),
@@ -1800,55 +1801,67 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
               ),
             ),
             // Inline mobile picker (replaces keyboard)
-            if (isMobileLayout)
-              AnimatedSize(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeInOut,
-                child: _showInlinePicker
-                    ? SizedBox(
-                        height: _lastKeyboardHeight > 0
-                            ? _lastKeyboardHeight
-                            : 280,
-                        child: MobileMediaPickerPanel(
-                          onEmojiSelected: (category, emoji) {
-                            final text = _messageController.text;
-                            final selection = _messageController.selection;
-                            final cursorPos = selection.baseOffset >= 0
-                                ? selection.baseOffset
-                                : text.length;
-                            final newText =
-                                text.substring(0, cursorPos) +
-                                emoji.emoji +
-                                text.substring(cursorPos);
-                            _messageController.text = newText;
-                            _messageController.selection =
-                                TextSelection.collapsed(
-                                  offset: cursorPos + emoji.emoji.length,
-                                );
-                            _onInputChanged(newText);
-                          },
-                          onGifSelected: (gifUrl, slug) {
-                            setState(() => _showInlinePicker = false);
-                            _setPendingExternalAttachment(
-                              url: gifUrl,
-                              fileName: 'gif',
-                              mimeType: kImageGifMimeType,
-                              ext: 'gif',
-                            );
-                          },
-                          onPhotoSelected: _handlePhotoSelected,
-                          onClose: () {
-                            setState(() => _showInlinePicker = false);
-                            _inputFocusNode.requestFocus();
-                          },
-                        ),
-                      )
-                    : const SizedBox.shrink(),
-              ),
+            if (isMobileLayout) _buildInlinePicker(),
           ],
         ),
         // Media picker is rendered by ChatPanel in its own Stack (above message list).
       ],
+    );
+  }
+
+  /// Builds the mention and slash-command autocomplete pickers.
+  /// Exactly one is visible at a time — mention picker takes priority.
+  Widget _buildAutocompletePickers() {
+    if (_mentionController.showPicker) {
+      return MentionAutocomplete(
+        members: _filteredMentionMembers,
+        mentionQuery: _mentionController.query,
+        onMentionSelected: _handleMentionSelected,
+      );
+    }
+    return SlashCommandAutocomplete(
+      inputText: _messageController.text,
+      userIsGroupAdmin: _currentUserIsGroupAdmin,
+      onSelect: (template) {
+        _messageController.text = template;
+        _messageController.selection = TextSelection.collapsed(
+          offset: template.length,
+        );
+      },
+    );
+  }
+
+  /// Builds the animated inline media/emoji picker that replaces the keyboard
+  /// on mobile. Collapses to [SizedBox.shrink] when not shown.
+  Widget _buildInlinePicker() {
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeInOut,
+      child: _showInlinePicker
+          ? SizedBox(
+              height: _lastKeyboardHeight > 0 ? _lastKeyboardHeight : 280,
+              child: MobileMediaPickerPanel(
+                onEmojiSelected: (category, emoji) {
+                  _insertEmoji(emoji.emoji);
+                  _onInputChanged(_messageController.text);
+                },
+                onGifSelected: (gifUrl, slug) {
+                  setState(() => _showInlinePicker = false);
+                  _setPendingExternalAttachment(
+                    url: gifUrl,
+                    fileName: 'gif',
+                    mimeType: kImageGifMimeType,
+                    ext: 'gif',
+                  );
+                },
+                onPhotoSelected: _handlePhotoSelected,
+                onClose: () {
+                  setState(() => _showInlinePicker = false);
+                  _inputFocusNode.requestFocus();
+                },
+              ),
+            )
+          : const SizedBox.shrink(),
     );
   }
 

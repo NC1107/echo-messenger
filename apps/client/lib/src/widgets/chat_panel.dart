@@ -165,70 +165,78 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       // resetting selectedTextChannelId, and cache offset under the still-
       // current cacheKeyFor (which uses that channel id).
       final oldId = oldWidget.conversation?.id;
-      if (oldId != null) {
-        _controller.lastChannelByConversation[oldId] = _selectedTextChannelId;
-        _controller.cacheCurrentOffset(oldId);
-      }
+      if (oldId != null) _saveOldConversationState(oldId);
 
       // Restore the channel the user last viewed in this conversation BEFORE
       // anything reads cacheKeyFor — otherwise the per-channel scroll cache
       // misses on the very lookup that should be hitting.
       final newId = widget.conversation?.id;
-      final restoredChannel = newId != null
+      _selectedTextChannelId = newId != null
           ? _controller.lastChannelByConversation[newId]
           : null;
 
-      _selectedTextChannelId = restoredChannel;
-      _activeVoiceChannelId = null;
-      _loadedHistoryKey = null;
-      _controller.autoScrollConversationKey = null;
-      _showSearch = false;
-      _threadParent = null;
-      _highlightedMessageId = null;
-      _pendingInitialMessageId = widget.initialMessageId;
-      _hasNewMessagesBelow = false;
-      _newMessagesBelowCount = 0;
-      _unreadBoundaryMessageId = null;
-      _unreadBoundaryCount = 0;
-      _initialScrollPending = false;
-      _controller.floatingDate = null;
-      _controller.floatingDateVisible = false;
-      _controller.floatingDateTimer?.cancel();
-      _highlightTimer?.cancel();
-      _messageKeys.clear();
-      _liveRegionAnnouncement = '';
-      _lastAnnouncedMessageId = null;
-      _liveRegionClearTimer?.cancel();
-      _dismissReactionPicker();
-      // Reset peer crypto trackers — they are scoped to the active DM.
-      _identityPolledPeerId = null;
-      _prevIdentityChanged = false;
-      _corruptionPolledPeerId = null;
-      _prevCorrupted = false;
-
-      // Restore cached scroll position for the new conversation, or scroll
-      // to bottom if no cached position exists. If there's an unread boundary,
-      // defer to the first-load callback which scrolls to the divider.
-      if (newId != null) {
-        final cached =
-            _controller.scrollPositions[_controller.cacheKeyFor(newId)];
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!_scrollController.hasClients) return;
-          // Defer to the first-load callback if unread boundary will be set
-          final convData = ref
-              .read(conversationsProvider)
-              .conversations
-              .where((c) => c.id == newId)
-              .firstOrNull;
-          if (convData != null && convData.unreadCount > 0) return;
-          if (cached != null) {
-            _controller.restoreCachedOffsetWithRetry(cached);
-          } else {
-            _scrollToBottom(animated: false, settleRetries: 3);
-          }
-        });
-      }
+      _resetConversationState();
+      _restoreOrScrollToBottom(newId);
     }
+  }
+
+  /// Persists the current channel selection and scroll offset for [oldId]
+  /// before the conversation switch resets state.
+  void _saveOldConversationState(String oldId) {
+    _controller.lastChannelByConversation[oldId] = _selectedTextChannelId;
+    _controller.cacheCurrentOffset(oldId);
+  }
+
+  /// Resets all per-conversation ephemeral state when switching conversations.
+  void _resetConversationState() {
+    _activeVoiceChannelId = null;
+    _loadedHistoryKey = null;
+    _controller.autoScrollConversationKey = null;
+    _showSearch = false;
+    _threadParent = null;
+    _highlightedMessageId = null;
+    _pendingInitialMessageId = widget.initialMessageId;
+    _hasNewMessagesBelow = false;
+    _newMessagesBelowCount = 0;
+    _unreadBoundaryMessageId = null;
+    _unreadBoundaryCount = 0;
+    _initialScrollPending = false;
+    _controller.floatingDate = null;
+    _controller.floatingDateVisible = false;
+    _controller.floatingDateTimer?.cancel();
+    _highlightTimer?.cancel();
+    _messageKeys.clear();
+    _liveRegionAnnouncement = '';
+    _lastAnnouncedMessageId = null;
+    _liveRegionClearTimer?.cancel();
+    _dismissReactionPicker();
+    // Reset peer crypto trackers — they are scoped to the active DM.
+    _identityPolledPeerId = null;
+    _prevIdentityChanged = false;
+    _corruptionPolledPeerId = null;
+    _prevCorrupted = false;
+  }
+
+  /// After a conversation switch, restores a cached scroll position or scrolls
+  /// to the bottom. Skips if an unread boundary exists (first-load handles it).
+  void _restoreOrScrollToBottom(String? newId) {
+    if (newId == null) return;
+    final cached = _controller.scrollPositions[_controller.cacheKeyFor(newId)];
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      // Defer to the first-load callback if unread boundary will be set.
+      final convData = ref
+          .read(conversationsProvider)
+          .conversations
+          .where((c) => c.id == newId)
+          .firstOrNull;
+      if (convData != null && convData.unreadCount > 0) return;
+      if (cached != null) {
+        _controller.restoreCachedOffsetWithRetry(cached);
+      } else {
+        _scrollToBottom(animated: false, settleRetries: 3);
+      }
+    });
   }
 
   @override
@@ -751,61 +759,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
 
     if (conv == null) return const NoConversationPlaceholder();
 
-    // Load on first build + scroll to newest message (or unread boundary)
-    if (_loadedHistoryKey == null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _loadHistory();
-        _loadChannels();
-        // Capture unread boundary before marking as read (which resets count)
-        _captureUnreadBoundary();
-        _markAsRead();
-        final pendingMsg = _pendingInitialMessageId;
-        if (pendingMsg != null) {
-          _pendingInitialMessageId = null;
-          // Wait for next frame so message widgets are rendered and keys registered.
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _highlightMessage(pendingMsg);
-          });
-        } else if (_unreadBoundaryMessageId != null) {
-          _scrollToUnreadBoundary();
-        } else {
-          // First open: history is loading async in parallel and may render
-          // additional rows over the next several hundred ms. Mark the scroll
-          // as pending so we re-trigger it when the load completes; landing
-          // on the genuinely-newest message requires waiting for the layout
-          // pass that includes those new rows (#919).
-          _initialScrollPending = true;
-          _scrollToBottom(settleRetries: 3);
-        }
-      });
-    }
-
-    // Re-scroll to bottom when the initial history load completes. The first
-    // `_scrollToBottom` above fires before any rows are rendered; once the
-    // server returns and the list grows downward, we want to land at the
-    // newest message rather than wherever the partial list ended (#919).
-    if (_initialScrollPending) {
-      ref.listen(
-        chatProvider.select(
-          (s) => s.isLoadingHistory(conv.id, channelId: _selectedTextChannelId),
-        ),
-        (prev, next) {
-          // Only react to the load FINISHING (true -> false) and only on
-          // the initial open.
-          if (!_initialScrollPending) return;
-          if (prev == true && next == false) {
-            _initialScrollPending = false;
-            // Defer to the next frame so the layout pass with the loaded
-            // messages has actually run before we read maxScrollExtent.
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (!mounted) return;
-              _scrollToBottom(animated: false, settleRetries: 3);
-            });
-          }
-        },
-      );
-    }
-
+    _handleInitialLoad(conv);
+    _listenForInitialHistoryLoad(conv);
     _handleKeyboardScroll();
 
     final myUserId = ref.watch(authProvider.select((s) => s.userId)) ?? '';
@@ -866,7 +821,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     final chatContentBox = buildChatContentBox(
       context,
       ref,
-      ChatPanelBodyParams(
+      _buildBodyParams(
         conv: conv,
         myUserId: myUserId,
         authToken: authToken,
@@ -874,107 +829,208 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         mediaTicket: mediaTicket,
         messages: messages,
         memberAvatars: memberAvatars,
-        selectedTextChannelId: _selectedTextChannelId,
         selectedChannelId: selectedChannelId,
-        activeVoiceChannelId: _activeVoiceChannelId,
+        includeUnchanneled: includeUnchanneled,
         isLoadingHistory: isLoadingHistory,
         hasMoreHistory: hasMoreHistory,
         displayName: displayName,
-        scrollController: _scrollController,
-        messageKeys: _messageKeys,
-        savedIds: _savedIds,
-        highlightedMessageId: _highlightedMessageId,
-        unreadBoundaryMessageId: _unreadBoundaryMessageId,
-        unreadBoundaryCount: _unreadBoundaryCount,
-        floatingDate: _floatingDate,
-        floatingDateVisible: _floatingDateVisible,
-        hasNewMessagesBelow: _hasNewMessagesBelow,
-        newMessagesBannerText: _newMessagesBannerText(),
-        liveRegionAnnouncement: _liveRegionAnnouncement,
-        showSearch: _showSearch,
-        hideVoiceDock: widget.hideVoiceDock,
         typingUsers: typingUsers,
-        isDragOver: _isDragOver,
-        chatInputBarKey: _chatInputBarKey,
-        onBack: widget.onBack,
-        onMembersToggle: widget.onMembersToggle,
-        onGroupInfo: widget.onGroupInfo,
-        onShowLounge: widget.onShowLounge,
-        onTextChannelChanged: _onTextChannelChanged,
-        onVoiceChannelChanged: (channelId) {
-          if (mounted) setState(() => _activeVoiceChannelId = channelId);
-        },
-        onSetShowSearch: (v) => setState(() => _showSearch = v),
-        onHighlightMessage: _highlightMessage,
-        onShowReactionPicker: _showReactionPicker,
-        onToggleReaction: _toggleReaction,
-        onShowFullReactionPicker: (msg) =>
-            _showFullReactionPicker(msg, myUserId),
-        onDeleteFailed: (msg) =>
-            actions.deleteFailed(ref: ref, conv: conv, message: msg),
-        onConfirmDelete: (msg) => actions.confirmDelete(
-          context: context,
-          ref: ref,
-          conv: conv,
-          message: msg,
-          addToDeletedForMe: DeletedForMeStorage.add,
-        ),
-        onRetryMessage: (msg) =>
-            actions.retryMessage(ref: ref, conv: conv, message: msg),
-        onOpenThread: _openThread,
-        onPinMessage: (msg) => actions.pinMessage(
-          context: context,
-          ref: ref,
-          conv: conv,
-          message: msg,
-        ),
-        onUnpinMessage: (msg) => actions.unpinMessage(
-          context: context,
-          ref: ref,
-          conv: conv,
-          message: msg,
-        ),
-        onForwardMessage: (msg) =>
-            actions.forwardMessage(context: context, ref: ref, message: msg),
-        onSaveMessage: (msg) => actions.saveMessage(
-          context: context,
-          message: msg,
-          onAddSavedId: (id) => setState(() => _savedIds.add(id)),
-        ),
-        onUnsaveMessage: (msg) => actions.unsaveMessage(
-          context: context,
-          message: msg,
-          onRemoveSavedId: (id) => setState(() => _savedIds.remove(id)),
-        ),
-        onJumpToReplyQuote: _jumpToReplyQuote,
-        onOpenImageGallery: (resolvedUrl) => actions.openImageGallery(
-          context: context,
-          ref: ref,
-          tappedUrl: resolvedUrl,
-          messages: messages,
-          serverUrl: serverUrl,
-          authToken: authToken,
-        ),
-        onScrollToBottom: () => _scrollToBottom(settleRetries: 2),
-        onMessageSent: () {
-          _scrollToBottom(settleRetries: 2);
-          _markAsRead();
-        },
-        onMediaPickerChanged: () {
-          setState(() {});
-          // Scroll to bottom when inline picker appears/disappears
-          // so the latest messages stay visible.
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _scrollToBottom(settleRetries: 2);
-          });
-        },
       ),
     );
 
-    // Compose the chat content with optional thread panel.
-    final Widget chatContent;
+    final chatContent = _buildChatContent(
+      chatContentBox: chatContentBox,
+      serverUrl: serverUrl,
+      authToken: authToken,
+    );
+
+    return _wrapWithDropTarget(chatContent);
+  }
+
+  /// Schedules the first-open history load + initial scroll on the first build
+  /// frame for [conv]. No-op if history has already been loaded.
+  void _handleInitialLoad(Conversation conv) {
+    if (_loadedHistoryKey != null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadHistory();
+      _loadChannels();
+      // Capture unread boundary before marking as read (which resets count).
+      _captureUnreadBoundary();
+      _markAsRead();
+      final pendingMsg = _pendingInitialMessageId;
+      if (pendingMsg != null) {
+        _pendingInitialMessageId = null;
+        // Wait for next frame so message widgets are rendered and keys registered.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _highlightMessage(pendingMsg);
+        });
+      } else if (_unreadBoundaryMessageId != null) {
+        _scrollToUnreadBoundary();
+      } else {
+        // First open: history is loading async in parallel and may render
+        // additional rows over the next several hundred ms. Mark the scroll
+        // as pending so we re-trigger it when the load completes; landing
+        // on the genuinely-newest message requires waiting for the layout
+        // pass that includes those new rows (#919).
+        _initialScrollPending = true;
+        _scrollToBottom(settleRetries: 3);
+      }
+    });
+  }
+
+  /// Registers a ref.listen that re-scrolls to bottom once the initial history
+  /// load finishes. Only active while [_initialScrollPending] is true (#919).
+  void _listenForInitialHistoryLoad(Conversation conv) {
+    if (!_initialScrollPending) return;
+    // Re-scroll to bottom when the initial history load completes. The first
+    // `_scrollToBottom` fires before any rows are rendered; once the server
+    // returns and the list grows downward, we want to land at the newest
+    // message rather than wherever the partial list ended (#919).
+    ref.listen(
+      chatProvider.select(
+        (s) => s.isLoadingHistory(conv.id, channelId: _selectedTextChannelId),
+      ),
+      (prev, next) {
+        if (!_initialScrollPending) return;
+        if (prev == true && next == false) {
+          _initialScrollPending = false;
+          // Defer to the next frame so the layout pass with the loaded
+          // messages has actually run before we read maxScrollExtent.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _scrollToBottom(animated: false, settleRetries: 3);
+          });
+        }
+      },
+    );
+  }
+
+  /// Builds the [ChatPanelBodyParams] for [buildChatContentBox].
+  ChatPanelBodyParams _buildBodyParams({
+    required Conversation conv,
+    required String myUserId,
+    required String authToken,
+    required String serverUrl,
+    required String? mediaTicket,
+    required List<ChatMessage> messages,
+    required Map<String, String?> memberAvatars,
+    required String? selectedChannelId,
+    required bool includeUnchanneled,
+    required bool isLoadingHistory,
+    required bool hasMoreHistory,
+    required String displayName,
+    required List<String> typingUsers,
+  }) => ChatPanelBodyParams(
+    conv: conv,
+    myUserId: myUserId,
+    authToken: authToken,
+    serverUrl: serverUrl,
+    mediaTicket: mediaTicket,
+    messages: messages,
+    memberAvatars: memberAvatars,
+    selectedTextChannelId: _selectedTextChannelId,
+    selectedChannelId: selectedChannelId,
+    activeVoiceChannelId: _activeVoiceChannelId,
+    isLoadingHistory: isLoadingHistory,
+    hasMoreHistory: hasMoreHistory,
+    displayName: displayName,
+    scrollController: _scrollController,
+    messageKeys: _messageKeys,
+    savedIds: _savedIds,
+    highlightedMessageId: _highlightedMessageId,
+    unreadBoundaryMessageId: _unreadBoundaryMessageId,
+    unreadBoundaryCount: _unreadBoundaryCount,
+    floatingDate: _floatingDate,
+    floatingDateVisible: _floatingDateVisible,
+    hasNewMessagesBelow: _hasNewMessagesBelow,
+    newMessagesBannerText: _newMessagesBannerText(),
+    liveRegionAnnouncement: _liveRegionAnnouncement,
+    showSearch: _showSearch,
+    hideVoiceDock: widget.hideVoiceDock,
+    typingUsers: typingUsers,
+    isDragOver: _isDragOver,
+    chatInputBarKey: _chatInputBarKey,
+    onBack: widget.onBack,
+    onMembersToggle: widget.onMembersToggle,
+    onGroupInfo: widget.onGroupInfo,
+    onShowLounge: widget.onShowLounge,
+    onTextChannelChanged: _onTextChannelChanged,
+    onVoiceChannelChanged: (channelId) {
+      if (mounted) setState(() => _activeVoiceChannelId = channelId);
+    },
+    onSetShowSearch: (v) => setState(() => _showSearch = v),
+    onHighlightMessage: _highlightMessage,
+    onShowReactionPicker: _showReactionPicker,
+    onToggleReaction: _toggleReaction,
+    onShowFullReactionPicker: (msg) => _showFullReactionPicker(msg, myUserId),
+    onDeleteFailed: (msg) =>
+        actions.deleteFailed(ref: ref, conv: conv, message: msg),
+    onConfirmDelete: (msg) => actions.confirmDelete(
+      context: context,
+      ref: ref,
+      conv: conv,
+      message: msg,
+      addToDeletedForMe: DeletedForMeStorage.add,
+    ),
+    onRetryMessage: (msg) =>
+        actions.retryMessage(ref: ref, conv: conv, message: msg),
+    onOpenThread: _openThread,
+    onPinMessage: (msg) => actions.pinMessage(
+      context: context,
+      ref: ref,
+      conv: conv,
+      message: msg,
+    ),
+    onUnpinMessage: (msg) => actions.unpinMessage(
+      context: context,
+      ref: ref,
+      conv: conv,
+      message: msg,
+    ),
+    onForwardMessage: (msg) =>
+        actions.forwardMessage(context: context, ref: ref, message: msg),
+    onSaveMessage: (msg) => actions.saveMessage(
+      context: context,
+      message: msg,
+      onAddSavedId: (id) => setState(() => _savedIds.add(id)),
+    ),
+    onUnsaveMessage: (msg) => actions.unsaveMessage(
+      context: context,
+      message: msg,
+      onRemoveSavedId: (id) => setState(() => _savedIds.remove(id)),
+    ),
+    onJumpToReplyQuote: _jumpToReplyQuote,
+    onOpenImageGallery: (resolvedUrl) => actions.openImageGallery(
+      context: context,
+      ref: ref,
+      tappedUrl: resolvedUrl,
+      messages: messages,
+      serverUrl: serverUrl,
+      authToken: authToken,
+    ),
+    onScrollToBottom: () => _scrollToBottom(settleRetries: 2),
+    onMessageSent: () {
+      _scrollToBottom(settleRetries: 2);
+      _markAsRead();
+    },
+    onMediaPickerChanged: () {
+      setState(() {});
+      // Scroll to bottom when inline picker appears/disappears
+      // so the latest messages stay visible.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToBottom(settleRetries: 2);
+      });
+    },
+  );
+
+  /// Composes [chatContentBox] with an optional side-by-side thread panel.
+  Widget _buildChatContent({
+    required Widget chatContentBox,
+    required String serverUrl,
+    required String authToken,
+  }) {
     if (_threadParent != null && !Responsive.isMobile(context)) {
-      chatContent = Row(
+      return Row(
         children: [
           Expanded(child: chatContentBox),
           ThreadViewPanel(
@@ -989,17 +1045,19 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
           ),
         ],
       );
-    } else {
-      chatContent = chatContentBox;
     }
+    return chatContentBox;
+  }
 
-    // DropTarget on desktop + web only — mobile has no external drag-drop.
+  /// Wraps [child] in a [DropTarget] on desktop/web; returns [child] unchanged
+  /// on mobile platforms that have no external drag-and-drop.
+  Widget _wrapWithDropTarget(Widget child) {
     final dropSupported =
         kIsWeb ||
         defaultTargetPlatform == TargetPlatform.linux ||
         defaultTargetPlatform == TargetPlatform.macOS ||
         defaultTargetPlatform == TargetPlatform.windows;
-    if (!dropSupported) return chatContent;
+    if (!dropSupported) return child;
     return DropTarget(
       onDragEntered: (_) => setState(() => _isDragOver = true),
       onDragExited: (_) => setState(() => _isDragOver = false),
@@ -1007,7 +1065,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         setState(() => _isDragOver = false);
         onChatPanelDropDone(d, _chatInputBarKey.currentState);
       },
-      child: chatContent,
+      child: child,
     );
   }
 }
