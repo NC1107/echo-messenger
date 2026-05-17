@@ -38,6 +38,10 @@ class AuthState {
   /// False for newly registered accounts that haven't gone through onboarding.
   final bool onboardingCompleted;
 
+  /// The user's custom status text (e.g. "Working from home"). Null when
+  /// not yet loaded or when the user has no status set.
+  final String? statusText;
+
   const AuthState({
     this.isLoggedIn = false,
     this.userId,
@@ -49,6 +53,7 @@ class AuthState {
     this.isLoading = false,
     this.presenceStatus = 'online',
     this.onboardingCompleted = true,
+    this.statusText,
   });
 
   AuthState copyWith({
@@ -62,6 +67,9 @@ class AuthState {
     bool? isLoading,
     String? presenceStatus,
     bool? onboardingCompleted,
+    // Use the sentinel pattern so callers can explicitly clear statusText to
+    // null without copyWith silently keeping the previous value.
+    Object? statusText = _kKeep,
   }) {
     return AuthState(
       isLoggedIn: isLoggedIn ?? this.isLoggedIn,
@@ -74,9 +82,16 @@ class AuthState {
       isLoading: isLoading ?? this.isLoading,
       presenceStatus: presenceStatus ?? this.presenceStatus,
       onboardingCompleted: onboardingCompleted ?? this.onboardingCompleted,
+      statusText: statusText == _kKeep
+          ? this.statusText
+          : statusText as String?,
     );
   }
 }
+
+/// Sentinel used by [AuthState.copyWith] to distinguish "not provided" from
+/// "explicitly null" for nullable [String?] fields like [AuthState.statusText].
+const Object _kKeep = Object();
 
 /// Authentication state notifier.
 ///
@@ -286,6 +301,38 @@ class AuthNotifier extends _$AuthNotifier
       );
     } catch (e) {
       debugPrint('[Auth] setPresenceStatus failed: $e');
+    }
+  }
+
+  /// Update the user's custom status text and persist it on the server.
+  ///
+  /// Optimistically applies the change to local state immediately. On network
+  /// failure the error is logged and the local state is rolled back so the UI
+  /// reflects the actual server value.
+  ///
+  /// Pass an empty string or null to clear the status.
+  Future<void> setStatusText(String? text) async {
+    if (!state.isLoggedIn) return;
+    final previous = state.statusText;
+    final normalized = (text == null || text.trim().isEmpty)
+        ? null
+        : text.trim();
+
+    // Optimistic update.
+    state = state.copyWith(statusText: normalized);
+
+    try {
+      await authenticatedRequest(
+        (token) => http.put(
+          Uri.parse('$_serverUrl/api/users/me/status-text'),
+          headers: {..._kJsonHeaders, 'Authorization': 'Bearer $token'},
+          body: jsonEncode({'status_text': normalized}),
+        ),
+      );
+    } catch (e) {
+      debugPrint('[Auth] setStatusText failed: $e');
+      // Roll back to the previous value on failure.
+      state = state.copyWith(statusText: previous);
     }
   }
 
