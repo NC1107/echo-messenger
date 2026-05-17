@@ -62,3 +62,83 @@ impl ParsedRecipientDeviceContents {
         self.by_user.keys().copied().collect()
     }
 }
+
+// ── Unit tests ───────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_wire(entries: &[(&str, &[(&str, &str)])]) -> RecipientDeviceContents {
+        entries
+            .iter()
+            .map(|(uid, devices)| {
+                let dev_map: HashMap<String, String> = devices
+                    .iter()
+                    .map(|(did, ct)| (did.to_string(), ct.to_string()))
+                    .collect();
+                (uid.to_string(), dev_map)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn from_wire_valid_round_trip() {
+        let uid = Uuid::new_v4();
+        let wire = make_wire(&[(&uid.to_string(), &[("1", "ct_a"), ("2", "ct_b")])]);
+
+        let parsed = ParsedRecipientDeviceContents::from_wire(&wire);
+
+        let devices = parsed.by_user.get(&uid).expect("uid should be present");
+        assert_eq!(devices.len(), 2);
+        assert_eq!(devices[&1], "ct_a");
+        assert_eq!(devices[&2], "ct_b");
+    }
+
+    #[test]
+    fn from_wire_malformed_uuid_is_silently_dropped() {
+        let wire = make_wire(&[("not-a-valid-uuid", &[("0", "some_ct")])]);
+        let parsed = ParsedRecipientDeviceContents::from_wire(&wire);
+        // The bad entry must be dropped; by_user stays empty.
+        assert!(
+            parsed.by_user.is_empty(),
+            "malformed UUID row must be dropped"
+        );
+    }
+
+    #[test]
+    fn from_wire_malformed_device_id_is_dropped() {
+        let uid = Uuid::new_v4();
+        let wire = make_wire(&[(&uid.to_string(), &[("not_an_int", "ct_x"), ("3", "ct_y")])]);
+        let parsed = ParsedRecipientDeviceContents::from_wire(&wire);
+
+        let devices = parsed.by_user.get(&uid).expect("uid should be present");
+        // "not_an_int" device dropped; device 3 survives.
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[&3], "ct_y");
+    }
+
+    #[test]
+    fn from_wire_empty_input_produces_empty_result() {
+        let wire: RecipientDeviceContents = HashMap::new();
+        let parsed = ParsedRecipientDeviceContents::from_wire(&wire);
+        assert!(parsed.by_user.is_empty());
+        assert!(parsed.recipient_ids().is_empty());
+    }
+
+    #[test]
+    fn recipient_ids_returns_all_valid_uuids() {
+        let uid_a = Uuid::new_v4();
+        let uid_b = Uuid::new_v4();
+        let wire = make_wire(&[
+            (&uid_a.to_string(), &[("0", "ct_a")]),
+            (&uid_b.to_string(), &[("1", "ct_b")]),
+        ]);
+        let parsed = ParsedRecipientDeviceContents::from_wire(&wire);
+        let mut ids = parsed.recipient_ids();
+        ids.sort();
+        let mut expected = vec![uid_a, uid_b];
+        expected.sort();
+        assert_eq!(ids, expected);
+    }
+}

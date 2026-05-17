@@ -305,3 +305,83 @@ pub(in crate::ws::message_service) async fn validate_conversation_security(
 
     Some((conv_security, conv_kind, resolved_channel_id))
 }
+
+// ── Unit tests ───────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Helper: encode arbitrary bytes as standard base64.
+    fn b64(bytes: &[u8]) -> String {
+        BASE64.encode(bytes)
+    }
+
+    // ── is_valid_ciphertext_shape ─────────────────────────────────────────────
+
+    #[test]
+    fn shape_v1_initial_accepted() {
+        // [0xEC, 0x01] + some payload bytes
+        let payload = b64(&[0xEC, 0x01, 0x00, 0x01, 0x02, 0x03]);
+        assert!(is_valid_ciphertext_shape(&payload));
+    }
+
+    #[test]
+    fn shape_v2_initial_accepted() {
+        // [0xEC, 0x02] + some payload bytes
+        let payload = b64(&[0xEC, 0x02, 0xAA, 0xBB]);
+        assert!(is_valid_ciphertext_shape(&payload));
+    }
+
+    #[test]
+    fn shape_normal_message_accepted() {
+        // u32 LE header_len == 40 (ECHO_NORMAL_HEADER_LEN)
+        let mut bytes = vec![40u8, 0, 0, 0]; // 40 as little-endian u32
+        bytes.extend_from_slice(&[0u8; 40]); // header
+        bytes.extend_from_slice(&[0u8; 12]); // nonce
+        bytes.extend_from_slice(&[0u8; 16]); // ciphertext + tag
+        let payload = b64(&bytes);
+        assert!(is_valid_ciphertext_shape(&payload));
+    }
+
+    #[test]
+    fn shape_invalid_base64_rejected() {
+        assert!(!is_valid_ciphertext_shape("not!valid!base64!!!!!"));
+    }
+
+    #[test]
+    fn shape_wrong_magic_byte_rejected() {
+        // First byte is 0xAB, not 0xEC
+        let payload = b64(&[0xAB, 0x01, 0x00, 0x00]);
+        assert!(!is_valid_ciphertext_shape(&payload));
+    }
+
+    #[test]
+    fn shape_too_short_rejected() {
+        // Single byte — can't match any branch
+        let payload = b64(&[0xEC]);
+        assert!(!is_valid_ciphertext_shape(&payload));
+    }
+
+    #[test]
+    fn shape_empty_rejected() {
+        let payload = b64(&[]);
+        assert!(!is_valid_ciphertext_shape(&payload));
+    }
+
+    #[test]
+    fn shape_normal_wrong_header_len_rejected() {
+        // 4-byte LE value of 41 — not 40
+        let mut bytes = vec![41u8, 0, 0, 0];
+        bytes.extend_from_slice(&[0u8; 40]);
+        let payload = b64(&bytes);
+        assert!(!is_valid_ciphertext_shape(&payload));
+    }
+
+    #[test]
+    fn shape_plaintext_rejected() {
+        // A realistic ASCII message that should not pass the gate
+        let payload = b64(b"Hello, world!");
+        assert!(!is_valid_ciphertext_shape(&payload));
+    }
+}
