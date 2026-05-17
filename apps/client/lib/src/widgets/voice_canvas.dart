@@ -850,6 +850,7 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
     return MouseRegion(
       cursor: SystemMouseCursors.grab,
       child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
         onDoubleTap: widget.onDoubleTap,
         onPanUpdate: (details) {
           final s = widget.canvasSize;

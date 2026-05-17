@@ -150,7 +150,17 @@ class _NotificationSectionState extends State<NotificationSection> {
 
   Future<void> _sendTestNotification() async {
     try {
-      await SoundService().playMessageReceived();
+      try {
+        await SoundService().playMessageReceived();
+      } catch (_) {
+        if (mounted) {
+          ToastService.show(
+            context,
+            'Couldn\'t play sound on this platform',
+            type: ToastType.warning,
+          );
+        }
+      }
       NotificationService().showMessageNotification(
         senderUsername: 'Echo',
         body: 'This is a test notification!',

@@ -268,6 +268,8 @@ class _DiscoverGroupsScreenState extends ConsumerState<DiscoverGroupsScreen> {
                               fontSize: 18,
                               fontWeight: FontWeight.w700,
                             ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 2),
                           Row(
@@ -565,25 +567,12 @@ class _GroupDiscoveryItem extends StatelessWidget {
         child: InkWell(
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Group avatar — bright solid background with white glyph,
-                // deterministically picked from the group palette.
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: groupAvatarColor(group.name),
-                    borderRadius: BorderRadius.circular(22),
-                  ),
-                  alignment: Alignment.center,
-                  child: const Icon(Icons.group, size: 22, color: Colors.white),
-                ),
-                const SizedBox(width: 12),
-                // Name + stats + description
-                Expanded(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final isNarrow = constraints.maxWidth < 400;
+                final joinButton = _buildJoinAffordance(context);
+                final nameColumn = Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -594,7 +583,7 @@ class _GroupDiscoveryItem extends StatelessWidget {
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
                         ),
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 4),
@@ -641,66 +630,88 @@ class _GroupDiscoveryItem extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ],
+                      if (isNarrow) ...[const SizedBox(height: 10), joinButton],
                     ],
                   ),
-                ),
-                const SizedBox(width: 12),
-                // Join / Joined affordance
-                if (group.joined)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: context.surfaceHover,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      'Joined',
-                      style: TextStyle(
-                        color: context.textMuted,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
+                );
+
+                return ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 68),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Group avatar — bright solid background with white glyph,
+                      // deterministically picked from the group palette.
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: groupAvatarColor(group.name),
+                          borderRadius: BorderRadius.circular(22),
+                        ),
+                        alignment: Alignment.center,
+                        child: const Icon(
+                          Icons.group,
+                          size: 22,
+                          color: Colors.white,
+                        ),
                       ),
-                    ),
-                  )
-                else
-                  FilledButton(
-                    onPressed: isJoining ? null : onJoin,
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 10,
-                      ),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    child: isJoining
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Text(
-                            'Join',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+                      const SizedBox(width: 12),
+                      // Name + stats + description (+ button on narrow)
+                      nameColumn,
+                      if (!isNarrow) ...[const SizedBox(width: 12), joinButton],
+                    ],
                   ),
-              ],
+                );
+              },
             ),
           ),
         ),
       ),
+    );
+  }
+
+  /// Builds the Join / Joined affordance widget, shared between the row
+  /// layout (wide screens) and the stacked layout (narrow screens).
+  Widget _buildJoinAffordance(BuildContext context) {
+    if (group.joined) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: context.surfaceHover,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(
+          'Joined',
+          style: TextStyle(
+            color: context.textMuted,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      );
+    }
+    return FilledButton(
+      onPressed: isJoining ? null : onJoin,
+      style: FilledButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+      child: isJoining
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            )
+          : const Text(
+              'Join',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
     );
   }
 

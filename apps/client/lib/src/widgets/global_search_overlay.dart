@@ -283,7 +283,11 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
   @override
   Widget build(BuildContext context) {
     final isMobile = Responsive.isMobile(context);
-    final width = isMobile ? MediaQuery.of(context).size.width - 32 : 560.0;
+    final screenWidth = MediaQuery.of(context).size.width;
+    // Responsive width: tablets (< 900) get screen-48, desktops get fixed 560
+    final width = isMobile
+        ? screenWidth - 32
+        : (screenWidth < 900 ? screenWidth - 48 : 560.0);
 
     // A non-focusable Focus observer: it sees raw key events but never owns
     // primary focus, so it can't steal the user's first keystroke from the
@@ -323,43 +327,46 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
                   children: [
                     Padding(
                       padding: const EdgeInsets.all(12),
-                      child: TextField(
-                        controller: _controller,
-                        focusNode: _focusNode,
-                        onChanged: _onQueryChanged,
-                        style: TextStyle(
-                          color: context.textPrimary,
-                          fontSize: 15,
-                        ),
-                        decoration: InputDecoration(
-                          hintText: 'Search messages, contacts, groups...',
-                          hintStyle: TextStyle(color: context.textMuted),
-                          prefixIcon: Icon(
-                            Icons.search,
-                            color: context.textMuted,
-                            size: 20,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minHeight: 44),
+                        child: TextField(
+                          controller: _controller,
+                          focusNode: _focusNode,
+                          onChanged: _onQueryChanged,
+                          style: TextStyle(
+                            color: context.textPrimary,
+                            fontSize: 15,
                           ),
-                          suffixIcon: _loading
-                              ? const Padding(
-                                  padding: EdgeInsets.all(12),
-                                  child: SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
+                          decoration: InputDecoration(
+                            hintText: 'Search messages, contacts, groups...',
+                            hintStyle: TextStyle(color: context.textMuted),
+                            prefixIcon: Icon(
+                              Icons.search,
+                              color: context.textMuted,
+                              size: 20,
+                            ),
+                            suffixIcon: _loading
+                                ? const Padding(
+                                    padding: EdgeInsets.all(12),
+                                    child: SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
                                     ),
-                                  ),
-                                )
-                              : null,
-                          filled: true,
-                          fillColor: context.mainBg,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide.none,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 10,
+                                  )
+                                : null,
+                            filled: true,
+                            fillColor: context.mainBg,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide.none,
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
                           ),
                         ),
                       ),

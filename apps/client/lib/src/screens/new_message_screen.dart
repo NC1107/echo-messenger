@@ -349,36 +349,46 @@ class _NewMessageScreenState extends ConsumerState<NewMessageScreen> {
   // ── sub-widgets ────────────────────────────────────────────────────────────
 
   Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-      child: SizedBox(
-        height: 44,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                style: TextButton.styleFrom(
-                  foregroundColor: context.accent,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                ),
-                child: const Text(
-                  'Cancel',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+    return Semantics(
+      header: true,
+      label: 'New message dialog',
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+        child: SizedBox(
+          height: 44,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Tooltip(
+                  message: 'Cancel',
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: TextButton.styleFrom(
+                      foregroundColor: context.accent,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                    ),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
                 ),
               ),
-            ),
-            Text(
-              'New message',
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
+              Text(
+                'New message',
+                style: TextStyle(
+                  color: context.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -402,7 +412,7 @@ class _NewMessageScreenState extends ConsumerState<NewMessageScreen> {
             child: CompositedTransformTarget(
               link: _searchLayerLink,
               child: Container(
-                constraints: const BoxConstraints(minHeight: 44),
+                constraints: const BoxConstraints(minHeight: 50),
                 decoration: BoxDecoration(
                   color: context.cardRowBg,
                   borderRadius: BorderRadius.circular(10),
@@ -415,7 +425,7 @@ class _NewMessageScreenState extends ConsumerState<NewMessageScreen> {
                 ),
                 padding: const EdgeInsets.symmetric(
                   horizontal: 10,
-                  vertical: 6,
+                  vertical: 10,
                 ),
                 child: Wrap(
                   spacing: 6,

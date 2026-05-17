@@ -39,18 +39,48 @@ void showGroupMembersSheet(BuildContext context, Conversation conversation) {
 /// bucket. Members are read directly from [conversation.members], which is
 /// kept up-to-date by [conversationsProvider] (the same data source used by
 /// the desktop [MembersPanel]).
-class GroupMembersSheet extends ConsumerWidget {
+class GroupMembersSheet extends ConsumerStatefulWidget {
   final Conversation conversation;
 
   const GroupMembersSheet({super.key, required this.conversation});
+
+  @override
+  ConsumerState<GroupMembersSheet> createState() => _GroupMembersSheetState();
+}
+
+class _GroupMembersSheetState extends ConsumerState<GroupMembersSheet> {
+  static const double _maxChildSize = 0.92;
+  final _sheetController = DraggableScrollableController();
+  double _currentSize = 0.6;
 
   String _memberCountLabel(int count) {
     return '$count member${count == 1 ? '' : 's'}';
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final conv = conversation;
+  void initState() {
+    super.initState();
+    _sheetController.addListener(_onSheetSizeChanged);
+  }
+
+  void _onSheetSizeChanged() {
+    if (!_sheetController.isAttached) return;
+    final size = _sheetController.size;
+    if ((size - _currentSize).abs() > 0.01) {
+      setState(() => _currentSize = size);
+    }
+  }
+
+  @override
+  void dispose() {
+    _sheetController.removeListener(_onSheetSizeChanged);
+    _sheetController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final conv = widget.conversation;
 
     final auth = ref.watch(authProvider);
     final myUserId = auth.userId ?? '';
@@ -86,11 +116,13 @@ class GroupMembersSheet extends ConsumerWidget {
       });
 
     final onlineCount = sorted.where((m) => presenceFor(m).isOnline).length;
+    final showExpandHint = _currentSize < _maxChildSize * 0.7;
 
     return DraggableScrollableSheet(
+      controller: _sheetController,
       initialChildSize: 0.6,
       minChildSize: 0.35,
-      maxChildSize: 0.92,
+      maxChildSize: _maxChildSize,
       expand: false,
       builder: (context, scrollController) {
         return Container(
@@ -101,18 +133,33 @@ class GroupMembersSheet extends ConsumerWidget {
           ),
           child: Column(
             children: [
-              // Drag handle
+              // Drag handle + optional expand hint
               Padding(
                 padding: const EdgeInsets.only(top: 12),
-                child: Center(
-                  child: Container(
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: context.textMuted.withValues(alpha: 0.4),
-                      borderRadius: BorderRadius.circular(2),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: context.textMuted.withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
                     ),
-                  ),
+                    if (showExpandHint) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Swipe up for full list',
+                        style: GoogleFonts.inter(
+                          color: context.textMuted.withValues(alpha: 0.6),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
               // Header

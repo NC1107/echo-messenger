@@ -53,9 +53,26 @@ class ChatHeaderBar extends ConsumerWidget {
     final conv = conversation;
     final displayName = conv.displayName(myUserId);
 
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // On narrow portrait (< 400 logical px wide) reduce horizontal padding
+        // so the back button + display name don't crowd each other.
+        final hPad = constraints.maxWidth < 400 ? 8.0 : 16.0;
+        return _buildHeaderRow(context, ref, conv, displayName, hPad);
+      },
+    );
+  }
+
+  Widget _buildHeaderRow(
+    BuildContext context,
+    WidgetRef ref,
+    Conversation conv,
+    String displayName,
+    double hPad,
+  ) {
     return Container(
       height: 60,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: EdgeInsets.symmetric(horizontal: hPad),
       decoration: BoxDecoration(
         color: context.sidebarBg,
         border: Border(bottom: BorderSide(color: context.border, width: 1)),

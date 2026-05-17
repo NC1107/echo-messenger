@@ -30,8 +30,8 @@ class AttachFileButton extends StatelessWidget {
           customBorder: const CircleBorder(),
           onTap: onTap,
           child: Container(
-            width: 40,
-            height: 40,
+            width: 44,
+            height: 44,
             decoration: BoxDecoration(
               color: context.surface,
               shape: BoxShape.circle,

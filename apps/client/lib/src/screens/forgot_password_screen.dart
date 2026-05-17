@@ -172,7 +172,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
             children: [
               Icon(
                 Icons.info_outline,
-                size: 20,
+                size: 24,
                 color: colorScheme.onSecondaryContainer,
               ),
               const SizedBox(width: 12),

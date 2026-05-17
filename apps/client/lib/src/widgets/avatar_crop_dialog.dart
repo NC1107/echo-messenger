@@ -269,7 +269,24 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Crop Avatar'),
+      title: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          const Text('Crop Avatar'),
+          SizedBox(
+            width: 44,
+            height: 44,
+            child: IconButton(
+              onPressed: () => Navigator.of(context).pop(),
+              icon: Icon(
+                Icons.close,
+                size: 20,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
       content: SizedBox(
         width: _previewSize,
         child: Column(

@@ -549,6 +549,10 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               // when a call is active (#913).
               if (MediaQuery.sizeOf(context).width >= 600)
                 _buildSidebarUpdateBanner(context),
+              // Explicit gap between bug-report row and voice dock to prevent
+              // visual occlusion when corners round.
+              if (MediaQuery.sizeOf(context).width >= 600)
+                const SizedBox(height: 4),
               // On narrow (mobile), VoiceFooter is rendered at the Scaffold
               // level in home_screen.dart above the bottom tab bar.
               if (MediaQuery.sizeOf(context).width >= 600)
@@ -986,7 +990,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       child: Container(
         // Outer wrapper provides the 44x44 tap target without enlarging the
         // visual pill -- the inner Container keeps the compact 28px chip.
-        constraints: const BoxConstraints(minHeight: 44),
+        constraints: const BoxConstraints(minHeight: 44, minWidth: 44),
         alignment: Alignment.center,
         child: AnimatedContainer(
           duration: MotionDurations.quick,

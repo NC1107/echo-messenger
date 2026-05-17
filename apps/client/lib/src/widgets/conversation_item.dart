@@ -20,7 +20,8 @@ import 'avatar_utils.dart';
 const double kConversationItemHeight = 68.0;
 
 /// Tighter height for the compact (Discord-style) density tier.
-const double kConversationItemHeightCompact = 52.0;
+/// Bumped from 52px to 56px to maintain buffer above 56px bottom tab bar.
+const double kConversationItemHeightCompact = 56.0;
 
 /// Roomier height for the cozy density tier — power users who want
 /// breathing room on large displays.
@@ -555,25 +556,44 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
           Positioned(
             bottom: 0,
             right: 0,
-            // Dim the presence dot for muted conversations so the row
-            // reads as "present but quiet" overall.
-            child: Opacity(
-              opacity: conv.isMuted ? 0.5 : 1.0,
-              child: AnimatedContainer(
-                duration: MotionDurations.gentle,
-                curve: MotionCurves.emphasis,
-                width: dotSize,
-                height: dotSize,
-                decoration: BoxDecoration(
-                  color: presenceStatusDotColor(
-                    context,
-                    widget.peerPresenceStatus,
-                    widget.isPeerOnline,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // Presence dot at full opacity for clarity
+                AnimatedContainer(
+                  duration: MotionDurations.gentle,
+                  curve: MotionCurves.emphasis,
+                  width: dotSize,
+                  height: dotSize,
+                  decoration: BoxDecoration(
+                    color: presenceStatusDotColor(
+                      context,
+                      widget.peerPresenceStatus,
+                      widget.isPeerOnline,
+                    ),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: context.sidebarBg, width: 2),
                   ),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: context.sidebarBg, width: 2),
                 ),
-              ),
+                // Mute-bell overlay for muted conversations
+                if (conv.isMuted)
+                  Positioned(
+                    bottom: -2,
+                    right: -2,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: context.sidebarBg,
+                      ),
+                      padding: const EdgeInsets.all(1),
+                      child: Icon(
+                        Icons.notifications_off_outlined,
+                        size: 8,
+                        color: context.textMuted,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
       ],

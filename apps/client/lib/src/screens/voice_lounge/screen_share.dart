@@ -101,8 +101,8 @@ class ScreenShareViewer extends ConsumerWidget {
               },
               style: IconButton.styleFrom(
                 backgroundColor: EchoTheme.danger.withValues(alpha: 0.7),
-                padding: const EdgeInsets.all(6),
-                minimumSize: const Size(28, 28),
+                padding: const EdgeInsets.all(10),
+                minimumSize: const Size(44, 44),
               ),
             ),
           ),

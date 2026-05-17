@@ -329,6 +329,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         actions: [
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(48),
+            ),
             child: const Text('Got it'),
           ),
         ],
@@ -361,7 +364,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void _showQuickSwitcher() {
     showDialog(
       context: context,
-      barrierColor: Colors.transparent,
+      barrierColor: Colors.black12,
       builder: (ctx) =>
           QuickSwitcherOverlay(onSelect: (conv) => _selectConversation(conv)),
     );
@@ -370,7 +373,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void _showGlobalSearch() {
     showDialog(
       context: context,
-      barrierColor: Colors.transparent,
+      barrierColor: Colors.black12,
       builder: (ctx) => GlobalSearchOverlay(
         onResultTap: (conversationId, messageId) {
           final conversations = ref.read(conversationsProvider).conversations;
@@ -387,7 +390,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void _showKeyboardShortcuts() {
     showDialog<void>(
       context: context,
-      barrierColor: Colors.transparent,
+      barrierColor: Colors.black12,
       builder: (_) => const KeyboardShortcutsOverlay(),
     );
   }
@@ -429,14 +432,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ),
             child: SizedBox(
               width: (size.width * 0.4).clamp(360, 520).toDouble(),
-              height: (size.height * 0.7).clamp(440, 720).toDouble(),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: NewMessageScreen(
-                  onStartConversation: (conv) {
-                    Navigator.pop(dialogContext);
-                    _selectConversation(conv);
-                  },
+                child: SingleChildScrollView(
+                  child: NewMessageScreen(
+                    onStartConversation: (conv) {
+                      Navigator.pop(dialogContext);
+                      _selectConversation(conv);
+                    },
+                  ),
                 ),
               ),
             ),
@@ -758,47 +762,54 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       button: true,
                       child: GestureDetector(
                         onTap: () => _selectConversation(conv),
-                        child: Center(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: isSelected
-                                  ? Border.all(color: context.accent, width: 2)
-                                  : null,
-                            ),
-                            child: Builder(
-                              builder: (_) {
-                                final String? avatarUrl;
-                                if (conv.isGroup) {
-                                  avatarUrl = resolveAvatarUrl(
-                                    conv.iconUrl,
-                                    serverUrl,
+                        child: SizedBox(
+                          width: 44,
+                          height: 44,
+                          child: Center(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: isSelected
+                                    ? Border.all(
+                                        color: context.accent,
+                                        width: 2,
+                                      )
+                                    : null,
+                              ),
+                              child: Builder(
+                                builder: (_) {
+                                  final String? avatarUrl;
+                                  if (conv.isGroup) {
+                                    avatarUrl = resolveAvatarUrl(
+                                      conv.iconUrl,
+                                      serverUrl,
+                                    );
+                                  } else {
+                                    final peer = conv.members
+                                        .where((m) => m.userId != myUserId)
+                                        .firstOrNull;
+                                    avatarUrl = resolveAvatarUrl(
+                                      peer?.avatarUrl,
+                                      serverUrl,
+                                    );
+                                  }
+                                  return buildAvatar(
+                                    name: displayName,
+                                    radius: 18,
+                                    imageUrl: avatarUrl,
+                                    bgColor: conv.isGroup
+                                        ? groupAvatarColor(displayName)
+                                        : null,
+                                    fallbackIcon: conv.isGroup
+                                        ? const Icon(
+                                            Icons.group,
+                                            size: 16,
+                                            color: Colors.white,
+                                          )
+                                        : null,
                                   );
-                                } else {
-                                  final peer = conv.members
-                                      .where((m) => m.userId != myUserId)
-                                      .firstOrNull;
-                                  avatarUrl = resolveAvatarUrl(
-                                    peer?.avatarUrl,
-                                    serverUrl,
-                                  );
-                                }
-                                return buildAvatar(
-                                  name: displayName,
-                                  radius: 18,
-                                  imageUrl: avatarUrl,
-                                  bgColor: conv.isGroup
-                                      ? groupAvatarColor(displayName)
-                                      : null,
-                                  fallbackIcon: conv.isGroup
-                                      ? const Icon(
-                                          Icons.group,
-                                          size: 16,
-                                          color: Colors.white,
-                                        )
-                                      : null,
-                                );
-                              },
+                                },
+                              ),
                             ),
                           ),
                         ),

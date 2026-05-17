@@ -638,27 +638,34 @@ class _MessageItemState extends State<MessageItem>
     required VoidCallback onTap,
     Color? color,
   }) {
-    return InkWell(
-      onTap: () {
-        Navigator.pop(sheetContext);
-        onTap();
-      },
-      child: Container(
-        height: 48,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Row(
-          children: [
-            Icon(icon, size: 18, color: color ?? context.textPrimary),
-            const SizedBox(width: 14),
-            Text(
-              label,
-              style: GoogleFonts.inter(
-                color: color ?? context.textPrimary,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
+    return Semantics(
+      button: true,
+      label: label,
+      child: InkWell(
+        onTap: () {
+          Navigator.pop(sheetContext);
+          onTap();
+        },
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44),
+          child: Container(
+            height: 48,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Icon(icon, size: 18, color: color ?? context.textPrimary),
+                const SizedBox(width: 14),
+                Text(
+                  label,
+                  style: GoogleFonts.inter(
+                    color: color ?? context.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

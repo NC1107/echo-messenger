@@ -61,15 +61,28 @@ class AuthLayout extends StatelessWidget {
   Widget _buildNarrow(BuildContext context) {
     return SafeArea(
       child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 400),
-          child: SingleChildScrollView(
-            padding: narrowPadding,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [compactHeader, const SizedBox(height: 32), formColumn],
-            ),
-          ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // On narrow phones (e.g. iPhone SE at 375px) a fixed 400 max-width
+            // plus 48px of side padding overflows. Clamp to available width.
+            final effectiveMax = constraints.maxWidth < 448
+                ? constraints.maxWidth
+                : 400.0;
+            return ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: effectiveMax),
+              child: SingleChildScrollView(
+                padding: narrowPadding,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    compactHeader,
+                    const SizedBox(height: 32),
+                    formColumn,
+                  ],
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -218,39 +231,53 @@ class _FormCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 440,
-      child: Container(
-        padding: const EdgeInsets.all(32),
-        decoration: BoxDecoration(
-          color: context.surface.withValues(alpha: 0.85),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Theme.of(context).dividerColor, width: 1),
-          boxShadow: [
-            BoxShadow(
-              color: context.shadowColor,
-              blurRadius: 24,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              title,
-              style: GoogleFonts.inter(
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-                color: context.textPrimary,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Clamp the card width so it doesn't collide with the brand panel at
+        // ~800px-wide tablets. 40% of available width keeps it proportional.
+        final cardWidth = constraints.maxWidth > 0
+            ? constraints.maxWidth * 0.4 < 440
+                  ? constraints.maxWidth * 0.4
+                  : 440.0
+            : 440.0;
+        return SizedBox(
+          width: cardWidth,
+          child: Container(
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: context.surface.withValues(alpha: 0.85),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: Theme.of(context).dividerColor,
+                width: 1,
               ),
+              boxShadow: [
+                BoxShadow(
+                  color: context.shadowColor,
+                  blurRadius: 24,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
-            const SizedBox(height: 20),
-            child,
-          ],
-        ),
-      ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.inter(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                    color: context.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                child,
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

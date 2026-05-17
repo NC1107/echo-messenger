@@ -306,19 +306,22 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
           ),
         )
       else
-        SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
-          title: Text(
-            'Require Biometric to Open App',
-            style: TextStyle(color: context.textPrimary, fontSize: 14),
+        Container(
+          constraints: const BoxConstraints(minHeight: 48),
+          child: SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            title: Text(
+              'Require Biometric to Open App',
+              style: TextStyle(color: context.textPrimary, fontSize: 14),
+            ),
+            subtitle: Text(
+              'Lock Echo when it goes to the background. '
+              'Use Face ID, fingerprint, or device PIN to unlock.',
+              style: TextStyle(color: context.textMuted, fontSize: 12),
+            ),
+            value: biometric.enabled,
+            onChanged: _toggleBiometric,
           ),
-          subtitle: Text(
-            'Lock Echo when it goes to the background. '
-            'Use Face ID, fingerprint, or device PIN to unlock.',
-            style: TextStyle(color: context.textMuted, fontSize: 12),
-          ),
-          value: biometric.enabled,
-          onChanged: _toggleBiometric,
         ),
     ];
   }
@@ -612,9 +615,10 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 CircleAvatar(
-                  radius: 18,
+                  radius: 24,
                   backgroundColor: context.accent.withValues(alpha: 0.15),
                   child: Text(
                     initials,

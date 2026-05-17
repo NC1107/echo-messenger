@@ -107,8 +107,8 @@ class SendButton extends ConsumerWidget {
           child: AnimatedContainer(
             duration: MotionDurations.standard,
             curve: MotionCurves.emphasis,
-            width: 40,
-            height: 40,
+            width: 44,
+            height: 44,
             decoration: BoxDecoration(
               color: s.fillColor,
               shape: BoxShape.circle,
