@@ -364,12 +364,17 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     // Per-user device IDs collide across users (sender device 1 vs recipient
     // device 1), so per-recipient maps are kept separate end-to-end (#522).
     final result = await _encryptMessageForSend(toUserId, content);
-    if (result == null) {
-      // Encryption failed and error message was already queued.
+    if (result.payload == null) {
+      _addFailedMessage(
+        toUserId,
+        _friendlyEncryptionError(result.error ?? 'Encryption failed'),
+        conversationId: conversationId,
+        originalContent: content,
+      );
       return;
     }
 
-    final (recipientDeviceContents, fallbackPayload) = result;
+    final (recipientDeviceContents, fallbackPayload) = result.payload!;
     _sendMessageFrame(
       toUserId,
       fallbackPayload,
@@ -380,12 +385,11 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
   }
 
   /// Encrypt a message for all devices (recipient + self) with fallback chain.
-  /// Returns (recipientDeviceContents, fallbackPayload) or null on final failure.
-  /// Queues error message on failure.
-  Future<(Map<String, Map<String, String>>?, String)?> _encryptMessageForSend(
-    String toUserId,
-    String content,
-  ) async {
+  /// Returns the encrypted payload on success, or the final error on total failure.
+  Future<
+    ({(Map<String, Map<String, String>>?, String)? payload, Object? error})
+  >
+  _encryptMessageForSend(String toUserId, String content) async {
     Map<String, Map<String, String>>? recipientDeviceContents;
     String fallbackPayload;
     try {
@@ -417,7 +421,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
           selfContents.values.firstOrNull ??
           '';
 
-      return (recipientDeviceContents, fallbackPayload);
+      return (payload: (recipientDeviceContents, fallbackPayload), error: null);
     } catch (e) {
       return _encryptMessageFallback(toUserId, content, e);
     }
@@ -441,7 +445,10 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
   }
 
   /// Fallback encryption: try single-device, then session reset, then fail.
-  Future<(Map<String, Map<String, String>>?, String)?> _encryptMessageFallback(
+  Future<
+    ({(Map<String, Map<String, String>>?, String)? payload, Object? error})
+  >
+  _encryptMessageFallback(
     String toUserId,
     String content,
     Object firstError,
@@ -450,17 +457,17 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     try {
       final crypto = ref.read(cryptoServiceProvider);
       final fallbackPayload = await crypto.encryptMessage(toUserId, content);
-      return (null, fallbackPayload);
+      return (payload: (null, fallbackPayload), error: null);
     } catch (e2) {
       debugLog('Fallback encryption failed, resetting session: $e2', 'WS');
       try {
         final crypto = ref.read(cryptoServiceProvider);
         await crypto.invalidateSessionKey(toUserId);
         final fallbackPayload = await crypto.encryptMessage(toUserId, content);
-        return (null, fallbackPayload);
+        return (payload: (null, fallbackPayload), error: null);
       } catch (e3) {
         debugLog('Encryption retry after reset also failed: $e3', 'WS');
-        return null;
+        return (payload: null, error: e3);
       }
     }
   }
