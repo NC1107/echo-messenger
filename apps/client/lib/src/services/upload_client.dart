@@ -63,6 +63,20 @@ class UploadResult {
 ///
 /// Use [UploadClient.withCallbacks] in unit tests to inject stub token/refresh
 /// callbacks without requiring a live [AuthNotifier] or Riverpod container.
+
+/// Bundle of upload-related parameters passed to [_buildRequest].
+typedef _UploadParams = ({
+  String method,
+  Uri uri,
+  String token,
+  List<int> bytes,
+  String fileName,
+  String mimeType,
+  String fieldName,
+  Map<String, String>? extraFields,
+  void Function(int sent, int total)? onProgress,
+});
+
 class UploadClient {
   /// Construct from a live [AuthNotifier] (production use).
   UploadClient(AuthNotifier auth)
@@ -103,7 +117,7 @@ class UploadClient {
         return const UploadResult(ok: false, errorMessage: 'Not authenticated');
       }
 
-      final request = _buildRequest(
+      final params = (
         method: method,
         uri: Uri.parse('$serverUrl$path'),
         token: token,
@@ -114,6 +128,8 @@ class UploadClient {
         extraFields: extraFields,
         onProgress: onProgress,
       );
+
+      final request = _buildRequest(params);
 
       final streamed = await request.send();
       final body = await streamed.stream.bytesToString();
@@ -160,56 +176,46 @@ class UploadClient {
   // Private helpers
   // ---------------------------------------------------------------------------
 
-  http.MultipartRequest _buildRequest({
-    required String method,
-    required Uri uri,
-    required String token,
-    required List<int> bytes,
-    required String fileName,
-    required String mimeType,
-    required String fieldName,
-    Map<String, String>? extraFields,
-    void Function(int sent, int total)? onProgress,
-  }) {
-    final request = http.MultipartRequest(method, uri);
-    request.headers['Authorization'] = 'Bearer $token';
+  http.MultipartRequest _buildRequest(_UploadParams params) {
+    final request = http.MultipartRequest(params.method, params.uri);
+    request.headers['Authorization'] = 'Bearer ${params.token}';
 
-    if (extraFields != null) {
-      request.fields.addAll(extraFields);
+    if (params.extraFields != null) {
+      request.fields.addAll(params.extraFields!);
     }
 
-    final parts = mimeType.split('/');
+    final parts = params.mimeType.split('/');
     final mediaType = parts.length == 2
         ? MediaType(parts[0], parts[1])
         : MediaType('application', 'octet-stream');
 
-    if (onProgress == null) {
+    if (params.onProgress == null) {
       request.files.add(
         http.MultipartFile.fromBytes(
-          fieldName,
-          bytes,
-          filename: fileName,
+          params.fieldName,
+          params.bytes,
+          filename: params.fileName,
           contentType: mediaType,
         ),
       );
     } else {
-      final total = bytes.length;
+      final total = params.bytes.length;
       Stream<List<int>> chunked() async* {
         var offset = 0;
         while (offset < total) {
           final end = (offset + _kChunkSize).clamp(0, total);
-          yield bytes.sublist(offset, end);
+          yield params.bytes.sublist(offset, end);
           offset = end;
-          onProgress(offset, total);
+          params.onProgress!(offset, total);
         }
       }
 
       request.files.add(
         http.MultipartFile(
-          fieldName,
+          params.fieldName,
           chunked(),
           total,
-          filename: fileName,
+          filename: params.fileName,
           contentType: mediaType,
         ),
       );

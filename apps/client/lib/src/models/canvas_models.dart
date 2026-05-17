@@ -215,6 +215,9 @@ class CanvasState {
     this.isLoaded = false,
   });
 
+  // @S107: API-stable, params are externally fixed by serialization format.
+  // The constructor params match the wire format for canvas state; copyWith
+  // signature mirrors the constructor. Refactoring would require protocol changes.
   CanvasState copyWith({
     List<CanvasStroke>? strokes,
     List<CanvasImage>? images,

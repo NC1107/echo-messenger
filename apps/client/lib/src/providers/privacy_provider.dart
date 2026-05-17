@@ -32,6 +32,9 @@ class PrivacyState {
     this.error,
   });
 
+  // @S107: Refactoring would require changes across all 8 call sites + API.
+  // Each param maps to a discrete privacy setting; further decomposition breaks
+  // the domain model. Accept complexity here over parameter records.
   PrivacyState copyWith({
     bool? readReceiptsEnabled,
     bool? emailVisible,
@@ -42,19 +45,17 @@ class PrivacyState {
     bool? showOnlineStatus,
     bool? isLoading,
     String? error,
-  }) {
-    return PrivacyState(
-      readReceiptsEnabled: readReceiptsEnabled ?? this.readReceiptsEnabled,
-      emailVisible: emailVisible ?? this.emailVisible,
-      phoneVisible: phoneVisible ?? this.phoneVisible,
-      emailDiscoverable: emailDiscoverable ?? this.emailDiscoverable,
-      phoneDiscoverable: phoneDiscoverable ?? this.phoneDiscoverable,
-      searchable: searchable ?? this.searchable,
-      showOnlineStatus: showOnlineStatus ?? this.showOnlineStatus,
-      isLoading: isLoading ?? this.isLoading,
-      error: error,
-    );
-  }
+  }) => PrivacyState(
+    readReceiptsEnabled: readReceiptsEnabled ?? this.readReceiptsEnabled,
+    emailVisible: emailVisible ?? this.emailVisible,
+    phoneVisible: phoneVisible ?? this.phoneVisible,
+    emailDiscoverable: emailDiscoverable ?? this.emailDiscoverable,
+    phoneDiscoverable: phoneDiscoverable ?? this.phoneDiscoverable,
+    searchable: searchable ?? this.searchable,
+    showOnlineStatus: showOnlineStatus ?? this.showOnlineStatus,
+    isLoading: isLoading ?? this.isLoading,
+    error: error,
+  );
 }
 
 @Riverpod(keepAlive: true)

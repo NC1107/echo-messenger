@@ -33,7 +33,7 @@ Future<void> pickFile({
   required void Function(bool) setIsPicking,
   required StageAttachmentFn stage,
   required SendFileImmediatelyFn sendImmediately,
-}) => _pickAndDispatch(
+}) => _pickAndDispatch((
   context: context,
   mounted: mounted,
   isPicking: isPicking,
@@ -42,7 +42,7 @@ Future<void> pickFile({
   sendImmediately: sendImmediately,
   type: FileType.any,
   errorPrefix: 'File pick',
-);
+));
 
 /// Mobile gallery picker — same multi/single semantics as [pickFile] but
 /// scoped to `FileType.media`.
@@ -53,7 +53,7 @@ Future<void> pickImageFromGallery({
   required void Function(bool) setIsPicking,
   required StageAttachmentFn stage,
   required SendFileImmediatelyFn sendImmediately,
-}) => _pickAndDispatch(
+}) => _pickAndDispatch((
   context: context,
   mounted: mounted,
   isPicking: isPicking,
@@ -62,7 +62,7 @@ Future<void> pickImageFromGallery({
   sendImmediately: sendImmediately,
   type: FileType.media,
   errorPrefix: 'Pick',
-);
+));
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -150,16 +150,26 @@ Future<bool> _dispatchFile({
   }
 }
 
-Future<void> _pickAndDispatch({
-  required BuildContext context,
-  required bool Function() mounted,
-  required bool Function() isPicking,
-  required void Function(bool) setIsPicking,
-  required StageAttachmentFn stage,
-  required SendFileImmediatelyFn sendImmediately,
-  required FileType type,
-  required String errorPrefix,
-}) async {
+typedef _PickAndDispatchParams = ({
+  BuildContext context,
+  bool Function() mounted,
+  bool Function() isPicking,
+  void Function(bool) setIsPicking,
+  StageAttachmentFn stage,
+  SendFileImmediatelyFn sendImmediately,
+  FileType type,
+  String errorPrefix,
+});
+
+Future<void> _pickAndDispatch(_PickAndDispatchParams params) async {
+  final context = params.context;
+  final mounted = params.mounted;
+  final isPicking = params.isPicking;
+  final setIsPicking = params.setIsPicking;
+  final stage = params.stage;
+  final sendImmediately = params.sendImmediately;
+  final type = params.type;
+  final errorPrefix = params.errorPrefix;
   if (isPicking()) return;
   setIsPicking(true);
   try {

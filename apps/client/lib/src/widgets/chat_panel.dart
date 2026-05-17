@@ -31,6 +31,38 @@ import 'chat_panel/reaction_picker_overlay.dart';
 import 'chat_panel/scroll_helpers.dart' as sh;
 import 'thread_view_panel.dart';
 
+/// Input parameter holder for [_ChatPanelState._buildBodyParams].
+/// Reduces parameter count from 13 to 1 to satisfy SonarQube S107.
+class _BuildBodyParamsInput {
+  _BuildBodyParamsInput({
+    required this.conv,
+    required this.myUserId,
+    required this.authToken,
+    required this.serverUrl,
+    required this.mediaTicket,
+    required this.messages,
+    required this.memberAvatars,
+    required this.selectedChannelId,
+    required this.isLoadingHistory,
+    required this.hasMoreHistory,
+    required this.displayName,
+    required this.typingUsers,
+  });
+
+  final Conversation conv;
+  final String myUserId;
+  final String authToken;
+  final String serverUrl;
+  final String? mediaTicket;
+  final List<ChatMessage> messages;
+  final Map<String, String?> memberAvatars;
+  final String? selectedChannelId;
+  final bool isLoadingHistory;
+  final bool hasMoreHistory;
+  final String displayName;
+  final List<String> typingUsers;
+}
+
 class ChatPanel extends ConsumerStatefulWidget {
   final Conversation? conversation;
   final VoidCallback? onMembersToggle;
@@ -284,7 +316,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   void _updateFloatingDate() {
     final conv = widget.conversation;
     if (conv == null) return;
-    sh.updateFloatingDate(
+    sh.updateFloatingDate((
       ref: ref,
       conv: conv,
       scrollController: _scrollController,
@@ -294,7 +326,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       controller: _controller,
       setState: setState,
       mounted: () => mounted,
-    );
+    ));
   }
 
   void _scrollToBottom({bool animated = true, int settleRetries = 3}) {
@@ -540,7 +572,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     String? selectedChannelId,
     bool includeUnchanneled,
   ) {
-    sh.setupAutoScroll(
+    sh.setupAutoScroll((
       ref: ref,
       conv: conv,
       selectedChannelId: selectedChannelId,
@@ -557,7 +589,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       onScrollToUnreadBoundary: _scrollToUnreadBoundary,
       setState: setState,
       mounted: () => mounted,
-    );
+    ));
   }
 
   String _displayNameFor(Conversation conv, String myUserId) => conv.isGroup
@@ -822,19 +854,20 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       context,
       ref,
       _buildBodyParams(
-        conv: conv,
-        myUserId: myUserId,
-        authToken: authToken,
-        serverUrl: serverUrl,
-        mediaTicket: mediaTicket,
-        messages: messages,
-        memberAvatars: memberAvatars,
-        selectedChannelId: selectedChannelId,
-        includeUnchanneled: includeUnchanneled,
-        isLoadingHistory: isLoadingHistory,
-        hasMoreHistory: hasMoreHistory,
-        displayName: displayName,
-        typingUsers: typingUsers,
+        _BuildBodyParamsInput(
+          conv: conv,
+          myUserId: myUserId,
+          authToken: authToken,
+          serverUrl: serverUrl,
+          mediaTicket: mediaTicket,
+          messages: messages,
+          memberAvatars: memberAvatars,
+          selectedChannelId: selectedChannelId,
+          isLoadingHistory: isLoadingHistory,
+          hasMoreHistory: hasMoreHistory,
+          displayName: displayName,
+          typingUsers: typingUsers,
+        ),
       ),
     );
 
@@ -906,122 +939,110 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   }
 
   /// Builds the [ChatPanelBodyParams] for [buildChatContentBox].
-  ChatPanelBodyParams _buildBodyParams({
-    required Conversation conv,
-    required String myUserId,
-    required String authToken,
-    required String serverUrl,
-    required String? mediaTicket,
-    required List<ChatMessage> messages,
-    required Map<String, String?> memberAvatars,
-    required String? selectedChannelId,
-    required bool includeUnchanneled,
-    required bool isLoadingHistory,
-    required bool hasMoreHistory,
-    required String displayName,
-    required List<String> typingUsers,
-  }) => ChatPanelBodyParams(
-    conv: conv,
-    myUserId: myUserId,
-    authToken: authToken,
-    serverUrl: serverUrl,
-    mediaTicket: mediaTicket,
-    messages: messages,
-    memberAvatars: memberAvatars,
-    selectedTextChannelId: _selectedTextChannelId,
-    selectedChannelId: selectedChannelId,
-    activeVoiceChannelId: _activeVoiceChannelId,
-    isLoadingHistory: isLoadingHistory,
-    hasMoreHistory: hasMoreHistory,
-    displayName: displayName,
-    scrollController: _scrollController,
-    messageKeys: _messageKeys,
-    savedIds: _savedIds,
-    highlightedMessageId: _highlightedMessageId,
-    unreadBoundaryMessageId: _unreadBoundaryMessageId,
-    unreadBoundaryCount: _unreadBoundaryCount,
-    floatingDate: _floatingDate,
-    floatingDateVisible: _floatingDateVisible,
-    hasNewMessagesBelow: _hasNewMessagesBelow,
-    newMessagesBannerText: _newMessagesBannerText(),
-    liveRegionAnnouncement: _liveRegionAnnouncement,
-    showSearch: _showSearch,
-    hideVoiceDock: widget.hideVoiceDock,
-    typingUsers: typingUsers,
-    isDragOver: _isDragOver,
-    chatInputBarKey: _chatInputBarKey,
-    onBack: widget.onBack,
-    onMembersToggle: widget.onMembersToggle,
-    onGroupInfo: widget.onGroupInfo,
-    onShowLounge: widget.onShowLounge,
-    onTextChannelChanged: _onTextChannelChanged,
-    onVoiceChannelChanged: (channelId) {
-      if (mounted) setState(() => _activeVoiceChannelId = channelId);
-    },
-    onSetShowSearch: (v) => setState(() => _showSearch = v),
-    onHighlightMessage: _highlightMessage,
-    onShowReactionPicker: _showReactionPicker,
-    onToggleReaction: _toggleReaction,
-    onShowFullReactionPicker: (msg) => _showFullReactionPicker(msg, myUserId),
-    onDeleteFailed: (msg) =>
-        actions.deleteFailed(ref: ref, conv: conv, message: msg),
-    onConfirmDelete: (msg) => actions.confirmDelete(
-      context: context,
-      ref: ref,
-      conv: conv,
-      message: msg,
-      addToDeletedForMe: DeletedForMeStorage.add,
-    ),
-    onRetryMessage: (msg) =>
-        actions.retryMessage(ref: ref, conv: conv, message: msg),
-    onOpenThread: _openThread,
-    onPinMessage: (msg) => actions.pinMessage(
-      context: context,
-      ref: ref,
-      conv: conv,
-      message: msg,
-    ),
-    onUnpinMessage: (msg) => actions.unpinMessage(
-      context: context,
-      ref: ref,
-      conv: conv,
-      message: msg,
-    ),
-    onForwardMessage: (msg) =>
-        actions.forwardMessage(context: context, ref: ref, message: msg),
-    onSaveMessage: (msg) => actions.saveMessage(
-      context: context,
-      message: msg,
-      onAddSavedId: (id) => setState(() => _savedIds.add(id)),
-    ),
-    onUnsaveMessage: (msg) => actions.unsaveMessage(
-      context: context,
-      message: msg,
-      onRemoveSavedId: (id) => setState(() => _savedIds.remove(id)),
-    ),
-    onJumpToReplyQuote: _jumpToReplyQuote,
-    onOpenImageGallery: (resolvedUrl) => actions.openImageGallery(
-      context: context,
-      ref: ref,
-      tappedUrl: resolvedUrl,
-      messages: messages,
-      serverUrl: serverUrl,
-      authToken: authToken,
-    ),
-    onScrollToBottom: () => _scrollToBottom(settleRetries: 2),
-    onMessageSent: () {
-      _scrollToBottom(settleRetries: 2);
-      _markAsRead();
-    },
-    onMediaPickerChanged: () {
-      setState(() {});
-      // Scroll to bottom when inline picker appears/disappears
-      // so the latest messages stay visible.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _scrollToBottom(settleRetries: 2);
-      });
-    },
-  );
+  ChatPanelBodyParams _buildBodyParams(_BuildBodyParamsInput input) =>
+      ChatPanelBodyParams(
+        conv: input.conv,
+        myUserId: input.myUserId,
+        authToken: input.authToken,
+        serverUrl: input.serverUrl,
+        mediaTicket: input.mediaTicket,
+        messages: input.messages,
+        memberAvatars: input.memberAvatars,
+        selectedTextChannelId: _selectedTextChannelId,
+        selectedChannelId: input.selectedChannelId,
+        activeVoiceChannelId: _activeVoiceChannelId,
+        isLoadingHistory: input.isLoadingHistory,
+        hasMoreHistory: input.hasMoreHistory,
+        displayName: input.displayName,
+        scrollController: _scrollController,
+        messageKeys: _messageKeys,
+        savedIds: _savedIds,
+        highlightedMessageId: _highlightedMessageId,
+        unreadBoundaryMessageId: _unreadBoundaryMessageId,
+        unreadBoundaryCount: _unreadBoundaryCount,
+        floatingDate: _floatingDate,
+        floatingDateVisible: _floatingDateVisible,
+        hasNewMessagesBelow: _hasNewMessagesBelow,
+        newMessagesBannerText: _newMessagesBannerText(),
+        liveRegionAnnouncement: _liveRegionAnnouncement,
+        showSearch: _showSearch,
+        hideVoiceDock: widget.hideVoiceDock,
+        typingUsers: input.typingUsers,
+        isDragOver: _isDragOver,
+        chatInputBarKey: _chatInputBarKey,
+        onBack: widget.onBack,
+        onMembersToggle: widget.onMembersToggle,
+        onGroupInfo: widget.onGroupInfo,
+        onShowLounge: widget.onShowLounge,
+        onTextChannelChanged: _onTextChannelChanged,
+        onVoiceChannelChanged: (channelId) {
+          if (mounted) setState(() => _activeVoiceChannelId = channelId);
+        },
+        onSetShowSearch: (v) => setState(() => _showSearch = v),
+        onHighlightMessage: _highlightMessage,
+        onShowReactionPicker: _showReactionPicker,
+        onToggleReaction: _toggleReaction,
+        onShowFullReactionPicker: (msg) =>
+            _showFullReactionPicker(msg, input.myUserId),
+        onDeleteFailed: (msg) =>
+            actions.deleteFailed(ref: ref, conv: input.conv, message: msg),
+        onConfirmDelete: (msg) => actions.confirmDelete(
+          context: context,
+          ref: ref,
+          conv: input.conv,
+          message: msg,
+          addToDeletedForMe: DeletedForMeStorage.add,
+        ),
+        onRetryMessage: (msg) =>
+            actions.retryMessage(ref: ref, conv: input.conv, message: msg),
+        onOpenThread: _openThread,
+        onPinMessage: (msg) => actions.pinMessage(
+          context: context,
+          ref: ref,
+          conv: input.conv,
+          message: msg,
+        ),
+        onUnpinMessage: (msg) => actions.unpinMessage(
+          context: context,
+          ref: ref,
+          conv: input.conv,
+          message: msg,
+        ),
+        onForwardMessage: (msg) =>
+            actions.forwardMessage(context: context, ref: ref, message: msg),
+        onSaveMessage: (msg) => actions.saveMessage(
+          context: context,
+          message: msg,
+          onAddSavedId: (id) => setState(() => _savedIds.add(id)),
+        ),
+        onUnsaveMessage: (msg) => actions.unsaveMessage(
+          context: context,
+          message: msg,
+          onRemoveSavedId: (id) => setState(() => _savedIds.remove(id)),
+        ),
+        onJumpToReplyQuote: _jumpToReplyQuote,
+        onOpenImageGallery: (resolvedUrl) => actions.openImageGallery(
+          context: context,
+          ref: ref,
+          tappedUrl: resolvedUrl,
+          messages: input.messages,
+          serverUrl: input.serverUrl,
+          authToken: input.authToken,
+        ),
+        onScrollToBottom: () => _scrollToBottom(settleRetries: 2),
+        onMessageSent: () {
+          _scrollToBottom(settleRetries: 2);
+          _markAsRead();
+        },
+        onMediaPickerChanged: () {
+          setState(() {});
+          // Scroll to bottom when inline picker appears/disappears
+          // so the latest messages stay visible.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _scrollToBottom(settleRetries: 2);
+          });
+        },
+      );
 
   /// Composes [chatContentBox] with an optional side-by-side thread panel.
   Widget _buildChatContent({
