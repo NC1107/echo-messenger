@@ -610,7 +610,12 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
   /// Collect local and remote video tiles from the LiveKit room.
   List<Widget> _collectVideoTiles(lk.Room room) {
     final tiles = <Widget>[];
+    _addLocalVideoTile(room, tiles);
+    _addRemoteVideoTiles(room, tiles);
+    return tiles;
+  }
 
+  void _addLocalVideoTile(lk.Room room, List<Widget> tiles) {
     final localVideo = room.localParticipant?.videoTrackPublications
         .where(
           (pub) => pub.track != null && pub.source == lk.TrackSource.camera,
@@ -626,7 +631,9 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
         ),
       );
     }
+  }
 
+  void _addRemoteVideoTiles(lk.Room room, List<Widget> tiles) {
     for (final participant in room.remoteParticipants.values) {
       for (final pub in participant.videoTrackPublications) {
         if (pub.track != null && pub.track is lk.VideoTrack) {
@@ -644,7 +651,6 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
         }
       }
     }
-    return tiles;
   }
 
   /// Build a grid of video tiles for participants with active video.

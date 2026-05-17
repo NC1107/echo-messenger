@@ -82,49 +82,46 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
       if (!mounted) return;
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        final List<dynamic> data = jsonDecode(response.body) as List<dynamic>;
-        final myUserId = ref.read(authProvider).userId ?? '';
-        // Seed chatProvider with the fetched historical replies so the
-        // reactive filter below picks them up immediately.
-        // Use addMessage only for genuinely new replies to avoid
-        // double-counting replyCount on the parent badge.
-        final notifier = ref.read(chatProvider.notifier);
-        final chatState = ref.read(chatProvider);
-        final existingIds = chatState
-            .messagesForConversation(widget.parentMessage.conversationId)
-            .map((m) => m.id)
-            .toSet();
-        for (final json in data) {
-          final reply = ChatMessage.fromServerJson(
-            json as Map<String, dynamic>,
-            myUserId,
-          );
-          if (!existingIds.contains(reply.id)) {
-            // Historical seeding: the parent's `replyCount` is already
-            // authoritative on the server, so suppress the optimistic bump
-            // that addMessage normally applies to fresh WS replies (#919).
-            notifier.addMessage(reply, bumpReplyCount: false);
-          }
-        }
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
-        }
+        await _processFetchedReplies(response.body);
       } else {
-        if (!mounted) return;
-        setState(() {
-          _error = 'Failed to load replies';
-          _isLoading = false;
-        });
+        _setError('Failed to load replies');
       }
     } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = 'Failed to load replies';
-        _isLoading = false;
-      });
+      _setError('Failed to load replies');
     }
+  }
+
+  Future<void> _processFetchedReplies(String responseBody) async {
+    final List<dynamic> data = jsonDecode(responseBody) as List<dynamic>;
+    final myUserId = ref.read(authProvider).userId ?? '';
+    final notifier = ref.read(chatProvider.notifier);
+    final chatState = ref.read(chatProvider);
+    final existingIds = chatState
+        .messagesForConversation(widget.parentMessage.conversationId)
+        .map((m) => m.id)
+        .toSet();
+
+    for (final json in data) {
+      final reply = ChatMessage.fromServerJson(
+        json as Map<String, dynamic>,
+        myUserId,
+      );
+      if (!existingIds.contains(reply.id)) {
+        notifier.addMessage(reply, bumpReplyCount: false);
+      }
+    }
+
+    if (mounted) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  void _setError(String message) {
+    if (!mounted) return;
+    setState(() {
+      _error = message;
+      _isLoading = false;
+    });
   }
 
   void _scrollToBottom() {

@@ -769,27 +769,48 @@ class _ImageViewerDialog extends StatelessWidget {
 /// The kind of attachment a message content string represents.
 enum ReplyAttachmentKind { image, gif, video, audio, file, none }
 
-/// Classifies content into a ReplyAttachmentKind.
-ReplyAttachmentKind replyAttachmentKind(String content) {
-  final trimmed = content.trim();
+/// Checks for explicit media markers ([img:], [video:], etc.) and returns the
+/// attachment kind, or null if none match.
+ReplyAttachmentKind? _replyAttachmentFromMarker(String trimmed) {
   if (trimmed.startsWith("[img:")) {
     final url = _imgRegex.firstMatch(trimmed)?.group(1) ?? "";
-    if (url.toLowerCase().endsWith(".gif")) return ReplyAttachmentKind.gif;
-    return ReplyAttachmentKind.image;
+    return url.toLowerCase().endsWith(".gif")
+        ? ReplyAttachmentKind.gif
+        : ReplyAttachmentKind.image;
   }
   if (trimmed.startsWith("[video:")) return ReplyAttachmentKind.video;
   if (trimmed.startsWith("[audio:")) return ReplyAttachmentKind.audio;
   if (trimmed.startsWith("[file:")) return ReplyAttachmentKind.file;
+  return null;
+}
+
+/// Classifies a media URL by extension.
+ReplyAttachmentKind? _replyAttachmentFromUrl(String mediaUrl) {
+  final ext = urlExtension(mediaUrl);
+  if (ext == "gif") return ReplyAttachmentKind.gif;
+  if (_imageExtensions.contains(ext)) return ReplyAttachmentKind.image;
+  if (_videoExtensions.contains(ext)) return ReplyAttachmentKind.video;
+  if (_audioExtensions.contains(ext)) return ReplyAttachmentKind.audio;
+  if (_fileExtensions.contains(ext)) return ReplyAttachmentKind.file;
+  if (mediaUrl.contains("/api/media/")) return ReplyAttachmentKind.image;
+  return null;
+}
+
+/// Classifies content into a ReplyAttachmentKind.
+ReplyAttachmentKind replyAttachmentKind(String content) {
+  final trimmed = content.trim();
+
+  // Check explicit markers first
+  final fromMarker = _replyAttachmentFromMarker(trimmed);
+  if (fromMarker != null) return fromMarker;
+
+  // Fall back to extracted URL classification
   final mediaUrl = extractMediaUrl(trimmed);
   if (mediaUrl != null) {
-    final ext = urlExtension(mediaUrl);
-    if (ext == "gif") return ReplyAttachmentKind.gif;
-    if (_imageExtensions.contains(ext)) return ReplyAttachmentKind.image;
-    if (_videoExtensions.contains(ext)) return ReplyAttachmentKind.video;
-    if (_audioExtensions.contains(ext)) return ReplyAttachmentKind.audio;
-    if (_fileExtensions.contains(ext)) return ReplyAttachmentKind.file;
-    if (mediaUrl.contains("/api/media/")) return ReplyAttachmentKind.image;
+    final fromUrl = _replyAttachmentFromUrl(mediaUrl);
+    if (fromUrl != null) return fromUrl;
   }
+
   // Bare /api/media/ URL without a recognised extension (no marker).
   if (trimmed.startsWith("http") && trimmed.contains("/api/media/")) {
     return ReplyAttachmentKind.image;

@@ -180,185 +180,166 @@ class _ImageGalleryViewerState extends State<ImageGalleryViewer>
           color: context.overlayScrim,
           child: Stack(
             children: [
-              // Full-screen page swipe area.
-              Positioned.fill(
-                child: PageView.builder(
-                  controller: _pageController,
-                  // When the current page is zoomed in, disable page-swipe so
-                  // horizontal drags pan the image instead of switching pages.
-                  physics: _pageIsZoomed(_currentIndex)
-                      ? const NeverScrollableScrollPhysics()
-                      : const BouncingScrollPhysics(),
-                  onPageChanged: (i) => setState(() => _currentIndex = i),
-                  itemCount: total,
-                  itemBuilder: (_, index) => _GalleryPage(
-                    imageUrl: widget.imageUrls[index],
-                    headers: widget.headers,
-                    transformationController: _controllerForPage(index),
-                    onZoomChanged: () => setState(() {}),
-                    onDismiss: _close,
-                  ),
-                ),
-              ),
+              _buildPageView(total),
+              _buildTopBar(total),
+              _buildBottomBar(total),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
-              // Top bar: counter + close button.
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    child: Row(
-                      children: [
-                        if (total > 1)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.55),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              '${_currentIndex + 1} of $total',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        const Spacer(),
-                        // 44x44 close button.
-                        Semantics(
-                          label: 'Close image viewer',
-                          button: true,
-                          child: SizedBox(
-                            width: 44,
-                            height: 44,
-                            child: IconButton(
-                              padding: EdgeInsets.zero,
-                              icon: const Icon(
-                                Icons.close,
-                                color: Colors.white,
-                              ),
-                              tooltip: 'Close',
-                              onPressed: _close,
-                            ),
-                          ),
-                        ),
-                      ],
+  Widget _buildPageView(int total) {
+    return Positioned.fill(
+      child: PageView.builder(
+        controller: _pageController,
+        // When the current page is zoomed in, disable page-swipe so
+        // horizontal drags pan the image instead of switching pages.
+        physics: _pageIsZoomed(_currentIndex)
+            ? const NeverScrollableScrollPhysics()
+            : const BouncingScrollPhysics(),
+        onPageChanged: (i) => setState(() => _currentIndex = i),
+        itemCount: total,
+        itemBuilder: (_, index) => _GalleryPage(
+          imageUrl: widget.imageUrls[index],
+          headers: widget.headers,
+          transformationController: _controllerForPage(index),
+          onZoomChanged: () => setState(() {}),
+          onDismiss: _close,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopBar(int total) {
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            children: [
+              if (total > 1)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '${_currentIndex + 1} of $total',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
-              ),
-
-              // Bottom bar: prev arrow + download + next arrow.
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 8,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        // Previous button — hidden when only one image.
-                        if (total > 1)
-                          Semantics(
-                            label: 'Previous image',
-                            button: true,
-                            child: SizedBox(
-                              width: 44,
-                              height: 44,
-                              child: IconButton(
-                                padding: EdgeInsets.zero,
-                                icon: Icon(
-                                  Icons.chevron_left,
-                                  size: 32,
-                                  color: _currentIndex > 0
-                                      ? Colors.white
-                                      : Colors.white30,
-                                ),
-                                onPressed: _currentIndex > 0
-                                    ? () => _pageController.previousPage(
-                                        duration: const Duration(
-                                          milliseconds: 280,
-                                        ),
-                                        curve: Curves.easeInOut,
-                                      )
-                                    : null,
-                              ),
-                            ),
-                          )
-                        else
-                          const SizedBox(width: 44),
-
-                        // Download button — 44x44 touch target.
-                        Semantics(
-                          label: 'Download image',
-                          button: true,
-                          child: SizedBox(
-                            width: 44,
-                            height: 44,
-                            child: IconButton(
-                              padding: EdgeInsets.zero,
-                              icon: const Icon(
-                                Icons.download_outlined,
-                                color: Colors.white,
-                              ),
-                              tooltip: 'Download',
-                              onPressed: _download,
-                            ),
-                          ),
-                        ),
-
-                        // Next button — hidden when only one image.
-                        if (total > 1)
-                          Semantics(
-                            label: 'Next image',
-                            button: true,
-                            child: SizedBox(
-                              width: 44,
-                              height: 44,
-                              child: IconButton(
-                                padding: EdgeInsets.zero,
-                                icon: Icon(
-                                  Icons.chevron_right,
-                                  size: 32,
-                                  color: _currentIndex < total - 1
-                                      ? Colors.white
-                                      : Colors.white30,
-                                ),
-                                onPressed: _currentIndex < total - 1
-                                    ? () => _pageController.nextPage(
-                                        duration: const Duration(
-                                          milliseconds: 280,
-                                        ),
-                                        curve: Curves.easeInOut,
-                                      )
-                                    : null,
-                              ),
-                            ),
-                          )
-                        else
-                          const SizedBox(width: 44),
-                      ],
-                    ),
+              const Spacer(),
+              Semantics(
+                label: 'Close image viewer',
+                button: true,
+                child: SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: IconButton(
+                    padding: EdgeInsets.zero,
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    tooltip: 'Close',
+                    onPressed: _close,
                   ),
                 ),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomBar(int total) {
+    return Positioned(
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildNavButton(
+                total > 1,
+                _currentIndex > 0,
+                Icons.chevron_left,
+                'Previous image',
+                () => _pageController.previousPage(
+                  duration: const Duration(milliseconds: 280),
+                  curve: Curves.easeInOut,
+                ),
+              ),
+              Semantics(
+                label: 'Download image',
+                button: true,
+                child: SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: IconButton(
+                    padding: EdgeInsets.zero,
+                    icon: const Icon(
+                      Icons.download_outlined,
+                      color: Colors.white,
+                    ),
+                    tooltip: 'Download',
+                    onPressed: _download,
+                  ),
+                ),
+              ),
+              _buildNavButton(
+                total > 1,
+                _currentIndex < total - 1,
+                Icons.chevron_right,
+                'Next image',
+                () => _pageController.nextPage(
+                  duration: const Duration(milliseconds: 280),
+                  curve: Curves.easeInOut,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNavButton(
+    bool isVisible,
+    bool isEnabled,
+    IconData icon,
+    String label,
+    VoidCallback onPressed,
+  ) {
+    if (!isVisible) return const SizedBox(width: 44);
+    return Semantics(
+      label: label,
+      button: true,
+      child: SizedBox(
+        width: 44,
+        height: 44,
+        child: IconButton(
+          padding: EdgeInsets.zero,
+          icon: Icon(
+            icon,
+            size: 32,
+            color: isEnabled ? Colors.white : Colors.white30,
+          ),
+          onPressed: isEnabled ? onPressed : null,
         ),
       ),
     );

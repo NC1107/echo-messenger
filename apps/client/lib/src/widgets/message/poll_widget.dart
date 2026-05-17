@@ -47,6 +47,8 @@ class PollWidget extends StatefulWidget {
 }
 
 class _PollWidgetState extends State<PollWidget> {
+  static const String _kPollPrefix = '[poll:';
+
   Poll? _poll;
   bool _loading = true;
   bool _voting = false;
@@ -336,15 +338,22 @@ class _PollWidgetState extends State<PollWidget> {
 
 /// Returns `true` when [content] is a poll message tag of the form
 /// `[poll:"question"|Opt1|Opt2|...]`.
-bool isPollContent(String content) => content.trimLeft().startsWith('[poll:');
+bool isPollContent(String content) =>
+    content.trimLeft().startsWith(_PollWidgetState._kPollPrefix);
 
 /// Parse a poll content tag.  Returns `null` on malformed input.
 ///
 /// Tag format: `[poll:"Question?"|Option 1|Option 2|Option 3]`
 ({String question, List<String> options})? parsePollTag(String content) {
   final trimmed = content.trim();
-  if (!trimmed.startsWith('[poll:') || !trimmed.endsWith(']')) return null;
-  final inner = trimmed.substring('[poll:'.length, trimmed.length - 1);
+  if (!trimmed.startsWith(_PollWidgetState._kPollPrefix) ||
+      !trimmed.endsWith(']')) {
+    return null;
+  }
+  final inner = trimmed.substring(
+    _PollWidgetState._kPollPrefix.length,
+    trimmed.length - 1,
+  );
   if (!inner.startsWith('"')) return null;
   final closeQuote = inner.indexOf('"', 1);
   if (closeQuote < 0) return null;

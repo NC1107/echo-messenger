@@ -136,6 +136,76 @@ void loadOlderMessages({
       );
 }
 
+bool _isReplyLoaded(
+  WidgetRef ref,
+  Conversation conv,
+  String? selectedChannelId,
+  bool includeUnchanneled,
+  String replyToId,
+  List<ChatMessage> Function(Conversation, ChatState, String?, bool)
+  resolveMessages,
+) {
+  final state = ref.read(chatProvider);
+  final loaded = resolveMessages(
+    conv,
+    state,
+    selectedChannelId,
+    includeUnchanneled,
+  );
+  return loaded.indexWhere((m) => m.id == replyToId) >= 0;
+}
+
+Future<bool> _paginateOnceForReply(
+  WidgetRef ref,
+  Conversation conv,
+  String? selectedTextChannelId,
+  String? selectedChannelId,
+  bool includeUnchanneled,
+  String replyToId,
+  ChatPanelController controller,
+  _HistoryAuth a,
+  bool Function() mounted,
+  List<ChatMessage> Function(Conversation, ChatState, String?, bool)
+  resolveMessages,
+) async {
+  if (!mounted()) return false;
+  final state = ref.read(chatProvider);
+  if (!state.conversationHasMore(conv.id, channelId: selectedTextChannelId)) {
+    return false;
+  }
+  final loaded = resolveMessages(
+    conv,
+    state,
+    selectedChannelId,
+    includeUnchanneled,
+  );
+  if (loaded.isEmpty) return false;
+
+  final cursor = controller.paginationCursor(loaded);
+  await ref
+      .read(chatProvider.notifier)
+      .loadHistoryWithUserId(
+        conv.id,
+        a.token,
+        a.userId,
+        channelId: selectedTextChannelId,
+        before: cursor.timestamp,
+        crypto: a.crypto,
+        isGroup: conv.isGroup,
+        groupCrypto: a.groupCrypto,
+      );
+
+  if (!mounted()) return false;
+  return _isReplyLoaded(
+    ref,
+    conv,
+    selectedChannelId,
+    includeUnchanneled,
+    replyToId,
+    resolveMessages,
+  );
+}
+
 Future<void> jumpToReplyQuote({
   required BuildContext context,
   required WidgetRef ref,
@@ -151,19 +221,15 @@ Future<void> jumpToReplyQuote({
   final selectedChannelId = conv.isGroup ? selectedTextChannelId : null;
   final includeUnchanneled = conv.isGroup && selectedTextChannelId == null;
 
-  bool isLoaded() {
-    final state = ref.read(chatProvider);
-    final loaded = resolveMessages(
-      conv,
-      state,
-      selectedChannelId,
-      includeUnchanneled,
-    );
-    return loaded.indexWhere((m) => m.id == replyToId) >= 0;
-  }
-
   // Fast path: already in memory.
-  if (isLoaded()) {
+  if (_isReplyLoaded(
+    ref,
+    conv,
+    selectedChannelId,
+    includeUnchanneled,
+    replyToId,
+    resolveMessages,
+  )) {
     onHighlight();
     return;
   }
@@ -174,41 +240,25 @@ Future<void> jumpToReplyQuote({
   final a = _resolveAuth(ref, conv);
   if (a == null) return;
 
-  for (var round = 0; round < 30; round++) {
-    if (!mounted()) return;
-    final state = ref.read(chatProvider);
-    if (!state.conversationHasMore(conv.id, channelId: selectedTextChannelId)) {
-      break;
-    }
-    final loaded = resolveMessages(
+  // Cap loop to 30 rounds (~1500 msgs at 50/round)
+  var round = 0;
+  while (round < 30) {
+    round++;
+    final found = await _paginateOnceForReply(
+      ref,
       conv,
-      state,
+      selectedTextChannelId,
       selectedChannelId,
       includeUnchanneled,
+      replyToId,
+      controller,
+      a,
+      mounted,
+      resolveMessages,
     );
-    if (loaded.isEmpty) break;
-    // Use the oldest channel-scoped (non-system) message as the
-    // pagination cursor — see `ChatPanelController.paginationCursor` for
-    // the `#prod-2026-05-08` rationale.
-    final cursor = controller.paginationCursor(loaded);
-
-    await ref
-        .read(chatProvider.notifier)
-        .loadHistoryWithUserId(
-          conv.id,
-          a.token,
-          a.userId,
-          channelId: selectedTextChannelId,
-          before: cursor.timestamp,
-          crypto: a.crypto,
-          isGroup: conv.isGroup,
-          groupCrypto: a.groupCrypto,
-        );
-    if (!mounted()) return;
-    if (isLoaded()) {
-      onHighlight();
-      return;
-    }
+    if (!found) break;
+    onHighlight();
+    return;
   }
 
   if (!context.mounted) return;
