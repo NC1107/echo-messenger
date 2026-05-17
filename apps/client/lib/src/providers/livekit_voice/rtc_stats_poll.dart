@@ -105,67 +105,16 @@ class RtcStatsPoll {
         }
         if (_disposed) return;
 
-        // First pass: find the selected candidate-pair id via transport.
-        String? selectedPairId;
-        final candidatePairs = <String, StatsReport>{};
-        for (final r in reports) {
-          if (r.type == 'transport') {
-            final id = r.values['selectedCandidatePairId'];
-            if (id is String && id.isNotEmpty) selectedPairId = id;
-          } else if (r.type == 'candidate-pair') {
-            candidatePairs[r.id] = r;
-          }
-        }
+        totalBitrate += _collectAudioBitrate(reports, currentIds);
 
-        // Fallback: candidate-pair flagged `selected` or `nominated`.
-        if (selectedPairId == null ||
-            !candidatePairs.containsKey(selectedPairId)) {
-          for (final entry in candidatePairs.entries) {
-            final v = entry.value.values;
-            if (v['selected'] == true || v['nominated'] == true) {
-              selectedPairId = entry.key;
-              break;
-            }
-          }
-        }
-
-        if (selectedPairId != null) {
-          final pair = candidatePairs[selectedPairId];
-          final rttSec = pair?.values['currentRoundTripTime'];
-          if (rttSec is num) {
-            rttMs = rttSec.toDouble() * 1000.0;
-            sawRtt = true;
-          }
-        }
-
-        // Sum outbound-rtp audio bitrate across senders.
-        for (final r in reports) {
-          if (r.type != 'outbound-rtp') continue;
-          final kind = r.values['kind'] ?? r.values['mediaType'];
-          if (kind != 'audio') continue;
-
-          final bytesSent = r.values['bytesSent'];
-          if (bytesSent is! num) continue;
-          final tsMs = r.timestamp;
-
-          currentIds.add(r.id);
-          final prev = _prevBytes[r.id];
-          _prevBytes[r.id] = _BytesSample(bytesSent.toInt(), tsMs);
-
-          if (prev == null) continue;
-          final deltaBytes = bytesSent.toInt() - prev.bytes;
-          final deltaMs = tsMs - prev.timestampMs;
-          if (deltaBytes <= 0 || deltaMs <= 0) continue;
-
-          // bits / sec = bytes * 8 / (ms / 1000)
-          final bps = (deltaBytes * 8 * 1000) / deltaMs;
-          totalBitrate += bps.round();
+        final pcRtt = _collectRtt(reports);
+        if (pcRtt != null) {
+          rttMs = pcRtt;
+          sawRtt = true;
         }
       }
 
-      // Prune entries for tracks that are no longer present in the current
-      // reports — avoids unbounded growth when tracks are unpublished.
-      _prevBytes.removeWhere((id, _) => !currentIds.contains(id));
+      _pruneStaleBytes(currentIds);
 
       if (_disposed) return;
       final next = RtcStatsSample(
@@ -179,6 +128,86 @@ class RtcStatsPoll {
     } finally {
       _inFlight = false;
     }
+  }
+
+  /// Iterates [reports] for `outbound-rtp` audio entries, accumulates the
+  /// per-tick bitrate delta, records the current snapshot into [_prevBytes],
+  /// and registers each seen report id in [currentIds].
+  ///
+  /// Returns the total audio bitrate in bits-per-second contributed by all
+  /// outbound audio senders found in this report set.
+  int _collectAudioBitrate(List<StatsReport> reports, Set<String> currentIds) {
+    var bitrate = 0;
+    for (final r in reports) {
+      if (r.type != 'outbound-rtp') continue;
+      final kind = r.values['kind'] ?? r.values['mediaType'];
+      if (kind != 'audio') continue;
+
+      final bytesSent = r.values['bytesSent'];
+      if (bytesSent is! num) continue;
+      final tsMs = r.timestamp;
+
+      currentIds.add(r.id);
+      final prev = _prevBytes[r.id];
+      _prevBytes[r.id] = _BytesSample(bytesSent.toInt(), tsMs);
+
+      if (prev == null) continue;
+      final deltaBytes = bytesSent.toInt() - prev.bytes;
+      final deltaMs = tsMs - prev.timestampMs;
+      if (deltaBytes <= 0 || deltaMs <= 0) continue;
+
+      // bits / sec = bytes * 8 / (ms / 1000)
+      final bps = (deltaBytes * 8 * 1000) / deltaMs;
+      bitrate += bps.round();
+    }
+    return bitrate;
+  }
+
+  /// Extracts the round-trip time in milliseconds from [reports] by locating
+  /// the selected `candidate-pair` via a `transport` report, falling back to
+  /// any pair flagged `selected` or `nominated`.
+  ///
+  /// Returns `null` when no usable RTT value is present in the report set.
+  double? _collectRtt(List<StatsReport> reports) {
+    // First pass: resolve the selected candidate-pair id via the transport
+    // report, and collect all candidate-pair entries for lookup.
+    String? selectedPairId;
+    final candidatePairs = <String, StatsReport>{};
+    for (final r in reports) {
+      if (r.type == 'transport') {
+        final id = r.values['selectedCandidatePairId'];
+        if (id is String && id.isNotEmpty) selectedPairId = id;
+      } else if (r.type == 'candidate-pair') {
+        candidatePairs[r.id] = r;
+      }
+    }
+
+    // Fallback: candidate-pair flagged `selected` or `nominated`.
+    if (selectedPairId == null || !candidatePairs.containsKey(selectedPairId)) {
+      selectedPairId = _findNominatedPairId(candidatePairs);
+    }
+
+    if (selectedPairId == null) return null;
+    final rttSec =
+        candidatePairs[selectedPairId]?.values['currentRoundTripTime'];
+    if (rttSec is! num) return null;
+    return rttSec.toDouble() * 1000.0;
+  }
+
+  /// Scans [candidatePairs] for the first entry flagged `selected` or
+  /// `nominated` and returns its id, or `null` if none is found.
+  String? _findNominatedPairId(Map<String, StatsReport> candidatePairs) {
+    for (final entry in candidatePairs.entries) {
+      final v = entry.value.values;
+      if (v['selected'] == true || v['nominated'] == true) return entry.key;
+    }
+    return null;
+  }
+
+  /// Removes entries from [_prevBytes] whose ids are not present in
+  /// [currentIds] — avoids unbounded growth when tracks are unpublished.
+  void _pruneStaleBytes(Set<String> currentIds) {
+    _prevBytes.removeWhere((id, _) => !currentIds.contains(id));
   }
 
   /// Pull the publisher + subscriber peer-connections off the LiveKit room.

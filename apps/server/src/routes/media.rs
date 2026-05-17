@@ -22,6 +22,18 @@ use crate::auth::{jwt, middleware::AuthUser};
 use crate::db;
 use crate::error::{AppError, DbErrCtx, ErrorCode};
 
+/// Read pixel dimensions from the first bytes of an uploaded image file.
+///
+/// Uses [`imagesize`] which parses only the file header — no full decode,
+/// no large allocations. Returns `None` for non-image formats or when the
+/// header is unrecognised; the caller stores `NULL` in those cases.
+fn read_image_dimensions(path: &str) -> Option<(u32, u32)> {
+    match imagesize::size(path) {
+        Ok(dim) => Some((dim.width as u32, dim.height as u32)),
+        Err(_) => None,
+    }
+}
+
 use super::AppState;
 
 /// Maximum upload size: 100 MB. Sized for modern phone videos and reasonable
@@ -346,6 +358,20 @@ pub async fn upload(
         AppError::internal(format!("Failed to save file: {e}"))
     })?;
 
+    // Read image dimensions from the file header. Best-effort: non-image
+    // uploads and unrecognised formats store NULL; this never fails the upload.
+    let (img_width, img_height) = if mime_type.starts_with("image/") {
+        match read_image_dimensions(&disk_path) {
+            Some((w, h)) => (Some(w as i32), Some(h as i32)),
+            None => {
+                tracing::debug!(media_id = %file_uuid, "image dimensions unreadable; storing NULL");
+                (None, None)
+            }
+        }
+    } else {
+        (None, None)
+    };
+
     let row = db::media::create_media(
         &state.pool,
         file_uuid,
@@ -354,6 +380,8 @@ pub async fn upload(
         &mime_type,
         file_size,
         conversation_id,
+        img_width,
+        img_height,
     )
     .await?;
 
@@ -380,6 +408,10 @@ pub async fn upload(
     });
     if let Some(url) = thumb_url {
         body["thumb_url"] = json!(url);
+    }
+    if let (Some(w), Some(h)) = (row.width, row.height) {
+        body["width"] = json!(w);
+        body["height"] = json!(h);
     }
 
     Ok((StatusCode::CREATED, axum::Json(body)))

@@ -13,6 +13,7 @@ import '../../services/media_cache_service.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
 import '../../utils/download_helper.dart';
+import 'image_attachment.dart';
 import 'video_player.dart';
 import 'voice_message_widget.dart';
 
@@ -236,8 +237,6 @@ class MediaContent extends StatefulWidget {
 }
 
 class MediaContentState extends State<MediaContent> {
-  static final Map<String, Size> _imageSizeCache = {};
-
   String _resolveUrl(String url) => resolveMediaUrl(
     url,
     serverUrl: widget.serverUrl,
@@ -510,82 +509,15 @@ class MediaContentState extends State<MediaContent> {
                           );
                         },
                       )
-                    : CachedNetworkImage(
+                    : ImageAttachment(
                         imageUrl: fullUrl,
-                        cacheKey: stableMediaCacheKey(fullUrl),
-                        cacheManager: chatMediaCacheManager,
-                        width: 300,
-                        fit: BoxFit.cover,
-                        httpHeaders: headers,
+                        headers: headers,
                         // Cap decode at 300px * DPR so a 4K JPEG isn't
                         // held in RAM at full size for a 300px inline
                         // bubble (#639).
                         memCacheWidth:
                             (300 * MediaQuery.devicePixelRatioOf(context))
                                 .round(),
-                        imageBuilder: (ctx, imageProvider) {
-                          if (!_imageSizeCache.containsKey(fullUrl)) {
-                            imageProvider
-                                .resolve(const ImageConfiguration())
-                                .addListener(
-                                  ImageStreamListener((info, _) {
-                                    _imageSizeCache[fullUrl] = Size(
-                                      info.image.width.toDouble(),
-                                      info.image.height.toDouble(),
-                                    );
-                                  }),
-                                );
-                          }
-                          return Image(
-                            image: imageProvider,
-                            fit: BoxFit.cover,
-                            width: 300,
-                          );
-                        },
-                        errorWidget: (_, e, st) => Container(
-                          width: 300,
-                          height: 80,
-                          decoration: BoxDecoration(
-                            color: context.surface,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Center(
-                            child: Text(
-                              '[Image failed to load]',
-                              style: TextStyle(
-                                color: context.textMuted,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
-                        ),
-                        placeholder: (_, _) {
-                          final cached = _imageSizeCache[fullUrl];
-                          final h = cached != null
-                              ? (300 * cached.height / cached.width).clamp(
-                                  80.0,
-                                  400.0,
-                                )
-                              : 200.0;
-                          return Container(
-                            width: 300,
-                            height: h,
-                            decoration: BoxDecoration(
-                              color: context.surface,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Center(
-                              child: SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: context.textMuted,
-                                ),
-                              ),
-                            ),
-                          );
-                        },
                       ),
                 Positioned(
                   right: 8,

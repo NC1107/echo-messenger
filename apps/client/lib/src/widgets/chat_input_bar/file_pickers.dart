@@ -64,6 +64,92 @@ Future<void> pickImageFromGallery({
   errorPrefix: 'Pick',
 );
 
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+/// Reads raw bytes for [file], falling back to a path read on non-web mobile
+/// when `withData: true` yields null (e.g. large files / content URIs).
+Future<Uint8List?> _readFileBytes(PlatformFile file) async {
+  if (file.bytes != null) return file.bytes;
+  if (file.path == null || kIsWeb) return null;
+  try {
+    return await File(file.path!).readAsBytes();
+  } catch (e) {
+    debugPrint('[ChatInput] Failed to read file from path: $e');
+    return null;
+  }
+}
+
+/// Returns `(ext, mimeType)` for [file].
+(String, String) _resolveMime(PlatformFile file) {
+  final ext = (file.extension ?? '').toLowerCase();
+  final mime = kMimeTypes[ext] ?? ['application', kOctetStream];
+  return (ext, '${mime[0]}/${mime[1]}');
+}
+
+/// Validates size, resolves bytes + mime, then either stages (single-pick) or
+/// sends immediately (multi-pick). Returns `true` when a file was successfully
+/// handled so the caller can count successes.
+Future<bool> _dispatchFile({
+  required BuildContext context,
+  required PlatformFile file,
+  required bool isMulti,
+  required StageAttachmentFn stage,
+  required SendFileImmediatelyFn sendImmediately,
+}) async {
+  if (file.size > kMaxUploadBytes) {
+    if (context.mounted) {
+      ToastService.show(
+        context,
+        '${file.name} is ${formatBytes(file.size)} — limit is '
+        '${formatBytes(kMaxUploadBytes)}',
+        type: ToastType.error,
+      );
+    }
+    return false;
+  }
+
+  final bytes = await _readFileBytes(file);
+  if (bytes == null) {
+    if (context.mounted) {
+      ToastService.show(
+        context,
+        'Could not read file: ${file.name}',
+        type: ToastType.error,
+      );
+    }
+    return false;
+  }
+
+  final (ext, mimeType) = _resolveMime(file);
+
+  if (!isMulti) {
+    stage(bytes: bytes, fileName: file.name, mimeType: mimeType, ext: ext);
+    return true;
+  }
+
+  try {
+    await sendImmediately(
+      bytes: bytes,
+      fileName: file.name,
+      mimeType: mimeType,
+      ext: ext,
+    );
+    return true;
+  } catch (e) {
+    debugPrint('[ChatInput] Send failed for ${file.name}: $e');
+    if (context.mounted) {
+      ToastService.show(
+        context,
+        'Failed to send ${file.name}',
+        type: ToastType.error,
+      );
+    }
+    return false;
+  }
+}
+
 Future<void> _pickAndDispatch({
   required BuildContext context,
   required bool Function() mounted,
@@ -100,67 +186,17 @@ Future<void> _pickAndDispatch({
 
     var sentCount = 0;
     for (final file in result.files) {
-      if (file.size > kMaxUploadBytes) {
-        if (context.mounted) {
-          ToastService.show(
-            context,
-            '${file.name} is ${formatBytes(file.size)} — limit is '
-            '${formatBytes(kMaxUploadBytes)}',
-            type: ToastType.error,
-          );
-        }
-        continue;
-      }
-
-      // On mobile, withData:true may still yield null bytes for larger files
-      // or certain content URIs. Fall back to reading from the file path.
-      Uint8List? bytes = file.bytes;
-      if (bytes == null && file.path != null && !kIsWeb) {
-        try {
-          bytes = await File(file.path!).readAsBytes();
-        } catch (e) {
-          debugPrint('[ChatInput] Failed to read file from path: $e');
-        }
-      }
-
-      if (bytes == null) {
-        if (context.mounted) {
-          ToastService.show(
-            context,
-            'Could not read file: ${file.name}',
-            type: ToastType.error,
-          );
-        }
-        continue;
-      }
-
-      final ext = (file.extension ?? '').toLowerCase();
-      final mime = kMimeTypes[ext] ?? ['application', kOctetStream];
-      final mimeType = '${mime[0]}/${mime[1]}';
-
-      if (isMulti) {
-        try {
-          await sendImmediately(
-            bytes: bytes,
-            fileName: file.name,
-            mimeType: mimeType,
-            ext: ext,
-          );
-          sentCount++;
-        } catch (e) {
-          debugPrint('[ChatInput] Send failed for ${file.name}: $e');
-          if (context.mounted) {
-            ToastService.show(
-              context,
-              'Failed to send ${file.name}',
-              type: ToastType.error,
-            );
-          }
-        }
-      } else {
-        stage(bytes: bytes, fileName: file.name, mimeType: mimeType, ext: ext);
-      }
+      if (!context.mounted) break;
+      final ok = await _dispatchFile(
+        context: context,
+        file: file,
+        isMulti: isMulti,
+        stage: stage,
+        sendImmediately: sendImmediately,
+      );
+      if (ok) sentCount++;
     }
+
     if (isMulti && context.mounted && sentCount < result.files.length) {
       final failed = result.files.length - sentCount;
       ToastService.show(
@@ -196,12 +232,7 @@ Future<void> pickImageFromCamera({
     if (result == null || result.files.isEmpty) return;
     if (!mounted()) return;
     final file = result.files.first;
-    Uint8List? bytes = file.bytes;
-    if (bytes == null && file.path != null && !kIsWeb) {
-      try {
-        bytes = await File(file.path!).readAsBytes();
-      } catch (_) {}
-    }
+    final bytes = await _readFileBytes(file);
     if (bytes == null) return;
     final ext = (file.extension ?? 'jpg').toLowerCase();
     stage(

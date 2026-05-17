@@ -74,6 +74,12 @@ reqwest = { version = "0.13", features = ["json", "stream"] }
 # File type detection (magic bytes)
 infer = "0.19"
 
+# Lightweight image dimension reader (reads only the header, not the full pixel
+# data). Used to extract width/height from uploaded images at upload time so the
+# DTO can return them and the client can reserve the correct aspect-ratio
+# placeholder before bytes arrive.
+imagesize = "0.13"
+
 # CIDR matching for trusted-proxy IP resolution in rate limiting.
 # Already a transitive dep (via reqwest → hickory-resolver); pinned explicitly
 # so the import is tracked and version bumps are deliberate.

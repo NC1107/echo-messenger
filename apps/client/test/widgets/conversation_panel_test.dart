@@ -20,7 +20,15 @@ void main() {
       expect(find.text('Echo'), findsOneWidget);
     });
 
-    testWidgets('renders action menu in header', (tester) async {
+    testWidgets('renders action menu in header on desktop (wide) layout', (
+      tester,
+    ) async {
+      // The "+" header menu is desktop-only (width >= 600). Force a wide
+      // viewport so the widget renders it.
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
       bool newChatCalled = false;
       bool newGroupCalled = false;
       bool discoverCalled = false;
@@ -36,7 +44,7 @@ void main() {
       );
       await tester.pump();
 
-      // Verify the "+" action menu exists
+      // Verify the "+" action menu exists on wide layouts
       expect(find.byIcon(Icons.add), findsOneWidget);
 
       // Open the popup menu
@@ -69,6 +77,54 @@ void main() {
       await tester.pumpAndSettle();
       expect(discoverCalled, isTrue);
     });
+
+    testWidgets(
+      'pencil FAB is visible on mobile and opens compose menu on long-press',
+      (tester) async {
+        // Narrow viewport — mobile layout
+        tester.view.physicalSize = const Size(390, 844);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        bool newChatCalled = false;
+        bool newGroupCalled = false;
+
+        await tester.pumpApp(
+          ConversationPanel(
+            onConversationTap: (_) {},
+            onNewChat: () => newChatCalled = true,
+            onNewGroup: () => newGroupCalled = true,
+            onDiscover: () {},
+          ),
+          overrides: standardOverrides(),
+        );
+        await tester.pump();
+
+        // "+" header button must NOT appear on mobile
+        expect(find.byIcon(Icons.add), findsNothing);
+
+        // Pencil FAB must be visible
+        expect(find.byIcon(Icons.edit_outlined), findsOneWidget);
+
+        // Single tap triggers new chat
+        await tester.tap(find.byIcon(Icons.edit_outlined));
+        await tester.pump();
+        expect(newChatCalled, isTrue);
+
+        // Long-press opens the compose popup menu
+        await tester.longPress(find.byIcon(Icons.edit_outlined));
+        await tester.pumpAndSettle();
+
+        expect(find.text('New chat'), findsOneWidget);
+        expect(find.text('New group'), findsOneWidget);
+        expect(find.text('Discover groups'), findsOneWidget);
+
+        // Tap "New group" from the menu
+        await tester.tap(find.text('New group'));
+        await tester.pumpAndSettle();
+        expect(newGroupCalled, isTrue);
+      },
+    );
 
     testWidgets('renders conversation list items', (tester) async {
       await tester.pumpApp(

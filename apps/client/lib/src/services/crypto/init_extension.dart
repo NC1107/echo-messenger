@@ -27,7 +27,6 @@ extension CryptoServiceInit on CryptoService {
     if (migrated == 'true') return;
 
     final prefs = await SharedPreferences.getInstance();
-    var allSucceeded = true;
 
     // On web, skip removing keys from SharedPreferences after copying to
     // secure storage. SecureKeyStore on web uses Web Crypto API encryption
@@ -35,69 +34,15 @@ extension CryptoServiceInit on CryptoService {
     // SharedPreferences (plain localStorage) is the reliable fallback.
     final removeFromPrefs = !kIsWeb;
 
-    // Migrate identity + signing + signed prekey (named keys)
-    for (final key in CryptoService._allCryptoKeys) {
-      final value = prefs.getString(key);
-      if (value != null) {
-        try {
-          await store.write(key, value);
-          if (removeFromPrefs) await prefs.remove(key);
-          debugPrint(
-            '[Crypto] Migrated $key from SharedPreferences to '
-            'secure storage',
-          );
-        } catch (e) {
-          allSucceeded = false;
-          debugPrint(
-            '[Crypto] Migration of $key failed (keeping in SharedPreferences '
-            'for next attempt): $e',
-          );
-        }
-      }
-    }
+    final namedOk = await _migrateNamedKeys(prefs, store, removeFromPrefs);
+    final prefixedOk = await _migratePrefixedKeys(
+      prefs,
+      store,
+      removeFromPrefs,
+    );
+    final counterOk = await _migrateCounterKeys(prefs, store, removeFromPrefs);
 
-    // Migrate prefixed keys: sessions, OTP privates, peer identities
-    for (final key in prefs.getKeys()) {
-      final isPrefixed =
-          key.startsWith(CryptoService._sessionPrefix) ||
-          key.startsWith(CryptoService._otpPrivatePrefix) ||
-          key.startsWith(CryptoService._peerIdentityPrefix) ||
-          key.startsWith(CryptoService._peerIdentityChangedPrefix);
-      if (isPrefixed) {
-        final value = prefs.getString(key);
-        if (value != null) {
-          try {
-            await store.write(key, value);
-            if (removeFromPrefs) await prefs.remove(key);
-            debugPrint('[Crypto] Migrated $key to secure storage');
-          } catch (e) {
-            allSucceeded = false;
-            debugPrint(
-              '[Crypto] Migration of $key failed '
-              '(keeping in SharedPreferences): $e',
-            );
-          }
-        }
-      }
-    }
-
-    // Also migrate device ID and OTP next ID
-    for (final key in [
-      CryptoService._deviceIdPref,
-      CryptoService._otpNextIdPref,
-    ]) {
-      final value = prefs.getString(key);
-      if (value != null) {
-        try {
-          await store.write(key, value);
-          if (removeFromPrefs) await prefs.remove(key);
-        } catch (e) {
-          allSucceeded = false;
-        }
-      }
-    }
-
-    if (allSucceeded) {
+    if (namedOk && prefixedOk && counterOk) {
       await store.write('_crypto_migration_complete', 'true');
       debugPrint('[Crypto] Migration complete -- all keys in secure storage');
     } else {
@@ -105,18 +50,125 @@ extension CryptoServiceInit on CryptoService {
     }
   }
 
-  /// Restore identity, signing, and signed prekey from secure storage.
-  ///
-  /// [readKey] is used to read values, allowing callers to inject a fallback
-  /// strategy (e.g. SharedPreferences on web) when SecureKeyStore fails.
-  Future<void> _restoreKeysFromStorage(
+  /// Migrate named crypto keys (identity, signing, signed prekey) from
+  /// [prefs] to [store]. Returns `true` if all present keys migrated without
+  /// error.
+  Future<bool> _migrateNamedKeys(
+    SharedPreferences prefs,
     SecureKeyStore store,
-    String storedPrivate, {
-    Future<String?> Function(String key)? readKey,
-  }) async {
-    Future<String?> read(String key) =>
-        readKey != null ? readKey(key) : store.read(key);
+    bool removeFromPrefs,
+  ) async {
+    var allSucceeded = true;
+    for (final key in CryptoService._allCryptoKeys) {
+      final value = prefs.getString(key);
+      if (value != null) {
+        final ok = await _migrateOneKey(
+          prefs,
+          store,
+          key,
+          value,
+          removeFromPrefs,
+        );
+        if (!ok) allSucceeded = false;
+        if (ok) {
+          debugPrint(
+            '[Crypto] Migrated $key from SharedPreferences to '
+            'secure storage',
+          );
+        }
+      }
+    }
+    return allSucceeded;
+  }
 
+  /// Migrate prefixed crypto keys (sessions, OTP privates, peer identities)
+  /// from [prefs] to [store]. Returns `true` if all present keys migrated
+  /// without error.
+  Future<bool> _migratePrefixedKeys(
+    SharedPreferences prefs,
+    SecureKeyStore store,
+    bool removeFromPrefs,
+  ) async {
+    var allSucceeded = true;
+    for (final key in prefs.getKeys()) {
+      final isPrefixed =
+          key.startsWith(CryptoService._sessionPrefix) ||
+          key.startsWith(CryptoService._otpPrivatePrefix) ||
+          key.startsWith(CryptoService._peerIdentityPrefix) ||
+          key.startsWith(CryptoService._peerIdentityChangedPrefix);
+      if (!isPrefixed) continue;
+
+      final value = prefs.getString(key);
+      if (value != null) {
+        final ok = await _migrateOneKey(
+          prefs,
+          store,
+          key,
+          value,
+          removeFromPrefs,
+        );
+        if (!ok) allSucceeded = false;
+        if (ok) debugPrint('[Crypto] Migrated $key to secure storage');
+      }
+    }
+    return allSucceeded;
+  }
+
+  /// Migrate counter keys (device ID and OTP next ID) from [prefs] to [store].
+  /// Returns `true` if all present keys migrated without error.
+  Future<bool> _migrateCounterKeys(
+    SharedPreferences prefs,
+    SecureKeyStore store,
+    bool removeFromPrefs,
+  ) async {
+    var allSucceeded = true;
+    for (final key in [
+      CryptoService._deviceIdPref,
+      CryptoService._otpNextIdPref,
+    ]) {
+      final value = prefs.getString(key);
+      if (value != null) {
+        final ok = await _migrateOneKey(
+          prefs,
+          store,
+          key,
+          value,
+          removeFromPrefs,
+        );
+        if (!ok) allSucceeded = false;
+      }
+    }
+    return allSucceeded;
+  }
+
+  /// Write a single [key]/[value] pair to [store] and optionally remove from
+  /// [prefs]. Returns `true` on success, `false` if the store write threw.
+  Future<bool> _migrateOneKey(
+    SharedPreferences prefs,
+    SecureKeyStore store,
+    String key,
+    String value,
+    bool removeFromPrefs,
+  ) async {
+    try {
+      await store.write(key, value);
+      if (removeFromPrefs) await prefs.remove(key);
+      return true;
+    } catch (e) {
+      debugPrint(
+        '[Crypto] Migration of $key failed (keeping in SharedPreferences '
+        'for next attempt): $e',
+      );
+      return false;
+    }
+  }
+
+  /// Restore the X25519 identity key pair from [storedPrivate] and [store].
+  Future<void> _restoreIdentityKey(
+    SecureKeyStore store,
+    String storedPrivate,
+    Future<String?> Function(String key) read,
+  ) async {
     final privateBytes = base64Decode(storedPrivate);
     final publicBytes = base64Decode(
       (await read(CryptoService._identityPubKeyPref))!,
@@ -126,8 +178,13 @@ extension CryptoServiceInit on CryptoService {
       publicKey: SimplePublicKey(publicBytes, type: KeyPairType.x25519),
       type: KeyPairType.x25519,
     );
+  }
 
-    // Restore Ed25519 signing key pair
+  /// Restore (or regenerate) the Ed25519 signing key pair from [store].
+  Future<void> _restoreSigningKey(
+    SecureKeyStore store,
+    Future<String?> Function(String key) read,
+  ) async {
     final sigPriv = await read(CryptoService._signingKeyPref);
     final sigPub = await read(CryptoService._signingPubKeyPref);
     if (sigPriv != null && sigPub != null) {
@@ -144,8 +201,13 @@ extension CryptoServiceInit on CryptoService {
       await _saveSigningKey(store);
       _keysAreFresh = true;
     }
+  }
 
-    // Restore signed prekey pair
+  /// Restore (or regenerate) the X25519 signed prekey pair from [store].
+  Future<void> _restoreSignedPrekey(
+    SecureKeyStore store,
+    Future<String?> Function(String key) read,
+  ) async {
     final spkPriv = await read(CryptoService._signedPrekeyPref);
     final spkPub = await read(CryptoService._signedPrekeyPubPref);
     if (spkPriv != null && spkPub != null) {
@@ -162,6 +224,23 @@ extension CryptoServiceInit on CryptoService {
       await _saveSignedPrekey(store);
       _keysAreFresh = true;
     }
+  }
+
+  /// Restore identity, signing, and signed prekey from secure storage.
+  ///
+  /// [readKey] is used to read values, allowing callers to inject a fallback
+  /// strategy (e.g. SharedPreferences on web) when SecureKeyStore fails.
+  Future<void> _restoreKeysFromStorage(
+    SecureKeyStore store,
+    String storedPrivate, {
+    Future<String?> Function(String key)? readKey,
+  }) async {
+    Future<String?> read(String key) =>
+        readKey != null ? readKey(key) : store.read(key);
+
+    await _restoreIdentityKey(store, storedPrivate, read);
+    await _restoreSigningKey(store, read);
+    await _restoreSignedPrekey(store, read);
 
     // Always mark identity bundle for upload so the server has the
     // current bundle.
