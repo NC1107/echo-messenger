@@ -147,6 +147,7 @@ class _QuickReactionRowState extends State<QuickReactionRow> {
                             style: const TextStyle(
                               fontSize: 24,
                               decoration: TextDecoration.none,
+                              fontFamilyFallback: ['NotoEmoji'],
                             ),
                           ),
                         ),

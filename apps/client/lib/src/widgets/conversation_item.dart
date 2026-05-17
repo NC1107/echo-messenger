@@ -435,7 +435,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 padding: EdgeInsets.symmetric(
-                  horizontal: isCozy ? 14 : (isCompact ? 10 : 12),
+                  horizontal: _resolveHorizontalPadding(isCozy, isCompact),
                 ),
                 // Visual children re-announce muted/unread/timestamp via
                 // their own Semantics nodes; suppress those so the composed
@@ -449,7 +449,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                         displayName,
                         density: density,
                       ),
-                      SizedBox(width: isCozy ? 14 : (isCompact ? 8 : 12)),
+                      SizedBox(width: _resolveAvatarSpacing(isCozy, isCompact)),
                       _buildNameAndSnippet(
                         context,
                         displayName: displayName,
@@ -496,6 +496,19 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
       return context.unreadRowTint;
     }
     return Colors.transparent;
+  }
+
+  double _resolveHorizontalPadding(bool isCozy, bool isCompact) {
+    return (isCozy ? 14 : (isCompact ? 10 : 12)).toDouble();
+  }
+
+  double _resolveAvatarSpacing(bool isCozy, bool isCompact) {
+    return (isCozy ? 14 : (isCompact ? 8 : 12)).toDouble();
+  }
+
+  Color _resolveTimestampColor(BuildContext context, bool hasUnread) {
+    if (widget.conversation.isMuted) return context.mutedSurface;
+    return hasUnread ? context.accent : context.textMuted;
   }
 
   Widget _buildAvatarStack(
@@ -732,9 +745,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
             overflow: TextOverflow.ellipsis,
             style: GoogleFonts.inter(
               fontSize: 12,
-              color: widget.conversation.isMuted
-                  ? context.mutedSurface
-                  : (hasUnread ? context.accent : context.textMuted),
+              color: _resolveTimestampColor(context, hasUnread),
             ),
           ),
         ],

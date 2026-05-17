@@ -28,46 +28,49 @@ Future<void> showFullReactionPicker(
     ),
     builder: (sheetContext) => SizedBox(
       height: 380,
-      child: EmojiPicker(
-        onEmojiSelected: (_, emoji) {
-          Navigator.of(sheetContext).pop();
-          final alreadyReacted = message.reactions.any(
-            (r) => r.emoji == emoji.emoji && r.userId == myUserId,
-          );
-          onPick(emoji.emoji, alreadyReacted);
-        },
-        config: Config(
-          height: 380,
-          checkPlatformCompatibility: true,
-          emojiViewConfig: EmojiViewConfig(
-            backgroundColor: context.surface,
-            columns: 9,
-            emojiSizeMax: 28,
-            verticalSpacing: 0,
-            horizontalSpacing: 0,
-            noRecents: Text(
-              'No recents yet.',
-              style: TextStyle(fontSize: 12, color: context.textMuted),
+      child: DefaultTextStyle(
+        style: const TextStyle(fontFamilyFallback: ['NotoEmoji']),
+        child: EmojiPicker(
+          onEmojiSelected: (_, emoji) {
+            Navigator.of(sheetContext).pop();
+            final alreadyReacted = message.reactions.any(
+              (r) => r.emoji == emoji.emoji && r.userId == myUserId,
+            );
+            onPick(emoji.emoji, alreadyReacted);
+          },
+          config: Config(
+            height: 380,
+            checkPlatformCompatibility: true,
+            emojiViewConfig: EmojiViewConfig(
+              backgroundColor: context.surface,
+              columns: 9,
+              emojiSizeMax: 28,
+              verticalSpacing: 0,
+              horizontalSpacing: 0,
+              noRecents: Text(
+                'No recents yet.',
+                style: TextStyle(fontSize: 12, color: context.textMuted),
+              ),
             ),
-          ),
-          categoryViewConfig: CategoryViewConfig(
-            initCategory: Category.SMILEYS,
-            recentTabBehavior: RecentTabBehavior.RECENT,
-            backgroundColor: context.surface,
-            indicatorColor: context.accent,
-            iconColorSelected: context.accent,
-            iconColor: context.textMuted,
-          ),
-          skinToneConfig: SkinToneConfig(
-            enabled: true,
-            dialogBackgroundColor: context.surface,
-            indicatorColor: context.accent,
-          ),
-          bottomActionBarConfig: const BottomActionBarConfig(enabled: false),
-          searchViewConfig: SearchViewConfig(
-            backgroundColor: context.surface,
-            buttonIconColor: context.textSecondary,
-            hintText: 'Find an emoji...',
+            categoryViewConfig: CategoryViewConfig(
+              initCategory: Category.SMILEYS,
+              recentTabBehavior: RecentTabBehavior.RECENT,
+              backgroundColor: context.surface,
+              indicatorColor: context.accent,
+              iconColorSelected: context.accent,
+              iconColor: context.textMuted,
+            ),
+            skinToneConfig: SkinToneConfig(
+              enabled: true,
+              dialogBackgroundColor: context.surface,
+              indicatorColor: context.accent,
+            ),
+            bottomActionBarConfig: const BottomActionBarConfig(enabled: false),
+            searchViewConfig: SearchViewConfig(
+              backgroundColor: context.surface,
+              buttonIconColor: context.textSecondary,
+              hintText: 'Find an emoji...',
+            ),
           ),
         ),
       ),

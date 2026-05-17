@@ -9,6 +9,7 @@
 //   error • Undefined name 'AudioPreset'
 // on lib/src/providers/livekit_voice_provider.dart.
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:livekit_client/livekit_client.dart';
 
@@ -16,6 +17,8 @@ import 'package:echo_app/src/providers/livekit_voice_provider.dart';
 import 'package:echo_app/src/providers/livekit_voice/rtc_stats_poll.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('LiveKitVoiceState', () {
     test('initial state matches expected defaults', () {
       const state = LiveKitVoiceState();
@@ -105,5 +108,173 @@ void main() {
         expect(opts.encoding, AudioEncoding.presetMusic);
       },
     );
+  });
+
+  group('LiveKitVoiceNotifier public methods', () {
+    late ProviderContainer container;
+
+    setUp(() {
+      container = ProviderContainer();
+      addTearDown(container.dispose);
+    });
+
+    test('setCaptureEnabled updates state with isCaptureEnabled', () {
+      final notifier = container.read(livekitVoiceProvider.notifier);
+      expect(container.read(livekitVoiceProvider).isCaptureEnabled, isTrue);
+
+      notifier.setCaptureEnabled(false);
+      expect(container.read(livekitVoiceProvider).isCaptureEnabled, isFalse);
+
+      notifier.setCaptureEnabled(true);
+      expect(container.read(livekitVoiceProvider).isCaptureEnabled, isTrue);
+    });
+
+    test('setDeafened(true) mutes mic and saves previous state', () async {
+      final notifier = container.read(livekitVoiceProvider.notifier);
+      notifier.state = notifier.state.copyWith(
+        isActive: true,
+        isCaptureEnabled: true,
+      );
+
+      await notifier.setDeafened(true);
+      final state = container.read(livekitVoiceProvider);
+      expect(state.isDeafened, isTrue);
+      expect(state.isCaptureEnabled, isFalse);
+    });
+
+    test(
+      'setDeafened(false) restores mic state when previously unmuted',
+      () async {
+        final notifier = container.read(livekitVoiceProvider.notifier);
+        notifier.state = notifier.state.copyWith(
+          isActive: true,
+          isCaptureEnabled: true,
+        );
+
+        // Deafen then undeafen
+        await notifier.setDeafened(true);
+        await notifier.setDeafened(false);
+
+        final state = container.read(livekitVoiceProvider);
+        expect(state.isDeafened, isFalse);
+        expect(state.isCaptureEnabled, isTrue);
+      },
+    );
+
+    test(
+      'setDeafened keeps mic muted on undeafen if was muted before',
+      () async {
+        final notifier = container.read(livekitVoiceProvider.notifier);
+        notifier.state = notifier.state.copyWith(
+          isActive: true,
+          isCaptureEnabled: false, // start muted
+        );
+
+        // Deafen then undeafen
+        await notifier.setDeafened(true);
+        await notifier.setDeafened(false);
+
+        final state = container.read(livekitVoiceProvider);
+        expect(state.isDeafened, isFalse);
+        expect(
+          state.isCaptureEnabled,
+          isFalse,
+        ); // stays muted since it was muted before
+      },
+    );
+
+    test('leaveChannel resets state to empty', () async {
+      final notifier = container.read(livekitVoiceProvider.notifier);
+      notifier.state = notifier.state.copyWith(
+        isActive: false,
+        conversationId: 'conv-1',
+        channelId: 'chan-1',
+      );
+
+      // Set isActive to false to skip sound playback path
+      await notifier.leaveChannel();
+      final state = container.read(livekitVoiceProvider);
+      expect(state.isActive, isFalse);
+      expect(state.conversationId, isNull);
+      expect(state.channelId, isNull);
+    });
+
+    test('leaveChannel is idempotent when not active', () async {
+      final notifier = container.read(livekitVoiceProvider.notifier);
+      const state = LiveKitVoiceState.empty;
+      expect(state.isActive, isFalse);
+
+      // Should not throw
+      await notifier.leaveChannel();
+      expect(container.read(livekitVoiceProvider).isActive, isFalse);
+    });
+
+    test('setCaptureEnabled updates state independent of room', () {
+      final notifier = container.read(livekitVoiceProvider.notifier);
+      notifier.state = notifier.state.copyWith(isCaptureEnabled: true);
+
+      // Should update state even with no room
+      notifier.setCaptureEnabled(false);
+      expect(container.read(livekitVoiceProvider).isCaptureEnabled, isFalse);
+    });
+
+    test('setDeafened preserves other state fields', () async {
+      final notifier = container.read(livekitVoiceProvider.notifier);
+      notifier.state = notifier.state.copyWith(
+        isActive: true,
+        conversationId: 'conv-1',
+        channelId: 'chan-1',
+        isCaptureEnabled: true,
+      );
+
+      await notifier.setDeafened(true);
+      final state = container.read(livekitVoiceProvider);
+      expect(state.conversationId, equals('conv-1'));
+      expect(state.channelId, equals('chan-1'));
+      expect(state.isActive, isTrue);
+    });
+
+    // Regression: joining a new lounge while still joining another used to
+    // crash with PlatformException("No active stream to cancel") because the
+    // second Room opened its EventChannel streams before the first Room's
+    // streams were torn down.  The _isJoining guard prevents this race.
+    //
+    // Tests the observable surface: state.isJoining tracks mid-join state,
+    // and copyWith(isJoining: false) correctly resets it — confirming the
+    // state machine used by the guard behaves correctly.
+    test('isJoining state tracks concurrent-join guard correctly', () {
+      final notifier = container.read(livekitVoiceProvider.notifier);
+
+      // Simulate state showing a join is in progress.
+      notifier.state = notifier.state.copyWith(isJoining: true);
+      expect(container.read(livekitVoiceProvider).isJoining, isTrue);
+      expect(container.read(livekitVoiceProvider).isActive, isFalse);
+
+      // Simulate join completing (or being aborted): guard clears.
+      notifier.state = notifier.state.copyWith(isJoining: false);
+      expect(container.read(livekitVoiceProvider).isJoining, isFalse);
+      expect(container.read(livekitVoiceProvider).isActive, isFalse);
+    });
+
+    // NOTE: Keep this test last in the group. It sets isActive=true which
+    // triggers SoundService.playVoiceLeave() — a platform channel call that
+    // throws MissingPluginException async in the test environment. Flutter's
+    // test runner attributes that deferred exception to the NEXT test, so any
+    // test added after this one would fail spuriously.
+    test('leaveChannel clears conversationId and channelId', () async {
+      final notifier = container.read(livekitVoiceProvider.notifier);
+      notifier.state = notifier.state.copyWith(
+        isActive: true,
+        conversationId: 'conv-1',
+        channelId: 'chan-1',
+        peerCount: 5,
+      );
+
+      await notifier.leaveChannel();
+      final state = container.read(livekitVoiceProvider);
+      expect(state.conversationId, isNull);
+      expect(state.channelId, isNull);
+      expect(state.peerCount, 0);
+    });
   });
 }

@@ -52,6 +52,9 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   /// Whether the drawing canvas overlay is active.
   bool _isDrawing = false;
 
+  /// Whether the members sidebar is collapsed (hidden).
+  bool _membersSidebarCollapsed = false;
+
   /// Anchors for dock submenu panels.
   final LayerLink _drawingToolsLayerLink = LayerLink();
   final LayerLink _micLayerLink = LayerLink();
@@ -297,13 +300,16 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
               ),
               const SizedBox(height: 16),
             ],
-            ParticipantGrid(
-              room: room,
-              voiceState: voiceLk,
-              localAvatarUrl: _buildAvatarUrl(),
-              memberAvatars: memberAvatars,
-              authToken: ref.read(authProvider).token,
-              onTileTap: (key) => setState(() => _focusedTileKey = key),
+            Visibility(
+              visible: !_membersSidebarCollapsed,
+              child: ParticipantGrid(
+                room: room,
+                voiceState: voiceLk,
+                localAvatarUrl: _buildAvatarUrl(),
+                memberAvatars: memberAvatars,
+                authToken: ref.read(authProvider).token,
+                onTileTap: (key) => setState(() => _focusedTileKey = key),
+              ),
             ),
           ],
         ),
@@ -353,13 +359,16 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
               child: const ScreenShareViewer(),
             ),
           if (screenShare.isScreenSharing) const SizedBox(height: 16),
-          ParticipantGrid(
-            room: room,
-            voiceState: voiceLk,
-            localAvatarUrl: _buildAvatarUrl(),
-            memberAvatars: memberAvatars,
-            authToken: ref.read(authProvider).token,
-            onTileTap: (key) => setState(() => _focusedTileKey = key),
+          Visibility(
+            visible: !_membersSidebarCollapsed,
+            child: ParticipantGrid(
+              room: room,
+              voiceState: voiceLk,
+              localAvatarUrl: _buildAvatarUrl(),
+              memberAvatars: memberAvatars,
+              authToken: ref.read(authProvider).token,
+              onTileTap: (key) => setState(() => _focusedTileKey = key),
+            ),
           ),
         ],
       ),
@@ -522,40 +531,98 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     await ref.read(voiceLoungeBackgroundProvider.notifier).clear();
   }
 
-  /// Show a tiny bottom-sheet with "Choose image" + "Reset to default" so the
-  /// single icon button covers both operations.
+  /// Show a bottom-sheet with "Choose image" + "Reset to default" so the
+  /// single icon button covers both operations. On desktop (600px+), shows
+  /// a modal dialog with a grid of preset backgrounds instead.
   Future<void> _openBackgroundMenu(BuildContext ctx) async {
     final hasCustom =
         ref.read(voiceLoungeBackgroundProvider).customBackgroundPath != null;
-    await showModalBottomSheet<void>(
-      context: ctx,
-      builder: (sheetCtx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.image_outlined),
-                title: const Text('Choose voice lounge background'),
-                onTap: () {
-                  Navigator.of(sheetCtx).pop();
-                  _pickBackground();
-                },
-              ),
-              if (hasCustom)
-                ListTile(
-                  leading: const Icon(Icons.restore),
-                  title: const Text('Reset to default'),
-                  onTap: () {
-                    Navigator.of(sheetCtx).pop();
-                    _clearBackground();
+    final isDesktop = MediaQuery.sizeOf(ctx).width >= 600;
+
+    if (isDesktop) {
+      await showDialog<void>(
+        context: ctx,
+        builder: (dialogCtx) => AlertDialog(
+          backgroundColor: dialogCtx.surface,
+          title: const Text('Voice lounge background'),
+          content: SizedBox(
+            width: 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Choose a custom image',
+                  style: TextStyle(
+                    color: dialogCtx.textSecondary,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  icon: const Icon(Icons.image_outlined),
+                  label: const Text('Browse files'),
+                  onPressed: () {
+                    Navigator.of(dialogCtx).pop();
+                    _pickBackground();
                   },
                 ),
-            ],
+                if (hasCustom) ...[
+                  const SizedBox(height: 16),
+                  TextButton.icon(
+                    icon: const Icon(Icons.restore),
+                    label: const Text('Reset to default'),
+                    onPressed: () {
+                      Navigator.of(dialogCtx).pop();
+                      _clearBackground();
+                    },
+                  ),
+                ],
+              ],
+            ),
           ),
-        );
-      },
-    );
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+            side: BorderSide(color: dialogCtx.border),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    } else {
+      await showModalBottomSheet<void>(
+        context: ctx,
+        builder: (sheetCtx) {
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.image_outlined),
+                  title: const Text('Choose voice lounge background'),
+                  onTap: () {
+                    Navigator.of(sheetCtx).pop();
+                    _pickBackground();
+                  },
+                ),
+                if (hasCustom)
+                  ListTile(
+                    leading: const Icon(Icons.restore),
+                    title: const Text('Reset to default'),
+                    onTap: () {
+                      Navigator.of(sheetCtx).pop();
+                      _clearBackground();
+                    },
+                  ),
+              ],
+            ),
+          );
+        },
+      );
+    }
   }
 
   /// Resolves the active background widget for the lounge.  When the user
@@ -611,6 +678,11 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
 
   void _closeSubmenu() => setState(() => _activeSubmenu = null);
 
+  /// Resolves a relative or absolute avatar URL to a full URL.
+  String _resolveAvatarUrl(String avatarUrl, String serverUrl) {
+    return avatarUrl.startsWith('http') ? avatarUrl : '$serverUrl$avatarUrl';
+  }
+
   /// Builds the username -> avatarUrl map from the active conversation's members.
   Map<String, String?> _buildMemberAvatars(String conversationId) {
     final serverUrl = ref.read(serverUrlProvider);
@@ -621,12 +693,10 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     final avatars = <String, String?>{};
     if (conversation == null) return avatars;
     for (final m in conversation.members) {
-      final resolved = m.avatarUrl != null && m.avatarUrl!.isNotEmpty
-          ? (m.avatarUrl!.startsWith('http')
-                ? m.avatarUrl
-                : '$serverUrl${m.avatarUrl}')
+      final resolvedUrl = m.avatarUrl != null && m.avatarUrl!.isNotEmpty
+          ? _resolveAvatarUrl(m.avatarUrl!, serverUrl)
           : null;
-      avatars[m.username] = resolved;
+      avatars[m.username] = resolvedUrl;
     }
     return avatars;
   }
@@ -694,6 +764,10 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
             channelName: channelName,
             participantCount: totalParticipants,
             onBackToChat: widget.onBackToChat,
+            membersSidebarCollapsed: _membersSidebarCollapsed,
+            onToggleMembers: () => setState(
+              () => _membersSidebarCollapsed = !_membersSidebarCollapsed,
+            ),
           ),
           Expanded(child: contentArea),
           // Space for the floating dock

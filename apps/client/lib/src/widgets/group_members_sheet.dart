@@ -44,6 +44,10 @@ class GroupMembersSheet extends ConsumerWidget {
 
   const GroupMembersSheet({super.key, required this.conversation});
 
+  String _memberCountLabel(int count) {
+    return '$count member${count == 1 ? '' : 's'}';
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final conv = conversation;
@@ -128,7 +132,7 @@ class GroupMembersSheet extends ConsumerWidget {
                     Text(
                       onlineCount > 0
                           ? '${members.length} total · $onlineCount online'
-                          : '${members.length} member${members.length == 1 ? '' : 's'}',
+                          : _memberCountLabel(members.length),
                       style: GoogleFonts.inter(
                         color: context.textMuted,
                         fontSize: 12,

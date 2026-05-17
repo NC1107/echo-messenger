@@ -116,6 +116,22 @@ class MessageCache {
     return messages;
   }
 
+  /// Synchronously check whether a message ID is present in an already-open
+  /// conversation box.
+  ///
+  /// Returns `true` only when the box for [conversationId] is already open in
+  /// memory AND the key exists in it. Returns `false` when the box is not yet
+  /// open (it may still exist on disk — use [getCachedMessage] to check with
+  /// disk I/O). Used by the WS message handler (#26) to suppress spurious
+  /// unread increments and notifications for replayed offline messages without
+  /// needing an async disk read on the hot receive path.
+  static bool isMessageCachedSync(String conversationId, String messageId) {
+    if (messageId.isEmpty) return false;
+    final box = _convBoxes[conversationId];
+    if (box == null || !box.isOpen) return false;
+    return box.containsKey(messageId);
+  }
+
   /// Look up a single cached message by conversation and message ID.
   ///
   /// Returns null if the message is not in the cache. Used by the history

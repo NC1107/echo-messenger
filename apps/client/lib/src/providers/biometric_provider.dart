@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -52,8 +54,9 @@ class Biometric extends _$Biometric {
   }
 
   Future<void> _init() async {
-    // local_auth has no web implementation -- skip entirely on web.
-    if (kIsWeb) {
+    // local_auth has no Linux implementation and throws MissingPluginException.
+    // Skip biometric init on Linux to avoid the error; web is also unsupported.
+    if (kIsWeb || Platform.isLinux) {
       state = state.copyWith(isAvailable: false, isLoading: false);
       return;
     }

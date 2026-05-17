@@ -743,9 +743,7 @@ class AvatarCircle extends StatelessWidget {
       child: avatarUrl != null
           ? Image.network(
               avatarUrl!,
-              headers: authToken != null
-                  ? {'Authorization': 'Bearer $authToken'}
-                  : null,
+              headers: _getAuthHeaders(authToken),
               fit: BoxFit.cover,
               width: avatarSize,
               height: avatarSize,
@@ -844,14 +842,27 @@ class _LocalScreenShareTrackState extends State<LocalScreenShareTrack> {
   @override
   Widget build(BuildContext context) {
     if (_track == null) {
-      return const Center(
-        child: SizedBox(
-          width: 24,
-          height: 24,
-          child: CircularProgressIndicator(strokeWidth: 2),
+      // Black background prevents the BackdropFilter in sibling ParticipantTile
+      // widgets from sampling a grey surface and washing out the lounge UI
+      // while the screen-share track resolves (#17a).
+      return const ColoredBox(
+        color: Colors.black,
+        child: Center(
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Colors.white54,
+            ),
+          ),
         ),
       );
     }
     return lk.VideoTrackRenderer(_track!, fit: lk.VideoViewFit.contain);
   }
+}
+
+Map<String, String>? _getAuthHeaders(String? authToken) {
+  return authToken != null ? {'Authorization': 'Bearer $authToken'} : null;
 }

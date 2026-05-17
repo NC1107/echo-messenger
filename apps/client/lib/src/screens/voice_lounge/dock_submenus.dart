@@ -324,9 +324,7 @@ class ScreenShareSubmenuStandalone extends ConsumerWidget {
             Icon(
               selected ? Icons.radio_button_checked : Icons.radio_button_off,
               size: 16,
-              color: enabled
-                  ? (selected ? context.accent : context.textMuted)
-                  : context.textMuted.withValues(alpha: 0.5),
+              color: _getRadioColor(selected, enabled, context),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -344,5 +342,10 @@ class ScreenShareSubmenuStandalone extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  Color _getRadioColor(bool selected, bool enabled, BuildContext context) {
+    if (!enabled) return context.textMuted.withValues(alpha: 0.5);
+    return selected ? context.accent : context.textMuted;
   }
 }

@@ -568,7 +568,7 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
                     : null,
                 child: r.avatarUrl == null
                     ? Text(
-                        label.isNotEmpty ? label[0].toUpperCase() : '?',
+                        _getAvatarInitial(label),
                         style: TextStyle(
                           color: context.accent,
                           fontSize: 13,
@@ -753,4 +753,8 @@ class _GroupResult {
     required this.description,
     required this.memberCount,
   });
+}
+
+String _getAvatarInitial(String label) {
+  return label.isNotEmpty ? label[0].toUpperCase() : '?';
 }

@@ -1090,7 +1090,8 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     final serverUrl = ref.read(serverUrlProvider);
     final isMe = member.userId == myUserId;
     final role = member.role ?? 'member';
-    final activity = isMe ? 'You' : (isOnline ? 'online' : 'away');
+    final onlineStatus = isOnline ? 'online' : 'away';
+    final activity = isMe ? 'You' : onlineStatus;
 
     return InkWell(
       onTap: () {

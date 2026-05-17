@@ -26,6 +26,7 @@ import '../screens/settings/privacy_section.dart'
 import '../services/slash_commands.dart';
 import '../services/toast_service.dart';
 import '../services/upload_client.dart';
+import '../services/emoji_shortcodes.dart';
 import '../theme/echo_theme.dart';
 import '../theme/motion_tokens.dart';
 import '../theme/responsive.dart';
@@ -454,6 +455,10 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
 
   Future<void> _doSend(String text) async {
     if (text.isEmpty) return;
+
+    // Expand emoji shortcodes (e.g., :smile: → 😄) at send-time
+    final expandedText = expandEmojiShortcodes(text);
+
     final conv = widget.conversation;
     final myUserId = ref.read(authProvider).userId ?? '';
     final chatState = ref.read(chatProvider);
@@ -475,7 +480,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         .read(chatProvider.notifier)
         .addOptimistic(
           peerUserId,
-          text,
+          expandedText,
           myUserId,
           conversationId: conv.id,
           channelId: channelId,
@@ -495,7 +500,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
             .read(websocketProvider.notifier)
             .sendGroupMessage(
               conv.id,
-              text,
+              expandedText,
               channelId: channelId,
               replyToId: replyTo?.id,
             );
@@ -504,7 +509,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
             .read(websocketProvider.notifier)
             .sendMessage(
               peerUserId,
-              text,
+              expandedText,
               conversationId: conv.id,
               replyToId: replyTo?.id,
             );
@@ -1659,7 +1664,11 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   /// above the message list (not inside the input bar's Stack).
   Widget buildMediaPickerPanel() {
     return MediaPickerPanel(
-      onEmojiSelected: (category, emoji) => _insertEmoji(emoji.emoji),
+      onEmojiSelected: (category, emoji) {
+        _insertEmoji(emoji.emoji);
+        setState(() => _showMediaPicker = false);
+        _inputFocusNode.requestFocus();
+      },
       onGifSelected: (gifUrl, slug) {
         setState(() => _showMediaPicker = false);
         // GIF is an external URL -- no upload needed.
@@ -1834,12 +1843,14 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   /// Builds the animated inline media/emoji picker that replaces the keyboard
   /// on mobile. Collapses to [SizedBox.shrink] when not shown.
   Widget _buildInlinePicker() {
+    final pickerHeight = (_lastKeyboardHeight > 0 ? _lastKeyboardHeight : 280)
+        .toDouble();
     return AnimatedSize(
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeInOut,
       child: _showInlinePicker
           ? SizedBox(
-              height: _lastKeyboardHeight > 0 ? _lastKeyboardHeight : 280,
+              height: pickerHeight,
               child: MobileMediaPickerPanel(
                 onEmojiSelected: (category, emoji) {
                   _insertEmoji(emoji.emoji);

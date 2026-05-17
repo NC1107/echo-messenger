@@ -15,15 +15,17 @@ import '../../providers/screen_share_provider.dart';
 import 'echo_screen_select_dialog.dart';
 
 bool _useLiveKitPicker() {
-  // macOS and Windows: keep LiveKit's ScreenSelectDialog (no native picker
-  // equivalent inside flutter_webrtc on those platforms).
+  // macOS, Windows, and Linux: use EchoScreenSelectDialog which enumerates
+  // sources via flutter_webrtc's DesktopCapturer (no portal dependency).
   //
-  // Linux: skip the LiveKit dialog. Its Window tab segfaults libwebrtc
-  // (#911 follow-up) and the system has xdg-desktop-portal which exposes
-  // a much better native picker. Defer to flutter_webrtc's
-  // setScreenShareEnabled which routes through the portal.
+  // Linux previously deferred to flutter_webrtc's setScreenShareEnabled which
+  // was supposed to route through xdg-desktop-portal. In practice the portal
+  // handshake is unreliable — it returns "source not found" when the portal
+  // daemon isn't running or dismisses the picker before flutter_webrtc reads
+  // the result (#12). Using the same custom picker path as macOS/Windows
+  // bypasses the portal entirely and gives consistent source enumeration.
   if (kIsWeb) return false;
-  if (Platform.isMacOS || Platform.isWindows) return true;
+  if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) return true;
   return false;
 }
 
@@ -115,7 +117,7 @@ Future<void> _startScreenShareWithPicker(
   }
 }
 
-/// Start screen share via the platform's native picker (Linux/mobile/web).
+/// Start screen share via the platform's native picker (mobile/web).
 Future<void> _startScreenShareNative(
   LiveKitVoiceNotifier lkNotifier,
   ScreenShare ssNotifier,
@@ -139,10 +141,11 @@ Future<void> _startScreenShareNative(
 
 /// Toggle screen share for the current LiveKit room.
 ///
-/// On desktop, opens LiveKit's [ScreenSelectDialog] so the user can pick a
-/// specific window or screen, creates a [LocalVideoTrack] from the selected
-/// source, and publishes it to the room. On mobile / web the LiveKit
-/// notifier handles the source selection internally.
+/// On desktop (macOS, Windows, Linux), opens [EchoScreenSelectDialog] so the
+/// user can pick a specific window or screen, creates a [LocalVideoTrack] from
+/// the selected source, and publishes it to the room with a single-layer VP8
+/// publish (no simulcast). On mobile / web the LiveKit notifier handles source
+/// selection internally via the platform's native picker.
 ///
 /// No-op when not in a voice channel (no room available).
 Future<void> toggleScreenShare(BuildContext context, WidgetRef ref) async {

@@ -9,12 +9,16 @@ class LoungeHeader extends StatelessWidget {
   final String channelName;
   final int participantCount;
   final VoidCallback? onBackToChat;
+  final bool membersSidebarCollapsed;
+  final VoidCallback? onToggleMembers;
 
   const LoungeHeader({
     super.key,
     required this.channelName,
     required this.participantCount,
     this.onBackToChat,
+    this.membersSidebarCollapsed = false,
+    this.onToggleMembers,
   });
 
   @override
@@ -55,6 +59,22 @@ class LoungeHeader extends StatelessWidget {
             ),
           ),
           const Spacer(),
+          if (onToggleMembers != null)
+            IconButton(
+              tooltip: membersSidebarCollapsed
+                  ? 'Show members'
+                  : 'Hide members',
+              onPressed: onToggleMembers,
+              icon: Icon(
+                membersSidebarCollapsed
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
+                size: 20,
+              ),
+              style: IconButton.styleFrom(
+                foregroundColor: context.textSecondary,
+              ),
+            ),
           if (onBackToChat != null)
             TextButton.icon(
               onPressed: onBackToChat,

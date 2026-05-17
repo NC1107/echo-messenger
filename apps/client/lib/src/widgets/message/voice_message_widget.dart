@@ -282,9 +282,12 @@ class _VoiceMessageWidgetState extends State<VoiceMessageWidget> {
 
     final showPosition = _position > Duration.zero;
     final showDuration = _duration > Duration.zero;
+    final defaultDurationLabel = showDuration
+        ? _formatDuration(_duration)
+        : '0:00';
     final durationLabel = showPosition
         ? _formatDuration(_position)
-        : (showDuration ? _formatDuration(_duration) : '0:00');
+        : defaultDurationLabel;
 
     return SizedBox(
       width: 272,

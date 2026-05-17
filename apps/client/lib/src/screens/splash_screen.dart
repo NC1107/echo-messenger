@@ -368,6 +368,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       return _buildUpdatePrompt(context);
     }
 
+    // Boot card matches the update-prompt card style: rounded surface,
+    // 16-px border-radius, themed border. Keeps the small splash window
+    // visually consistent with the in-app update modal.
     return Scaffold(
       backgroundColor: context.mainBg,
       body: Stack(
@@ -376,48 +379,53 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
           Center(
             child: FadeTransition(
               opacity: _fadeAnimation,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const EchoLogoIcon(size: 72),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Echo',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.5,
-                      color: context.accent,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 28,
+                  vertical: 24,
+                ),
+                decoration: BoxDecoration(
+                  color: context.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: context.border),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const EchoLogoIcon(size: 56),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Echo',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.5,
+                        color: context.accent,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 32),
-                  SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      color: context.accent.withValues(alpha: 0.6),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: context.accent.withValues(alpha: 0.6),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    _statusText,
-                    style: TextStyle(fontSize: 13, color: context.textMuted),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 16,
-            child: Center(
-              child: Text(
-                'v$appVersion',
-                style: TextStyle(
-                  fontSize: 10,
-                  color: context.textMuted.withValues(alpha: 0.5),
+                    const SizedBox(height: 12),
+                    Text(
+                      _statusText,
+                      style: TextStyle(fontSize: 12, color: context.textMuted),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'v$appVersion',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: context.textMuted.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

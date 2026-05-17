@@ -124,19 +124,33 @@ class SoundService {
   Future<void> playMessageSent() async {
     if (!_enabled) return;
     try {
-      await _sentPlayer.play(AssetSource('sounds/sent.mp3'), volume: 0.4);
+      await _sentPlayer.play(
+        AssetSource('assets/sounds/sent.mp3'),
+        volume: 0.4,
+      );
     } catch (e) {
       debugPrint('[Sound] Failed to play sent sound: $e');
     }
   }
 
   /// Play the selected notification sound when a new message is received.
+  ///
+  /// Errors are swallowed via `.catchError` rather than just try/await because
+  /// the audioplayers package can settle a late completer with
+  /// `MissingPluginException` AFTER the awaited `play()` returns — happens
+  /// under flutter_test where no platform channel is bound. Without the
+  /// explicit catch, the late rejection leaks past the test boundary and
+  /// fails the test even though no production user could observe it.
   Future<void> playMessageReceived() async {
     if (!_enabled) return;
     final path = _notificationSound.assetPath;
     if (path == null) return;
     try {
-      await _receivedPlayer.play(AssetSource(path), volume: 0.3);
+      await _receivedPlayer
+          .play(AssetSource('assets/$path'), volume: 0.3)
+          .catchError((Object e) {
+            debugPrint('[Sound] Failed to play received sound (late): $e');
+          });
     } catch (e) {
       debugPrint('[Sound] Failed to play received sound: $e');
     }
@@ -147,7 +161,7 @@ class SoundService {
     final path = sound.assetPath;
     if (path == null) return;
     try {
-      await _receivedPlayer.play(AssetSource(path), volume: 0.3);
+      await _receivedPlayer.play(AssetSource('assets/$path'), volume: 0.3);
     } catch (e) {
       debugPrint('[Sound] Failed to preview sound: $e');
     }
@@ -158,7 +172,7 @@ class SoundService {
     if (!_enabled) return;
     try {
       await _voiceJoinPlayer.play(
-        AssetSource('sounds/voice_join.mp3'),
+        AssetSource('assets/sounds/voice_join.mp3'),
         volume: 0.5,
       );
     } catch (e) {
@@ -171,7 +185,7 @@ class SoundService {
     if (!_enabled) return;
     try {
       await _voiceLeavePlayer.play(
-        AssetSource('sounds/voice_leave.mp3'),
+        AssetSource('assets/sounds/voice_leave.mp3'),
         volume: 0.5,
       );
     } catch (e) {

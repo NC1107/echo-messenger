@@ -287,6 +287,87 @@ void main() {
       expect(notifier.state.isLoading, isFalse);
     });
 
+    test('decrypts encrypted previews from cache', () async {
+      when(
+        () => mockClient.get(
+          any(that: predicate<Uri>((u) => u.path == '/api/conversations')),
+          headers: any(named: 'headers'),
+        ),
+      ).thenAnswer(
+        (_) async => http.Response(
+          jsonEncode([
+            {
+              'conversation_id': 'c-encrypted',
+              'kind': 'direct',
+              'last_message': 'VGhpcyBpcyBhIGJhc2U2NCBlbmNvZGVkIG1lc3NhZ2U=',
+              'last_message_timestamp': '2026-01-15T10:00:00Z',
+              'unread_count': 1,
+              'members': [
+                {'user_id': 'peer', 'username': 'alice'},
+              ],
+            },
+          ]),
+          200,
+        ),
+      );
+
+      final notifier = container.read(conversationsProvider.notifier);
+      await http.runWithClient(
+        () => notifier.loadConversations(),
+        () => mockClient,
+      );
+
+      expect(notifier.state.conversations, hasLength(1));
+      final conv = notifier.state.conversations.first;
+      expect(conv.lastMessage, 'Encrypted message');
+    });
+
+    test('sorts conversations by most recent activity first', () async {
+      when(
+        () => mockClient.get(
+          any(that: predicate<Uri>((u) => u.path == '/api/conversations')),
+          headers: any(named: 'headers'),
+        ),
+      ).thenAnswer(
+        (_) async => http.Response(
+          jsonEncode([
+            {
+              'conversation_id': 'c1',
+              'kind': 'direct',
+              'last_message': 'msg1',
+              'last_message_timestamp': '2026-01-15T10:00:00Z',
+              'members': [],
+            },
+            {
+              'conversation_id': 'c2',
+              'kind': 'direct',
+              'last_message': 'msg2',
+              'last_message_timestamp': '2026-01-15T12:00:00Z',
+              'members': [],
+            },
+            {
+              'conversation_id': 'c3',
+              'kind': 'direct',
+              'last_message': 'msg3',
+              'last_message_timestamp': '2026-01-15T08:00:00Z',
+              'members': [],
+            },
+          ]),
+          200,
+        ),
+      );
+
+      final notifier = container.read(conversationsProvider.notifier);
+      await http.runWithClient(
+        () => notifier.loadConversations(),
+        () => mockClient,
+      );
+
+      expect(notifier.state.conversations[0].id, 'c2');
+      expect(notifier.state.conversations[1].id, 'c1');
+      expect(notifier.state.conversations[2].id, 'c3');
+    });
+
     // -------------------------------------------------------------------
     // #515: monotonic-generation guard against stale reload responses.
     // Two concurrent reloads (e.g. WS reconnect racing pull-to-refresh)
@@ -540,6 +621,60 @@ void main() {
             contains('connect'),
           ),
         ),
+      );
+    });
+
+    test('creates DM locally when API returns it but not in top-50', () async {
+      when(
+        () => mockClient.post(
+          any(that: predicate<Uri>((u) => u.path == '/api/conversations/dm')),
+          headers: any(named: 'headers'),
+          body: any(named: 'body'),
+          encoding: any(named: 'encoding'),
+        ),
+      ).thenAnswer(
+        (_) async =>
+            http.Response(jsonEncode({'conversation_id': 'new-dm-2'}), 201),
+      );
+
+      // Stub loadConversations to NOT return the newly created DM (outside top-50).
+      when(
+        () => mockClient.get(
+          any(that: predicate<Uri>((u) => u.path == '/api/conversations')),
+          headers: any(named: 'headers'),
+        ),
+      ).thenAnswer((_) async => http.Response(jsonEncode([]), 200));
+
+      final notifier = container.read(conversationsProvider.notifier);
+      final result = await http.runWithClient(
+        () => notifier.getOrCreateDm('peer-2', 'charlie'),
+        () => mockClient,
+      );
+
+      expect(result.id, 'new-dm-2');
+      expect(result.isGroup, isFalse);
+      expect(result.members.any((m) => m.userId == 'peer-2'), isTrue);
+    });
+
+    test('rejects response with empty conversation_id', () {
+      when(
+        () => mockClient.post(
+          any(that: predicate<Uri>((u) => u.path == '/api/conversations/dm')),
+          headers: any(named: 'headers'),
+          body: any(named: 'body'),
+          encoding: any(named: 'encoding'),
+        ),
+      ).thenAnswer(
+        (_) async => http.Response(jsonEncode({'conversation_id': ''}), 200),
+      );
+
+      final notifier = container.read(conversationsProvider.notifier);
+      expect(
+        () => http.runWithClient(
+          () => notifier.getOrCreateDm('peer-3', 'dave'),
+          () => mockClient,
+        ),
+        throwsA(isA<DmException>()),
       );
     });
   });

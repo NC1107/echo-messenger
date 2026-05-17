@@ -57,6 +57,39 @@ class _ForwardMessageDialogState extends ConsumerState<_ForwardMessageDialog> {
     return scored.map((e) => e.conv).toList();
   }
 
+  Widget _buildConversationList(
+    BuildContext context,
+    bool isLoading,
+    List<Conversation> filtered,
+  ) {
+    if (isLoading) {
+      return Center(child: CircularProgressIndicator(color: context.accent));
+    }
+    if (filtered.isEmpty) {
+      return Center(
+        child: Text(
+          'No conversations found',
+          style: TextStyle(color: context.textMuted, fontSize: 14),
+        ),
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 8),
+      itemCount: filtered.length,
+      itemBuilder: (_, i) {
+        final conv = filtered[i];
+        return _ConversationPickerTile(
+          conversation: conv,
+          myUserId: ref.watch(authProvider).userId ?? '',
+          onTap: () {
+            Navigator.of(context).pop();
+            widget.onForward(conv);
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final convState = ref.watch(conversationsProvider);
@@ -147,35 +180,11 @@ class _ForwardMessageDialogState extends ConsumerState<_ForwardMessageDialog> {
 
             // Conversation list
             Expanded(
-              child: convState.isLoading
-                  ? Center(
-                      child: CircularProgressIndicator(color: context.accent),
-                    )
-                  : filtered.isEmpty
-                  ? Center(
-                      child: Text(
-                        'No conversations found',
-                        style: TextStyle(
-                          color: context.textMuted,
-                          fontSize: 14,
-                        ),
-                      ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      itemCount: filtered.length,
-                      itemBuilder: (_, i) {
-                        final conv = filtered[i];
-                        return _ConversationPickerTile(
-                          conversation: conv,
-                          myUserId: myUserId,
-                          onTap: () {
-                            Navigator.of(context).pop();
-                            widget.onForward(conv);
-                          },
-                        );
-                      },
-                    ),
+              child: _buildConversationList(
+                context,
+                convState.isLoading,
+                filtered,
+              ),
             ),
           ],
         ),

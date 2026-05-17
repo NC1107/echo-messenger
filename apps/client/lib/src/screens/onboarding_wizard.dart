@@ -22,6 +22,7 @@ import '../theme/echo_theme.dart';
 import '../utils/friendly_error.dart';
 import '../widgets/avatar_crop_dialog.dart';
 import '../widgets/echo_logo_icon.dart';
+import '../widgets/window_chrome.dart';
 
 /// Shared preferences key that gates whether onboarding has been completed.
 const kOnboardingCompletedKey = 'onboarding_completed';
@@ -44,10 +45,11 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
 
   // Profile fields shown inline on the Welcome page (the user can also edit
   // these later under Settings > Profile).
-  final _pronounsController = TextEditingController();
+  String? _selectedPronouns;
+  final _customPronounsController = TextEditingController();
   final _bioController = TextEditingController();
   final _statusController = TextEditingController();
-  final _timezoneController = TextEditingController();
+  String _selectedTimezone = '';
 
   /// Selected presence status. Mirrors the values used by the in-app status
   /// picker (see `conversation_panel.dart`). Defaults to "online".
@@ -72,7 +74,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   @override
   void initState() {
     super.initState();
-    _timezoneController.text = DateTime.now().timeZoneName;
+    _selectedTimezone = DateTime.now().timeZoneName;
     _loadNotificationPrefs();
   }
 
@@ -89,10 +91,9 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   void dispose() {
     _pageController.dispose();
     _displayNameController.dispose();
-    _pronounsController.dispose();
+    _customPronounsController.dispose();
     _bioController.dispose();
     _statusController.dispose();
-    _timezoneController.dispose();
     _contactUsernameController.dispose();
     super.dispose();
   }
@@ -140,12 +141,17 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
 
   Future<void> _saveProfile() async {
     final serverUrl = ref.read(serverUrlProvider);
+    // Resolve pronouns: use custom text when "Custom" is chosen, otherwise
+    // use the selected preset (or empty string if none selected).
+    final pronounsValue = _selectedPronouns == 'custom'
+        ? _customPronounsController.text.trim()
+        : (_selectedPronouns ?? '');
     final body = <String, dynamic>{
       'display_name': _displayNameController.text,
       'bio': _bioController.text,
       'status_message': _statusController.text,
-      'pronouns': _pronounsController.text,
-      'timezone': _timezoneController.text,
+      'pronouns': pronounsValue,
+      'timezone': _selectedTimezone,
     };
 
     try {
@@ -294,45 +300,57 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: context.mainBg,
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              child: Column(
-                children: [
-                  // Logo
-                  const SizedBox(height: 12),
-                  const EchoLogoIcon(size: 36),
-                  const SizedBox(height: 20),
-
-                  // Pages
-                  Expanded(
-                    child: PageView(
-                      controller: _pageController,
-                      physics: const NeverScrollableScrollPhysics(),
-                      onPageChanged: (i) => setState(() => _currentPage = i),
+      body: Column(
+        children: [
+          const AppTitleBar(),
+          Expanded(
+            child: SafeArea(
+              top: false,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 520),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 16,
+                    ),
+                    child: Column(
                       children: [
-                        _buildWelcomePage(context),
-                        _buildThemePage(context),
-                        _buildAccessibilityPage(context),
-                        _buildNotificationsPage(context),
-                        _buildEncryptionPage(context),
-                        _buildContactPage(context),
+                        // Logo
+                        const SizedBox(height: 12),
+                        const EchoLogoIcon(size: 36),
+                        const SizedBox(height: 20),
+
+                        // Pages
+                        Expanded(
+                          child: PageView(
+                            controller: _pageController,
+                            physics: const NeverScrollableScrollPhysics(),
+                            onPageChanged: (i) =>
+                                setState(() => _currentPage = i),
+                            children: [
+                              _buildWelcomePage(context),
+                              _buildThemePage(context),
+                              _buildAccessibilityPage(context),
+                              _buildNotificationsPage(context),
+                              _buildEncryptionPage(context),
+                              _buildContactPage(context),
+                            ],
+                          ),
+                        ),
+
+                        // Dot indicator + buttons
+                        const SizedBox(height: 16),
+                        _buildBottomControls(context),
+                        const SizedBox(height: 12),
                       ],
                     ),
                   ),
-
-                  // Dot indicator + buttons
-                  const SizedBox(height: 16),
-                  _buildBottomControls(context),
-                  const SizedBox(height: 12),
-                ],
+                ),
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -483,19 +501,18 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
             maxLines: 3,
           ),
           const SizedBox(height: 12),
-          _buildField(
-            controller: _pronounsController,
-            label: 'Pronouns',
-            hint: 'e.g. she/her, they/them',
-            maxLength: 32,
-          ),
+          _buildPronounsDropdown(context),
+          if (_selectedPronouns == 'custom') ...[
+            const SizedBox(height: 8),
+            _buildField(
+              controller: _customPronounsController,
+              label: 'Custom pronouns',
+              hint: 'e.g. xe/xem',
+              maxLength: 32,
+            ),
+          ],
           const SizedBox(height: 12),
-          _buildField(
-            controller: _timezoneController,
-            label: 'Timezone',
-            hint: 'Auto-detected; edit if needed',
-            maxLength: 64,
-          ),
+          _buildTimezoneDropdown(context),
           const SizedBox(height: 12),
           _buildPresenceDropdown(context),
         ],
@@ -532,6 +549,129 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
             DropdownMenuItem(value: 'away', child: Text('Away')),
             DropdownMenuItem(value: 'dnd', child: Text('Do Not Disturb')),
             DropdownMenuItem(value: 'invisible', child: Text('Invisible')),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Pronouns dropdown
+  // ---------------------------------------------------------------------------
+
+  static const List<({String value, String label})> _pronounsOptions = [
+    (value: 'he/him', label: 'he/him'),
+    (value: 'she/her', label: 'she/her'),
+    (value: 'they/them', label: 'they/them'),
+    (value: 'he/they', label: 'he/they'),
+    (value: 'she/they', label: 'she/they'),
+    (value: 'custom', label: 'Custom…'),
+  ];
+
+  Widget _buildPronounsDropdown(BuildContext context) {
+    return InputDecorator(
+      decoration: InputDecoration(
+        labelText: 'Pronouns (optional)',
+        labelStyle: TextStyle(color: context.textSecondary),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: context.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: context.accent),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          isDense: true,
+          isExpanded: true,
+          hint: Text(
+            'Select pronouns',
+            style: TextStyle(color: context.textMuted, fontSize: 14),
+          ),
+          value: _selectedPronouns,
+          style: TextStyle(color: context.textPrimary, fontSize: 14),
+          onChanged: (v) => setState(() {
+            _selectedPronouns = v;
+            if (v != 'custom') _customPronounsController.clear();
+          }),
+          items: [
+            for (final opt in _pronounsOptions)
+              DropdownMenuItem(value: opt.value, child: Text(opt.label)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Timezone dropdown
+  // ---------------------------------------------------------------------------
+
+  /// A curated list of representative IANA timezone identifiers shown in the
+  /// picker. Not exhaustive — the full list is ~600 entries. The auto-detected
+  /// name from [DateTime.now().timeZoneName] (e.g. "EST") may not appear here;
+  /// we add it dynamically so the initial selection always resolves.
+  static const List<String> _commonTimezones = [
+    'Pacific/Honolulu',
+    'America/Anchorage',
+    'America/Los_Angeles',
+    'America/Denver',
+    'America/Chicago',
+    'America/New_York',
+    'America/Sao_Paulo',
+    'Atlantic/Reykjavik',
+    'Europe/London',
+    'Europe/Paris',
+    'Europe/Berlin',
+    'Europe/Helsinki',
+    'Europe/Moscow',
+    'Asia/Dubai',
+    'Asia/Kolkata',
+    'Asia/Dhaka',
+    'Asia/Bangkok',
+    'Asia/Shanghai',
+    'Asia/Tokyo',
+    'Australia/Sydney',
+    'Pacific/Auckland',
+  ];
+
+  Widget _buildTimezoneDropdown(BuildContext context) {
+    // Ensure the auto-detected value (e.g. "EST") is always in the list
+    // even when it doesn't match a canonical IANA name.
+    final tzList = [
+      if (!_commonTimezones.contains(_selectedTimezone)) _selectedTimezone,
+      ..._commonTimezones,
+    ];
+
+    return InputDecorator(
+      decoration: InputDecoration(
+        labelText: 'Timezone',
+        labelStyle: TextStyle(color: context.textSecondary),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: context.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: context.accent),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          isDense: true,
+          isExpanded: true,
+          value: _selectedTimezone,
+          style: TextStyle(color: context.textPrimary, fontSize: 14),
+          onChanged: (v) {
+            if (v != null) setState(() => _selectedTimezone = v);
+          },
+          items: [
+            for (final tz in tzList)
+              DropdownMenuItem(value: tz, child: Text(tz)),
           ],
         ),
       ),
@@ -619,25 +759,54 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 24),
-          SizedBox(
-            height: 120,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              itemCount: _wizardThemes.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 10),
-              itemBuilder: (_, i) {
-                final t = _wizardThemes[i];
-                final isSelected = current == t.selection;
-                return _WizardThemeCard(
-                  label: t.label,
-                  swatch: t.swatch,
-                  isSelected: isSelected,
-                  onTap: () =>
-                      ref.read(themeProvider.notifier).setTheme(t.selection),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              // Wide (desktop/tablet): show all cards in a single row grid.
+              // Narrow (phone): fall back to horizontal scroll.
+              final isWide = constraints.maxWidth >= 600;
+              if (isWide) {
+                return GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: _wizardThemes.length,
+                  mainAxisSpacing: 10,
+                  crossAxisSpacing: 10,
+                  childAspectRatio: 96 / 96,
+                  children: [
+                    for (final t in _wizardThemes)
+                      _WizardThemeCard(
+                        label: t.label,
+                        swatch: t.swatch,
+                        isSelected: current == t.selection,
+                        onTap: () => ref
+                            .read(themeProvider.notifier)
+                            .setTheme(t.selection),
+                      ),
+                  ],
                 );
-              },
-            ),
+              }
+              return SizedBox(
+                height: 120,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  itemCount: _wizardThemes.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 10),
+                  itemBuilder: (_, i) {
+                    final t = _wizardThemes[i];
+                    final isSelected = current == t.selection;
+                    return _WizardThemeCard(
+                      label: t.label,
+                      swatch: t.swatch,
+                      isSelected: isSelected,
+                      onTap: () => ref
+                          .read(themeProvider.notifier)
+                          .setTheme(t.selection),
+                    );
+                  },
+                ),
+              );
+            },
           ),
         ],
       ),

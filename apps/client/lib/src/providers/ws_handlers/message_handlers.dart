@@ -71,6 +71,7 @@ extension MessageHandlersOn on WsMessageHandler {
     final conversationId = json['conversation_id'] as String;
     final timestamp = json['timestamp'] as String;
     final senderUsername = json['from_username'] as String;
+    final messageId = json['message_id'] as String? ?? '';
 
     // System message sentinel -- render as an in-chat event pill and skip the
     // normal decrypt/preview pipeline entirely (#663).
@@ -78,6 +79,18 @@ extension MessageHandlersOn on WsMessageHandler {
       _handleSystemSentinel(rawContent, conversationId, myUserId);
       return;
     }
+
+    // #26: detect replayed offline messages via a synchronous Hive box check.
+    // isMessageCachedSync only returns true when the box for this conversation
+    // is already open in memory AND the key exists — no disk I/O, no async.
+    // On re-login the first loadConversations() call (triggered by WS connect)
+    // opens the per-conversation Hive boxes, so by the time the server drains
+    // the offline queue the boxes are open and this check is effective.
+    // Messages that are NOT yet in the open box (first time seen) return false,
+    // so genuinely new messages are never suppressed.
+    final alreadySeen =
+        messageId.isNotEmpty &&
+        MessageCache.isMessageCachedSync(conversationId, messageId);
 
     final cryptoState = ref.read(cryptoProvider);
     final conversation = ref
@@ -124,6 +137,7 @@ extension MessageHandlersOn on WsMessageHandler {
         senderUsername,
         fromUserId,
         isKnownConversation,
+        alreadySeen: alreadySeen,
       );
       return;
     }
@@ -138,6 +152,7 @@ extension MessageHandlersOn on WsMessageHandler {
         timestamp,
         senderUsername,
         fromDeviceId,
+        alreadySeen: alreadySeen,
       );
     } else {
       _queueEncryptedMessageForLater(
@@ -158,7 +173,7 @@ extension MessageHandlersOn on WsMessageHandler {
     // When crypto is NOT initialized, notify with raw content (it's plaintext
     // in that case). When crypto IS initialized, the notification fires AFTER
     // decryption inside _decryptAndDeliverWithPreview.
-    if (!cryptoState.isInitialized && fromUserId != myUserId) {
+    if (!cryptoState.isInitialized && fromUserId != myUserId && !alreadySeen) {
       _notifyIfAllowed(conversationId, senderUsername, rawContent);
     }
   }
@@ -210,8 +225,9 @@ extension MessageHandlersOn on WsMessageHandler {
     String timestamp,
     String senderUsername,
     String fromUserId,
-    bool isKnownConversation,
-  ) {
+    bool isKnownConversation, {
+    bool alreadySeen = false,
+  }) {
     final msg = ChatMessage.fromServerJson(json, myUserId);
     ref.read(chatProvider.notifier).addMessage(msg);
     if (!msg.id.startsWith('pending_')) {
@@ -224,11 +240,14 @@ extension MessageHandlersOn on WsMessageHandler {
           content: rawContent,
           timestamp: timestamp,
           senderUsername: senderUsername,
+          // #26: replayed messages (already in cache) must not re-bump unread.
+          incrementUnread: !alreadySeen,
         );
     if (!isKnownConversation) {
       ref.read(conversationsProvider.notifier).loadConversations();
     }
-    if (fromUserId != myUserId) {
+    // #26: don't re-notify for messages the user already saw.
+    if (fromUserId != myUserId && !alreadySeen) {
       _notifyIfAllowed(conversationId, senderUsername, rawContent);
     }
   }
@@ -241,8 +260,9 @@ extension MessageHandlersOn on WsMessageHandler {
     String conversationId,
     String timestamp,
     String senderUsername,
-    int? fromDeviceId,
-  ) {
+    int? fromDeviceId, {
+    bool alreadySeen = false,
+  }) {
     final crypto = ref.read(cryptoServiceProvider);
     final token = ref.read(authProvider).token ?? '';
     crypto.setToken(token);
@@ -256,6 +276,7 @@ extension MessageHandlersOn on WsMessageHandler {
       timestamp,
       senderUsername,
       fromDeviceId: fromDeviceId,
+      alreadySeen: alreadySeen,
     );
   }
 

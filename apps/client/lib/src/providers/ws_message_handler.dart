@@ -344,6 +344,10 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
     String timestamp,
     String senderUsername, {
     int? fromDeviceId,
+    // #26: true when the message was already in the Hive cache, meaning it was
+    // seen in a prior session. Suppresses the unread-count bump and notification
+    // so that replayed offline messages don't spam the user on re-login.
+    bool alreadySeen = false,
   }) async {
     final (decryptedContent, wasEncrypted) = await _decryptContent(
       crypto,
@@ -370,7 +374,8 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
 
     final isMention = _detectMention(fromUserId, myUserId, decryptedContent);
 
-    // Update conversations list with decrypted preview
+    // Update conversations list with decrypted preview.
+    // #26: don't bump unread for messages that were already cached (replayed).
     ref
         .read(conversationsProvider.notifier)
         .onNewMessage(
@@ -379,10 +384,11 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
           timestamp: timestamp,
           senderUsername: senderUsername,
           isMention: isMention,
+          incrementUnread: !alreadySeen,
         );
 
-    // Notify with decrypted content so users never see ciphertext.
-    if (fromUserId != myUserId) {
+    // #26: don't re-notify for messages the user already saw.
+    if (fromUserId != myUserId && !alreadySeen) {
       _notifyIfAllowed(conversationId, senderUsername, decryptedContent);
     }
   }
@@ -503,7 +509,10 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
     final isMuted = conv?.isMuted ?? false;
     if (isMuted) return;
 
-    SoundService().playMessageReceived();
+    // Fire-and-forget: playMessageReceived is async but errors are
+    // caught inside it. Use .ignore() to prevent any unhandled-future
+    // warnings from the test runner when the audio plugin is unavailable.
+    SoundService().playMessageReceived().ignore();
     final body = displayContent.length > 100
         ? '${displayContent.substring(0, 100)}...'
         : displayContent;

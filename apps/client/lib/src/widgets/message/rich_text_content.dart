@@ -132,11 +132,13 @@ class _RichTextContentState extends State<RichTextContent> {
 
   /// Base text style used throughout message rendering.
   /// Ligatures are disabled ("calt" 0) so user text reads without code ligatures.
+  /// NotoEmoji font fallback ensures emoji render in color on all platforms.
   TextStyle _baseStyle() => TextStyle(
     fontSize: _bodyFontSize,
     color: widget.textColor,
     height: _bodyLineHeight,
     fontFeatures: const [FontFeature.disable('calt')],
+    fontFamilyFallback: const ['NotoEmoji'],
   );
 
   TapGestureRecognizer _createLinkRecognizer(String url) {

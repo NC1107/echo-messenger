@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:livekit_client/livekit_client.dart';
 import 'package:record/record.dart';
@@ -188,6 +189,11 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
   @override
   bool _disposed = false;
 
+  /// True while a join sequence is in progress.  Prevents a second
+  /// [joinChannel] call from racing the first when the user taps a new
+  /// lounge before the previous one finishes connecting or tearing down.
+  bool _isJoining = false;
+
   @override
   bool _wasMutedBeforeDeafen = false;
 
@@ -275,6 +281,18 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
   }) async {
     if (_disposed) return;
 
+    // Prevent concurrent join sequences from racing each other.  This can
+    // happen when the user taps a new lounge while the previous join is still
+    // in flight (token fetch, room.connect, etc.).
+    if (_isJoining) {
+      DebugLogService.instance.log(
+        LogLevel.warning,
+        'LiveKitVoice',
+        'joinChannel: ignored — join already in progress for $channelId',
+      );
+      return;
+    }
+
     // Already in this exact channel -- nothing to do.
     if (state.isActive &&
         state.conversationId == conversationId &&
@@ -282,8 +300,14 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       return;
     }
 
-    // Leave any existing channel first.
-    await leaveChannel();
+    _isJoining = true;
+
+    // Fully tear down any existing room BEFORE starting the new join sequence.
+    // Awaiting here ensures the previous Room's EventChannel streams (LiveKit
+    // internal) are cancelled before a second Room tries to open its own
+    // streams on the same native channel — otherwise Flutter throws
+    // PlatformException(error, No active stream to cancel, null, null).
+    await _teardownCurrent();
 
     state = state.copyWith(
       conversationId: conversationId,
@@ -317,7 +341,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       DebugLogService.instance.log(
         LogLevel.info,
         'LiveKitVoice',
-        'joinChannel: join complete for channel $channelId',
+        'joinChannel: successfully joined channel $channelId',
       );
     } catch (e) {
       // Surface the URL we tried so a 404 / DNS failure points ops at the
@@ -335,6 +359,8 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
         isActive: false,
         error: 'Failed to join voice channel',
       );
+    } finally {
+      _isJoining = false;
     }
   }
 
@@ -358,11 +384,6 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     // Requesting permission FIRST drains the prompt into a clean idle
     // context, so by the time room.connect/setMicrophoneEnabled run the
     // permission is already .granted or .denied — no synchronous race.
-    DebugLogService.instance.log(
-      LogLevel.info,
-      'LiveKitVoice',
-      'joinChannel: pre-requesting microphone permission',
-    );
     final micPermitted = await _requestMicrophonePermission();
     if (!micPermitted) {
       DebugLogService.instance.log(
@@ -377,18 +398,8 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       );
       throw Exception('Microphone permission denied');
     }
-    DebugLogService.instance.log(
-      LogLevel.info,
-      'LiveKitVoice',
-      'joinChannel: microphone permission granted',
-    );
 
     // ---- breadcrumb 1: token fetch ----------------------------------------
-    DebugLogService.instance.log(
-      LogLevel.info,
-      'LiveKitVoice',
-      'joinChannel: fetching LiveKit token for channel $channelId',
-    );
     _LiveKitTokenResult? tokenResult;
     try {
       tokenResult = await _fetchLiveKitToken(conversationId, channelId);
@@ -416,18 +427,8 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
 
     final livekitUrl = tokenResult.url;
     final livekitToken = tokenResult.token;
-    DebugLogService.instance.log(
-      LogLevel.info,
-      'LiveKitVoice',
-      'joinChannel: token obtained, url=$livekitUrl token_len=${livekitToken.length}',
-    );
 
     // ---- breadcrumb 2: room creation ----------------------------------------
-    DebugLogService.instance.log(
-      LogLevel.info,
-      'LiveKitVoice',
-      'joinChannel: creating Room object',
-    );
     final voiceSettings = ref.read(voiceSettingsProvider);
     late final Room room;
     try {
@@ -467,11 +468,6 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     _attachRoomListeners(room);
 
     // ---- breadcrumb 3: room.connect -----------------------------------------
-    DebugLogService.instance.log(
-      LogLevel.info,
-      'LiveKitVoice',
-      'joinChannel: calling room.connect($livekitUrl)',
-    );
     try {
       await room.connect(livekitUrl, livekitToken);
     } catch (e) {
@@ -482,11 +478,6 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       );
       rethrow;
     }
-    DebugLogService.instance.log(
-      LogLevel.info,
-      'LiveKitVoice',
-      'joinChannel: room.connect succeeded',
-    );
 
     // Set display name so peers see a username instead of a UUID identity.
     // Wrap in try/catch: setName triggers an UpdateOwnMetadata signal request
@@ -513,11 +504,6 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     // Mic permission was already granted at the top of joinChannel
     // (breadcrumb 0) so this call is non-blocking.
     final micEnabled = !startMuted;
-    DebugLogService.instance.log(
-      LogLevel.info,
-      'LiveKitVoice',
-      'joinChannel: calling setMicrophoneEnabled($micEnabled)',
-    );
     try {
       await room.localParticipant?.setMicrophoneEnabled(micEnabled);
     } catch (e) {
@@ -528,11 +514,6 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       );
       rethrow;
     }
-    DebugLogService.instance.log(
-      LogLevel.info,
-      'LiveKitVoice',
-      'joinChannel: microphone enabled=$micEnabled',
-    );
 
     // ---- PTT: start muted and install keyboard listener -------------------
     // When push-to-talk is enabled the mic must be silent by default and
@@ -542,11 +523,6 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     final voiceSettingsForPtt = ref.read(voiceSettingsProvider);
     final pttActive = voiceSettingsForPtt.pushToTalkEnabled;
     if (pttActive) {
-      DebugLogService.instance.log(
-        LogLevel.info,
-        'LiveKitVoice',
-        'joinChannel: PTT enabled — muting mic and installing listener',
-      );
       await room.localParticipant?.setMicrophoneEnabled(false);
       _pttListener?.stop();
       _pttListener = PushToTalkListener(
@@ -615,27 +591,53 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     );
   }
 
+  /// Fully tear down the current room, background services, and CallKit.
+  ///
+  /// Separated from [leaveChannel] so [joinChannel] can await a complete
+  /// teardown before starting a new join — preventing the
+  /// "No active stream to cancel" PlatformException that fires when a second
+  /// LiveKit Room tries to open its EventChannel streams before the first
+  /// Room's streams are fully closed.
+  Future<void> _teardownCurrent() async {
+    // Stop background services and CallKit before cleaning up the room so
+    // the OS audio session is released in the right order.
+    _detachNotificationActionListener();
+    // Use unawaited for fire-and-forget OS calls; errors are non-fatal.
+    unawaited(BackgroundService.instance.stopVoice());
+    unawaited(VoiceCallKitService.instance.endCall());
+    unawaited(PipController.instance.disable());
+
+    try {
+      await _cleanupRoom();
+    } on PlatformException catch (e) {
+      // Swallow "No active stream to cancel" that LiveKit's EventChannel
+      // emits when the room's broadcast stream is torn down a second time
+      // (e.g. disposed-screen navigation races a new joinChannel call).
+      debugPrint(
+        '[LiveKitVoice] PlatformException during teardown (ignored): $e',
+      );
+      DebugLogService.instance.log(
+        LogLevel.warning,
+        'LiveKitVoice',
+        'PlatformException during teardown (ignored): $e',
+      );
+    } catch (e) {
+      // SocketException / TimeoutException on flaky connections.
+      debugPrint('[LiveKitVoice] cleanup error during teardown: $e');
+      DebugLogService.instance.log(
+        LogLevel.warning,
+        'LiveKitVoice',
+        'Cleanup error during teardown (ignored): $e',
+      );
+    }
+  }
+
   /// Disconnect from the LiveKit room and reset state.
   Future<void> leaveChannel() async {
     if (state.isActive) {
       SoundService().playVoiceLeave();
     }
-    try {
-      await _cleanupRoom();
-    } catch (e) {
-      // Ensure state is always cleaned up even if disconnect throws
-      // (e.g. SocketException on connection timeout).
-      debugPrint('[LiveKitVoice] cleanup error during leave: $e');
-      DebugLogService.instance.log(
-        LogLevel.warning,
-        'LiveKitVoice',
-        'Cleanup error during leave (ignored): $e',
-      );
-    }
-    _detachNotificationActionListener();
-    unawaited(BackgroundService.instance.stopVoice());
-    unawaited(VoiceCallKitService.instance.endCall());
-    unawaited(PipController.instance.disable());
+    await _teardownCurrent();
     state = LiveKitVoiceState.empty;
   }
 
