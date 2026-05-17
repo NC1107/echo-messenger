@@ -103,6 +103,41 @@ fn extract_at_usernames(content: &str) -> Vec<String> {
     out
 }
 
+/// Resolve broadcast keywords to all non-removed members of the conversation.
+async fn resolve_broadcast_members(
+    pool: &PgPool,
+    conversation_id: Uuid,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    let rows: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT cm.user_id FROM conversation_members cm \
+         WHERE cm.conversation_id = $1 AND cm.is_removed = false",
+    )
+    .bind(conversation_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(uid,)| uid).collect())
+}
+
+/// Resolve explicit `@<username>` tokens to matching members of the conversation.
+async fn resolve_username_mentions(
+    pool: &PgPool,
+    conversation_id: Uuid,
+    usernames: &[String],
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    let rows: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT cm.user_id FROM conversation_members cm \
+         JOIN users u ON u.id = cm.user_id \
+         WHERE cm.conversation_id = $1 \
+           AND cm.is_removed = false \
+           AND LOWER(u.username) = ANY($2::text[])",
+    )
+    .bind(conversation_id)
+    .bind(usernames)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(uid,)| uid).collect())
+}
+
 /// Insert mention rows for `message_id` in conversation `conv_id`.
 ///
 /// Resolves `@<username>` tokens against the conversation's member list
@@ -151,37 +186,15 @@ pub async fn extract_and_persist(
     }
 
     // Resolve to user_ids.  For broadcast keywords we pull every member;
-    // for `@<username>` we pull only matching members.  In either case
-    // the sender is filtered out client-side below.
+    // for `@<username>` we pull only matching members.
     let mut targets: Vec<Uuid> = Vec::new();
 
     if mentions_everyone || mentions_here {
-        let rows: Vec<(Uuid,)> = sqlx::query_as(
-            "SELECT cm.user_id FROM conversation_members cm \
-             WHERE cm.conversation_id = $1 AND cm.is_removed = false",
-        )
-        .bind(conversation_id)
-        .fetch_all(pool)
-        .await?;
-        targets.extend(rows.into_iter().map(|(uid,)| uid));
+        targets.extend(resolve_broadcast_members(pool, conversation_id).await?);
     }
 
     if !usernames.is_empty() {
-        // Lowercase comparison so capitalisation in the message doesn't
-        // gate detection.  `username` itself is canonically lowercase by
-        // registration validation, but we still LOWER() defensively.
-        let rows: Vec<(Uuid,)> = sqlx::query_as(
-            "SELECT cm.user_id FROM conversation_members cm \
-             JOIN users u ON u.id = cm.user_id \
-             WHERE cm.conversation_id = $1 \
-               AND cm.is_removed = false \
-               AND LOWER(u.username) = ANY($2::text[])",
-        )
-        .bind(conversation_id)
-        .bind(&usernames)
-        .fetch_all(pool)
-        .await?;
-        targets.extend(rows.into_iter().map(|(uid,)| uid));
+        targets.extend(resolve_username_mentions(pool, conversation_id, &usernames).await?);
     }
 
     // Drop the sender (a self-mention should not bump their own badge)

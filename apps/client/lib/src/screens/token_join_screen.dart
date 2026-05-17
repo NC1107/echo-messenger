@@ -170,42 +170,9 @@ class _TokenJoinScreenState extends ConsumerState<TokenJoinScreen>
       if (!mounted) return;
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final alreadyMember = data['already_member'] as bool? ?? false;
-        await ref.read(conversationsProvider.notifier).loadConversations();
-        if (mounted) {
-          ToastService.show(
-            context,
-            alreadyMember
-                ? 'You are already a member of ${_preview?.name ?? "this group"}'
-                : 'Joined ${_preview?.name ?? "group"} successfully!',
-            type: ToastType.success,
-          );
-          final convId = _preview?.conversationId;
-          if (convId != null) {
-            context.go('$_routeHome?conversation=$convId');
-          } else {
-            context.go(_routeHome);
-          }
-        }
+        await _handleAcceptInviteSuccess(response);
       } else {
-        String errorMsg = 'Failed to join group';
-        try {
-          final body = jsonDecode(response.body) as Map<String, dynamic>;
-          errorMsg = body['error'] as String? ?? errorMsg;
-        } catch (_) {}
-        if (response.statusCode == 404) {
-          setState(() {
-            _isJoining = false;
-            _isExpiredOrInvalid = true;
-            _error = errorMsg;
-          });
-        } else {
-          setState(() {
-            _isJoining = false;
-            _error = errorMsg;
-          });
-        }
+        await _handleAcceptInviteError(response);
       }
     } catch (e) {
       if (mounted) {
@@ -215,6 +182,50 @@ class _TokenJoinScreenState extends ConsumerState<TokenJoinScreen>
         });
       }
     }
+  }
+
+  Future<void> _handleAcceptInviteSuccess(http.Response response) async {
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final alreadyMember = data['already_member'] as bool? ?? false;
+    await ref.read(conversationsProvider.notifier).loadConversations();
+    if (mounted) {
+      final toastMsg = _buildSuccessToastMessage(alreadyMember);
+      ToastService.show(context, toastMsg, type: ToastType.success);
+      _navigateToConversation();
+    }
+  }
+
+  String _buildSuccessToastMessage(bool alreadyMember) {
+    final groupName = _preview?.name ?? 'group';
+    return alreadyMember
+        ? 'You are already a member of $groupName'
+        : 'Joined $groupName successfully!';
+  }
+
+  void _navigateToConversation() {
+    final convId = _preview?.conversationId;
+    if (convId != null) {
+      context.go('$_routeHome?conversation=$convId');
+    } else {
+      context.go(_routeHome);
+    }
+  }
+
+  Future<void> _handleAcceptInviteError(http.Response response) async {
+    String errorMsg = 'Failed to join group';
+    try {
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      errorMsg = body['error'] as String? ?? errorMsg;
+    } catch (_) {}
+
+    final isExpired = response.statusCode == 404;
+    setState(() {
+      _isJoining = false;
+      _error = errorMsg;
+      if (isExpired) {
+        _isExpiredOrInvalid = true;
+      }
+    });
   }
 
   void _openGroup() {

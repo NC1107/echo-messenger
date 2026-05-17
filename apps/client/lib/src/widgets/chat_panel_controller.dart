@@ -151,31 +151,13 @@ class ChatPanelController extends ChangeNotifier {
       if (c == null || !c.hasClients) return;
 
       final target = c.position.maxScrollExtent;
-      final alreadyAtBottom = (target - c.position.pixels).abs() < 1;
-      if (alreadyAtBottom) return;
+      if ((target - c.position.pixels).abs() < 1) return;
 
-      Future<void> settleIfNeeded() async {
-        if (settleRetries <= 0 ||
-            _scrollController == null ||
-            !_scrollController!.hasClients) {
-          return;
-        }
-        // Wait for layout to settle so maxScrollExtent includes new content
-        await Future<void>.delayed(const Duration(milliseconds: 150));
-        final cc = _scrollController;
-        if (cc == null || !cc.hasClients) return;
-        final newTarget = cc.position.maxScrollExtent;
-        if ((newTarget - cc.position.pixels).abs() > 1) {
-          cc.jumpTo(newTarget);
-        }
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-        scrollToBottom(
-          conversationId: conversationId,
-          animated: false,
-          settleRetries: settleRetries - 1,
-          onSettleComplete: onSettleComplete,
-        );
-      }
+      final settle = _SettleParams(
+        conversationId: conversationId,
+        settleRetries: settleRetries,
+        onSettleComplete: onSettleComplete,
+      );
 
       if (animated) {
         c
@@ -184,20 +166,48 @@ class ChatPanelController extends ChangeNotifier {
               duration: const Duration(milliseconds: 220),
               curve: Curves.easeOut,
             )
-            .whenComplete(settleIfNeeded);
+            .whenComplete(() => _settleToBottom(settle));
       } else {
         c.jumpTo(target);
-        settleIfNeeded();
+        _settleToBottom(settle);
       }
 
       // Update the scroll cache. Key includes channel ID so switching text
       // channels within a group preserves separate scroll positions.
-      if (conversationId != null) {
-        scrollPositions[cacheKeyFor(conversationId)] = target;
-        evictScrollPositions();
-      }
+      _cacheBottomOffset(conversationId, target);
       onSettleComplete?.call();
     });
+  }
+
+  /// One settle pass: waits for layout to stabilise, nudges the scroll
+  /// position if the list grew, then recurses via [scrollToBottom].
+  Future<void> _settleToBottom(_SettleParams p) async {
+    if (p.settleRetries <= 0) return;
+    final c = _scrollController;
+    if (c == null || !c.hasClients) return;
+
+    // Wait for layout to settle so maxScrollExtent includes new content.
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    final cc = _scrollController;
+    if (cc == null || !cc.hasClients) return;
+
+    final newTarget = cc.position.maxScrollExtent;
+    if ((newTarget - cc.position.pixels).abs() > 1) {
+      cc.jumpTo(newTarget);
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    scrollToBottom(
+      conversationId: p.conversationId,
+      animated: false,
+      settleRetries: p.settleRetries - 1,
+      onSettleComplete: p.onSettleComplete,
+    );
+  }
+
+  void _cacheBottomOffset(String? conversationId, double target) {
+    if (conversationId == null) return;
+    scrollPositions[cacheKeyFor(conversationId)] = target;
+    evictScrollPositions();
   }
 
   /// Resolve messages for the current conversation and channel.
@@ -247,4 +257,18 @@ class ChatPanelController extends ChangeNotifier {
     }
     return identical(filtered, raw) ? raw : filtered.toList();
   }
+}
+
+/// Parameter bundle passed to [ChatPanelController._settleToBottom] so the
+/// private helper does not need a closure over the outer scope.
+class _SettleParams {
+  const _SettleParams({
+    required this.conversationId,
+    required this.settleRetries,
+    required this.onSettleComplete,
+  });
+
+  final String? conversationId;
+  final int settleRetries;
+  final VoidCallback? onSettleComplete;
 }

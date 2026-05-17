@@ -81,183 +81,192 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Tool selection
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-            child: Row(
-              children: [
-                _toolChip(context, Icons.edit, 'Draw', CanvasTool.pen),
-                const SizedBox(width: 8),
-                _toolChip(
-                  context,
-                  Icons.auto_fix_high,
-                  'Erase',
-                  CanvasTool.eraser,
-                ),
-              ],
-            ),
-          ),
+          _buildToolSelector(context),
           if (_selectedTool == CanvasTool.pen) ...[
             const Divider(height: 1),
-            // Color picker
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-              child: Text(
-                'Color',
-                style: TextStyle(
-                  color: context.textMuted,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: _penColors.map((c) {
-                  final isSelected = _selectedColor == c;
-                  return GestureDetector(
-                    onTap: () {
-                      HapticFeedback.selectionClick();
-                      setState(() => _selectedColor = c);
-                      ref.read(canvasProvider.notifier).setColor(c);
-                    },
-                    child: SizedBox(
-                      width: 44,
-                      height: 44,
-                      child: Center(
-                        child: AnimatedContainer(
-                          duration: MotionDurations.quick,
-                          width: isSelected ? 24 : 20,
-                          height: isSelected ? 24 : 20,
-                          decoration: BoxDecoration(
-                            color: c,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: isSelected
-                                  ? context.accent
-                                  : context.border,
-                              width: isSelected ? 2.5 : 1,
-                            ),
-                            boxShadow: isSelected
-                                ? [
-                                    BoxShadow(
-                                      color: c.withValues(alpha: 0.5),
-                                      blurRadius: 6,
-                                    ),
-                                  ]
-                                : null,
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ),
+            _buildColorPicker(context),
             const SizedBox(height: 4),
             const Divider(height: 1),
-            // Size picker
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-              child: Text(
-                'Size',
-                style: TextStyle(
-                  color: context.textMuted,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Row(
-                children: _penSizes.map((s) {
-                  final isSelected = _selectedSize == s;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: GestureDetector(
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        setState(() => _selectedSize = s);
-                        ref.read(canvasProvider.notifier).setStrokeWidth(s);
-                      },
-                      child: AnimatedContainer(
-                        duration: MotionDurations.quick,
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: isSelected
-                              ? context.accent.withValues(alpha: 0.12)
-                              : Colors.transparent,
-                          border: Border.all(
-                            color: isSelected ? context.accent : context.border,
-                            width: isSelected ? 2 : 1,
-                          ),
-                        ),
-                        child: Center(
-                          child: Container(
-                            width: s.clamp(4.0, 16.0),
-                            height: s.clamp(4.0, 16.0),
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? context.accent
-                                  : context.textPrimary,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ),
+            _buildSizePicker(context),
           ],
           const Divider(height: 12),
-          // Image + Clear
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextButton.icon(
-                    onPressed: () async {
-                      HapticFeedback.lightImpact();
-                      await _pickAndAddImage(context);
-                      if (mounted) widget.onRequestClose?.call();
-                    },
-                    icon: const Icon(
-                      Icons.add_photo_alternate_outlined,
-                      size: 16,
-                    ),
-                    label: const Text('Image'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: context.accent,
-                      textStyle: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: TextButton.icon(
-                    onPressed: () {
-                      HapticFeedback.mediumImpact();
-                      ref.read(canvasProvider.notifier).clearDrawing();
-                      widget.onRequestClose?.call();
-                    },
-                    icon: const Icon(Icons.delete_outline, size: 16),
-                    label: const Text('Clear'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: EchoTheme.danger,
-                      textStyle: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                ),
-              ],
+          _buildActionButtons(context),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildToolSelector(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: Row(
+        children: [
+          _toolChip(context, Icons.edit, 'Draw', CanvasTool.pen),
+          const SizedBox(width: 8),
+          _toolChip(context, Icons.auto_fix_high, 'Erase', CanvasTool.eraser),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildColorPicker(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: Text(
+            'Color',
+            style: TextStyle(
+              color: context.textMuted,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: _penColors.map((c) => _colorSwatch(context, c)).toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _colorSwatch(BuildContext context, Color c) {
+    final isSelected = _selectedColor == c;
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        setState(() => _selectedColor = c);
+        ref.read(canvasProvider.notifier).setColor(c);
+      },
+      child: SizedBox(
+        width: 44,
+        height: 44,
+        child: Center(
+          child: AnimatedContainer(
+            duration: MotionDurations.quick,
+            width: isSelected ? 24 : 20,
+            height: isSelected ? 24 : 20,
+            decoration: BoxDecoration(
+              color: c,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: isSelected ? context.accent : context.border,
+                width: isSelected ? 2.5 : 1,
+              ),
+              boxShadow: isSelected
+                  ? [BoxShadow(color: c.withValues(alpha: 0.5), blurRadius: 6)]
+                  : null,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSizePicker(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: Text(
+            'Size',
+            style: TextStyle(
+              color: context.textMuted,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: _penSizes.map((s) => _sizeChip(context, s)).toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _sizeChip(BuildContext context, double s) {
+    final isSelected = _selectedSize == s;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          setState(() => _selectedSize = s);
+          ref.read(canvasProvider.notifier).setStrokeWidth(s);
+        },
+        child: AnimatedContainer(
+          duration: MotionDurations.quick,
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: isSelected
+                ? context.accent.withValues(alpha: 0.12)
+                : Colors.transparent,
+            border: Border.all(
+              color: isSelected ? context.accent : context.border,
+              width: isSelected ? 2 : 1,
+            ),
+          ),
+          child: Center(
+            child: Container(
+              width: s.clamp(4.0, 16.0),
+              height: s.clamp(4.0, 16.0),
+              decoration: BoxDecoration(
+                color: isSelected ? context.accent : context.textPrimary,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButtons(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextButton.icon(
+              onPressed: () async {
+                HapticFeedback.lightImpact();
+                await _pickAndAddImage(context);
+                if (mounted) widget.onRequestClose?.call();
+              },
+              icon: const Icon(Icons.add_photo_alternate_outlined, size: 16),
+              label: const Text('Image'),
+              style: TextButton.styleFrom(
+                foregroundColor: context.accent,
+                textStyle: const TextStyle(fontSize: 12),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: TextButton.icon(
+              onPressed: () {
+                HapticFeedback.mediumImpact();
+                ref.read(canvasProvider.notifier).clearDrawing();
+                widget.onRequestClose?.call();
+              },
+              icon: const Icon(Icons.delete_outline, size: 16),
+              label: const Text('Clear'),
+              style: TextButton.styleFrom(
+                foregroundColor: EchoTheme.danger,
+                textStyle: const TextStyle(fontSize: 12),
+              ),
             ),
           ),
         ],
@@ -272,67 +281,78 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
     final conversationId = widget.conversationId;
     final serverUrl = ref.read(serverUrlProvider);
     try {
-      final result = await FilePicker.pickFiles(
-        type: FileType.image,
-        allowMultiple: false,
-        withData: true,
-      );
-      if (result == null || result.files.isEmpty) return;
-      final file = result.files.first;
-      final bytes = file.bytes;
-      if (bytes == null) return;
+      final pickedFile = await _pickImageFile();
+      if (pickedFile == null) return;
 
       if (conversationId.isEmpty) {
-        // No conversation — image add requires a conversation context for
-        // the upload + broadcast.  Show a snackbar instead of a local-only
-        // preview that wouldn't sync to anyone.
+        // ignore: use_build_context_synchronously
         if (ctx.mounted) {
-          ScaffoldMessenger.of(ctx).showSnackBar(
-            const SnackBar(
-              content: Text('Open a conversation before adding images'),
-            ),
-          );
+          _showSnackBar(ctx, 'Open a conversation before adding images');
         }
         return;
       }
 
-      final ext = file.extension?.toLowerCase() ?? 'png';
-      final mimeType = _mimeForExtension(ext);
-      final uploader = UploadClient(ref.read(authProvider.notifier));
-      final uploadResult = await uploader.uploadFile(
+      final errorMsg = await _uploadImage(
+        file: pickedFile,
+        conversationId: conversationId,
         serverUrl: serverUrl,
-        path: '/api/media/upload',
-        bytes: bytes,
-        fileName: file.name,
-        mimeType: mimeType,
-        extraFields: {'conversation_id': conversationId},
       );
-      if (!mounted) return;
-
-      if (uploadResult.ok) {
-        final relUrl = uploadResult.url ?? '';
-        final absUrl = relUrl.startsWith('http') ? relUrl : '$serverUrl$relUrl';
-        _addImageByUrl(absUrl);
-      } else {
-        // Upload failed — surface the error so the user can retry.  We no
-        // longer fall back to a local-only preview because that copy never
-        // synced to other participants and led to a confusing experience.
-        if (ctx.mounted) {
-          ScaffoldMessenger.of(ctx).showSnackBar(
-            const SnackBar(
-              content: Text('Image upload failed; please try again'),
-            ),
-          );
-        }
-      }
+      // ignore: use_build_context_synchronously
+      if (errorMsg != null && ctx.mounted) _showSnackBar(ctx, errorMsg);
     } catch (e) {
       debugPrint('[DrawingMenu] pickImage error: $e');
-      if (ctx.mounted) {
-        ScaffoldMessenger.of(
-          ctx,
-        ).showSnackBar(const SnackBar(content: Text('Failed to add image')));
-      }
+      // ignore: use_build_context_synchronously
+      if (ctx.mounted) _showSnackBar(ctx, 'Failed to add image');
     }
+  }
+
+  /// Returns the picked file with bytes, or null if the user cancelled or
+  /// no bytes were available.
+  Future<PlatformFile?> _pickImageFile() async {
+    final result = await FilePicker.pickFiles(
+      type: FileType.image,
+      allowMultiple: false,
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return null;
+    final file = result.files.first;
+    return file.bytes == null ? null : file;
+  }
+
+  /// Uploads [file] and places the image on the canvas on success.
+  /// Returns an error message string on failure, or null on success.
+  Future<String?> _uploadImage({
+    required PlatformFile file,
+    required String conversationId,
+    required String serverUrl,
+  }) async {
+    final ext = file.extension?.toLowerCase() ?? 'png';
+    final mimeType = _mimeForExtension(ext);
+    final uploader = UploadClient(ref.read(authProvider.notifier));
+    final uploadResult = await uploader.uploadFile(
+      serverUrl: serverUrl,
+      path: '/api/media/upload',
+      bytes: file.bytes!,
+      fileName: file.name,
+      mimeType: mimeType,
+      extraFields: {'conversation_id': conversationId},
+    );
+    if (!mounted) return null;
+
+    if (uploadResult.ok) {
+      final relUrl = uploadResult.url ?? '';
+      final absUrl = relUrl.startsWith('http') ? relUrl : '$serverUrl$relUrl';
+      _addImageByUrl(absUrl);
+      return null;
+    }
+    // Upload failed — surface the error so the user can retry.  We no
+    // longer fall back to a local-only preview because that copy never
+    // synced to other participants and led to a confusing experience.
+    return 'Image upload failed; please try again';
+  }
+
+  void _showSnackBar(BuildContext ctx, String message) {
+    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _addImageByUrl(String url) {

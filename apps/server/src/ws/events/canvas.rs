@@ -8,6 +8,114 @@ use crate::ws::error::send_error;
 use crate::ws::protocol::ServerMessage;
 use crate::ws::typing_service;
 
+/// Persist canvas state for non-ephemeral event kinds.
+/// Returns early if a hard error (cap reached) prevents broadcast.
+async fn persist_canvas_state(
+    state: &AppState,
+    sender_id: Uuid,
+    channel_id: Uuid,
+    kind: &str,
+    payload: &serde_json::Value,
+) -> bool {
+    match kind {
+        "stroke" => match db::canvas::append_stroke(&state.pool, channel_id, payload.clone()).await
+        {
+            Ok(()) => true,
+            Err(db::canvas::CanvasCapError::CapReached) => {
+                send_error(state, sender_id, "Canvas stroke limit reached");
+                false
+            }
+            Err(e) => {
+                tracing::error!("canvas: failed to persist stroke for channel {channel_id}: {e:?}");
+                true
+            }
+        },
+        "clear" => {
+            if let Err(e) = db::canvas::clear_drawing(&state.pool, channel_id).await {
+                tracing::error!("canvas: failed to clear drawing for channel {channel_id}: {e:?}");
+            }
+            true
+        }
+        "image_add" => {
+            match db::canvas::add_image(&state.pool, channel_id, payload.clone()).await {
+                Ok(()) => true,
+                Err(db::canvas::CanvasCapError::CapReached) => {
+                    send_error(state, sender_id, "Canvas image limit reached");
+                    false
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "canvas: failed to persist image for channel {channel_id}: {e:?}"
+                    );
+                    true
+                }
+            }
+        }
+        "image_move" => {
+            if let Err(e) = db::canvas::update_image(&state.pool, channel_id, payload.clone()).await
+            {
+                tracing::error!("canvas: failed to update image for channel {channel_id}: {e:?}");
+            }
+            true
+        }
+        "image_remove" => {
+            let Some(id) = payload.get("id").and_then(|v| v.as_str()) else {
+                send_error(state, sender_id, "image_remove requires an 'id' field");
+                return false;
+            };
+            if let Err(e) = db::canvas::remove_image(&state.pool, channel_id, id).await {
+                tracing::error!(
+                    "canvas: failed to remove image {id} for channel {channel_id}: {e:?}"
+                );
+            }
+            true
+        }
+        _ => true, // "avatar_move" — ephemeral, no DB write
+    }
+}
+
+/// Verify sender is a member of the conversation.
+async fn verify_membership(state: &AppState, sender_id: Uuid, conversation_id: Uuid) -> bool {
+    match db::groups::is_member(&state.pool, conversation_id, sender_id).await {
+        Ok(m) => {
+            if !m {
+                send_error(state, sender_id, "Not a member of this conversation");
+            }
+            m
+        }
+        Err(_) => {
+            send_error(state, sender_id, "Database error");
+            false
+        }
+    }
+}
+
+/// Look up channel and validate it's a voice channel.
+async fn lookup_voice_channel(state: &AppState, sender_id: Uuid, channel_id: Uuid) -> Option<Uuid> {
+    let channel = match db::channels::get_channel(&state.pool, channel_id).await {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            send_error(state, sender_id, "Channel not found");
+            return None;
+        }
+        Err(_) => {
+            send_error(state, sender_id, "Database error");
+            return None;
+        }
+    };
+
+    if channel.kind != "voice" {
+        send_error(
+            state,
+            sender_id,
+            "Canvas events are only valid for voice channels",
+        );
+        return None;
+    }
+
+    Some(channel.conversation_id)
+}
+
 /// Handle a canvas event from a client.
 ///
 /// - Looks up the channel, verifies sender is a group member, then broadcasts
@@ -37,98 +145,17 @@ pub(in crate::ws) async fn handle_canvas_event(
         return;
     }
 
-    // Look up the channel to obtain the conversation_id.
-    let channel = match db::channels::get_channel(&state.pool, channel_id).await {
-        Ok(Some(c)) => c,
-        Ok(None) => {
-            send_error(state, sender_id, "Channel not found");
-            return;
-        }
-        Err(_) => {
-            send_error(state, sender_id, "Database error");
-            return;
-        }
+    let conversation_id = match lookup_voice_channel(state, sender_id, channel_id).await {
+        Some(cid) => cid,
+        None => return,
     };
 
-    // Reject canvas events sent to non-voice channels (canvas is a sub-feature
-    // of voice lounges; text channels do not have a canvas).
-    if channel.kind != "voice" {
-        send_error(
-            state,
-            sender_id,
-            "Canvas events are only valid for voice channels",
-        );
+    if !verify_membership(state, sender_id, conversation_id).await {
         return;
     }
 
-    let conversation_id = channel.conversation_id;
-
-    // Verify sender is a member.
-    let is_member = match db::groups::is_member(&state.pool, conversation_id, sender_id).await {
-        Ok(m) => m,
-        Err(_) => {
-            send_error(state, sender_id, "Database error");
-            return;
-        }
-    };
-    if !is_member {
-        send_error(state, sender_id, "Not a member of this conversation");
+    if !persist_canvas_state(state, sender_id, channel_id, &kind, &payload).await {
         return;
-    }
-
-    // Persist state for non-ephemeral kinds.
-    match kind.as_str() {
-        "stroke" => {
-            match db::canvas::append_stroke(&state.pool, channel_id, payload.clone()).await {
-                Ok(()) => {}
-                Err(db::canvas::CanvasCapError::CapReached) => {
-                    send_error(state, sender_id, "Canvas stroke limit reached");
-                    return;
-                }
-                Err(e) => {
-                    tracing::error!(
-                        "canvas: failed to persist stroke for channel {channel_id}: {e:?}"
-                    );
-                }
-            }
-        }
-        "clear" => {
-            if let Err(e) = db::canvas::clear_drawing(&state.pool, channel_id).await {
-                tracing::error!("canvas: failed to clear drawing for channel {channel_id}: {e:?}");
-            }
-        }
-        "image_add" => {
-            match db::canvas::add_image(&state.pool, channel_id, payload.clone()).await {
-                Ok(()) => {}
-                Err(db::canvas::CanvasCapError::CapReached) => {
-                    send_error(state, sender_id, "Canvas image limit reached");
-                    return;
-                }
-                Err(e) => {
-                    tracing::error!(
-                        "canvas: failed to persist image for channel {channel_id}: {e:?}"
-                    );
-                }
-            }
-        }
-        "image_move" => {
-            if let Err(e) = db::canvas::update_image(&state.pool, channel_id, payload.clone()).await
-            {
-                tracing::error!("canvas: failed to update image for channel {channel_id}: {e:?}");
-            }
-        }
-        "image_remove" => {
-            let Some(id) = payload.get("id").and_then(|v| v.as_str()) else {
-                send_error(state, sender_id, "image_remove requires an 'id' field");
-                return;
-            };
-            if let Err(e) = db::canvas::remove_image(&state.pool, channel_id, id).await {
-                tracing::error!(
-                    "canvas: failed to remove image {id} for channel {channel_id}: {e:?}"
-                );
-            }
-        }
-        _ => {} // "avatar_move" — ephemeral, no DB write
     }
 
     // Broadcast to all other conversation members.

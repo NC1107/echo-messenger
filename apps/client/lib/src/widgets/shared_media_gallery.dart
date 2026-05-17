@@ -144,23 +144,7 @@ class _MediaGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (items.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              isVideo ? Icons.videocam_outlined : Icons.image_outlined,
-              size: 48,
-              color: context.textMuted.withValues(alpha: 0.4),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              emptyLabel,
-              style: TextStyle(color: context.textMuted, fontSize: 14),
-            ),
-          ],
-        ),
-      );
+      return _buildEmpty(context);
     }
 
     // For images, the resolved URL points to the file itself. For videos, the
@@ -199,79 +183,130 @@ class _MediaGrid extends StatelessWidget {
         mainAxisSpacing: 3,
       ),
       itemCount: items.length,
-      itemBuilder: (context, index) {
-        final thumbUrl = resolvedThumbUrls[index];
-        final fileUrl = resolvedFileUrls[index];
-
-        return Semantics(
-          label: isVideo ? 'play video' : 'view media',
-          button: true,
-          child: GestureDetector(
-            onTap: () {
-              if (isVideo) {
-                final uri = Uri.tryParse(fileUrl);
-                if (uri != null) {
-                  launchUrl(uri, mode: LaunchMode.externalApplication);
-                }
-              } else {
-                showImageGallery(
-                  context: context,
-                  imageUrls: resolvedThumbUrls,
-                  initialIndex: index,
-                  headers: headers,
-                );
-              }
-            },
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(2),
-              child: Stack(
-                fit: StackFit.passthrough,
-                children: [
-                  thumbUrl.endsWith('.gif')
-                      ? Image.network(
-                          thumbUrl,
-                          headers: headers,
-                          fit: BoxFit.cover,
-                          gaplessPlayback: true,
-                          errorBuilder: (_, _, _) =>
-                              _placeholder(context, isVideo: isVideo),
-                        )
-                      : CachedNetworkImage(
-                          imageUrl: thumbUrl,
-                          cacheKey: stableMediaCacheKey(thumbUrl),
-                          cacheManager: chatMediaCacheManager,
-                          httpHeaders: headers,
-                          fit: BoxFit.cover,
-                          placeholder: (_, _) =>
-                              _placeholder(context, isVideo: isVideo),
-                          errorWidget: (_, _, _) =>
-                              _placeholder(context, isVideo: isVideo),
-                        ),
-                  if (isVideo)
-                    const Center(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: Color(0x80000000),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Padding(
-                          padding: EdgeInsets.all(6),
-                          child: Icon(
-                            Icons.play_arrow,
-                            color: Colors.white,
-                            size: 24,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
+      itemBuilder: (context, index) => _buildGridTile(
+        context,
+        index: index,
+        resolvedThumbUrls: resolvedThumbUrls,
+        resolvedFileUrls: resolvedFileUrls,
+        headers: headers,
+      ),
     );
   }
+
+  Widget _buildEmpty(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isVideo ? Icons.videocam_outlined : Icons.image_outlined,
+            size: 48,
+            color: context.textMuted.withValues(alpha: 0.4),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            emptyLabel,
+            style: TextStyle(color: context.textMuted, fontSize: 14),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGridTile(
+    BuildContext context, {
+    required int index,
+    required List<String> resolvedThumbUrls,
+    required List<String> resolvedFileUrls,
+    required Map<String, String> headers,
+  }) {
+    final thumbUrl = resolvedThumbUrls[index];
+    final fileUrl = resolvedFileUrls[index];
+
+    return Semantics(
+      label: isVideo ? 'play video' : 'view media',
+      button: true,
+      child: GestureDetector(
+        onTap: () => _onTileTap(
+          context,
+          fileUrl: fileUrl,
+          resolvedThumbUrls: resolvedThumbUrls,
+          index: index,
+          headers: headers,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(2),
+          child: Stack(
+            fit: StackFit.passthrough,
+            children: [
+              _buildThumbnail(context, thumbUrl: thumbUrl, headers: headers),
+              if (isVideo) _videoPlayOverlay,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _onTileTap(
+    BuildContext context, {
+    required String fileUrl,
+    required List<String> resolvedThumbUrls,
+    required int index,
+    required Map<String, String> headers,
+  }) {
+    if (isVideo) {
+      final uri = Uri.tryParse(fileUrl);
+      if (uri != null) {
+        launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } else {
+      showImageGallery(
+        context: context,
+        imageUrls: resolvedThumbUrls,
+        initialIndex: index,
+        headers: headers,
+      );
+    }
+  }
+
+  Widget _buildThumbnail(
+    BuildContext context, {
+    required String thumbUrl,
+    required Map<String, String> headers,
+  }) {
+    if (thumbUrl.endsWith('.gif')) {
+      return Image.network(
+        thumbUrl,
+        headers: headers,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+        errorBuilder: (_, _, _) => _placeholder(context, isVideo: isVideo),
+      );
+    }
+    return CachedNetworkImage(
+      imageUrl: thumbUrl,
+      cacheKey: stableMediaCacheKey(thumbUrl),
+      cacheManager: chatMediaCacheManager,
+      httpHeaders: headers,
+      fit: BoxFit.cover,
+      placeholder: (_, _) => _placeholder(context, isVideo: isVideo),
+      errorWidget: (_, _, _) => _placeholder(context, isVideo: isVideo),
+    );
+  }
+
+  static const Widget _videoPlayOverlay = Center(
+    child: DecoratedBox(
+      decoration: BoxDecoration(
+        color: Color(0x80000000),
+        shape: BoxShape.circle,
+      ),
+      child: Padding(
+        padding: EdgeInsets.all(6),
+        child: Icon(Icons.play_arrow, color: Colors.white, size: 24),
+      ),
+    ),
+  );
 
   Widget _placeholder(BuildContext context, {bool isVideo = false}) {
     return Container(
