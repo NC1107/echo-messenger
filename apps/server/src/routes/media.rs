@@ -524,6 +524,92 @@ pub struct MediaDownloadQuery {
     pub token: Option<String>,
 }
 
+/// Extract and validate user ID from Authorization header or media ticket.
+fn extract_user_id(
+    state: &AppState,
+    query: &MediaDownloadQuery,
+    headers: &axum::http::HeaderMap,
+) -> Result<Uuid, AppError> {
+    // 1. Try Authorization header (JWT)
+    if let Some(token_str) = headers
+        .get("Authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+    {
+        let claims = jwt::validate_token(token_str, &state.jwt_secret)?;
+        return Uuid::parse_str(&claims.sub)
+            .map_err(|_| AppError::unauthorized("Invalid user ID in token"));
+    }
+    // 2. Try ?ticket= or legacy ?token= as media ticket
+    if let Some(ticket_str) = query.ticket.as_ref().or(query.token.as_ref()) {
+        return validate_media_ticket(state, ticket_str);
+    }
+    Err(AppError::unauthorized("Missing authentication"))
+}
+
+/// Serve a satisfiable byte range response.
+async fn serve_byte_range(
+    disk_path: &str,
+    start: u64,
+    end: u64,
+    total_size: u64,
+    mime_type: &str,
+    disposition: &str,
+) -> Result<Response, AppError> {
+    let slice_len = end - start + 1;
+    let mut file = fs::File::open(disk_path).await.map_err(|e| {
+        tracing::error!("Failed to open media file for range: {e}");
+        AppError::internal("Failed to read media")
+    })?;
+    file.seek(SeekFrom::Start(start)).await.map_err(|e| {
+        tracing::error!("Failed to seek media file: {e}");
+        AppError::internal("Failed to read media")
+    })?;
+    let mut buf = vec![0u8; slice_len as usize];
+    file.read_exact(&mut buf).await.map_err(|e| {
+        tracing::error!("Failed to read media slice: {e}");
+        AppError::internal("Failed to read media")
+    })?;
+
+    Response::builder()
+        .status(StatusCode::PARTIAL_CONTENT)
+        .header(CONTENT_TYPE, mime_type)
+        .header(CONTENT_DISPOSITION, disposition)
+        .header(ACCEPT_RANGES, "bytes")
+        .header(CONTENT_LENGTH, slice_len)
+        .header(CONTENT_RANGE, format!("bytes {start}-{end}/{total_size}"))
+        .body(Body::from(buf))
+        .map_err(|e| AppError::internal(format!("Failed to build response: {e}")))
+}
+
+/// Serve the full file without Range header support.
+async fn serve_full_file(
+    disk_path: &str,
+    total_size: u64,
+    mime_type: &str,
+    disposition: &str,
+) -> Result<Response, AppError> {
+    let file = fs::File::open(disk_path).await.map_err(|e| {
+        tracing::error!("Failed to open media file {}: {}", disk_path, e);
+        AppError {
+            status: StatusCode::NOT_FOUND,
+            message: "Media file not found on disk".to_string(),
+            code: ErrorCode::NotFound,
+            body: None,
+        }
+    })?;
+
+    let stream = ReaderStream::new(file);
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(CONTENT_TYPE, mime_type)
+        .header(CONTENT_DISPOSITION, disposition)
+        .header(ACCEPT_RANGES, "bytes")
+        .header(CONTENT_LENGTH, total_size)
+        .body(Body::from_stream(stream))
+        .map_err(|e| AppError::internal(format!("Failed to build response: {e}")))
+}
+
 /// GET /api/media/:id
 ///
 /// Returns the file with correct Content-Type and Content-Disposition headers.
@@ -537,22 +623,7 @@ pub async fn download(
     Query(query): Query<MediaDownloadQuery>,
     headers: axum::http::HeaderMap,
 ) -> Result<Response, AppError> {
-    // 1. Try Authorization header (JWT)
-    let user_id = if let Some(token_str) = headers
-        .get("Authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
-    {
-        let claims = jwt::validate_token(token_str, &state.jwt_secret)?;
-        Uuid::parse_str(&claims.sub)
-            .map_err(|_| AppError::unauthorized("Invalid user ID in token"))?
-    }
-    // 2. Try ?ticket= or legacy ?token= as media ticket
-    else if let Some(ticket_str) = query.ticket.or(query.token) {
-        validate_media_ticket(&state, &ticket_str)?
-    } else {
-        return Err(AppError::unauthorized("Missing authentication"));
-    };
+    let user_id = extract_user_id(&state, &query, &headers)?;
     let row = db::media::get_media(&state.pool, id)
         .await?
         .ok_or_else(|| AppError {
@@ -614,30 +685,15 @@ pub async fn download(
     if let Some(range_header) = headers.get(RANGE).and_then(|v| v.to_str().ok()) {
         match parse_byte_range(range_header, total_size) {
             Ok((start, end)) => {
-                let slice_len = end - start + 1;
-                let mut file = fs::File::open(&disk_path).await.map_err(|e| {
-                    tracing::error!("Failed to open media file for range: {e}");
-                    AppError::internal("Failed to read media")
-                })?;
-                file.seek(SeekFrom::Start(start)).await.map_err(|e| {
-                    tracing::error!("Failed to seek media file: {e}");
-                    AppError::internal("Failed to read media")
-                })?;
-                let mut buf = vec![0u8; slice_len as usize];
-                file.read_exact(&mut buf).await.map_err(|e| {
-                    tracing::error!("Failed to read media slice: {e}");
-                    AppError::internal("Failed to read media")
-                })?;
-
-                return Response::builder()
-                    .status(StatusCode::PARTIAL_CONTENT)
-                    .header(CONTENT_TYPE, &row.mime_type)
-                    .header(CONTENT_DISPOSITION, &disposition)
-                    .header(ACCEPT_RANGES, "bytes")
-                    .header(CONTENT_LENGTH, slice_len)
-                    .header(CONTENT_RANGE, format!("bytes {start}-{end}/{total_size}"))
-                    .body(Body::from(buf))
-                    .map_err(|e| AppError::internal(format!("Failed to build response: {e}")));
+                return serve_byte_range(
+                    &disk_path,
+                    start,
+                    end,
+                    total_size,
+                    &row.mime_type,
+                    &disposition,
+                )
+                .await;
             }
             Err(_) => {
                 // Unsatisfiable range — RFC 7233 says respond with 416.
@@ -651,29 +707,7 @@ pub async fn download(
     }
 
     // No Range header — stream the full file without buffering it into RAM.
-    // `ReaderStream` wraps the `tokio::fs::File` and yields chunks as they
-    // are read from disk; peak RAM is O(chunk) regardless of file size.
-    let file = fs::File::open(&disk_path).await.map_err(|e| {
-        tracing::error!("Failed to open media file {}: {}", disk_path, e);
-        AppError {
-            status: StatusCode::NOT_FOUND,
-            message: "Media file not found on disk".to_string(),
-            code: ErrorCode::NotFound,
-            body: None,
-        }
-    })?;
-
-    let stream = ReaderStream::new(file);
-    let response = Response::builder()
-        .status(StatusCode::OK)
-        .header(CONTENT_TYPE, &row.mime_type)
-        .header(CONTENT_DISPOSITION, &disposition)
-        .header(ACCEPT_RANGES, "bytes")
-        .header(CONTENT_LENGTH, total_size)
-        .body(Body::from_stream(stream))
-        .map_err(|e| AppError::internal(format!("Failed to build response: {e}")))?;
-
-    Ok(response)
+    serve_full_file(&disk_path, total_size, &row.mime_type, &disposition).await
 }
 
 /// GET /api/media/:id/thumb
