@@ -743,9 +743,7 @@ class AvatarCircle extends StatelessWidget {
       child: avatarUrl != null
           ? Image.network(
               avatarUrl!,
-              headers: authToken != null
-                  ? {'Authorization': 'Bearer $authToken'}
-                  : null,
+              headers: _getAuthHeaders(authToken),
               fit: BoxFit.cover,
               width: avatarSize,
               height: avatarSize,
@@ -854,4 +852,8 @@ class _LocalScreenShareTrackState extends State<LocalScreenShareTrack> {
     }
     return lk.VideoTrackRenderer(_track!, fit: lk.VideoViewFit.contain);
   }
+}
+
+Map<String, String>? _getAuthHeaders(String? authToken) {
+  return authToken != null ? {'Authorization': 'Bearer $authToken'} : null;
 }

@@ -115,8 +115,9 @@ class TrayService with TrayListener, WindowListener {
   /// Update the tray tooltip to show the current unread count.
   Future<void> updateBadge(int unreadCount) async {
     if (!_initialised) return;
+    final messageSuffix = unreadCount == 1 ? '' : 's';
     final label = unreadCount > 0
-        ? 'Echo - $unreadCount unread message${unreadCount == 1 ? '' : 's'}'
+        ? 'Echo - $unreadCount unread message$messageSuffix'
         : 'Echo';
     await _safeSetToolTip(label);
   }

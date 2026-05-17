@@ -99,7 +99,8 @@ class _StatsGrid extends StatelessWidget {
       builder: (context, constraints) {
         // Target ~180px per card, clamp to 2-4 columns.
         final width = constraints.maxWidth;
-        final cols = width >= 720 ? 4 : (width >= 480 ? 3 : 2);
+        final colsIfSmall = width >= 480 ? 3 : 2;
+        final cols = width >= 720 ? 4 : colsIfSmall;
         final spacing = 12.0;
         final cardWidth = (width - spacing * (cols - 1)) / cols;
         return Wrap(

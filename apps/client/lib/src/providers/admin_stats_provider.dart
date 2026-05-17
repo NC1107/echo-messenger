@@ -31,8 +31,12 @@ class AdminStats {
   });
 
   factory AdminStats.fromJson(Map<String, dynamic> json) {
-    int asInt(Object? v) =>
-        v is int ? v : (v is num ? v.toInt() : int.tryParse('$v') ?? 0);
+    int asInt(Object? v) {
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      return int.tryParse('$v') ?? 0;
+    }
+
     return AdminStats(
       usersTotal: asInt(json['users_total']),
       usersActive24h: asInt(json['users_active_24h']),

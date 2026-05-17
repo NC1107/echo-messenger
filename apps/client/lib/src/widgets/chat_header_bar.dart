@@ -184,6 +184,15 @@ class ChatHeaderBar extends ConsumerWidget {
     // encrypted (explicit "plaintext DM" warning replaces the old banner).
     // Groups never show the unlock-open glyph because group plaintext is
     // expected today.
+    final Widget? unencryptedDmGlyph = !conv.isGroup
+        ? const Padding(
+            padding: EdgeInsets.only(left: 5),
+            child: Tooltip(
+              message: 'Not encrypted -- plaintext DM',
+              child: Icon(Icons.lock_open, size: 12, color: EchoTheme.warning),
+            ),
+          )
+        : null;
     final Widget? lockGlyph = conv.isEncrypted
         ? Padding(
             padding: const EdgeInsets.only(left: 5),
@@ -192,19 +201,7 @@ class ChatHeaderBar extends ConsumerWidget {
               child: Icon(Icons.lock, size: 12, color: context.textMuted),
             ),
           )
-        : (!conv.isGroup
-              ? const Padding(
-                  padding: EdgeInsets.only(left: 5),
-                  child: Tooltip(
-                    message: 'Not encrypted -- plaintext DM',
-                    child: Icon(
-                      Icons.lock_open,
-                      size: 12,
-                      color: EchoTheme.warning,
-                    ),
-                  ),
-                )
-              : null);
+        : unencryptedDmGlyph;
 
     if (conv.isGroup) {
       return Row(

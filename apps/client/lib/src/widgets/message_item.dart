@@ -1483,6 +1483,11 @@ class _MessageItemState extends State<MessageItem>
         : null;
     final showAvatar = widget.showHeader || forceShow;
 
+    final avatarWidth =
+        (widget._isCompact ? 32 : (widget.compactLayout ? 24 : 28)).toDouble();
+    final avatarRadius =
+        (widget._isCompact ? 16 : (widget.compactLayout ? 12 : 14)).toDouble();
+
     return Semantics(
       label: 'View profile of ${msg.fromUsername}',
       button: true,
@@ -1493,13 +1498,11 @@ class _MessageItemState extends State<MessageItem>
         child: SizedBox(
           // Slice 5: bump compact avatar to 32px (closer to Discord's 40)
           // for legibility while staying tighter than the bubbles layout.
-          width: widget._isCompact ? 32 : (widget.compactLayout ? 24 : 28),
+          width: avatarWidth,
           child: showAvatar
               ? buildAvatar(
                   name: msg.fromUsername,
-                  radius: widget._isCompact
-                      ? 16
-                      : (widget.compactLayout ? 12 : 14),
+                  radius: avatarRadius,
                   bgColor: _getAvatarColor(msg.fromUserId),
                   imageUrl: avatarImageUrl,
                 )

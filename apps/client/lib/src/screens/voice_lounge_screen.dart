@@ -611,6 +611,11 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
 
   void _closeSubmenu() => setState(() => _activeSubmenu = null);
 
+  /// Resolves a relative or absolute avatar URL to a full URL.
+  String _resolveAvatarUrl(String avatarUrl, String serverUrl) {
+    return avatarUrl.startsWith('http') ? avatarUrl : '$serverUrl$avatarUrl';
+  }
+
   /// Builds the username -> avatarUrl map from the active conversation's members.
   Map<String, String?> _buildMemberAvatars(String conversationId) {
     final serverUrl = ref.read(serverUrlProvider);
@@ -621,12 +626,10 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     final avatars = <String, String?>{};
     if (conversation == null) return avatars;
     for (final m in conversation.members) {
-      final resolved = m.avatarUrl != null && m.avatarUrl!.isNotEmpty
-          ? (m.avatarUrl!.startsWith('http')
-                ? m.avatarUrl
-                : '$serverUrl${m.avatarUrl}')
+      final resolvedUrl = m.avatarUrl != null && m.avatarUrl!.isNotEmpty
+          ? _resolveAvatarUrl(m.avatarUrl!, serverUrl)
           : null;
-      avatars[m.username] = resolved;
+      avatars[m.username] = resolvedUrl;
     }
     return avatars;
   }

@@ -157,11 +157,11 @@ class _LocaleOption extends StatelessWidget {
                         Text(
                           entry.displayName,
                           style: TextStyle(
-                            color: isSelected
-                                ? context.accent
-                                : isFullyTranslated
-                                ? context.textPrimary
-                                : context.textMuted,
+                            color: _getLanguageTextColor(
+                              isSelected,
+                              isFullyTranslated,
+                              context,
+                            ),
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
                           ),
@@ -189,5 +189,14 @@ class _LocaleOption extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Color _getLanguageTextColor(
+    bool isSelected,
+    bool isFullyTranslated,
+    BuildContext context,
+  ) {
+    if (isSelected) return context.accent;
+    return isFullyTranslated ? context.textPrimary : context.textMuted;
   }
 }

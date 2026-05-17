@@ -1834,12 +1834,14 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   /// Builds the animated inline media/emoji picker that replaces the keyboard
   /// on mobile. Collapses to [SizedBox.shrink] when not shown.
   Widget _buildInlinePicker() {
+    final pickerHeight = (_lastKeyboardHeight > 0 ? _lastKeyboardHeight : 280)
+        .toDouble();
     return AnimatedSize(
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeInOut,
       child: _showInlinePicker
           ? SizedBox(
-              height: _lastKeyboardHeight > 0 ? _lastKeyboardHeight : 280,
+              height: pickerHeight,
               child: MobileMediaPickerPanel(
                 onEmojiSelected: (category, emoji) {
                   _insertEmoji(emoji.emoji);
