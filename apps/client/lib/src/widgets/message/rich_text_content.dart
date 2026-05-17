@@ -191,6 +191,20 @@ class _RichTextContentState extends State<RichTextContent> {
   /// Build spans for a segment that may contain bold, italic, underline,
   /// strikethrough, spoiler, masked links, URLs, and mentions (but NOT code).
   List<InlineSpan> _buildFormattedSpans(String text) {
+    final entries = _collectFormatMatches(text);
+    final filtered = _filterOverlappingMatches(entries);
+
+    if (filtered.isEmpty) {
+      return _buildMentionSpans(text);
+    }
+
+    return _buildSpansFromMatches(text, filtered);
+  }
+
+  /// Collect all formatting matches (masked links, bold, italic, etc.) into
+  /// a single list of entries with positions and tags.
+  List<({int start, int end, String tag, RegExpMatch match})>
+  _collectFormatMatches(String text) {
     final entries = <({int start, int end, String tag, RegExpMatch match})>[];
 
     for (final m in _maskedLinkRegex.allMatches(text)) {
@@ -221,6 +235,15 @@ class _RichTextContentState extends State<RichTextContent> {
       return b.end.compareTo(a.end);
     });
 
+    return entries;
+  }
+
+  /// Filter overlapping matches by keeping only non-overlapping spans
+  /// in order of appearance.
+  List<({int start, int end, String tag, RegExpMatch match})>
+  _filterOverlappingMatches(
+    List<({int start, int end, String tag, RegExpMatch match})> entries,
+  ) {
     final filtered = <({int start, int end, String tag, RegExpMatch match})>[];
     int cursor = 0;
     for (final e in entries) {
@@ -228,11 +251,15 @@ class _RichTextContentState extends State<RichTextContent> {
       filtered.add(e);
       cursor = e.end;
     }
+    return filtered;
+  }
 
-    if (filtered.isEmpty) {
-      return _buildMentionSpans(text);
-    }
-
+  /// Build inline spans from non-overlapping formatting matches,
+  /// interleaving them with mention spans for plain text segments.
+  List<InlineSpan> _buildSpansFromMatches(
+    String text,
+    List<({int start, int end, String tag, RegExpMatch match})> filtered,
+  ) {
     final spans = <InlineSpan>[];
     int lastEnd = 0;
 
@@ -240,9 +267,7 @@ class _RichTextContentState extends State<RichTextContent> {
       if (e.start > lastEnd) {
         spans.addAll(_buildMentionSpans(text.substring(lastEnd, e.start)));
       }
-
       spans.add(_buildSpanForTag(e));
-
       lastEnd = e.end;
     }
 

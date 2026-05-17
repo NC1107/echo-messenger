@@ -949,24 +949,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   void _listenForErrors() {
+    _listenConversationsErrors();
+    _listenCryptoErrors();
+    _listenVoiceErrors();
+  }
+
+  void _listenConversationsErrors() {
     ref.listen<ConversationsState>(conversationsProvider, (prev, next) {
       if (next.error != null && next.error != prev?.error) {
         ToastService.show(context, next.error!, type: ToastType.error);
       }
-      // Update tray badge when total unread count changes.
-      if (TrayService.isSupported) {
-        final prevTotal =
-            prev?.conversations.fold<int>(0, (s, c) => s + c.unreadCount) ?? 0;
-        final nextTotal = next.conversations.fold<int>(
-          0,
-          (s, c) => s + c.unreadCount,
-        );
-        if (nextTotal != prevTotal) {
-          unawaited(TrayService.instance.updateBadge(nextTotal));
-        }
-      }
+      _updateTrayBadgeIfNeeded(prev, next);
     });
+  }
 
+  void _updateTrayBadgeIfNeeded(
+    ConversationsState? prev,
+    ConversationsState next,
+  ) {
+    if (!TrayService.isSupported) return;
+    final prevTotal =
+        prev?.conversations.fold<int>(0, (s, c) => s + c.unreadCount) ?? 0;
+    final nextTotal = next.conversations.fold<int>(
+      0,
+      (s, c) => s + c.unreadCount,
+    );
+    if (nextTotal != prevTotal) {
+      unawaited(TrayService.instance.updateBadge(nextTotal));
+    }
+  }
+
+  void _listenCryptoErrors() {
     ref.listen<CryptoState>(cryptoProvider, (prev, next) {
       if (next.error != null && next.error != prev?.error) {
         ToastService.show(
@@ -984,7 +997,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         );
       }
     });
+  }
 
+  void _listenVoiceErrors() {
     ref.listen<LiveKitVoiceState>(voiceRtcProvider, (prev, next) {
       if (next.error == null || next.error == prev?.error) return;
       ToastService.show(context, next.error!, type: ToastType.error);
@@ -1503,7 +1518,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final updateState = ref.watch(updateProvider);
     final showUpdateDot = updateState.updateAvailable && !updateState.dismissed;
 
-    final tabs = <_MobileTabSpec>[
+    final tabs = _buildMobileTabSpecs(unreadTotal, showUpdateDot);
+
+    return Material(
+      color: context.sidebarBg,
+      child: SafeArea(
+        top: false,
+        child: Container(
+          height: 64,
+          decoration: BoxDecoration(
+            border: Border(top: BorderSide(color: context.border, width: 1)),
+          ),
+          child: Row(
+            children: List.generate(tabs.length, (i) {
+              return _buildMobileTabItem(tabs[i], i);
+            }),
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<_MobileTabSpec> _buildMobileTabSpecs(
+    int unreadTotal,
+    bool showUpdateDot,
+  ) {
+    return <_MobileTabSpec>[
       _MobileTabSpec(
         label: 'Chats',
         outlinedIcon: Icons.chat_bubble_outline,
@@ -1527,94 +1567,81 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         showDot: showUpdateDot,
       ),
     ];
+  }
 
-    return Material(
-      color: context.sidebarBg,
-      child: SafeArea(
-        top: false,
-        child: Container(
-          height: 64,
-          decoration: BoxDecoration(
-            border: Border(top: BorderSide(color: context.border, width: 1)),
-          ),
-          child: Row(
-            children: List.generate(tabs.length, (i) {
-              final isActive = i == _mobileTabIndex;
-              final tab = tabs[i];
-              return Expanded(
-                child: Semantics(
-                  selected: isActive,
-                  button: true,
-                  // "Chats tab", "Discover tab", etc. The trailing word matches
-                  // the e2e a11y selectors (`getByRole('button', { name: /chats
-                  // tab/i })`) and reads naturally to screen readers.
-                  label: '${tab.label} tab',
-                  child: InkWell(
-                    onTap: () {
-                      if (i == _mobileTabIndex) return;
-                      setState(() {
-                        _mobileTabIndex = i;
-                        if (i != 0) {
-                          _narrowPanelIndex = 0;
-                        }
-                      });
-                    },
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            Icon(
-                              isActive ? tab.filledIcon : tab.outlinedIcon,
-                              size: 24,
-                              color: isActive
-                                  ? context.accent
-                                  : context.textMuted,
-                            ),
-                            if (tab.badge > 0)
-                              Positioned(
-                                top: -3,
-                                right: -8,
-                                child: _UnreadBadge(
-                                  count: tab.badge,
-                                  ringColor: context.sidebarBg,
-                                  bgColor: context.accent,
-                                ),
-                              )
-                            else if (tab.showDot)
-                              Positioned(
-                                top: -2,
-                                right: -2,
-                                child: _DotBadge(
-                                  ringColor: context.sidebarBg,
-                                  bgColor: context.accent,
-                                ),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          tab.label,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: isActive
-                                ? FontWeight.w600
-                                : FontWeight.w500,
-                            color: isActive
-                                ? context.accent
-                                : context.textMuted,
-                            letterSpacing: 0.1,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            }),
+  Widget _buildMobileTabItem(_MobileTabSpec tab, int index) {
+    final isActive = index == _mobileTabIndex;
+    return Expanded(
+      child: Semantics(
+        selected: isActive,
+        button: true,
+        // "Chats tab", "Discover tab", etc. The trailing word matches
+        // the e2e a11y selectors (`getByRole('button', { name: /chats
+        // tab/i })`) and reads naturally to screen readers.
+        label: '${tab.label} tab',
+        child: InkWell(
+          onTap: () {
+            if (index == _mobileTabIndex) return;
+            setState(() {
+              _mobileTabIndex = index;
+              if (index != 0) {
+                _narrowPanelIndex = 0;
+              }
+            });
+          },
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildMobileTabIcon(tab, isActive),
+              const SizedBox(height: 3),
+              _buildMobileTabLabel(tab, isActive),
+            ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildMobileTabIcon(_MobileTabSpec tab, bool isActive) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Icon(
+          isActive ? tab.filledIcon : tab.outlinedIcon,
+          size: 24,
+          color: isActive ? context.accent : context.textMuted,
+        ),
+        if (tab.badge > 0)
+          Positioned(
+            top: -3,
+            right: -8,
+            child: _UnreadBadge(
+              count: tab.badge,
+              ringColor: context.sidebarBg,
+              bgColor: context.accent,
+            ),
+          )
+        else if (tab.showDot)
+          Positioned(
+            top: -2,
+            right: -2,
+            child: _DotBadge(
+              ringColor: context.sidebarBg,
+              bgColor: context.accent,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildMobileTabLabel(_MobileTabSpec tab, bool isActive) {
+    return Text(
+      tab.label,
+      style: TextStyle(
+        fontSize: 10,
+        fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+        color: isActive ? context.accent : context.textMuted,
+        letterSpacing: 0.1,
       ),
     );
   }

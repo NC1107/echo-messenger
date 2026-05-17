@@ -283,6 +283,93 @@ fn validate_head(head: &[u8], declared_mime: &str) -> Result<String, AppError> {
     }
 }
 
+/// Extract conversation_id from multipart field and verify membership.
+async fn extract_conversation_id(
+    field: axum::extract::multipart::Field<'_>,
+    state: &AppState,
+    auth_user_id: Uuid,
+) -> Result<Option<Uuid>, AppError> {
+    let text = field
+        .text()
+        .await
+        .map_err(|e| AppError::bad_request(format!("Invalid conversation_id: {e}")))?;
+    let cid = text
+        .parse::<Uuid>()
+        .map_err(|_| AppError::bad_request("conversation_id must be a valid UUID"))?;
+
+    let is_member = db::groups::is_member(&state.pool, cid, auth_user_id)
+        .await
+        .db_ctx("upload_media/is_member")?;
+    if !is_member {
+        return Err(AppError {
+            status: StatusCode::FORBIDDEN,
+            message: "Not a member of this conversation".to_string(),
+            code: ErrorCode::Forbidden,
+            body: None,
+        });
+    }
+
+    Ok(Some(cid))
+}
+
+/// Process multipart fields to extract file and conversation_id.
+async fn process_multipart_fields(
+    multipart: Multipart,
+    state: &AppState,
+    auth_user_id: Uuid,
+) -> Result<(String, String, String, i64, Option<Uuid>), AppError> {
+    let mut file_data: Option<(String, String, String, i64)> = None;
+    let mut conversation_id: Option<Uuid> = None;
+    let mut mp = multipart;
+
+    while let Some(field) = mp
+        .next_field()
+        .await
+        .map_err(|e| AppError::bad_request(format!("Invalid multipart data: {e}")))?
+    {
+        let field_name = field.name().unwrap_or_default().to_string();
+
+        if field_name == "conversation_id" {
+            conversation_id = extract_conversation_id(field, state, auth_user_id).await?;
+            continue;
+        }
+
+        if field_name == "file" {
+            file_data = Some(stream_field_to_temp(field).await?);
+        }
+    }
+
+    let (original_filename, mime_type, temp_path, file_size) = file_data
+        .ok_or_else(|| AppError::bad_request("Missing 'file' field in multipart form data"))?;
+
+    Ok((
+        original_filename,
+        mime_type,
+        temp_path,
+        file_size,
+        conversation_id,
+    ))
+}
+
+/// Build the JSON response with media metadata.
+fn build_upload_response(
+    row: &db::media::MediaRow,
+    thumb_url: Option<String>,
+) -> serde_json::Value {
+    let mut body = json!({
+        "id": row.id.to_string(),
+        "url": format!("/api/media/{}", row.id),
+    });
+    if let Some(url) = thumb_url {
+        body["thumb_url"] = json!(url);
+    }
+    if let (Some(w), Some(h)) = (row.width, row.height) {
+        body["width"] = json!(w);
+        body["height"] = json!(h);
+    }
+    body
+}
+
 /// POST /api/media/upload
 ///
 /// Accepts multipart form data with a `file` field and an optional
@@ -291,65 +378,20 @@ fn validate_head(head: &[u8], declared_mime: &str) -> Result<String, AppError> {
 pub async fn upload(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
-    mut multipart: Multipart,
+    multipart: Multipart,
 ) -> Result<impl IntoResponse, AppError> {
-    // Ensure uploads directory exists
     fs::create_dir_all("./uploads")
         .await
         .map_err(|e| AppError::internal(format!("Failed to create uploads directory: {e}")))?;
 
-    // (original_filename, mime_type, temp_path, file_size)
-    let mut file_data: Option<(String, String, String, i64)> = None;
-    let mut conversation_id: Option<Uuid> = None;
-
-    while let Some(field) = multipart
-        .next_field()
-        .await
-        .map_err(|e| AppError::bad_request(format!("Invalid multipart data: {e}")))?
-    {
-        let field_name = field.name().unwrap_or_default().to_string();
-
-        if field_name == "conversation_id" {
-            let text = field
-                .text()
-                .await
-                .map_err(|e| AppError::bad_request(format!("Invalid conversation_id: {e}")))?;
-            let cid = text
-                .parse::<Uuid>()
-                .map_err(|_| AppError::bad_request("conversation_id must be a valid UUID"))?;
-
-            // Verify the uploader is a member of this conversation
-            let is_member = db::groups::is_member(&state.pool, cid, auth.user_id)
-                .await
-                .db_ctx("upload_media/is_member")?;
-            if !is_member {
-                return Err(AppError {
-                    status: StatusCode::FORBIDDEN,
-                    message: "Not a member of this conversation".to_string(),
-                    code: ErrorCode::Forbidden,
-                    body: None,
-                });
-            }
-            conversation_id = Some(cid);
-            continue;
-        }
-
-        if field_name != "file" {
-            continue;
-        }
-
-        file_data = Some(stream_field_to_temp(field).await?);
-    }
-
-    let (original_filename, mime_type, temp_path, file_size) = file_data
-        .ok_or_else(|| AppError::bad_request("Missing 'file' field in multipart form data"))?;
+    let (original_filename, mime_type, temp_path, file_size, conversation_id) =
+        process_multipart_fields(multipart, &state, auth.user_id).await?;
 
     let ext = extension_for_mime(&mime_type);
     let file_uuid = Uuid::new_v4();
     let disk_filename = format!("{file_uuid}.{ext}");
     let disk_path = format!("./uploads/{disk_filename}");
 
-    // Atomically rename temp -> final path; no extra copy needed.
     fs::rename(&temp_path, &disk_path).await.map_err(|e| {
         let tmp = temp_path.clone();
         tokio::spawn(async move {
@@ -358,8 +400,6 @@ pub async fn upload(
         AppError::internal(format!("Failed to save file: {e}"))
     })?;
 
-    // Read image dimensions from the file header. Best-effort: non-image
-    // uploads and unrecognised formats store NULL; this never fails the upload.
     let (img_width, img_height) = if mime_type.starts_with("image/") {
         match read_image_dimensions(&disk_path) {
             Some((w, h)) => (Some(w as i32), Some(h as i32)),
@@ -385,9 +425,6 @@ pub async fn upload(
     )
     .await?;
 
-    // Generate a first-frame thumbnail for video uploads. Best-effort:
-    // we still return success even if ffmpeg is missing or fails — the client
-    // falls back to a black tile when /thumb returns 404.
     let mut thumb_url: Option<String> = None;
     if mime_type.starts_with("video/") {
         let thumb_path = format!("./uploads/{file_uuid}.thumb.jpg");
@@ -402,17 +439,7 @@ pub async fn upload(
         }
     }
 
-    let mut body = json!({
-        "id": row.id.to_string(),
-        "url": format!("/api/media/{}", row.id),
-    });
-    if let Some(url) = thumb_url {
-        body["thumb_url"] = json!(url);
-    }
-    if let (Some(w), Some(h)) = (row.width, row.height) {
-        body["width"] = json!(w);
-        body["height"] = json!(h);
-    }
+    let body = build_upload_response(&row, thumb_url);
 
     Ok((StatusCode::CREATED, axum::Json(body)))
 }

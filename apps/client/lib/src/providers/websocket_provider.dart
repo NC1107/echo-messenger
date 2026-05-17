@@ -363,6 +363,33 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
 
     // Per-user device IDs collide across users (sender device 1 vs recipient
     // device 1), so per-recipient maps are kept separate end-to-end (#522).
+    final result = await _encryptMessageForSend(toUserId, content);
+    if (result.payload == null) {
+      _addFailedMessage(
+        toUserId,
+        _friendlyEncryptionError(result.error ?? 'Encryption failed'),
+        conversationId: conversationId,
+        originalContent: content,
+      );
+      return;
+    }
+
+    final (recipientDeviceContents, fallbackPayload) = result.payload!;
+    _sendMessageFrame(
+      toUserId,
+      fallbackPayload,
+      recipientDeviceContents,
+      conversationId: conversationId,
+      replyToId: replyToId,
+    );
+  }
+
+  /// Encrypt a message for all devices (recipient + self) with fallback chain.
+  /// Returns the encrypted payload on success, or the final error on total failure.
+  Future<
+    ({(Map<String, Map<String, String>>?, String)? payload, Object? error})
+  >
+  _encryptMessageForSend(String toUserId, String content) async {
     Map<String, Map<String, String>>? recipientDeviceContents;
     String fallbackPayload;
     try {
@@ -381,47 +408,78 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
         selfContents = await crypto.encryptForOwnDevices(myUserId, content);
       }
 
-      recipientDeviceContents = <String, Map<String, String>>{};
-      if (recipientContents.isNotEmpty) {
-        recipientDeviceContents[toUserId] = recipientContents;
-      }
-      if (selfContents.isNotEmpty && myUserId != null && myUserId.isNotEmpty) {
-        recipientDeviceContents[myUserId] = selfContents;
-      }
+      recipientDeviceContents = _buildDeviceContentsMap(
+        toUserId,
+        recipientContents,
+        myUserId,
+        selfContents,
+      );
 
       // Legacy fallback: prefer the recipient's first ciphertext over self.
       fallbackPayload =
           recipientContents.values.firstOrNull ??
           selfContents.values.firstOrNull ??
           '';
+
+      return (payload: (recipientDeviceContents, fallbackPayload), error: null);
     } catch (e) {
-      debugLog('Multi-device encryption failed: $e', 'WS');
-      // Fall back to single-device encrypt with session reset retry
+      return _encryptMessageFallback(toUserId, content, e);
+    }
+  }
+
+  /// Build the device contents map from recipient and self encryption results.
+  Map<String, Map<String, String>>? _buildDeviceContentsMap(
+    String toUserId,
+    Map<String, String> recipientContents,
+    String? myUserId,
+    Map<String, String> selfContents,
+  ) {
+    final contents = <String, Map<String, String>>{};
+    if (recipientContents.isNotEmpty) {
+      contents[toUserId] = recipientContents;
+    }
+    if (selfContents.isNotEmpty && myUserId != null && myUserId.isNotEmpty) {
+      contents[myUserId] = selfContents;
+    }
+    return contents;
+  }
+
+  /// Fallback encryption: try single-device, then session reset, then fail.
+  Future<
+    ({(Map<String, Map<String, String>>?, String)? payload, Object? error})
+  >
+  _encryptMessageFallback(
+    String toUserId,
+    String content,
+    Object firstError,
+  ) async {
+    debugLog('Multi-device encryption failed: $firstError', 'WS');
+    try {
+      final crypto = ref.read(cryptoServiceProvider);
+      final fallbackPayload = await crypto.encryptMessage(toUserId, content);
+      return (payload: (null, fallbackPayload), error: null);
+    } catch (e2) {
+      debugLog('Fallback encryption failed, resetting session: $e2', 'WS');
       try {
         final crypto = ref.read(cryptoServiceProvider);
-        fallbackPayload = await crypto.encryptMessage(toUserId, content);
-        recipientDeviceContents = null;
-      } catch (e2) {
-        debugLog('Fallback encryption failed, resetting session: $e2', 'WS');
-        // Reset session and retry once before giving up
-        try {
-          final crypto = ref.read(cryptoServiceProvider);
-          await crypto.invalidateSessionKey(toUserId);
-          fallbackPayload = await crypto.encryptMessage(toUserId, content);
-          recipientDeviceContents = null;
-        } catch (e3) {
-          debugLog('Encryption retry after reset also failed: $e3', 'WS');
-          _addFailedMessage(
-            toUserId,
-            _friendlyEncryptionError(e3),
-            conversationId: conversationId,
-            originalContent: content,
-          );
-          return;
-        }
+        await crypto.invalidateSessionKey(toUserId);
+        final fallbackPayload = await crypto.encryptMessage(toUserId, content);
+        return (payload: (null, fallbackPayload), error: null);
+      } catch (e3) {
+        debugLog('Encryption retry after reset also failed: $e3', 'WS');
+        return (payload: null, error: e3);
       }
     }
+  }
 
+  /// Send the encrypted message frame over WebSocket with optional metadata.
+  void _sendMessageFrame(
+    String toUserId,
+    String fallbackPayload,
+    Map<String, Map<String, String>>? recipientDeviceContents, {
+    String? conversationId,
+    String? replyToId,
+  }) {
     final msg = <String, dynamic>{
       'type': 'send_message',
       'to_user_id': toUserId,

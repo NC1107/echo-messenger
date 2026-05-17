@@ -27,52 +27,8 @@ class ReplyQuote extends StatelessWidget {
     final truncated = replyToContent.length > 100
         ? '${replyToContent.substring(0, 100)}...'
         : replyToContent;
-
-    final String semanticsLabel;
-    switch (kind) {
-      case ReplyAttachmentKind.image:
-      case ReplyAttachmentKind.gif:
-        semanticsLabel = onTap != null
-            ? 'Jump to original message from ${replyToUsername ?? "Unknown"}'
-            : 'In reply to ${replyToUsername ?? "Unknown"}: Image attachment';
-      case ReplyAttachmentKind.video:
-        semanticsLabel = onTap != null
-            ? 'Jump to original message from ${replyToUsername ?? "Unknown"}'
-            : 'In reply to ${replyToUsername ?? "Unknown"}: Video attachment';
-      case ReplyAttachmentKind.audio:
-        semanticsLabel = onTap != null
-            ? 'Jump to original message from ${replyToUsername ?? "Unknown"}'
-            : 'In reply to ${replyToUsername ?? "Unknown"}: Voice message';
-      case ReplyAttachmentKind.file:
-        semanticsLabel = onTap != null
-            ? 'Jump to original message from ${replyToUsername ?? "Unknown"}'
-            : 'In reply to ${replyToUsername ?? "Unknown"}: File attachment';
-      case ReplyAttachmentKind.none:
-        semanticsLabel = onTap != null
-            ? 'Jump to original message from ${replyToUsername ?? "Unknown"}'
-            : 'In reply to ${replyToUsername ?? "Unknown"}: $truncated';
-    }
-
-    final mineFg = context.onSentBubble;
-
-    // Themes whose sent-bubble uses a light-on-dark text token (e.g. indigo,
-    // graphite) want the inner reply-quote's tint overlay to DARKEN the
-    // bubble. Themes whose `onSentBubble` is near-black (ember's amber,
-    // sakura's pink) want the overlay to LIGHTEN it instead -- otherwise an
-    // alpha-12 near-black wash on the bubble flattens it into a near-black
-    // block and the near-black text on top reads as black-on-black (#920).
-    //
-    // `context.sentBubbleTint` resolves to the correct contrast color
-    // (white for ember-class themes, mineFg for indigo-class) so this file
-    // never has to reach for a hardcoded `Colors.white` (#830 F7+F8).
-    final mineFgIsDark = mineFg.computeLuminance() < 0.3;
-    final tint = context.sentBubbleTint;
-    final mineOverlay = mineFgIsDark
-        ? tint.withValues(alpha: 0.18)
-        : tint.withValues(alpha: 0.12);
-    final mineBorder = mineFgIsDark
-        ? tint.withValues(alpha: 0.55)
-        : tint.withValues(alpha: 0.5);
+    final semanticsLabel = _buildSemanticsLabel(kind, truncated);
+    final (mineOverlay, mineBorder, mineFg) = _buildColorOverlays(context);
 
     return Semantics(
       label: semanticsLabel,
@@ -116,6 +72,34 @@ class ReplyQuote extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _buildSemanticsLabel(ReplyAttachmentKind kind, String truncated) {
+    final username = replyToUsername ?? "Unknown";
+    if (onTap != null) {
+      return 'Jump to original message from $username';
+    }
+    return switch (kind) {
+      ReplyAttachmentKind.image => 'In reply to $username: Image attachment',
+      ReplyAttachmentKind.gif => 'In reply to $username: Image attachment',
+      ReplyAttachmentKind.video => 'In reply to $username: Video attachment',
+      ReplyAttachmentKind.audio => 'In reply to $username: Voice message',
+      ReplyAttachmentKind.file => 'In reply to $username: File attachment',
+      ReplyAttachmentKind.none => 'In reply to $username: $truncated',
+    };
+  }
+
+  (Color, Color, Color) _buildColorOverlays(BuildContext context) {
+    final mineFg = context.onSentBubble;
+    final mineFgIsDark = mineFg.computeLuminance() < 0.3;
+    final tint = context.sentBubbleTint;
+    final mineOverlay = mineFgIsDark
+        ? tint.withValues(alpha: 0.18)
+        : tint.withValues(alpha: 0.12);
+    final mineBorder = mineFgIsDark
+        ? tint.withValues(alpha: 0.55)
+        : tint.withValues(alpha: 0.5);
+    return (mineOverlay, mineBorder, mineFg);
   }
 
   Widget _buildContentPreview(BuildContext context, ReplyAttachmentKind kind) {

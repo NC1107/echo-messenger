@@ -345,67 +345,13 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
     String senderUsername, {
     int? fromDeviceId,
   }) async {
-    String decryptedContent;
-    final isGroupEncrypted = rawContent.startsWith(groupEncryptedPrefix);
-
-    // Check if this is a group conversation -- group messages that don't have
-    // the GRP1: prefix are plaintext and should never be DM-decrypted.
-    final conversation = ref
-        .read(conversationsProvider)
-        .conversations
-        .where((c) => c.id == conversationId)
-        .firstOrNull;
-    final isGroupConversation = conversation?.isGroup ?? false;
-    final wasEncrypted =
-        isGroupEncrypted ||
-        (!isGroupConversation && looksEncrypted(rawContent));
-
-    if (isGroupEncrypted) {
-      // Group-encrypted message -- decrypt with AES-256-GCM group key.
-      try {
-        final groupCrypto = ref.read(groupCryptoServiceProvider);
-        final token = ref.read(authProvider).token ?? '';
-        groupCrypto.setToken(token);
-        final keyResult = await groupCrypto.getGroupKey(conversationId);
-        if (keyResult != null) {
-          final (_, keyBase64) = keyResult;
-          decryptedContent = await GroupCryptoService.decryptGroupMessage(
-            rawContent,
-            keyBase64,
-          );
-        } else {
-          decryptedContent = '[Could not decrypt - waiting for group key]';
-        }
-      } catch (e) {
-        debugLog('Group decrypt failed for $conversationId: $e', 'WebSocket');
-        decryptedContent = '[Could not decrypt group message]';
-      }
-    } else if (!wasEncrypted) {
-      // Content does not look encrypted (e.g. plaintext group messages) --
-      // deliver as-is without attempting decryption.
-      decryptedContent = rawContent;
-    } else {
-      try {
-        decryptedContent = await crypto.decryptMessage(
-          fromUserId,
-          rawContent,
-          fromDeviceId: fromDeviceId,
-        );
-      } catch (e) {
-        // Do NOT invalidate the session here. Invalidating and re-creating a
-        // new X3DH outgoing session would put Alice and Bob out of sync,
-        // permanently breaking all future messages in the conversation.
-        // decryptMessage() already handles the legitimate peer-key-reset case
-        // internally by detecting the X3DH magic prefix.
-        debugLog(
-          'Decryption failed for message in $conversationId '
-              'from $fromUserId: $e',
-          'WebSocket',
-        );
-        decryptedContent =
-            '[Could not decrypt - encryption keys may be out of sync]';
-      }
-    }
+    final (decryptedContent, wasEncrypted) = await _decryptContent(
+      crypto,
+      rawContent,
+      fromUserId,
+      conversationId,
+      fromDeviceId,
+    );
 
     final decryptedJson = Map<String, dynamic>.from(json);
     decryptedJson['content'] = decryptedContent;
@@ -422,14 +368,7 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
       MessageCache.cacheMessages(conversationId, [msg]);
     }
 
-    // Mention detection runs over the *decrypted* plaintext. Skip the
-    // sender's own messages — we don't want to badge someone for
-    // mentioning themselves. Sentinel-shaped strings (failed decrypt,
-    // placeholders) won't contain real mentions and are filtered by
-    // _decryptedPreviews logic upstream.
-    final isMention =
-        fromUserId != myUserId &&
-        containsMention(decryptedContent, ref.read(authProvider).username);
+    final isMention = _detectMention(fromUserId, myUserId, decryptedContent);
 
     // Update conversations list with decrypted preview
     ref
@@ -446,6 +385,110 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
     if (fromUserId != myUserId) {
       _notifyIfAllowed(conversationId, senderUsername, decryptedContent);
     }
+  }
+
+  /// Decrypt message content based on type (group-encrypted, DM-encrypted, or plaintext).
+  /// Returns (decryptedContent, wasEncrypted).
+  Future<(String, bool)> _decryptContent(
+    CryptoService crypto,
+    String rawContent,
+    String fromUserId,
+    String conversationId,
+    int? fromDeviceId,
+  ) async {
+    final isGroupEncrypted = rawContent.startsWith(groupEncryptedPrefix);
+
+    // Check if this is a group conversation
+    final conversation = ref
+        .read(conversationsProvider)
+        .conversations
+        .where((c) => c.id == conversationId)
+        .firstOrNull;
+    final isGroupConversation = conversation?.isGroup ?? false;
+    final wasEncrypted =
+        isGroupEncrypted ||
+        (!isGroupConversation && looksEncrypted(rawContent));
+
+    if (isGroupEncrypted) {
+      return (await _decryptGroupMessage(rawContent, conversationId), true);
+    } else if (!wasEncrypted) {
+      return (rawContent, false);
+    } else {
+      return (
+        await _decryptDmMessage(
+          crypto,
+          fromUserId,
+          rawContent,
+          conversationId,
+          fromDeviceId,
+        ),
+        true,
+      );
+    }
+  }
+
+  /// Decrypt a group-encrypted message using the group key.
+  Future<String> _decryptGroupMessage(
+    String rawContent,
+    String conversationId,
+  ) async {
+    try {
+      final groupCrypto = ref.read(groupCryptoServiceProvider);
+      final token = ref.read(authProvider).token ?? '';
+      groupCrypto.setToken(token);
+      final keyResult = await groupCrypto.getGroupKey(conversationId);
+      if (keyResult != null) {
+        final (_, keyBase64) = keyResult;
+        return await GroupCryptoService.decryptGroupMessage(
+          rawContent,
+          keyBase64,
+        );
+      } else {
+        return '[Could not decrypt - waiting for group key]';
+      }
+    } catch (e) {
+      debugLog('Group decrypt failed for $conversationId: $e', 'WebSocket');
+      return '[Could not decrypt group message]';
+    }
+  }
+
+  /// Decrypt a DM message using Signal Protocol.
+  Future<String> _decryptDmMessage(
+    CryptoService crypto,
+    String fromUserId,
+    String rawContent,
+    String conversationId,
+    int? fromDeviceId,
+  ) async {
+    try {
+      return await crypto.decryptMessage(
+        fromUserId,
+        rawContent,
+        fromDeviceId: fromDeviceId,
+      );
+    } catch (e) {
+      debugLog(
+        'Decryption failed for message in $conversationId '
+            'from $fromUserId: $e',
+        'WebSocket',
+      );
+      return '[Could not decrypt - encryption keys may be out of sync]';
+    }
+  }
+
+  /// Check if a message contains a mention of the current user.
+  bool _detectMention(
+    String fromUserId,
+    String myUserId,
+    String decryptedContent,
+  ) {
+    // Mention detection runs over the *decrypted* plaintext. Skip the
+    // sender's own messages — we don't want to badge someone for
+    // mentioning themselves. Sentinel-shaped strings (failed decrypt,
+    // placeholders) won't contain real mentions and are filtered by
+    // _decryptedPreviews logic upstream.
+    if (fromUserId == myUserId) return false;
+    return containsMention(decryptedContent, ref.read(authProvider).username);
   }
 
   /// Show a notification + play sound if the conversation is not muted.

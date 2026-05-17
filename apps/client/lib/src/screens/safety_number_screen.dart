@@ -265,42 +265,50 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
     }
 
     if (_error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.lock_outline, size: 48, color: context.textMuted),
-              const SizedBox(height: 16),
-              Text(
-                _error!,
-                textAlign: TextAlign.center,
-                style: TextStyle(color: context.textSecondary, fontSize: 14),
-              ),
-              const SizedBox(height: 20),
-              OutlinedButton.icon(
-                onPressed: _loadSafetyNumber,
-                icon: const Icon(Icons.refresh, size: 16),
-                label: const Text('Retry'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: context.accent,
-                  side: BorderSide(color: context.accent),
-                ),
-              ),
-              if (isDialog) ...[
-                const SizedBox(height: 12),
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Close'),
-                ),
-              ],
-            ],
-          ),
-        ),
-      );
+      return _buildErrorState(context, isDialog);
     }
 
+    return _buildContentState(context, isDialog);
+  }
+
+  Widget _buildErrorState(BuildContext context, bool isDialog) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.lock_outline, size: 48, color: context.textMuted),
+            const SizedBox(height: 16),
+            Text(
+              _error!,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: context.textSecondary, fontSize: 14),
+            ),
+            const SizedBox(height: 20),
+            OutlinedButton.icon(
+              onPressed: _loadSafetyNumber,
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('Retry'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: context.accent,
+                side: BorderSide(color: context.accent),
+              ),
+            ),
+            if (isDialog) ...[
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContentState(BuildContext context, bool isDialog) {
     final formatted = SafetyNumberService.formatForDisplay(_safetyNumber!);
     final isAddContactMode = _mode == _SafetyScreenMode.addContact;
     final qrData = isAddContactMode ? _inviteUrl : _safetyNumber!;
@@ -309,80 +317,176 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
       padding: const EdgeInsets.all(24),
       child: Column(
         children: [
-          if (isDialog)
-            Row(
-              children: [
-                Icon(
-                  Icons.verified_user_outlined,
-                  size: 20,
-                  color: context.accent,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Safety Number',
-                  style: TextStyle(
-                    color: context.textPrimary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  icon: Icon(Icons.close, size: 18, color: context.textMuted),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
+          if (isDialog) _buildDialogHeader(context),
           const SizedBox(height: 8),
-          SegmentedButton<_SafetyScreenMode>(
-            selected: {_mode},
-            onSelectionChanged: (selection) {
-              if (selection.isNotEmpty) {
-                setState(() => _mode = selection.first);
-              }
-            },
-            segments: const [
-              ButtonSegment(
-                value: _SafetyScreenMode.verify,
-                icon: Icon(Icons.verified_user_outlined, size: 16),
-                label: Text('Verify'),
+          _buildModeSegments(),
+          const SizedBox(height: 12),
+          _buildInstructions(isAddContactMode),
+          const SizedBox(height: 24),
+          _buildQrCode(qrData),
+          const SizedBox(height: 24),
+          if (isAddContactMode)
+            _buildAddContactSection()
+          else
+            _buildVerifySection(formatted),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDialogHeader(BuildContext context) {
+    return Row(
+      children: [
+        Icon(Icons.verified_user_outlined, size: 20, color: context.accent),
+        const SizedBox(width: 8),
+        Text(
+          'Safety Number',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const Spacer(),
+        IconButton(
+          icon: Icon(Icons.close, size: 18, color: context.textMuted),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildModeSegments() {
+    return SegmentedButton<_SafetyScreenMode>(
+      selected: {_mode},
+      onSelectionChanged: (selection) {
+        if (selection.isNotEmpty) {
+          setState(() => _mode = selection.first);
+        }
+      },
+      segments: const [
+        ButtonSegment(
+          value: _SafetyScreenMode.verify,
+          icon: Icon(Icons.verified_user_outlined, size: 16),
+          label: Text('Verify'),
+        ),
+        ButtonSegment(
+          value: _SafetyScreenMode.addContact,
+          icon: Icon(Icons.person_add_alt_1, size: 16),
+          label: Text('Add Contact'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInstructions(bool isAddContactMode) {
+    return Text(
+      isAddContactMode
+          ? 'Show this QR or link to let others add you using your username invite.'
+          : 'Verify that the safety number below matches on both '
+                '${widget.myUsername}\'s and ${widget.peerUsername}\'s devices.',
+      textAlign: TextAlign.center,
+      style: TextStyle(color: context.textSecondary, fontSize: 13),
+    );
+  }
+
+  Widget _buildQrCode(String qrData) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: QrImageView(
+        data: qrData,
+        version: QrVersions.auto,
+        size: 160,
+        backgroundColor: Colors.white,
+      ),
+    );
+  }
+
+  Widget _buildAddContactSection() {
+    return Column(
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: context.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: context.border),
+          ),
+          child: Column(
+            children: [
+              SelectableText(
+                _inviteUrl,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: context.textPrimary,
+                  fontSize: 13,
+                  height: 1.4,
+                ),
               ),
-              ButtonSegment(
-                value: _SafetyScreenMode.addContact,
-                icon: Icon(Icons.person_add_alt_1, size: 16),
-                label: Text('Add Contact'),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        await Clipboard.setData(
+                          ClipboardData(text: _inviteUrl),
+                        );
+                        if (!mounted) return;
+                        ToastService.show(
+                          context,
+                          'Invite link copied',
+                          type: ToastType.success,
+                        );
+                      },
+                      icon: const Icon(Icons.copy, size: 16),
+                      label: const Text('Copy Link'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _copyInviteMessage,
+                      icon: const Icon(Icons.share, size: 16),
+                      label: const Text('Copy Invite Message'),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          Text(
-            isAddContactMode
-                ? 'Show this QR or link to let others add you using your username invite.'
-                : 'Verify that the safety number below matches on both '
-                      '${widget.myUsername}\'s and ${widget.peerUsername}\'s devices.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: context.textSecondary, fontSize: 13),
-          ),
-          const SizedBox(height: 24),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'Anyone scanning this QR opens your DM invite. If they are not a contact yet, Echo sends a contact request first.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: context.textMuted, fontSize: 11),
+        ),
+      ],
+    );
+  }
 
-          // QR code
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: QrImageView(
-              data: qrData,
-              version: QrVersions.auto,
-              size: 160,
-              backgroundColor: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          if (isAddContactMode) ...[
-            Container(
+  Widget _buildVerifySection(String formatted) {
+    return Column(
+      children: [
+        Semantics(
+          label: 'copy safety number',
+          button: true,
+          child: GestureDetector(
+            onTap: () {
+              Clipboard.setData(ClipboardData(text: _safetyNumber!));
+              ToastService.show(
+                context,
+                'Safety number copied',
+                type: ToastType.success,
+              );
+            },
+            child: Container(
               width: double.infinity,
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -392,147 +496,75 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
               ),
               child: Column(
                 children: [
-                  SelectableText(
-                    _inviteUrl,
+                  Text(
+                    formatted,
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: context.textPrimary,
-                      fontSize: 13,
-                      height: 1.4,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w500,
+                      fontFamily: 'monospace',
+                      letterSpacing: 2,
+                      height: 1.6,
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () async {
-                            await Clipboard.setData(
-                              ClipboardData(text: _inviteUrl),
-                            );
-                            if (!context.mounted) return;
-                            ToastService.show(
-                              context,
-                              'Invite link copied',
-                              type: ToastType.success,
-                            );
-                          },
-                          icon: const Icon(Icons.copy, size: 16),
-                          label: const Text('Copy Link'),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _copyInviteMessage,
-                          icon: const Icon(Icons.share, size: 16),
-                          label: const Text('Copy Invite Message'),
-                        ),
-                      ),
-                    ],
-                  ),
+                  const SizedBox(height: 8),
+                  Icon(Icons.copy, size: 16, color: context.textMuted),
                 ],
               ),
             ),
-            const SizedBox(height: 12),
-            Text(
-              'Anyone scanning this QR opens your DM invite. If they are not a contact yet, Echo sends a contact request first.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: context.textMuted, fontSize: 11),
-            ),
-          ] else ...[
-            // Safety number digits
-            Semantics(
-              label: 'copy safety number',
-              button: true,
-              child: GestureDetector(
-                onTap: () {
-                  Clipboard.setData(ClipboardData(text: _safetyNumber!));
-                  ToastService.show(
-                    context,
-                    'Safety number copied',
-                    type: ToastType.success,
-                  );
-                },
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: context.surface,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: context.border),
-                  ),
-                  child: Column(
-                    children: [
-                      Text(
-                        formatted,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: context.textPrimary,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w500,
-                          fontFamily: 'monospace',
-                          letterSpacing: 2,
-                          height: 1.6,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Icon(Icons.copy, size: 16, color: context.textMuted),
-                    ],
-                  ),
+          ),
+        ),
+        const SizedBox(height: 24),
+        _buildVerificationButton(),
+        if (_isVerified && _verifiedAt != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            'Verified ${_timeAgo(_verifiedAt!)}',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: EchoTheme.online, fontSize: 12),
+          ),
+        ],
+        const SizedBox(height: 12),
+        Text(
+          'If the numbers match, tap to mark this conversation as verified. '
+          'If they change later, the session may have been re-established.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: context.textMuted, fontSize: 11),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildVerificationButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: _isVerified
+          ? OutlinedButton.icon(
+              onPressed: _toggleVerified,
+              icon: const Icon(Icons.check_circle, size: 18),
+              label: const Text('Verified'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: EchoTheme.online,
+                side: const BorderSide(color: EchoTheme.online),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            )
+          : FilledButton.icon(
+              onPressed: _toggleVerified,
+              icon: const Icon(Icons.verified_user_outlined, size: 18),
+              label: const Text('Mark as Verified'),
+              style: FilledButton.styleFrom(
+                backgroundColor: context.accent,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
                 ),
               ),
             ),
-            const SizedBox(height: 24),
-
-            // Verification button
-            SizedBox(
-              width: double.infinity,
-              child: _isVerified
-                  ? OutlinedButton.icon(
-                      onPressed: _toggleVerified,
-                      icon: const Icon(Icons.check_circle, size: 18),
-                      label: const Text('Verified'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: EchoTheme.online,
-                        side: const BorderSide(color: EchoTheme.online),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                    )
-                  : FilledButton.icon(
-                      onPressed: _toggleVerified,
-                      icon: const Icon(Icons.verified_user_outlined, size: 18),
-                      label: const Text('Mark as Verified'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: context.accent,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                    ),
-            ),
-            if (_isVerified && _verifiedAt != null) ...[
-              const SizedBox(height: 6),
-              Text(
-                'Verified ${_timeAgo(_verifiedAt!)}',
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: EchoTheme.online, fontSize: 12),
-              ),
-            ],
-            const SizedBox(height: 12),
-            Text(
-              'If the numbers match, tap to mark this conversation as verified. '
-              'If they change later, the session may have been re-established.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: context.textMuted, fontSize: 11),
-            ),
-          ],
-        ],
-      ),
     );
   }
 }

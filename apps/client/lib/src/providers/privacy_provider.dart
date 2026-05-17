@@ -115,6 +115,48 @@ class Privacy extends _$Privacy {
     }
   }
 
+  Map<String, dynamic> _buildPatchBody({
+    bool? readReceiptsEnabled,
+    bool? emailVisible,
+    bool? phoneVisible,
+    bool? emailDiscoverable,
+    bool? phoneDiscoverable,
+    bool? searchable,
+    bool? showOnlineStatus,
+  }) {
+    return {
+      // ignore: use_null_aware_elements
+      if (readReceiptsEnabled != null)
+        'read_receipts_enabled': readReceiptsEnabled,
+      // ignore: use_null_aware_elements
+      if (emailVisible != null) 'email_visible': emailVisible,
+      // ignore: use_null_aware_elements
+      if (phoneVisible != null) 'phone_visible': phoneVisible,
+      // ignore: use_null_aware_elements
+      if (emailDiscoverable != null) 'email_discoverable': emailDiscoverable,
+      // ignore: use_null_aware_elements
+      if (phoneDiscoverable != null) 'phone_discoverable': phoneDiscoverable,
+      // ignore: use_null_aware_elements
+      if (searchable != null) 'searchable': searchable,
+      // ignore: use_null_aware_elements
+      if (showOnlineStatus != null) 'show_online_status': showOnlineStatus,
+    };
+  }
+
+  PrivacyState _parsePrivacyResponse(Map<String, dynamic> data) {
+    return state.copyWith(
+      readReceiptsEnabled: data['read_receipts_enabled'] as bool? ?? true,
+      emailVisible: data['email_visible'] as bool? ?? false,
+      phoneVisible: data['phone_visible'] as bool? ?? false,
+      emailDiscoverable: data['email_discoverable'] as bool? ?? false,
+      phoneDiscoverable: data['phone_discoverable'] as bool? ?? false,
+      searchable: data['searchable'] as bool? ?? true,
+      showOnlineStatus: data['show_online_status'] as bool? ?? true,
+      isLoading: false,
+      error: null,
+    );
+  }
+
   Future<void> _patch({
     bool? readReceiptsEnabled,
     bool? emailVisible,
@@ -138,46 +180,27 @@ class Privacy extends _$Privacy {
     );
 
     try {
+      final patchBody = _buildPatchBody(
+        readReceiptsEnabled: readReceiptsEnabled,
+        emailVisible: emailVisible,
+        phoneVisible: phoneVisible,
+        emailDiscoverable: emailDiscoverable,
+        phoneDiscoverable: phoneDiscoverable,
+        searchable: searchable,
+        showOnlineStatus: showOnlineStatus,
+      );
+
       final response = await _authenticatedRequest(
         (token) => http.patch(
           Uri.parse('$_serverUrl/api/users/me/privacy'),
           headers: _headersWithToken(token),
-          body: jsonEncode({
-            // ignore: use_null_aware_elements
-            if (readReceiptsEnabled != null)
-              'read_receipts_enabled': readReceiptsEnabled,
-            // ignore: use_null_aware_elements
-            if (emailVisible != null) 'email_visible': emailVisible,
-            // ignore: use_null_aware_elements
-            if (phoneVisible != null) 'phone_visible': phoneVisible,
-            // ignore: use_null_aware_elements
-            if (emailDiscoverable != null)
-              'email_discoverable': emailDiscoverable,
-            // ignore: use_null_aware_elements
-            if (phoneDiscoverable != null)
-              'phone_discoverable': phoneDiscoverable,
-            // ignore: use_null_aware_elements
-            if (searchable != null) 'searchable': searchable,
-            // ignore: use_null_aware_elements
-            if (showOnlineStatus != null)
-              'show_online_status': showOnlineStatus,
-          }),
+          body: jsonEncode(patchBody),
         ),
       );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
-        state = state.copyWith(
-          readReceiptsEnabled: data['read_receipts_enabled'] as bool? ?? true,
-          emailVisible: data['email_visible'] as bool? ?? false,
-          phoneVisible: data['phone_visible'] as bool? ?? false,
-          emailDiscoverable: data['email_discoverable'] as bool? ?? false,
-          phoneDiscoverable: data['phone_discoverable'] as bool? ?? false,
-          searchable: data['searchable'] as bool? ?? true,
-          showOnlineStatus: data['show_online_status'] as bool? ?? true,
-          isLoading: false,
-          error: null,
-        );
+        state = _parsePrivacyResponse(data);
       } else {
         state = prev.copyWith(
           isLoading: false,

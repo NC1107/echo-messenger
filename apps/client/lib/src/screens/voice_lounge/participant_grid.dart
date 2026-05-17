@@ -339,25 +339,10 @@ class _ParticipantTileState extends State<ParticipantTile> {
     final avatarUrl = widget.avatarUrl;
     final authToken = widget.authToken;
     final onTap = widget.onTap;
-    final reduceMotion = MediaQuery.of(context).disableAnimations;
-    final double targetScale;
-    final double targetOpacity;
-    if (reduceMotion) {
-      targetScale = 1.0;
-      targetOpacity = 1.0;
-    } else {
-      switch (attention) {
-        case ParticipantAttention.speaking:
-          targetScale = 1.04;
-          targetOpacity = 1.0;
-        case ParticipantAttention.faded:
-          targetScale = 0.96;
-          targetOpacity = 0.62;
-        case ParticipantAttention.idle:
-          targetScale = 1.0;
-          targetOpacity = 1.0;
-      }
-    }
+    final (targetScale, targetOpacity) = _computeAttentionMetrics(
+      context,
+      attention,
+    );
 
     return AnimatedOpacity(
       opacity: targetOpacity,
@@ -437,6 +422,22 @@ class _ParticipantTileState extends State<ParticipantTile> {
         ),
       ),
     );
+  }
+
+  (double, double) _computeAttentionMetrics(
+    BuildContext context,
+    ParticipantAttention attention,
+  ) {
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
+    if (reduceMotion) {
+      return (1.0, 1.0);
+    }
+
+    return switch (attention) {
+      ParticipantAttention.speaking => (1.04, 1.0),
+      ParticipantAttention.faded => (0.96, 0.62),
+      ParticipantAttention.idle => (1.0, 1.0),
+    };
   }
 
   Widget _buildNameLabel(BuildContext context) {

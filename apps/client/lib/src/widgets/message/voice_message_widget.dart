@@ -148,14 +148,25 @@ class _VoiceMessageWidgetState extends State<VoiceMessageWidget> {
       return;
     }
 
+    if (await _tryResume()) {
+      return;
+    }
+
+    await _playAudio();
+  }
+
+  Future<bool> _tryResume() async {
     // Resume from paused position.
     if (_position > Duration.zero &&
         _duration > Duration.zero &&
         _position < _duration) {
       await _player.resume();
-      return;
+      return true;
     }
+    return false;
+  }
 
+  Future<void> _playAudio() async {
     setState(() {
       _isLoading = true;
       _loadError = null;
@@ -165,28 +176,7 @@ class _VoiceMessageWidgetState extends State<VoiceMessageWidget> {
       if (bytes != null) {
         await _player.play(BytesSource(bytes));
       } else {
-        final url = widget.audioUrl!;
-        if (widget.headers.isNotEmpty) {
-          // Download with auth headers then play from memory.
-          final response = await http.get(
-            Uri.parse(url),
-            headers: widget.headers,
-          );
-          if (response.statusCode >= 200 && response.statusCode < 300) {
-            await _player.play(BytesSource(response.bodyBytes));
-          } else {
-            // Surface the failure to the user instead of silently no-op'ing.
-            // Without this, mobile users tapped the play button and saw
-            // nothing happen (#554).
-            final reason = 'fetch failed (${response.statusCode})';
-            debugPrint('[VoiceMsg] $reason');
-            if (mounted) {
-              setState(() => _loadError = reason);
-            }
-          }
-        } else {
-          await _player.play(UrlSource(url));
-        }
+        await _playFromUrl();
       }
     } catch (e) {
       debugPrint('[VoiceMsg] play error: $e');
@@ -195,6 +185,32 @@ class _VoiceMessageWidgetState extends State<VoiceMessageWidget> {
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _playFromUrl() async {
+    final url = widget.audioUrl!;
+    if (widget.headers.isNotEmpty) {
+      await _playFromUrlWithAuth(url);
+    } else {
+      await _player.play(UrlSource(url));
+    }
+  }
+
+  Future<void> _playFromUrlWithAuth(String url) async {
+    // Download with auth headers then play from memory.
+    final response = await http.get(Uri.parse(url), headers: widget.headers);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      await _player.play(BytesSource(response.bodyBytes));
+    } else {
+      // Surface the failure to the user instead of silently no-op'ing.
+      // Without this, mobile users tapped the play button and saw
+      // nothing happen (#554).
+      final reason = 'fetch failed (${response.statusCode})';
+      debugPrint('[VoiceMsg] $reason');
+      if (mounted) {
+        setState(() => _loadError = reason);
+      }
     }
   }
 

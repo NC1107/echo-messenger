@@ -29,70 +29,13 @@ mixin _ConversationsHttpActionsMixin on Notifier<ConversationsState> {
     String peerUsername,
   ) async {
     // Search existing conversations for a non-group with that peer.
-    // The server list is limited to 50 entries, so older/message-less DMs
-    // might not be loaded yet -- we fall through to the API in that case.
-    for (final conv in state.conversations) {
-      if (!conv.isGroup) {
-        final hasPeer = conv.members.any((m) => m.userId == peerUserId);
-        if (hasPeer) return conv;
-      }
-    }
+    final existingDm = _findExistingDm(peerUserId);
+    if (existingDm != null) return existingDm;
 
     // Not found -- create (or locate) the DM conversation via the server.
     try {
-      final response = await _authenticatedRequest(
-        (token) => http.post(
-          Uri.parse('$_serverUrl/api/conversations/dm'),
-          headers: _headersWithToken(token),
-          body: jsonEncode({'peer_user_id': peerUserId}),
-        ),
-      );
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final convId = data['conversation_id'] as String?;
-        if (convId != null && convId.isNotEmpty) {
-          await loadConversations();
-
-          // The server sorts conversations by last-message time (LIMIT 50).
-          // A brand-new DM with no messages sorts last and may be excluded.
-          // If it is not in the refreshed list, add a minimal entry so the
-          // caller can navigate to it immediately; subsequent activity will
-          // populate the full data.
-          final found = state.conversations
-              .where((c) => c.id == convId && !c.isGroup)
-              .firstOrNull;
-          if (found != null) return found;
-
-          final newConv = Conversation(
-            id: convId,
-            isGroup: false,
-            members: [
-              ConversationMember(userId: peerUserId, username: peerUsername),
-            ],
-          );
-          state = state.copyWith(
-            conversations: [newConv, ...state.conversations],
-          );
-          DebugLogService.instance.log(
-            LogLevel.info,
-            'Conversations',
-            'Created DM $convId with $peerUsername (not in top-50 list, added locally)',
-          );
-          return newConv;
-        }
-      } else {
-        final errMsg = _parseServerError(
-          response.body,
-          'Could not start conversation',
-        );
-        DebugLogService.instance.log(
-          LogLevel.error,
-          'Conversations',
-          'getOrCreateDm failed (HTTP ${response.statusCode}): $errMsg',
-        );
-        throw DmException(errMsg);
-      }
+      final response = await _createDmRequest(peerUserId);
+      return _handleDmSuccess(response, peerUserId, peerUsername);
     } on DmException {
       rethrow;
     } catch (e) {
@@ -104,9 +47,84 @@ mixin _ConversationsHttpActionsMixin on Notifier<ConversationsState> {
       );
       throw DmException(_friendlyError(e));
     }
+  }
 
-    // Unreachable: all paths either return a Conversation or throw.
-    throw const DmException('Could not start conversation');
+  /// Find an existing non-group conversation with a peer.
+  /// Returns null if not found (may be outside the top-50 list).
+  Conversation? _findExistingDm(String peerUserId) {
+    for (final conv in state.conversations) {
+      if (!conv.isGroup) {
+        final hasPeer = conv.members.any((m) => m.userId == peerUserId);
+        if (hasPeer) return conv;
+      }
+    }
+    return null;
+  }
+
+  /// POST /api/conversations/dm and return the response.
+  Future<http.Response> _createDmRequest(String peerUserId) {
+    return _authenticatedRequest(
+      (token) => http.post(
+        Uri.parse('$_serverUrl/api/conversations/dm'),
+        headers: _headersWithToken(token),
+        body: jsonEncode({'peer_user_id': peerUserId}),
+      ),
+    );
+  }
+
+  /// Handle the response from _createDmRequest. Returns the conversation if
+  /// successful; throws DmException if the server rejects the request.
+  Future<Conversation> _handleDmSuccess(
+    http.Response response,
+    String peerUserId,
+    String peerUsername,
+  ) async {
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final convId = data['conversation_id'] as String?;
+      if (convId != null && convId.isNotEmpty) {
+        await loadConversations();
+
+        // The server sorts conversations by last-message time (LIMIT 50).
+        // A brand-new DM with no messages sorts last and may be excluded.
+        // If it is not in the refreshed list, add a minimal entry so the
+        // caller can navigate to it immediately; subsequent activity will
+        // populate the full data.
+        final found = state.conversations
+            .where((c) => c.id == convId && !c.isGroup)
+            .firstOrNull;
+        if (found != null) return found;
+
+        final newConv = Conversation(
+          id: convId,
+          isGroup: false,
+          members: [
+            ConversationMember(userId: peerUserId, username: peerUsername),
+          ],
+        );
+        state = state.copyWith(
+          conversations: [newConv, ...state.conversations],
+        );
+        DebugLogService.instance.log(
+          LogLevel.info,
+          'Conversations',
+          'Created DM $convId with $peerUsername (not in top-50 list, added locally)',
+        );
+        return newConv;
+      }
+    }
+
+    // Server rejected the request.
+    final errMsg = _parseServerError(
+      response.body,
+      'Could not start conversation',
+    );
+    DebugLogService.instance.log(
+      LogLevel.error,
+      'Conversations',
+      'getOrCreateDm failed (HTTP ${response.statusCode}): $errMsg',
+    );
+    throw DmException(errMsg);
   }
 
   /// Leave/delete a conversation. Removes the user's membership so it

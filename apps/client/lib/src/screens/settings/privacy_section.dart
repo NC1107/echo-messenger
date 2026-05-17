@@ -396,6 +396,269 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
     ];
   }
 
+  List<Widget> _buildContactInfoSection(
+    BuildContext context,
+    PrivacyState privacy,
+  ) {
+    return [
+      Text(
+        'Contact Info Visibility',
+        style: TextStyle(
+          color: context.textPrimary,
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      const SizedBox(height: 8),
+      Text(
+        'Control who can see your email and phone on your profile.',
+        style: TextStyle(
+          color: context.textSecondary,
+          fontSize: 13,
+          height: 1.5,
+        ),
+      ),
+      const SizedBox(height: 12),
+      SwitchListTile.adaptive(
+        contentPadding: EdgeInsets.zero,
+        title: Text(
+          'Show Email on Profile',
+          style: TextStyle(color: context.textPrimary, fontSize: 14),
+        ),
+        subtitle: Text(
+          'Allow other users to see your email address.',
+          style: TextStyle(color: context.textMuted, fontSize: 12),
+        ),
+        value: privacy.emailVisible,
+        onChanged: privacy.isLoading
+            ? null
+            : (value) =>
+                  ref.read(privacyProvider.notifier).setEmailVisible(value),
+      ),
+      SwitchListTile.adaptive(
+        contentPadding: EdgeInsets.zero,
+        title: Text(
+          'Show Phone on Profile',
+          style: TextStyle(color: context.textPrimary, fontSize: 14),
+        ),
+        subtitle: Text(
+          'Allow other users to see your phone number.',
+          style: TextStyle(color: context.textMuted, fontSize: 12),
+        ),
+        value: privacy.phoneVisible,
+        onChanged: privacy.isLoading
+            ? null
+            : (value) =>
+                  ref.read(privacyProvider.notifier).setPhoneVisible(value),
+      ),
+    ];
+  }
+
+  List<Widget> _buildDiscoverabilitySection(
+    BuildContext context,
+    PrivacyState privacy,
+  ) {
+    return [
+      const SizedBox(height: 16),
+      Text(
+        'Discoverability',
+        style: TextStyle(
+          color: context.textPrimary,
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      const SizedBox(height: 8),
+      Text(
+        'Control whether others can find you using your contact details.',
+        style: TextStyle(
+          color: context.textSecondary,
+          fontSize: 13,
+          height: 1.5,
+        ),
+      ),
+      const SizedBox(height: 12),
+      SwitchListTile.adaptive(
+        contentPadding: EdgeInsets.zero,
+        title: Text(
+          'Discoverable by Email',
+          style: TextStyle(color: context.textPrimary, fontSize: 14),
+        ),
+        subtitle: Text(
+          'Allow others to find you by searching your email.',
+          style: TextStyle(color: context.textMuted, fontSize: 12),
+        ),
+        value: privacy.emailDiscoverable,
+        onChanged: privacy.isLoading
+            ? null
+            : (value) => ref
+                  .read(privacyProvider.notifier)
+                  .setEmailDiscoverable(value),
+      ),
+      SwitchListTile.adaptive(
+        contentPadding: EdgeInsets.zero,
+        title: Text(
+          'Discoverable by Phone',
+          style: TextStyle(color: context.textPrimary, fontSize: 14),
+        ),
+        subtitle: Text(
+          'Allow others to find you by searching your phone number.',
+          style: TextStyle(color: context.textMuted, fontSize: 12),
+        ),
+        value: privacy.phoneDiscoverable,
+        onChanged: privacy.isLoading
+            ? null
+            : (value) => ref
+                  .read(privacyProvider.notifier)
+                  .setPhoneDiscoverable(value),
+      ),
+    ];
+  }
+
+  List<Widget> _buildSearchVisibilitySection(
+    BuildContext context,
+    PrivacyState privacy,
+  ) {
+    return [
+      const SizedBox(height: 24),
+      Text(
+        'Search Visibility',
+        style: TextStyle(
+          color: context.textPrimary,
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      const SizedBox(height: 8),
+      Text(
+        'Control whether other users can find your profile via search.',
+        style: TextStyle(
+          color: context.textSecondary,
+          fontSize: 13,
+          height: 1.5,
+        ),
+      ),
+      const SizedBox(height: 12),
+      SwitchListTile.adaptive(
+        contentPadding: EdgeInsets.zero,
+        title: Text(
+          'Allow others to find me',
+          style: TextStyle(color: context.textPrimary, fontSize: 14),
+        ),
+        subtitle: Text(
+          'When off, your username won\'t appear in search results.',
+          style: TextStyle(color: context.textMuted, fontSize: 12),
+        ),
+        value: privacy.searchable,
+        onChanged: privacy.isLoading
+            ? null
+            : (value) =>
+                  ref.read(privacyProvider.notifier).setSearchable(value),
+      ),
+    ];
+  }
+
+  List<Widget> _buildBlockedUsersSection(
+    BuildContext context,
+    ContactsState contacts,
+  ) {
+    return [
+      const SizedBox(height: 24),
+      const Divider(),
+      const SizedBox(height: 8),
+      Text(
+        'Blocked Users',
+        style: TextStyle(
+          color: context.textPrimary,
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      const SizedBox(height: 8),
+      Text(
+        'Blocked users cannot send you messages or see your '
+        'online status.',
+        style: TextStyle(
+          color: context.textSecondary,
+          fontSize: 13,
+          height: 1.5,
+        ),
+      ),
+      const SizedBox(height: 12),
+      if (contacts.isBlockedLoading)
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 8),
+          child: Center(
+            child: SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        )
+      else if (contacts.blockedUsers.isEmpty)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Text(
+            'No blocked users',
+            style: TextStyle(color: context.textMuted, fontSize: 13),
+          ),
+        )
+      else
+        ...contacts.blockedUsers.map((user) {
+          final initials = (user.displayName ?? user.username)
+              .substring(0, 1)
+              .toUpperCase();
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: context.accent.withValues(alpha: 0.15),
+                  child: Text(
+                    initials,
+                    style: TextStyle(
+                      color: context.accent,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    user.displayName ?? user.username,
+                    style: TextStyle(color: context.textPrimary, fontSize: 14),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                SizedBox(
+                  height: 44,
+                  child: OutlinedButton(
+                    onPressed: () =>
+                        _confirmUnblock(user.blockedId, user.username),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: EchoTheme.danger,
+                      side: const BorderSide(color: EchoTheme.danger),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                    ),
+                    child: Semantics(
+                      label: 'Unblock ${user.username}',
+                      child: const Text('Unblock'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final privacy = ref.watch(privacyProvider);
@@ -423,146 +686,9 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
             const SizedBox(height: 8),
             ..._buildMessagingPrivacySection(context, privacy),
             const SizedBox(height: 24),
-            Text(
-              'Contact Info Visibility',
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Control who can see your email and phone on your profile.',
-              style: TextStyle(
-                color: context.textSecondary,
-                fontSize: 13,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 12),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              title: Text(
-                'Show Email on Profile',
-                style: TextStyle(color: context.textPrimary, fontSize: 14),
-              ),
-              subtitle: Text(
-                'Allow other users to see your email address.',
-                style: TextStyle(color: context.textMuted, fontSize: 12),
-              ),
-              value: privacy.emailVisible,
-              onChanged: privacy.isLoading
-                  ? null
-                  : (value) => ref
-                        .read(privacyProvider.notifier)
-                        .setEmailVisible(value),
-            ),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              title: Text(
-                'Show Phone on Profile',
-                style: TextStyle(color: context.textPrimary, fontSize: 14),
-              ),
-              subtitle: Text(
-                'Allow other users to see your phone number.',
-                style: TextStyle(color: context.textMuted, fontSize: 12),
-              ),
-              value: privacy.phoneVisible,
-              onChanged: privacy.isLoading
-                  ? null
-                  : (value) => ref
-                        .read(privacyProvider.notifier)
-                        .setPhoneVisible(value),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Discoverability',
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Control whether others can find you using your contact details.',
-              style: TextStyle(
-                color: context.textSecondary,
-                fontSize: 13,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 12),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              title: Text(
-                'Discoverable by Email',
-                style: TextStyle(color: context.textPrimary, fontSize: 14),
-              ),
-              subtitle: Text(
-                'Allow others to find you by searching your email.',
-                style: TextStyle(color: context.textMuted, fontSize: 12),
-              ),
-              value: privacy.emailDiscoverable,
-              onChanged: privacy.isLoading
-                  ? null
-                  : (value) => ref
-                        .read(privacyProvider.notifier)
-                        .setEmailDiscoverable(value),
-            ),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              title: Text(
-                'Discoverable by Phone',
-                style: TextStyle(color: context.textPrimary, fontSize: 14),
-              ),
-              subtitle: Text(
-                'Allow others to find you by searching your phone number.',
-                style: TextStyle(color: context.textMuted, fontSize: 12),
-              ),
-              value: privacy.phoneDiscoverable,
-              onChanged: privacy.isLoading
-                  ? null
-                  : (value) => ref
-                        .read(privacyProvider.notifier)
-                        .setPhoneDiscoverable(value),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Search Visibility',
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Control whether other users can find your profile via search.',
-              style: TextStyle(
-                color: context.textSecondary,
-                fontSize: 13,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 12),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              title: Text(
-                'Allow others to find me',
-                style: TextStyle(color: context.textPrimary, fontSize: 14),
-              ),
-              subtitle: Text(
-                'When off, your username won\'t appear in search results.',
-                style: TextStyle(color: context.textMuted, fontSize: 12),
-              ),
-              value: privacy.searchable,
-              onChanged: privacy.isLoading
-                  ? null
-                  : (value) =>
-                        ref.read(privacyProvider.notifier).setSearchable(value),
-            ),
+            ..._buildContactInfoSection(context, privacy),
+            ..._buildDiscoverabilitySection(context, privacy),
+            ..._buildSearchVisibilitySection(context, privacy),
             const SizedBox(height: 24),
             Text(
               'Encryption',
@@ -662,102 +788,7 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
                 ),
               ),
             ],
-            const SizedBox(height: 24),
-            const Divider(),
-            const SizedBox(height: 8),
-            Text(
-              'Blocked Users',
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Blocked users cannot send you messages or see your '
-              'online status.',
-              style: TextStyle(
-                color: context.textSecondary,
-                fontSize: 13,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 12),
-            if (contacts.isBlockedLoading)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: Center(
-                  child: SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ),
-              )
-            else if (contacts.blockedUsers.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  'No blocked users',
-                  style: TextStyle(color: context.textMuted, fontSize: 13),
-                ),
-              )
-            else
-              ...contacts.blockedUsers.map((user) {
-                final initials = (user.displayName ?? user.username)
-                    .substring(0, 1)
-                    .toUpperCase();
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 18,
-                        backgroundColor: context.accent.withValues(alpha: 0.15),
-                        child: Text(
-                          initials,
-                          style: TextStyle(
-                            color: context.accent,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          user.displayName ?? user.username,
-                          style: TextStyle(
-                            color: context.textPrimary,
-                            fontSize: 14,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      SizedBox(
-                        height: 44,
-                        child: OutlinedButton(
-                          onPressed: () =>
-                              _confirmUnblock(user.blockedId, user.username),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: EchoTheme.danger,
-                            side: const BorderSide(color: EchoTheme.danger),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                          ),
-                          child: Semantics(
-                            label: 'Unblock ${user.username}',
-                            child: const Text('Unblock'),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
+            ..._buildBlockedUsersSection(context, contacts),
             const SizedBox(height: 24),
             const Divider(),
             const SizedBox(height: 8),

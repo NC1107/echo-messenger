@@ -296,267 +296,22 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
 
     String? attemptedUrl;
     try {
-      // ---- breadcrumb 0: pre-request microphone permission ------------------
-      // CRITICAL: iOS must grant mic permission BEFORE LiveKit's room.connect
-      // or any audio-track creation. LiveKit server logs from a real iOS
-      // crash showed: `room.connect` succeeded in 1.2s, then 22s later the
-      // peer connection died from watchdog SIGKILL. The 22s matches iOS
-      // killing the app for a blocked main thread, which is what happens
-      // when AVAudioSession activation in `setMicrophoneEnabled` collides
-      // with a TCC mic-permission prompt presented at the same time.
-      //
-      // Requesting permission FIRST drains the prompt into a clean idle
-      // context, so by the time room.connect/setMicrophoneEnabled run the
-      // permission is already .granted or .denied — no synchronous race.
-      DebugLogService.instance.log(
-        LogLevel.info,
-        'LiveKitVoice',
-        'joinChannel: pre-requesting microphone permission',
-      );
-      final micPermitted = await _requestMicrophonePermission();
-      if (!micPermitted) {
-        DebugLogService.instance.log(
-          LogLevel.error,
-          'LiveKitVoice',
-          'joinChannel: microphone permission denied — aborting',
-        );
-        state = state.copyWith(
-          isJoining: false,
-          isActive: false,
-          error: 'Microphone access is required to join a voice channel',
-        );
-        return;
-      }
-      DebugLogService.instance.log(
-        LogLevel.info,
-        'LiveKitVoice',
-        'joinChannel: microphone permission granted',
-      );
-
-      // ---- breadcrumb 1: token fetch ----------------------------------------
-      DebugLogService.instance.log(
-        LogLevel.info,
-        'LiveKitVoice',
-        'joinChannel: fetching LiveKit token for channel $channelId',
-      );
-      _LiveKitTokenResult? tokenResult;
-      try {
-        tokenResult = await _fetchLiveKitToken(conversationId, channelId);
-      } catch (e) {
-        DebugLogService.instance.log(
-          LogLevel.error,
-          'LiveKitVoice',
-          'joinChannel: token fetch threw: $e',
-        );
-        rethrow;
-      }
-
-      if (tokenResult == null) {
-        DebugLogService.instance.log(
-          LogLevel.error,
-          'LiveKitVoice',
-          'joinChannel: token fetch returned null — aborting',
-        );
-        state = state.copyWith(
-          isJoining: false,
-          error: 'Failed to obtain voice token',
-        );
-        return;
-      }
-
-      final livekitUrl = tokenResult.url;
-      final livekitToken = tokenResult.token;
-      attemptedUrl = livekitUrl;
-      DebugLogService.instance.log(
-        LogLevel.info,
-        'LiveKitVoice',
-        'joinChannel: token obtained, url=$livekitUrl token_len=${livekitToken.length}',
-      );
-
-      // ---- breadcrumb 2: room creation ----------------------------------------
-      DebugLogService.instance.log(
-        LogLevel.info,
-        'LiveKitVoice',
-        'joinChannel: creating Room object',
-      );
-      final voiceSettings = ref.read(voiceSettingsProvider);
-      late final Room room;
-      try {
-        room = Room(
-          roomOptions: RoomOptions(
-            adaptiveStream: true,
-            dynacast: true,
-            defaultAudioCaptureOptions: AudioCaptureOptions(
-              noiseSuppression: voiceSettings.noiseSuppression,
-              echoCancellation: voiceSettings.echoCancellation,
-              autoGainControl: voiceSettings.autoGainControl,
-            ),
-            defaultAudioPublishOptions: const AudioPublishOptions(
-              encoding: AudioEncoding.presetMusic,
-              dtx: true,
-            ),
-            defaultCameraCaptureOptions: const CameraCaptureOptions(
-              params: VideoParametersPresets.h720_169,
-            ),
-            defaultVideoPublishOptions: VideoPublishOptions(
-              videoEncoding: VideoEncoding(
-                maxBitrate: state.videoBitrate,
-                maxFramerate: state.videoFps,
-              ),
-            ),
-          ),
-        );
-      } catch (e) {
-        DebugLogService.instance.log(
-          LogLevel.error,
-          'LiveKitVoice',
-          'joinChannel: Room() constructor threw: $e',
-        );
-        rethrow;
-      }
-      _room = room;
-
-      _attachRoomListeners(room);
-
-      // ---- breadcrumb 3: room.connect -----------------------------------------
-      DebugLogService.instance.log(
-        LogLevel.info,
-        'LiveKitVoice',
-        'joinChannel: calling room.connect($livekitUrl)',
-      );
-      try {
-        await room.connect(livekitUrl, livekitToken);
-      } catch (e) {
-        DebugLogService.instance.log(
-          LogLevel.error,
-          'LiveKitVoice',
-          'joinChannel: room.connect threw: $e',
-        );
-        rethrow;
-      }
-      DebugLogService.instance.log(
-        LogLevel.info,
-        'LiveKitVoice',
-        'joinChannel: room.connect succeeded',
-      );
-
-      // Set display name so peers see a username instead of a UUID identity.
-      // Wrap in try/catch: setName triggers an UpdateOwnMetadata signal request
-      // that needs the `canUpdateOwnMetadata` grant in the LiveKit token. If
-      // the server-issued token is missing it, the SFU returns NOT_ALLOWED
-      // which closes the signal channel and cascades into every subsequent
-      // call (setMicrophoneEnabled, publish) failing. Server fix lives in
-      // routes/voice.rs but this guard stops a future grant regression from
-      // bricking the whole join flow.
-      final username = ref.read(authProvider).username;
-      if (username != null && username.isNotEmpty) {
-        try {
-          room.localParticipant?.setName(username);
-        } catch (e) {
-          DebugLogService.instance.log(
-            LogLevel.warning,
-            'LiveKitVoice',
-            'joinChannel: setName failed (non-fatal): $e',
-          );
-        }
-      }
-
-      // ---- breadcrumb 4: microphone enable ------------------------------------
-      // Mic permission was already granted at the top of joinChannel
-      // (breadcrumb 0) so this call is non-blocking.
-      final micEnabled = !startMuted;
-      DebugLogService.instance.log(
-        LogLevel.info,
-        'LiveKitVoice',
-        'joinChannel: calling setMicrophoneEnabled($micEnabled)',
-      );
-      try {
-        await room.localParticipant?.setMicrophoneEnabled(micEnabled);
-      } catch (e) {
-        DebugLogService.instance.log(
-          LogLevel.error,
-          'LiveKitVoice',
-          'joinChannel: setMicrophoneEnabled threw: $e',
-        );
-        rethrow;
-      }
-      DebugLogService.instance.log(
-        LogLevel.info,
-        'LiveKitVoice',
-        'joinChannel: microphone enabled=$micEnabled',
-      );
-
-      // ---- PTT: start muted and install keyboard listener -------------------
-      // When push-to-talk is enabled the mic must be silent by default and
-      // only transmit while the configured key is held.  Override `micEnabled`
-      // so the mic is off at join time regardless of `startMuted`, then arm
-      // the listener that will call setCaptureEnabled on key-down/up.
-      final voiceSettingsForPtt = ref.read(voiceSettingsProvider);
-      final pttActive = voiceSettingsForPtt.pushToTalkEnabled;
-      if (pttActive) {
-        DebugLogService.instance.log(
-          LogLevel.info,
-          'LiveKitVoice',
-          'joinChannel: PTT enabled — muting mic and installing listener',
-        );
-        await room.localParticipant?.setMicrophoneEnabled(false);
-        _pttListener?.stop();
-        _pttListener = PushToTalkListener(
-          keyId: voiceSettingsForPtt.pushToTalkKeyId,
-          onSetCaptureEnabled: setCaptureEnabled,
-        )..start();
-      }
-
-      state = state.copyWith(
-        isJoining: false,
-        isActive: true,
-        isCaptureEnabled: pttActive ? false : micEnabled,
-        error: null,
-        callStartedAt: DateTime.now(),
-      );
-
-      _syncPeerState();
-      _startAudioLevelPolling();
-      _startRtcStatsPolling(room);
-      SoundService().playVoiceJoin();
-
-      // ---- breadcrumb 5: foreground service + CallKit -------------------------
-      final resolvedChannelName = _resolveChannelName(
+      // Breadcrumb 0-4: mic permission, token, room, connect, setName, mic enable
+      final joinResult = await _performJoinSequence(
         conversationId,
         channelId,
+        startMuted,
       );
-      DebugLogService.instance.log(
-        LogLevel.info,
-        'LiveKitVoice',
-        'joinChannel: starting background service / CallKit for "$resolvedChannelName"',
-      );
-      // Promote the foreground service to voice mode (Android) and report
-      // an outgoing CallKit call (iOS) so the OS keeps the mic + audio
-      // session alive when the app is backgrounded.  Listen for Mute /
-      // Leave / End taps coming back from either UI.
-      _attachNotificationActionListener();
-      unawaited(
-        BackgroundService.instance.startVoice(
-          channelName: resolvedChannelName,
-          isMuted: !micEnabled,
-          participantCount: state.peerCount + 1,
-        ),
-      );
-      unawaited(
-        VoiceCallKitService.instance.startCall(
-          // CallKit's iOS CXCall ID is required to be a valid UUID.
-          // flutter_callkit_incoming's Swift handler does
-          // `UUID(uuidString: params.id)!` and force-unwraps — passing the
-          // previous `"$conversationId:$channelId"` composite was not a
-          // valid UUID, so the force-unwrap crashed with EXC_BREAKPOINT
-          // (Swift fatal error) inside CallManager.startCall, killing the
-          // app every iOS voice join. channelId is already a UUID and is
-          // unique per voice room, which preserves the "rejoin same room
-          // is a no-op" dedup semantic.
-          callId: channelId,
-          channelName: resolvedChannelName,
-          isMuted: !micEnabled,
-        ),
+      attemptedUrl = joinResult.attemptedUrl;
+      final room = joinResult.room;
+      final micEnabled = joinResult.micEnabled;
+
+      // Breadcrumb 5: foreground service + CallKit
+      await _setupBackgroundServices(
+        conversationId,
+        channelId,
+        room,
+        micEnabled,
       );
 
       DebugLogService.instance.log(
@@ -581,6 +336,283 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
         error: 'Failed to join voice channel',
       );
     }
+  }
+
+  /// Perform the ordered join sequence: mic permission → token → room → connect
+  /// → setName → mic enable → PTT setup. Returns room and mic state.
+  Future<({String? attemptedUrl, Room room, bool micEnabled})>
+  _performJoinSequence(
+    String conversationId,
+    String channelId,
+    bool startMuted,
+  ) async {
+    // ---- breadcrumb 0: pre-request microphone permission ------------------
+    // CRITICAL: iOS must grant mic permission BEFORE LiveKit's room.connect
+    // or any audio-track creation. LiveKit server logs from a real iOS
+    // crash showed: `room.connect` succeeded in 1.2s, then 22s later the
+    // peer connection died from watchdog SIGKILL. The 22s matches iOS
+    // killing the app for a blocked main thread, which is what happens
+    // when AVAudioSession activation in `setMicrophoneEnabled` collides
+    // with a TCC mic-permission prompt presented at the same time.
+    //
+    // Requesting permission FIRST drains the prompt into a clean idle
+    // context, so by the time room.connect/setMicrophoneEnabled run the
+    // permission is already .granted or .denied — no synchronous race.
+    DebugLogService.instance.log(
+      LogLevel.info,
+      'LiveKitVoice',
+      'joinChannel: pre-requesting microphone permission',
+    );
+    final micPermitted = await _requestMicrophonePermission();
+    if (!micPermitted) {
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'LiveKitVoice',
+        'joinChannel: microphone permission denied — aborting',
+      );
+      state = state.copyWith(
+        isJoining: false,
+        isActive: false,
+        error: 'Microphone access is required to join a voice channel',
+      );
+      throw Exception('Microphone permission denied');
+    }
+    DebugLogService.instance.log(
+      LogLevel.info,
+      'LiveKitVoice',
+      'joinChannel: microphone permission granted',
+    );
+
+    // ---- breadcrumb 1: token fetch ----------------------------------------
+    DebugLogService.instance.log(
+      LogLevel.info,
+      'LiveKitVoice',
+      'joinChannel: fetching LiveKit token for channel $channelId',
+    );
+    _LiveKitTokenResult? tokenResult;
+    try {
+      tokenResult = await _fetchLiveKitToken(conversationId, channelId);
+    } catch (e) {
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'LiveKitVoice',
+        'joinChannel: token fetch threw: $e',
+      );
+      rethrow;
+    }
+
+    if (tokenResult == null) {
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'LiveKitVoice',
+        'joinChannel: token fetch returned null — aborting',
+      );
+      state = state.copyWith(
+        isJoining: false,
+        error: 'Failed to obtain voice token',
+      );
+      throw Exception('Token fetch returned null');
+    }
+
+    final livekitUrl = tokenResult.url;
+    final livekitToken = tokenResult.token;
+    DebugLogService.instance.log(
+      LogLevel.info,
+      'LiveKitVoice',
+      'joinChannel: token obtained, url=$livekitUrl token_len=${livekitToken.length}',
+    );
+
+    // ---- breadcrumb 2: room creation ----------------------------------------
+    DebugLogService.instance.log(
+      LogLevel.info,
+      'LiveKitVoice',
+      'joinChannel: creating Room object',
+    );
+    final voiceSettings = ref.read(voiceSettingsProvider);
+    late final Room room;
+    try {
+      room = Room(
+        roomOptions: RoomOptions(
+          adaptiveStream: true,
+          dynacast: true,
+          defaultAudioCaptureOptions: AudioCaptureOptions(
+            noiseSuppression: voiceSettings.noiseSuppression,
+            echoCancellation: voiceSettings.echoCancellation,
+            autoGainControl: voiceSettings.autoGainControl,
+          ),
+          defaultAudioPublishOptions: const AudioPublishOptions(
+            encoding: AudioEncoding.presetMusic,
+            dtx: true,
+          ),
+          defaultCameraCaptureOptions: const CameraCaptureOptions(
+            params: VideoParametersPresets.h720_169,
+          ),
+          defaultVideoPublishOptions: VideoPublishOptions(
+            videoEncoding: VideoEncoding(
+              maxBitrate: state.videoBitrate,
+              maxFramerate: state.videoFps,
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'LiveKitVoice',
+        'joinChannel: Room() constructor threw: $e',
+      );
+      rethrow;
+    }
+    _room = room;
+    _attachRoomListeners(room);
+
+    // ---- breadcrumb 3: room.connect -----------------------------------------
+    DebugLogService.instance.log(
+      LogLevel.info,
+      'LiveKitVoice',
+      'joinChannel: calling room.connect($livekitUrl)',
+    );
+    try {
+      await room.connect(livekitUrl, livekitToken);
+    } catch (e) {
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'LiveKitVoice',
+        'joinChannel: room.connect threw: $e',
+      );
+      rethrow;
+    }
+    DebugLogService.instance.log(
+      LogLevel.info,
+      'LiveKitVoice',
+      'joinChannel: room.connect succeeded',
+    );
+
+    // Set display name so peers see a username instead of a UUID identity.
+    // Wrap in try/catch: setName triggers an UpdateOwnMetadata signal request
+    // that needs the `canUpdateOwnMetadata` grant in the LiveKit token. If
+    // the server-issued token is missing it, the SFU returns NOT_ALLOWED
+    // which closes the signal channel and cascades into every subsequent
+    // call (setMicrophoneEnabled, publish) failing. Server fix lives in
+    // routes/voice.rs but this guard stops a future grant regression from
+    // bricking the whole join flow.
+    final username = ref.read(authProvider).username;
+    if (username != null && username.isNotEmpty) {
+      try {
+        room.localParticipant?.setName(username);
+      } catch (e) {
+        DebugLogService.instance.log(
+          LogLevel.warning,
+          'LiveKitVoice',
+          'joinChannel: setName failed (non-fatal): $e',
+        );
+      }
+    }
+
+    // ---- breadcrumb 4: microphone enable ------------------------------------
+    // Mic permission was already granted at the top of joinChannel
+    // (breadcrumb 0) so this call is non-blocking.
+    final micEnabled = !startMuted;
+    DebugLogService.instance.log(
+      LogLevel.info,
+      'LiveKitVoice',
+      'joinChannel: calling setMicrophoneEnabled($micEnabled)',
+    );
+    try {
+      await room.localParticipant?.setMicrophoneEnabled(micEnabled);
+    } catch (e) {
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'LiveKitVoice',
+        'joinChannel: setMicrophoneEnabled threw: $e',
+      );
+      rethrow;
+    }
+    DebugLogService.instance.log(
+      LogLevel.info,
+      'LiveKitVoice',
+      'joinChannel: microphone enabled=$micEnabled',
+    );
+
+    // ---- PTT: start muted and install keyboard listener -------------------
+    // When push-to-talk is enabled the mic must be silent by default and
+    // only transmit while the configured key is held.  Override `micEnabled`
+    // so the mic is off at join time regardless of `startMuted`, then arm
+    // the listener that will call setCaptureEnabled on key-down/up.
+    final voiceSettingsForPtt = ref.read(voiceSettingsProvider);
+    final pttActive = voiceSettingsForPtt.pushToTalkEnabled;
+    if (pttActive) {
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'LiveKitVoice',
+        'joinChannel: PTT enabled — muting mic and installing listener',
+      );
+      await room.localParticipant?.setMicrophoneEnabled(false);
+      _pttListener?.stop();
+      _pttListener = PushToTalkListener(
+        keyId: voiceSettingsForPtt.pushToTalkKeyId,
+        onSetCaptureEnabled: setCaptureEnabled,
+      )..start();
+    }
+
+    state = state.copyWith(
+      isJoining: false,
+      isActive: true,
+      isCaptureEnabled: pttActive ? false : micEnabled,
+      error: null,
+      callStartedAt: DateTime.now(),
+    );
+
+    _syncPeerState();
+    _startAudioLevelPolling();
+    _startRtcStatsPolling(room);
+    SoundService().playVoiceJoin();
+
+    return (attemptedUrl: livekitUrl, room: room, micEnabled: micEnabled);
+  }
+
+  /// Setup background services and CallKit for voice channel.
+  Future<void> _setupBackgroundServices(
+    String conversationId,
+    String channelId,
+    Room room,
+    bool micEnabled,
+  ) async {
+    // ---- breadcrumb 5: foreground service + CallKit -------------------------
+    final resolvedChannelName = _resolveChannelName(conversationId, channelId);
+    DebugLogService.instance.log(
+      LogLevel.info,
+      'LiveKitVoice',
+      'joinChannel: starting background service / CallKit for "$resolvedChannelName"',
+    );
+    // Promote the foreground service to voice mode (Android) and report
+    // an outgoing CallKit call (iOS) so the OS keeps the mic + audio
+    // session alive when the app is backgrounded.  Listen for Mute /
+    // Leave / End taps coming back from either UI.
+    _attachNotificationActionListener();
+    unawaited(
+      BackgroundService.instance.startVoice(
+        channelName: resolvedChannelName,
+        isMuted: !micEnabled,
+        participantCount: state.peerCount + 1,
+      ),
+    );
+    unawaited(
+      VoiceCallKitService.instance.startCall(
+        // CallKit's iOS CXCall ID is required to be a valid UUID.
+        // flutter_callkit_incoming's Swift handler does
+        // `UUID(uuidString: params.id)!` and force-unwraps — passing the
+        // previous `"$conversationId:$channelId"` composite was not a
+        // valid UUID, so the force-unwrap crashed with EXC_BREAKPOINT
+        // (Swift fatal error) inside CallManager.startCall, killing the
+        // app every iOS voice join. channelId is already a UUID and is
+        // unique per voice room, which preserves the "rejoin same room
+        // is a no-op" dedup semantic.
+        callId: channelId,
+        channelName: resolvedChannelName,
+        isMuted: !micEnabled,
+      ),
+    );
   }
 
   /// Disconnect from the LiveKit room and reset state.

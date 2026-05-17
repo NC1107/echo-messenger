@@ -152,61 +152,63 @@ class CameraSubmenuStandalone extends ConsumerWidget {
                   ),
                 ),
               ),
-              ...cameras.map((cam) {
-                final label = cam.label.isNotEmpty ? cam.label : cam.deviceId;
-                final isCurrent = cam.deviceId == currentCamId;
-                return InkWell(
-                  onTap: () async {
-                    if (cam.deviceId != currentCamId) {
-                      await ref
-                          .read(voiceSettingsProvider.notifier)
-                          .setCameraDevice(cam.deviceId);
-                      await ref
-                          .read(livekitVoiceProvider.notifier)
-                          .switchCamera();
-                    }
-                    onRequestClose();
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 10,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          isCurrent
-                              ? Icons.radio_button_checked
-                              : Icons.radio_button_unchecked,
-                          size: 16,
-                          color: isCurrent ? context.accent : context.textMuted,
-                        ),
-                        const SizedBox(width: 10),
-                        Flexible(
-                          child: Text(
-                            label,
-                            style: TextStyle(
-                              color: context.textPrimary,
-                              fontSize: 13,
-                              fontWeight: isCurrent
-                                  ? FontWeight.w600
-                                  : FontWeight.normal,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }),
+              ..._buildCameraOptions(context, ref, cameras, currentCamId),
               const SizedBox(height: 4),
             ],
           );
         },
       ),
     );
+  }
+
+  List<Widget> _buildCameraOptions(
+    BuildContext context,
+    WidgetRef ref,
+    List<MediaDeviceInfo> cameras,
+    String currentCamId,
+  ) {
+    return cameras.map((cam) {
+      final label = cam.label.isNotEmpty ? cam.label : cam.deviceId;
+      final isCurrent = cam.deviceId == currentCamId;
+      return InkWell(
+        onTap: () async {
+          if (cam.deviceId != currentCamId) {
+            await ref
+                .read(voiceSettingsProvider.notifier)
+                .setCameraDevice(cam.deviceId);
+            await ref.read(livekitVoiceProvider.notifier).switchCamera();
+          }
+          onRequestClose();
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isCurrent
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_unchecked,
+                size: 16,
+                color: isCurrent ? context.accent : context.textMuted,
+              ),
+              const SizedBox(width: 10),
+              Flexible(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: context.textPrimary,
+                    fontSize: 13,
+                    fontWeight: isCurrent ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }).toList();
   }
 }
 

@@ -1052,80 +1052,73 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   Widget _buildBottomControls(BuildContext context) {
     return Column(
       children: [
-        // Page-indicator dots: active dot expands into an 18×6 accent pill,
-        // inactive dots stay as 6×6 muted circles. 6px gap between dots,
-        // 200ms ease.
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(_pageCount, (i) {
-            final isActive = i == _currentPage;
-            return AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              margin: const EdgeInsets.symmetric(horizontal: 3),
-              width: isActive ? 18 : 6,
-              height: 6,
-              decoration: BoxDecoration(
-                color: isActive
-                    ? context.accent
-                    : context.textMuted.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(3),
-              ),
-            );
-          }),
-        ),
+        _buildPageIndicatorDots(),
         const SizedBox(height: 16),
+        _buildNavigationButtons(),
+      ],
+    );
+  }
 
-        // Buttons
-        Builder(
-          builder: (_) {
-            final isLast = _currentPage == _pageCount - 1;
-            final buttonLabel = isLast ? 'Get Started' : 'Next';
-            return Row(
-              children: [
-                // Back button (hidden on first page)
-                if (_currentPage > 0)
-                  TextButton(
-                    onPressed: _saving
-                        ? null
-                        : () => _goToPage(_currentPage - 1),
-                    child: Text(
-                      'Back',
-                      style: TextStyle(color: context.textMuted),
-                    ),
-                  ),
-                // Skip button (hidden on last page -- "Skip for now" is inline)
-                if (!isLast)
-                  TextButton(
-                    onPressed: _saving ? null : _skip,
-                    child: Text(
-                      'Skip',
-                      style: TextStyle(color: context.textMuted),
-                    ),
-                  ),
-                const Spacer(),
-                // Next / Get Started
-                SizedBox(
-                  width: 160,
-                  child: FilledButton(
-                    onPressed: _saving ? null : _next,
-                    child: _saving
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : Text(buttonLabel),
-                  ),
-                ),
-              ],
-            );
-          },
+  Widget _buildPageIndicatorDots() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(_pageCount, (i) {
+        final isActive = i == _currentPage;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          width: isActive ? 18 : 6,
+          height: 6,
+          decoration: BoxDecoration(
+            color: isActive
+                ? context.accent
+                : context.textMuted.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(3),
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _buildNavigationButtons() {
+    final isLast = _currentPage == _pageCount - 1;
+    final buttonLabel = isLast ? 'Get Started' : 'Next';
+
+    return Row(
+      children: [
+        if (_currentPage > 0)
+          TextButton(
+            onPressed: _saving ? null : () => _goToPage(_currentPage - 1),
+            child: Text('Back', style: TextStyle(color: context.textMuted)),
+          ),
+        if (!isLast)
+          TextButton(
+            onPressed: _saving ? null : _skip,
+            child: Text('Skip', style: TextStyle(color: context.textMuted)),
+          ),
+        const Spacer(),
+        SizedBox(
+          width: 160,
+          child: FilledButton(
+            onPressed: _saving ? null : _next,
+            child: _buildNextButtonContent(buttonLabel),
+          ),
         ),
       ],
     );
+  }
+
+  Widget _buildNextButtonContent(String label) {
+    return _saving
+        ? const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Colors.white,
+            ),
+          )
+        : Text(label);
   }
 
   // ---------------------------------------------------------------------------
