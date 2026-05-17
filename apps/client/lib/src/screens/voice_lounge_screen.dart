@@ -224,43 +224,46 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     String channelName,
     int participantCount,
   ) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.black54,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.graphic_eq, size: 14, color: EchoTheme.online),
-          const SizedBox(width: 6),
-          Text(
-            channelName,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (widget.onBackToChat != null)
+          IconButton(
+            icon: const Icon(Icons.arrow_back),
+            tooltip: 'Back to chat',
+            onPressed: widget.onBackToChat,
+            color: Colors.white,
+            iconSize: 20,
+            style: IconButton.styleFrom(minimumSize: const Size(44, 44)),
           ),
-          const SizedBox(width: 6),
-          Text(
-            '· $participantCount',
-            style: const TextStyle(color: Colors.white70, fontSize: 12),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.black54,
+            borderRadius: BorderRadius.circular(20),
           ),
-          if (widget.onBackToChat != null) ...[
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: widget.onBackToChat,
-              child: const Icon(
-                Icons.chat_outlined,
-                size: 16,
-                color: Colors.white70,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.graphic_eq, size: 14, color: EchoTheme.online),
+              const SizedBox(width: 6),
+              Text(
+                channelName,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-            ),
-          ],
-        ],
-      ),
+              const SizedBox(width: 6),
+              Text(
+                '· $participantCount',
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -542,9 +545,27 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     if (isDesktop) {
       await showDialog<void>(
         context: ctx,
+        barrierDismissible: true,
         builder: (dialogCtx) => AlertDialog(
           backgroundColor: dialogCtx.surface,
-          title: const Text('Voice lounge background'),
+          title: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Voice lounge background'),
+              SizedBox(
+                width: 44,
+                height: 44,
+                child: IconButton(
+                  onPressed: () => Navigator.of(dialogCtx).pop(),
+                  icon: Icon(
+                    Icons.close,
+                    size: 20,
+                    color: dialogCtx.textSecondary,
+                  ),
+                ),
+              ),
+            ],
+          ),
           content: SizedBox(
             width: 400,
             child: Column(
@@ -584,12 +605,6 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
             borderRadius: BorderRadius.circular(8),
             side: BorderSide(color: dialogCtx.border),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogCtx).pop(),
-              child: const Text('Close'),
-            ),
-          ],
         ),
       );
     } else {

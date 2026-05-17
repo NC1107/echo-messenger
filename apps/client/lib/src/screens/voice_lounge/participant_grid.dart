@@ -197,24 +197,33 @@ class ParticipantGrid extends StatelessWidget {
   }
 
   Widget _buildCompactLayout(List<Widget> tiles) {
-    return ListView.separated(
-      scrollDirection: Axis.horizontal,
-      itemCount: tiles.length,
-      separatorBuilder: (context, index) => const SizedBox(width: 8),
-      itemBuilder: (_, i) => SizedBox(width: 100, child: tiles[i]),
+    return Scrollbar(
+      thumbVisibility: false,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: tiles.length,
+        separatorBuilder: (context, index) => const SizedBox(width: 8),
+        itemBuilder: (_, i) => SizedBox(width: 100, child: tiles[i]),
+      ),
     );
   }
 
   Widget _buildGridLayout(List<Widget> tiles) {
-    return Center(
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        alignment: WrapAlignment.center,
-        children: tiles
-            .map((t) => SizedBox(width: 112, height: 136, child: t))
-            .toList(),
-      ),
+    return OrientationBuilder(
+      builder: (context, orientation) {
+        final crossAxisCount = orientation == Orientation.portrait ? 2 : 3;
+        return Center(
+          child: GridView.count(
+            crossAxisCount: crossAxisCount,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            childAspectRatio: 112 / 136,
+            children: tiles,
+          ),
+        );
+      },
     );
   }
 }
@@ -412,6 +421,20 @@ class _ParticipantTileState extends State<ParticipantTile> {
                             authToken: authToken,
                           ),
                         _buildNameLabel(context),
+                        // Long-press affordance (remote participants only)
+                        if (!isLocal && remoteParticipant != null)
+                          Positioned(
+                            top: 4,
+                            right: 4,
+                            child: Tooltip(
+                              message: 'Long-press for options',
+                              child: Icon(
+                                Icons.more_vert,
+                                size: 10,
+                                color: Colors.white.withValues(alpha: 0.6),
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),

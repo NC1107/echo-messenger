@@ -321,7 +321,7 @@ class DockButtonWithSubmenu extends StatelessWidget {
             },
             borderRadius: BorderRadius.circular(12),
             child: SizedBox(
-              width: 14,
+              width: 20,
               height: 44,
               child: Icon(arrowIcon, size: 12, color: arrowColor),
             ),

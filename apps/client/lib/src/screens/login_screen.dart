@@ -140,35 +140,29 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           const SizedBox(height: 24),
                           _buildLoginButton(authState),
                           const SizedBox(height: 4),
-                          SizedBox(
-                            height: 44,
-                            child: Semantics(
-                              button: true,
-                              label: 'forgot-password',
-                              child: TextButton(
-                                onPressed: () => context.go('/forgot-password'),
-                                style: TextButton.styleFrom(
-                                  foregroundColor: context.textSecondary,
-                                ),
-                                child: const Text('Forgot password?'),
-                              ),
-                            ),
-                          ),
-                          SizedBox(
-                            height: 44,
-                            // TextButton + Text already produce a
-                            // button-role accessibility node named "Create an
-                            // account" — wrapping in another Semantics
-                            // duplicates the node and trips strict-mode
-                            // selectors (`getByRole('button', { name: /create
-                            // an account/i })` resolves to 2).
+                          Semantics(
+                            button: true,
+                            label: 'forgot-password',
                             child: TextButton(
-                              onPressed: () => context.go('/register'),
+                              onPressed: () => context.go('/forgot-password'),
                               style: TextButton.styleFrom(
                                 foregroundColor: context.textSecondary,
                               ),
-                              child: const Text('Create an account'),
+                              child: const Text('Forgot password?'),
                             ),
+                          ),
+                          // TextButton + Text already produce a
+                          // button-role accessibility node named "Create an
+                          // account" — wrapping in another Semantics
+                          // duplicates the node and trips strict-mode
+                          // selectors (`getByRole('button', { name: /create
+                          // an account/i })` resolves to 2).
+                          TextButton(
+                            onPressed: () => context.go('/register'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: context.textSecondary,
+                            ),
+                            child: const Text('Create an account'),
                           ),
                         ],
                       ),
@@ -352,7 +346,7 @@ class _ServerSubtitleState extends ConsumerState<_ServerSubtitle> {
         borderRadius: BorderRadius.circular(4),
         onTap: _showSwitchDialog,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [

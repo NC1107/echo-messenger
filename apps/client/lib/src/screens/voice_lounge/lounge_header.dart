@@ -73,6 +73,7 @@ class LoungeHeader extends StatelessWidget {
               ),
               style: IconButton.styleFrom(
                 foregroundColor: context.textSecondary,
+                minimumSize: const Size(44, 44),
               ),
             ),
           if (onBackToChat != null)

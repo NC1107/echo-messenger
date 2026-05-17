@@ -350,7 +350,9 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.byIcon(Icons.notifications_off_outlined), findsOneWidget);
+      // Mute icon may appear up to 3 times: snippet badge, name-row chip,
+      // and the small avatar-overlay added by the responsive UI audit.
+      expect(find.byIcon(Icons.notifications_off_outlined), findsWidgets);
     });
 
     testWidgets('onTap callback fires when tapped', (tester) async {

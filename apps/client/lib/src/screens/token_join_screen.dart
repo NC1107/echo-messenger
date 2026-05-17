@@ -246,11 +246,21 @@ class _TokenJoinScreenState extends ConsumerState<TokenJoinScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: context.mainBg,
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
-          child: _isLoading ? _buildLoadingState() : _buildCard(),
-        ),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final inner = Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
+            child: Center(
+              child: _isLoading ? _buildLoadingState() : _buildCard(),
+            ),
+          );
+          // Only wrap in a scroll view on short screens; tall desktops don't
+          // need the scrollbar chrome.
+          if (constraints.maxHeight < 600) {
+            return SingleChildScrollView(child: inner);
+          }
+          return inner;
+        },
       ),
     );
   }
@@ -403,9 +413,12 @@ class _TokenJoinScreenState extends ConsumerState<TokenJoinScreen>
               const SizedBox(height: 12),
               TextButton(
                 onPressed: () => context.go(_routeHome),
+                style: TextButton.styleFrom(
+                  foregroundColor: context.textSecondary,
+                ),
                 child: Text(
                   _isLoggedIn ? 'Back to chats' : 'Cancel',
-                  style: TextStyle(color: context.textSecondary, fontSize: 13),
+                  style: const TextStyle(fontSize: 13),
                 ),
               ),
             ],

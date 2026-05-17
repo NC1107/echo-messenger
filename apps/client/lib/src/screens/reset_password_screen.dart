@@ -113,6 +113,7 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
                       labelText: 'Reset token',
                       border: OutlineInputBorder(),
                       helperText: 'Paste the token your admin shared with you',
+                      helperMaxLines: 2,
                     ),
                     textInputAction: TextInputAction.next,
                     autocorrect: false,

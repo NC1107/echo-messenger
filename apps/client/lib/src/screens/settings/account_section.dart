@@ -836,9 +836,21 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
           style: TextStyle(color: context.textPrimary, fontSize: 14),
           items: [
             ..._pronounOptions.map(
-              (p) => DropdownMenuItem(value: p, child: Text(p)),
+              (p) => DropdownMenuItem(
+                value: p,
+                child: SizedBox(
+                  width: 200,
+                  child: Text(p, overflow: TextOverflow.ellipsis),
+                ),
+              ),
             ),
-            const DropdownMenuItem(value: 'other', child: Text('Other...')),
+            const DropdownMenuItem(
+              value: 'other',
+              child: SizedBox(
+                width: 200,
+                child: Text('Other...', overflow: TextOverflow.ellipsis),
+              ),
+            ),
           ],
           onChanged: (value) {
             setState(() {

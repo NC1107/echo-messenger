@@ -307,45 +307,52 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
             child: SafeArea(
               top: false,
               child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 520),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 16,
-                    ),
-                    child: Column(
-                      children: [
-                        // Logo
-                        const SizedBox(height: 12),
-                        const EchoLogoIcon(size: 36),
-                        const SizedBox(height: 20),
-
-                        // Pages
-                        Expanded(
-                          child: PageView(
-                            controller: _pageController,
-                            physics: const NeverScrollableScrollPhysics(),
-                            onPageChanged: (i) =>
-                                setState(() => _currentPage = i),
-                            children: [
-                              _buildWelcomePage(context),
-                              _buildThemePage(context),
-                              _buildAccessibilityPage(context),
-                              _buildNotificationsPage(context),
-                              _buildEncryptionPage(context),
-                              _buildContactPage(context),
-                            ],
-                          ),
+                child: LayoutBuilder(
+                  builder: (context, outerConstraints) {
+                    final effectiveMax = outerConstraints.maxWidth < 500
+                        ? double.infinity
+                        : 520.0;
+                    return ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: effectiveMax),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 16,
                         ),
+                        child: Column(
+                          children: [
+                            // Logo
+                            const SizedBox(height: 12),
+                            const EchoLogoIcon(size: 36),
+                            const SizedBox(height: 20),
 
-                        // Dot indicator + buttons
-                        const SizedBox(height: 16),
-                        _buildBottomControls(context),
-                        const SizedBox(height: 12),
-                      ],
-                    ),
-                  ),
+                            // Pages
+                            Expanded(
+                              child: PageView(
+                                controller: _pageController,
+                                physics: const NeverScrollableScrollPhysics(),
+                                onPageChanged: (i) =>
+                                    setState(() => _currentPage = i),
+                                children: [
+                                  _buildWelcomePage(context),
+                                  _buildThemePage(context),
+                                  _buildAccessibilityPage(context),
+                                  _buildNotificationsPage(context),
+                                  _buildEncryptionPage(context),
+                                  _buildContactPage(context),
+                                ],
+                              ),
+                            ),
+
+                            // Dot indicator + buttons
+                            const SizedBox(height: 16),
+                            _buildBottomControls(context),
+                            const SizedBox(height: 12),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
             ),
@@ -432,50 +439,54 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           Semantics(
             label: 'pick avatar',
             button: true,
-            child: GestureDetector(
-              onTap: _uploadingAvatar ? null : _pickAvatar,
-              child: Stack(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(3),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: context.accent, width: 2),
-                    ),
-                    child: CircleAvatar(
-                      radius: 48,
-                      backgroundColor: context.surface,
-                      backgroundImage: _avatarImage(auth, serverUrl),
-                      child: _avatarChild(auth, username),
-                    ),
-                  ),
-                  Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: Container(
-                      width: 30,
-                      height: 30,
+            child: SizedBox(
+              width: 120,
+              height: 120,
+              child: GestureDetector(
+                onTap: _uploadingAvatar ? null : _pickAvatar,
+                child: Stack(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(3),
                       decoration: BoxDecoration(
-                        color: context.accent,
                         shape: BoxShape.circle,
-                        border: Border.all(color: context.mainBg, width: 2),
+                        border: Border.all(color: context.accent, width: 2),
                       ),
-                      child: _uploadingAvatar
-                          ? const Padding(
-                              padding: EdgeInsets.all(6),
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
+                      child: CircleAvatar(
+                        radius: 48,
+                        backgroundColor: context.surface,
+                        backgroundImage: _avatarImage(auth, serverUrl),
+                        child: _avatarChild(auth, username),
+                      ),
+                    ),
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: context.accent,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: context.mainBg, width: 2),
+                        ),
+                        child: _uploadingAvatar
+                            ? const Padding(
+                                padding: EdgeInsets.all(6),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.camera_alt,
+                                size: 14,
                                 color: Colors.white,
                               ),
-                            )
-                          : const Icon(
-                              Icons.camera_alt,
-                              size: 14,
-                              color: Colors.white,
-                            ),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -763,7 +774,8 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
             builder: (context, constraints) {
               // Wide (desktop/tablet): show all cards in a single row grid.
               // Narrow (phone): fall back to horizontal scroll.
-              final isWide = constraints.maxWidth >= 600;
+              // Use 700 so a 600px-wide screen doesn't overflow the 6-card row.
+              final isWide = constraints.maxWidth >= 700;
               if (isWide) {
                 return GridView.count(
                   shrinkWrap: true,
@@ -1266,12 +1278,10 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
             child: Text('Skip', style: TextStyle(color: context.textMuted)),
           ),
         const Spacer(),
-        SizedBox(
-          width: 160,
-          child: FilledButton(
-            onPressed: _saving ? null : _next,
-            child: _buildNextButtonContent(buttonLabel),
-          ),
+        FilledButton(
+          onPressed: _saving ? null : _next,
+          style: FilledButton.styleFrom(minimumSize: const Size(120, 40)),
+          child: _buildNextButtonContent(buttonLabel),
         ),
       ],
     );

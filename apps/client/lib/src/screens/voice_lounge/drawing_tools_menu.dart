@@ -76,7 +76,7 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 200,
+      width: 240,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -125,10 +125,14 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Wrap(
-            spacing: 6,
-            runSpacing: 6,
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: GridView.count(
+            crossAxisCount: 5,
+            mainAxisSpacing: 2,
+            crossAxisSpacing: 2,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            childAspectRatio: 1.0,
             children: _penColors.map((c) => _colorSwatch(context, c)).toList(),
           ),
         ),

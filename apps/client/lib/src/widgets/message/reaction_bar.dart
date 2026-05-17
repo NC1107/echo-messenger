@@ -4,6 +4,7 @@ import '../../models/reaction.dart';
 import '../../providers/theme_provider.dart' show UIDensity;
 import '../../theme/echo_theme.dart';
 import '../../theme/motion_tokens.dart';
+import '../../theme/responsive.dart';
 
 /// Displays per-emoji reaction pills, each showing the emoji and its count.
 /// The chip background matches the parent bubble color (sent or received) with
@@ -50,6 +51,8 @@ class ReactionBar extends StatelessWidget {
 
     final totalCount = reactions.length;
 
+    final isMobileBreakpoint = Responsive.isMobile(context);
+
     return DefaultTextStyle(
       style: TextStyle(
         decoration: TextDecoration.none,
@@ -65,18 +68,36 @@ class ReactionBar extends StatelessWidget {
           runSpacing: 4,
           children: [
             for (final entry in grouped.entries)
-              _ReactionPill(
-                // Stable key so reordering this list doesn't let Flutter
-                // recycle a different emoji's _ReactionPillState (whose
-                // entry-scale animation has already played).
-                key: ValueKey('reaction-${entry.key}'),
-                emoji: entry.key,
-                count: entry.value.length,
-                isMine: isMine,
-                chatBgColor: chatBgColor,
-                onTap: onTap,
-                density: density,
-              ),
+              // On mobile, ensure each pill's tap target meets WCAG 44px
+              // minimum. Desktop preserves compact visual density unchanged.
+              isMobileBreakpoint
+                  ? ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 44),
+                      child: Align(
+                        alignment: Alignment.center,
+                        child: _ReactionPill(
+                          key: ValueKey('reaction-${entry.key}'),
+                          emoji: entry.key,
+                          count: entry.value.length,
+                          isMine: isMine,
+                          chatBgColor: chatBgColor,
+                          onTap: onTap,
+                          density: density,
+                        ),
+                      ),
+                    )
+                  : _ReactionPill(
+                      // Stable key so reordering this list doesn't let Flutter
+                      // recycle a different emoji's _ReactionPillState (whose
+                      // entry-scale animation has already played).
+                      key: ValueKey('reaction-${entry.key}'),
+                      emoji: entry.key,
+                      count: entry.value.length,
+                      isMine: isMine,
+                      chatBgColor: chatBgColor,
+                      onTap: onTap,
+                      density: density,
+                    ),
           ],
         ),
       ),

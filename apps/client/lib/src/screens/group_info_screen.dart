@@ -143,52 +143,145 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
             final query = searchController.text.trim();
             final filtered = _filterAvailableContacts(available, query);
             final serverUrl = ref.read(serverUrlProvider);
-            return SimpleDialog(
-              title: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('Add Member'),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: searchController,
-                    autofocus: true,
-                    decoration: const InputDecoration(
-                      hintText: 'Search contacts...',
-                      prefixIcon: Icon(Icons.search, size: 18),
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged: (_) => setDialogState(() {}),
-                  ),
-                ],
+            return Dialog(
+              backgroundColor: context.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: context.border),
               ),
-              children: filtered.isEmpty
-                  ? [
-                      const SimpleDialogOption(
-                        child: Text(
-                          'No contacts found',
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                      ),
-                    ]
-                  : filtered.map((contact) {
-                      return SimpleDialogOption(
-                        onPressed: () =>
-                            Navigator.pop(dialogContext, contact.userId),
-                        child: ListTile(
-                          leading: buildAvatar(
-                            name: contact.username,
-                            radius: 20,
-                            imageUrl: resolveAvatarUrl(
-                              contact.avatarUrl,
-                              serverUrl,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Title and close button
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Add Member',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              color: context.textPrimary,
                             ),
                           ),
-                          title: Text(contact.displayName ?? contact.username),
+                          SizedBox(
+                            width: 44,
+                            height: 44,
+                            child: IconButton(
+                              onPressed: () => Navigator.of(ctx).pop(),
+                              icon: Icon(
+                                Icons.close,
+                                size: 20,
+                                color: context.textSecondary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Search field
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: TextField(
+                        controller: searchController,
+                        autofocus: true,
+                        decoration: InputDecoration(
+                          hintText: 'Search contacts...',
+                          hintStyle: TextStyle(color: context.textSecondary),
+                          prefixIcon: Icon(
+                            Icons.search,
+                            size: 18,
+                            color: context.textSecondary,
+                          ),
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          filled: true,
+                          fillColor: context.surface,
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: context.border),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: context.accent),
+                          ),
                         ),
-                      );
-                    }).toList(),
+                        style: TextStyle(
+                          color: context.textPrimary,
+                          fontSize: 14,
+                        ),
+                        onChanged: (_) => setDialogState(() {}),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Divider(height: 8, color: context.border),
+                    // Contact list
+                    Expanded(
+                      child: filtered.isEmpty
+                          ? Center(
+                              child: Text(
+                                'No contacts found',
+                                style: TextStyle(color: context.textMuted),
+                              ),
+                            )
+                          : ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: filtered.length,
+                              itemBuilder: (listCtx, idx) {
+                                final contact = filtered[idx];
+                                return SizedBox(
+                                  height: 56,
+                                  child: InkWell(
+                                    onTap: () => Navigator.pop(
+                                      dialogContext,
+                                      contact.userId,
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 8,
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          buildAvatar(
+                                            name: contact.username,
+                                            radius: 20,
+                                            imageUrl: resolveAvatarUrl(
+                                              contact.avatarUrl,
+                                              serverUrl,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Text(
+                                              contact.displayName ??
+                                                  contact.username,
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                color: context.textPrimary,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
             );
           },
         );
@@ -1170,12 +1263,13 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                 ],
               ),
             ),
-            ?_buildMemberActions(
-              member: member,
-              isOwnerOrAdmin: isOwnerOrAdmin,
-              isMe: isMe,
-              role: role,
-            ),
+            _buildMemberActions(
+                  member: member,
+                  isOwnerOrAdmin: isOwnerOrAdmin,
+                  isMe: isMe,
+                  role: role,
+                ) ??
+                const SizedBox.shrink(),
           ],
         ),
       ),

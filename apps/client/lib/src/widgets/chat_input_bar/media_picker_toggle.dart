@@ -32,7 +32,7 @@ class MediaPickerToggle extends StatelessWidget {
         ),
         tooltip: showMediaPicker ? 'Keyboard' : 'Emoji & GIF',
         padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
         onPressed: onToggle,
       ),
     );

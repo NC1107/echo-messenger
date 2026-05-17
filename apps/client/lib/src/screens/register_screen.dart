@@ -204,7 +204,12 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                           style: TextButton.styleFrom(
                             foregroundColor: context.textSecondary,
                           ),
-                          child: const Text('Already have an account? Log in'),
+                          child: const Text(
+                            'Already have an account? Log in',
+                            textAlign: TextAlign.center,
+                            overflow: TextOverflow.visible,
+                            softWrap: true,
+                          ),
                         ),
                       ],
                     ),

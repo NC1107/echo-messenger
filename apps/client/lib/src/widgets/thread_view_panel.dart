@@ -205,11 +205,14 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
             ),
           ),
           Semantics(
-            label: 'Close thread view',
+            label: 'Close thread',
             button: true,
-            child: GestureDetector(
-              onTap: widget.onClose,
-              child: Icon(Icons.close, size: 18, color: context.textMuted),
+            child: IconButton(
+              icon: Icon(Icons.close, size: 18, color: context.textMuted),
+              tooltip: 'Close thread',
+              onPressed: widget.onClose,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
             ),
           ),
         ],

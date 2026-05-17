@@ -140,13 +140,16 @@ class _EchoScreenSelectDialogState extends State<_EchoScreenSelectDialog> {
     final theme = Theme.of(context);
     final visible = _sources.values.where((s) => s.type == _tab).toList();
     final columns = _tab == rtc.SourceType.Screen ? 2 : 3;
+    final mq = MediaQuery.of(context);
+    final dialogWidth = (mq.size.width * 0.9).clamp(320.0, 640.0);
+    final dialogHeight = (mq.size.height * 0.8).clamp(400.0, 560.0);
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       clipBehavior: Clip.antiAlias,
       child: SizedBox(
-        width: 640,
-        height: 560,
+        width: dialogWidth,
+        height: dialogHeight,
         child: Column(
           children: [
             // --- header --------------------------------------------------
