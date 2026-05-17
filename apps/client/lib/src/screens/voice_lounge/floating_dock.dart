@@ -74,133 +74,128 @@ class FloatingDock extends ConsumerWidget {
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
-              children: [
-                // -- Mic + submenu (noise suppression) --
-                DockButtonWithSubmenu(
-                  icon: voiceSettings.selfMuted ? Icons.mic_off : Icons.mic,
-                  tooltip: voiceSettings.selfMuted ? 'Unmute' : 'Mute',
-                  isActive: voiceSettings.selfMuted,
-                  activeColor: EchoTheme.danger,
-                  onPressed: () async {
-                    final notifier = ref.read(voiceSettingsProvider.notifier);
-                    final nextMuted = !voiceSettings.selfMuted;
-                    await notifier.setSelfMuted(nextMuted);
-                    ref
-                        .read(livekitVoiceProvider.notifier)
-                        .setCaptureEnabled(
-                          !nextMuted && !voiceSettings.selfDeafened,
-                        );
-                  },
-                  onSubmenuTap: () => onToggleSubmenu(DockSubmenu.mic),
-                  submenuActive: activeSubmenu == DockSubmenu.mic,
-                  submenuLayerLink: micLayerLink,
-                ),
-                // -- Deafen (tap only) --
-                _buildDockItem(
-                  context,
-                  icon: voiceSettings.selfDeafened
-                      ? Icons.headset_off
-                      : Icons.headset,
-                  tooltip: voiceSettings.selfDeafened ? 'Undeafen' : 'Deafen',
-                  isActive: voiceSettings.selfDeafened,
-                  activeColor: EchoTheme.danger,
-                  onPressed: () async {
-                    final notifier = ref.read(voiceSettingsProvider.notifier);
-                    final nextDeafened = !voiceSettings.selfDeafened;
-                    await notifier.setSelfDeafened(nextDeafened);
-                    await ref
-                        .read(livekitVoiceProvider.notifier)
-                        .setDeafened(nextDeafened);
-                  },
-                ),
-                // -- Camera + submenu (device picker) --
-                DockButtonWithSubmenu(
-                  icon: voiceState.isVideoEnabled
-                      ? Icons.videocam
-                      : Icons.videocam_off,
-                  tooltip: voiceState.isVideoEnabled
-                      ? 'Turn off camera'
-                      : 'Turn on camera',
-                  isActive: voiceState.isVideoEnabled,
-                  activeColor: context.accent,
-                  onPressed: () async {
-                    await ref.read(livekitVoiceProvider.notifier).toggleVideo();
-                  },
-                  onSubmenuTap: () => onToggleSubmenu(DockSubmenu.camera),
-                  submenuActive: activeSubmenu == DockSubmenu.camera,
-                  submenuLayerLink: cameraLayerLink,
-                ),
-                // -- Screen Share + submenu (quality settings) --
-                if (kSupportsScreenShare)
-                  DockButtonWithSubmenu(
-                    icon: screenShare.isScreenSharing
-                        ? Icons.stop_screen_share
-                        : Icons.screen_share,
-                    tooltip: screenShare.isScreenSharing
-                        ? 'Stop sharing'
-                        : 'Share screen',
-                    isActive: screenShare.isScreenSharing,
-                    activeColor: EchoTheme.online,
-                    onPressed: () => toggleScreenShare(context, ref),
-                    onSubmenuTap: () =>
-                        onToggleSubmenu(DockSubmenu.screenShare),
-                    submenuActive: activeSubmenu == DockSubmenu.screenShare,
-                    submenuLayerLink: screenShareLayerLink,
-                  ),
-                // -- Draw toggle + submenu (tools) -- (hidden in spotlight mode)
-                if (!spotlightMode)
-                  DockButtonWithSubmenu(
-                    icon: Icons.edit,
-                    tooltip: isDrawing ? 'Stop drawing' : 'Draw',
-                    isActive: isDrawing,
-                    activeColor: context.accent,
-                    onPressed: onToggleDrawing,
-                    onSubmenuTap: () => onToggleSubmenu(DockSubmenu.draw),
-                    submenuActive: activeSubmenu == DockSubmenu.draw,
-                    submenuLayerLink: drawingToolsLayerLink,
-                  ),
-                _dockDivider(context),
-                // -- Canvas/Spotlight toggle --
-                _buildDockItem(
-                  context,
-                  icon: spotlightMode ? Icons.grid_view : Icons.people,
-                  tooltip: spotlightMode ? 'Canvas view' : 'Spotlight view',
-                  isActive: spotlightMode,
-                  activeColor: context.accent,
-                  onPressed: onToggleSpotlight,
-                ),
-                _dockDivider(context),
-                // ── Leave ──
-                _buildDockItem(
-                  context,
-                  icon: Icons.call_end,
-                  tooltip: 'Leave',
-                  isActive: true,
-                  activeColor: EchoTheme.danger,
-                  isDestructive: true,
-                  onPressed: () async {
-                    if (screenShare.isScreenSharing) {
-                      await ref
-                          .read(livekitVoiceProvider.notifier)
-                          .setScreenShareEnabled(false);
-                      ref
-                          .read(screenShareProvider.notifier)
-                          .setLiveKitScreenShareActive(false);
-                    }
-                    await ref
-                        .read(channelsProvider.notifier)
-                        .leaveVoiceChannel(conversationId, channelId);
-                    await ref
-                        .read(livekitVoiceProvider.notifier)
-                        .leaveChannel();
-                  },
-                ),
-              ],
+              children: _buildDockChildren(context, ref),
             ),
           ),
         ),
       ),
     );
+  }
+
+  List<Widget> _buildDockChildren(BuildContext context, WidgetRef ref) {
+    return [
+      // -- Mic + submenu (noise suppression) --
+      DockButtonWithSubmenu(
+        icon: voiceSettings.selfMuted ? Icons.mic_off : Icons.mic,
+        tooltip: voiceSettings.selfMuted ? 'Unmute' : 'Mute',
+        isActive: voiceSettings.selfMuted,
+        activeColor: EchoTheme.danger,
+        onPressed: () async {
+          final notifier = ref.read(voiceSettingsProvider.notifier);
+          final nextMuted = !voiceSettings.selfMuted;
+          await notifier.setSelfMuted(nextMuted);
+          ref
+              .read(livekitVoiceProvider.notifier)
+              .setCaptureEnabled(!nextMuted && !voiceSettings.selfDeafened);
+        },
+        onSubmenuTap: () => onToggleSubmenu(DockSubmenu.mic),
+        submenuActive: activeSubmenu == DockSubmenu.mic,
+        submenuLayerLink: micLayerLink,
+      ),
+      // -- Deafen (tap only) --
+      _buildDockItem(
+        context,
+        icon: voiceSettings.selfDeafened ? Icons.headset_off : Icons.headset,
+        tooltip: voiceSettings.selfDeafened ? 'Undeafen' : 'Deafen',
+        isActive: voiceSettings.selfDeafened,
+        activeColor: EchoTheme.danger,
+        onPressed: () async {
+          final notifier = ref.read(voiceSettingsProvider.notifier);
+          final nextDeafened = !voiceSettings.selfDeafened;
+          await notifier.setSelfDeafened(nextDeafened);
+          await ref
+              .read(livekitVoiceProvider.notifier)
+              .setDeafened(nextDeafened);
+        },
+      ),
+      // -- Camera + submenu (device picker) --
+      DockButtonWithSubmenu(
+        icon: voiceState.isVideoEnabled ? Icons.videocam : Icons.videocam_off,
+        tooltip: voiceState.isVideoEnabled
+            ? 'Turn off camera'
+            : 'Turn on camera',
+        isActive: voiceState.isVideoEnabled,
+        activeColor: context.accent,
+        onPressed: () async {
+          await ref.read(livekitVoiceProvider.notifier).toggleVideo();
+        },
+        onSubmenuTap: () => onToggleSubmenu(DockSubmenu.camera),
+        submenuActive: activeSubmenu == DockSubmenu.camera,
+        submenuLayerLink: cameraLayerLink,
+      ),
+      // -- Screen Share + submenu (quality settings) --
+      if (kSupportsScreenShare)
+        DockButtonWithSubmenu(
+          icon: screenShare.isScreenSharing
+              ? Icons.stop_screen_share
+              : Icons.screen_share,
+          tooltip: screenShare.isScreenSharing
+              ? 'Stop sharing'
+              : 'Share screen',
+          isActive: screenShare.isScreenSharing,
+          activeColor: EchoTheme.online,
+          onPressed: () => toggleScreenShare(context, ref),
+          onSubmenuTap: () => onToggleSubmenu(DockSubmenu.screenShare),
+          submenuActive: activeSubmenu == DockSubmenu.screenShare,
+          submenuLayerLink: screenShareLayerLink,
+        ),
+      // -- Draw toggle + submenu (tools) -- (hidden in spotlight mode)
+      if (!spotlightMode)
+        DockButtonWithSubmenu(
+          icon: Icons.edit,
+          tooltip: isDrawing ? 'Stop drawing' : 'Draw',
+          isActive: isDrawing,
+          activeColor: context.accent,
+          onPressed: onToggleDrawing,
+          onSubmenuTap: () => onToggleSubmenu(DockSubmenu.draw),
+          submenuActive: activeSubmenu == DockSubmenu.draw,
+          submenuLayerLink: drawingToolsLayerLink,
+        ),
+      _dockDivider(context),
+      // -- Canvas/Spotlight toggle --
+      _buildDockItem(
+        context,
+        icon: spotlightMode ? Icons.grid_view : Icons.people,
+        tooltip: spotlightMode ? 'Canvas view' : 'Spotlight view',
+        isActive: spotlightMode,
+        activeColor: context.accent,
+        onPressed: onToggleSpotlight,
+      ),
+      _dockDivider(context),
+      // ── Leave ──
+      _buildDockItem(
+        context,
+        icon: Icons.call_end,
+        tooltip: 'Leave',
+        isActive: true,
+        activeColor: EchoTheme.danger,
+        isDestructive: true,
+        onPressed: () async {
+          if (screenShare.isScreenSharing) {
+            await ref
+                .read(livekitVoiceProvider.notifier)
+                .setScreenShareEnabled(false);
+            ref
+                .read(screenShareProvider.notifier)
+                .setLiveKitScreenShareActive(false);
+          }
+          await ref
+              .read(channelsProvider.notifier)
+              .leaveVoiceChannel(conversationId, channelId);
+          await ref.read(livekitVoiceProvider.notifier).leaveChannel();
+        },
+      ),
+    ];
   }
 
   static Widget _dockDivider(BuildContext context) {

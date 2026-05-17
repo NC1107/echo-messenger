@@ -319,6 +319,23 @@ Future<bool> dispatchSlashCommand(
     onRewrite?.call(rewrittenText);
     return true;
   }
+  return await _dispatchAdminOrPollCommand(
+    cmd,
+    conversation,
+    ref,
+    context,
+    onRewrite,
+  );
+}
+
+/// Dispatcher for admin and poll commands.
+Future<bool> _dispatchAdminOrPollCommand(
+  SlashCommand cmd,
+  Conversation conversation,
+  WidgetRef ref,
+  BuildContext context,
+  void Function(String)? onRewrite,
+) async {
   switch (cmd.name) {
     case 'help':
     case '?':
@@ -326,73 +343,112 @@ Future<bool> dispatchSlashCommand(
       return true;
 
     case 'name':
-      if (!conversation.isGroup) {
-        _toast(context, '/name is only available in groups', ToastType.warning);
-        return true;
-      }
-      if (!_callerIsAdmin(conversation, ref)) {
-        _toast(context, 'Only admins can rename the group', ToastType.warning);
-        return true;
-      }
-      if (cmd.args.isEmpty) {
-        _toast(context, 'Usage: /name <new name>', ToastType.info);
-        return true;
-      }
-      await _renameGroup(conversation, cmd.args, ref, context);
-      return true;
+      return await _handleNameCommand(cmd, conversation, ref, context);
 
     case 'description':
-      if (!conversation.isGroup) {
-        _toast(
-          context,
-          '/description is only available in groups',
-          ToastType.warning,
-        );
-        return true;
-      }
-      if (!_callerIsAdmin(conversation, ref)) {
-        _toast(
-          context,
-          'Only admins can change the description',
-          ToastType.warning,
-        );
-        return true;
-      }
-      await _setDescription(conversation, cmd.args, ref, context);
-      return true;
+      return await _handleDescriptionCommand(cmd, conversation, ref, context);
 
     case 'kick':
-      if (!conversation.isGroup) {
-        _toast(context, '/kick is only available in groups', ToastType.warning);
-        return true;
-      }
-      if (!_callerIsAdmin(conversation, ref)) {
-        _toast(context, 'Only admins can kick members', ToastType.warning);
-        return true;
-      }
-      if (cmd.args.isEmpty) {
-        _toast(context, 'Usage: /kick @username', ToastType.info);
-        return true;
-      }
-      await _kickMember(conversation, cmd.args, ref, context);
-      return true;
+      return await _handleKickCommand(cmd, conversation, ref, context);
 
     case 'poll':
-      final pollTag = _buildPollTag(cmd.args);
-      if (pollTag == null) {
-        _toast(
-          context,
-          'Usage: /poll "Question?" Option 1 | Option 2 | Option 3',
-          ToastType.info,
-        );
-        return true;
-      }
-      onRewrite?.call(pollTag);
-      return true;
+      return _handlePollCommand(cmd, context, onRewrite);
 
     default:
       return false;
   }
+}
+
+/// Handler for /name command.
+Future<bool> _handleNameCommand(
+  SlashCommand cmd,
+  Conversation conversation,
+  WidgetRef ref,
+  BuildContext context,
+) async {
+  if (!conversation.isGroup) {
+    _toast(context, '/name is only available in groups', ToastType.warning);
+    return true;
+  }
+  if (!_callerIsAdmin(conversation, ref)) {
+    _toast(context, 'Only admins can rename the group', ToastType.warning);
+    return true;
+  }
+  if (cmd.args.isEmpty) {
+    _toast(context, 'Usage: /name <new name>', ToastType.info);
+    return true;
+  }
+  await _renameGroup(conversation, cmd.args, ref, context);
+  return true;
+}
+
+/// Handler for /description command.
+Future<bool> _handleDescriptionCommand(
+  SlashCommand cmd,
+  Conversation conversation,
+  WidgetRef ref,
+  BuildContext context,
+) async {
+  if (!conversation.isGroup) {
+    _toast(
+      context,
+      '/description is only available in groups',
+      ToastType.warning,
+    );
+    return true;
+  }
+  if (!_callerIsAdmin(conversation, ref)) {
+    _toast(
+      context,
+      'Only admins can change the description',
+      ToastType.warning,
+    );
+    return true;
+  }
+  await _setDescription(conversation, cmd.args, ref, context);
+  return true;
+}
+
+/// Handler for /kick command.
+Future<bool> _handleKickCommand(
+  SlashCommand cmd,
+  Conversation conversation,
+  WidgetRef ref,
+  BuildContext context,
+) async {
+  if (!conversation.isGroup) {
+    _toast(context, '/kick is only available in groups', ToastType.warning);
+    return true;
+  }
+  if (!_callerIsAdmin(conversation, ref)) {
+    _toast(context, 'Only admins can kick members', ToastType.warning);
+    return true;
+  }
+  if (cmd.args.isEmpty) {
+    _toast(context, 'Usage: /kick @username', ToastType.info);
+    return true;
+  }
+  await _kickMember(conversation, cmd.args, ref, context);
+  return true;
+}
+
+/// Handler for /poll command.
+bool _handlePollCommand(
+  SlashCommand cmd,
+  BuildContext context,
+  void Function(String)? onRewrite,
+) {
+  final pollTag = _buildPollTag(cmd.args);
+  if (pollTag == null) {
+    _toast(
+      context,
+      'Usage: /poll "Question?" Option 1 | Option 2 | Option 3',
+      ToastType.info,
+    );
+    return true;
+  }
+  onRewrite?.call(pollTag);
+  return true;
 }
 
 // ---------------------------------------------------------------------------

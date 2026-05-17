@@ -331,41 +331,7 @@ class _FullscreenVideoPlayerState extends State<FullscreenVideoPlayer> {
       final player = Player();
       final controller = VideoController(player);
 
-      _subs.add(
-        player.stream.playing.listen((v) {
-          if (mounted) setState(() => _isPlaying = v);
-        }),
-      );
-      _subs.add(
-        player.stream.position.listen((v) {
-          if (mounted) setState(() => _position = v);
-        }),
-      );
-      _subs.add(
-        player.stream.duration.listen((v) {
-          if (mounted) setState(() => _duration = v);
-        }),
-      );
-      _subs.add(
-        player.stream.width.listen((v) {
-          if (mounted && v != null) setState(() => _videoWidth = v);
-        }),
-      );
-      _subs.add(
-        player.stream.height.listen((v) {
-          if (mounted && v != null) setState(() => _videoHeight = v);
-        }),
-      );
-      _subs.add(
-        player.stream.error.listen((e) {
-          if (!mounted || e.isEmpty) return;
-          debugPrint('[FullscreenVideoPlayer] player error: $e');
-          setState(() {
-            _initFailed = true;
-            _errorMessage = e;
-          });
-        }),
-      );
+      _wireStreamListeners(player);
 
       await player.open(
         Media(widget.videoUrl, httpHeaders: widget.headers),
@@ -391,6 +357,44 @@ class _FullscreenVideoPlayerState extends State<FullscreenVideoPlayer> {
         });
       }
     }
+  }
+
+  void _wireStreamListeners(Player player) {
+    _subs.add(
+      player.stream.playing.listen((v) {
+        if (mounted) setState(() => _isPlaying = v);
+      }),
+    );
+    _subs.add(
+      player.stream.position.listen((v) {
+        if (mounted) setState(() => _position = v);
+      }),
+    );
+    _subs.add(
+      player.stream.duration.listen((v) {
+        if (mounted) setState(() => _duration = v);
+      }),
+    );
+    _subs.add(
+      player.stream.width.listen((v) {
+        if (mounted && v != null) setState(() => _videoWidth = v);
+      }),
+    );
+    _subs.add(
+      player.stream.height.listen((v) {
+        if (mounted && v != null) setState(() => _videoHeight = v);
+      }),
+    );
+    _subs.add(
+      player.stream.error.listen((e) {
+        if (!mounted || e.isEmpty) return;
+        debugPrint('[FullscreenVideoPlayer] player error: $e');
+        setState(() {
+          _initFailed = true;
+          _errorMessage = e;
+        });
+      }),
+    );
   }
 
   @override
