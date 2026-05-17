@@ -15,8 +15,13 @@ pub struct MediaRow {
     pub size_bytes: i64,
     pub conversation_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
+    /// Pixel width of the image, or NULL for non-image uploads.
+    pub width: Option<i32>,
+    /// Pixel height of the image, or NULL for non-image uploads.
+    pub height: Option<i32>,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn create_media(
     pool: &PgPool,
     id: Uuid,
@@ -25,11 +30,15 @@ pub async fn create_media(
     mime_type: &str,
     size_bytes: i64,
     conversation_id: Option<Uuid>,
+    width: Option<i32>,
+    height: Option<i32>,
 ) -> Result<MediaRow, sqlx::Error> {
     sqlx::query_as::<_, MediaRow>(
-        "INSERT INTO media (id, uploader_id, filename, mime_type, size_bytes, conversation_id) \
-         VALUES ($1, $2, $3, $4, $5, $6) \
-         RETURNING id, uploader_id, filename, mime_type, size_bytes, conversation_id, created_at",
+        "INSERT INTO media \
+         (id, uploader_id, filename, mime_type, size_bytes, conversation_id, width, height) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) \
+         RETURNING id, uploader_id, filename, mime_type, size_bytes, conversation_id, \
+                   created_at, width, height",
     )
     .bind(id)
     .bind(uploader_id)
@@ -37,13 +46,16 @@ pub async fn create_media(
     .bind(mime_type)
     .bind(size_bytes)
     .bind(conversation_id)
+    .bind(width)
+    .bind(height)
     .fetch_one(pool)
     .await
 }
 
 pub async fn get_media(pool: &PgPool, id: Uuid) -> Result<Option<MediaRow>, sqlx::Error> {
     sqlx::query_as::<_, MediaRow>(
-        "SELECT id, uploader_id, filename, mime_type, size_bytes, conversation_id, created_at \
+        "SELECT id, uploader_id, filename, mime_type, size_bytes, conversation_id, \
+                created_at, width, height \
          FROM media WHERE id = $1",
     )
     .bind(id)

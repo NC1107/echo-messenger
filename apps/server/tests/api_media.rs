@@ -32,6 +32,7 @@ fn make_minimal_mp4(size: usize) -> Vec<u8> {
 }
 
 /// 1x1 pixel PNG -- enough for `infer::get` to detect image/png.
+/// Also used to verify that the upload DTO returns `width: 1, height: 1`.
 const MINIMAL_PNG: &[u8] = &[
     0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
     0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
@@ -508,5 +509,86 @@ async fn upload_m4v_returns_201() {
         201,
         "M4V upload should succeed: body = {}",
         resp.text().await.unwrap_or_default()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Image dimension extraction -- media_dimensions migration
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn upload_png_returns_dimensions_in_dto() {
+    // Verify that uploading MINIMAL_PNG (1x1 pixel) causes the server to
+    // detect the pixel dimensions and return `width` / `height` in the
+    // upload response DTO, so the client can reserve an exact-size placeholder
+    // before image bytes arrive.
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _, _) = common::register_and_login(&client, &base, "media_dim").await;
+
+    let part = Part::bytes(MINIMAL_PNG.to_vec())
+        .file_name("test.png")
+        .mime_str("image/png")
+        .unwrap();
+    let form = Form::new().part("file", part);
+
+    let resp = client
+        .post(format!("{base}/api/media/upload"))
+        .header("Authorization", format!("Bearer {token}"))
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status().as_u16(), 201, "upload should return 201");
+    let body: Value = resp.json().await.unwrap();
+
+    // MINIMAL_PNG is a 1x1 pixel image; the server must return the dimensions.
+    assert_eq!(
+        body["width"].as_i64(),
+        Some(1),
+        "upload DTO must include width=1 for MINIMAL_PNG; body={body}"
+    );
+    assert_eq!(
+        body["height"].as_i64(),
+        Some(1),
+        "upload DTO must include height=1 for MINIMAL_PNG; body={body}"
+    );
+}
+
+#[tokio::test]
+async fn upload_non_image_has_no_dimensions_in_dto() {
+    // Non-image uploads (video, audio, docs) must NOT include width/height in
+    // the DTO; the JSON keys should be absent (not null).
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _, _) = common::register_and_login(&client, &base, "media_nodim").await;
+
+    let video_bytes = make_minimal_mp4(SYNTHETIC_MP4_SIZE);
+    let part = Part::bytes(video_bytes)
+        .file_name("test.mp4")
+        .mime_str("video/mp4")
+        .unwrap();
+    let form = Form::new().part("file", part);
+
+    let resp = client
+        .post(format!("{base}/api/media/upload"))
+        .header("Authorization", format!("Bearer {token}"))
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status().as_u16(), 201);
+    let body: Value = resp.json().await.unwrap();
+
+    // width and height must be absent for video uploads.
+    assert!(
+        body.get("width").is_none(),
+        "video upload DTO must not include width; body={body}"
+    );
+    assert!(
+        body.get("height").is_none(),
+        "video upload DTO must not include height; body={body}"
     );
 }

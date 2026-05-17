@@ -13,6 +13,8 @@ class UploadResult {
     this.errorMessage,
     this.errorCode,
     this.statusCode,
+    this.width,
+    this.height,
   });
 
   /// True when the server returned 2xx and the upload succeeded.
@@ -30,9 +32,18 @@ class UploadResult {
   /// Raw HTTP status code.
   final int? statusCode;
 
+  /// Pixel width of the uploaded image, if the server detected it.
+  /// Null for non-image uploads and legacy server versions.
+  final int? width;
+
+  /// Pixel height of the uploaded image, if the server detected it.
+  /// Null for non-image uploads and legacy server versions.
+  final int? height;
+
   @override
   String toString() =>
       'UploadResult(ok: $ok, url: $url, status: $statusCode, '
+      'width: $width, height: $height, '
       'error: $errorMessage, code: $errorCode)';
 }
 
@@ -122,8 +133,14 @@ class UploadClient {
       }
 
       if (status == 200 || status == 201) {
-        final url = _parseUrl(body);
-        return UploadResult(ok: true, url: url, statusCode: status);
+        final (url, width, height) = _parseUrlAndDimensions(body);
+        return UploadResult(
+          ok: true,
+          url: url,
+          statusCode: status,
+          width: width,
+          height: height,
+        );
       }
 
       final (msg, code) = _parseError(body);
@@ -201,13 +218,18 @@ class UploadClient {
     return request;
   }
 
-  /// Extracts `url` or `avatar_url` from a 2xx JSON body.
-  String? _parseUrl(String body) {
+  /// Extracts `url` / `avatar_url` and optional image dimensions from a 2xx
+  /// JSON body. Returns `(url, width, height)` where width/height are null
+  /// for non-image uploads or when the server predates this feature.
+  (String?, int?, int?) _parseUrlAndDimensions(String body) {
     try {
       final data = jsonDecode(body) as Map<String, dynamic>;
-      return (data['url'] ?? data['avatar_url']) as String?;
+      final url = (data['url'] ?? data['avatar_url']) as String?;
+      final width = data['width'] as int?;
+      final height = data['height'] as int?;
+      return (url, width, height);
     } catch (_) {
-      return null;
+      return (null, null, null);
     }
   }
 

@@ -40,6 +40,7 @@ import 'chat_input_bar/media_picker_toggle.dart';
 import 'chat_input_bar/recording_row.dart';
 import 'chat_input_bar/send_button.dart';
 import 'chat_input_bar/upload_helpers.dart';
+import 'message/image_attachment.dart' show cacheImageDimensions;
 import 'input/markdown_toolbar.dart';
 import 'input/pending_attachments_strip.dart';
 import 'input/input_status_bar.dart';
@@ -742,7 +743,17 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       onProgress: onProgress,
     );
 
-    if (result.ok) return result.url;
+    if (result.ok) {
+      // Pre-populate the dimension cache so ImageAttachment can reserve the
+      // correct aspect-ratio placeholder on first render, before bytes arrive.
+      final url = result.url;
+      final w = result.width;
+      final h = result.height;
+      if (url != null && w != null && h != null) {
+        cacheImageDimensions(url, w, h);
+      }
+      return url;
+    }
 
     if (mounted && !result.ok) {
       ToastService.show(
