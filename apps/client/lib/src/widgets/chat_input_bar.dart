@@ -45,6 +45,7 @@ import 'input/pending_attachments_strip.dart';
 import 'input/input_status_bar.dart';
 import 'input/mention_autocomplete.dart';
 import 'input/mention_controller.dart';
+import 'input/slash_command_autocomplete.dart';
 import 'input/reply_preview_bar.dart';
 import 'media_picker_panel.dart';
 import 'mobile_media_picker_panel.dart';
@@ -551,6 +552,18 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       widget.conversation.members,
       myUserId,
     );
+  }
+
+  /// Whether the signed-in user has admin or owner role in the current
+  /// conversation.  Always `false` for DMs (non-group conversations).
+  bool get _currentUserIsGroupAdmin {
+    if (!widget.conversation.isGroup) return false;
+    final myUserId = ref.read(authProvider).userId ?? '';
+    final me = widget.conversation.members
+        .where((m) => m.userId == myUserId)
+        .firstOrNull;
+    final role = me?.role?.toLowerCase();
+    return role == 'admin' || role == 'owner';
   }
 
   // ---------------------------------------------------------------------------
@@ -1708,6 +1721,20 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                 members: _filteredMentionMembers,
                 mentionQuery: _mentionController.query,
                 onMentionSelected: _handleMentionSelected,
+              ),
+            // Slash-command autocomplete picker — only when mention picker is
+            // hidden (the two are mutually exclusive: `@` triggers mention,
+            // `/` as the first character triggers this one).
+            if (!_mentionController.showPicker)
+              SlashCommandAutocomplete(
+                inputText: _messageController.text,
+                userIsGroupAdmin: _currentUserIsGroupAdmin,
+                onSelect: (template) {
+                  _messageController.text = template;
+                  _messageController.selection = TextSelection.collapsed(
+                    offset: template.length,
+                  );
+                },
               ),
             // Input area
             Container(

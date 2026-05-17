@@ -68,6 +68,96 @@ const _kPollCommands = [
 const _kEveryoneCommands = [('/help or /?', 'Show this help dialog')];
 
 // ---------------------------------------------------------------------------
+// Public command catalog
+// ---------------------------------------------------------------------------
+
+/// A single entry in the slash-command catalog surfaced by the autocomplete
+/// picker.
+class SlashCommandHelp {
+  const SlashCommandHelp({
+    required this.name,
+    required this.template,
+    required this.description,
+  });
+
+  /// The command name including the leading slash (e.g. `/poll`).
+  final String name;
+
+  /// The full template inserted into the input when the user selects this
+  /// entry (e.g. `/poll "Question?" Option A | Option B`).
+  final String template;
+
+  /// Short human-readable description shown in the picker row.
+  final String description;
+}
+
+/// Returns the list of slash commands available to the current user.
+///
+/// When [includeAdmin] is `false` the admin-only commands (`/name`,
+/// `/description`, `/kick`) are omitted.
+List<SlashCommandHelp> availableSlashCommands({required bool includeAdmin}) {
+  return [
+    if (includeAdmin) ...[
+      const SlashCommandHelp(
+        name: '/name',
+        template: '/name ',
+        description: 'Rename the group',
+      ),
+      const SlashCommandHelp(
+        name: '/description',
+        template: '/description ',
+        description: 'Set the group description',
+      ),
+      const SlashCommandHelp(
+        name: '/kick',
+        template: '/kick @',
+        description: 'Remove a member from the group',
+      ),
+    ],
+    const SlashCommandHelp(
+      name: '/shrug',
+      template: '/shrug ',
+      description: 'Send text with shrug emoticon',
+    ),
+    const SlashCommandHelp(
+      name: '/tableflip',
+      template: '/tableflip ',
+      description: 'Send text with table flip emoticon',
+    ),
+    const SlashCommandHelp(
+      name: '/unflip',
+      template: '/unflip ',
+      description: 'Send text with unflip emoticon',
+    ),
+    const SlashCommandHelp(
+      name: '/me',
+      template: '/me ',
+      description: 'Send an action line (italicized)',
+    ),
+    const SlashCommandHelp(
+      name: '/lenny',
+      template: '/lenny ',
+      description: 'Send text with Lenny face',
+    ),
+    const SlashCommandHelp(
+      name: '/flip',
+      template: '/flip ',
+      description: 'Send text upside down',
+    ),
+    const SlashCommandHelp(
+      name: '/poll',
+      template: '/poll "Question?" Option A | Option B',
+      description: 'Create a poll',
+    ),
+    const SlashCommandHelp(
+      name: '/help',
+      template: '/help',
+      description: 'Show the slash commands help dialog',
+    ),
+  ];
+}
+
+// ---------------------------------------------------------------------------
 // Fun command rewriting
 // ---------------------------------------------------------------------------
 
