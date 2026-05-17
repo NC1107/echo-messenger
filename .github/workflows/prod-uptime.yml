@@ -1,0 +1,202 @@
+name: Prod Uptime
+
+# Lightweight health-check for echo-messenger.us.
+# Checks every 5 minutes; opens (or updates) a GitHub Issue on failure;
+# closes the issue automatically once all checks pass again.
+#
+# Checks:
+#   1. GET https://echo-messenger.us/api/health  -- must be 200 + {"status":"ok"}
+#   2. GET https://livekit.echo-messenger.us/    -- must be 200
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: prod-uptime
+  cancel-in-progress: false
+
+env:
+  ISSUE_TITLE: 'Outage: prod health check failing'
+  ISSUE_LABEL: outage
+
+jobs:
+  check:
+    name: Health checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      # "ok" or "fail"
+      result: ${{ steps.verdict.outputs.result }}
+      summary: ${{ steps.verdict.outputs.summary }}
+
+    steps:
+      - name: Check API health
+        id: api
+        run: |
+          set +e
+          RESPONSE=$(curl -sS -f -m 10 https://echo-messenger.us/api/health 2>&1)
+          CURL_EXIT=$?
+          echo "exit_code=$CURL_EXIT" >> "$GITHUB_OUTPUT"
+          echo "response<<BODY_EOF" >> "$GITHUB_OUTPUT"
+          echo "$RESPONSE" >> "$GITHUB_OUTPUT"
+          echo "BODY_EOF" >> "$GITHUB_OUTPUT"
+          if [ "$CURL_EXIT" -ne 0 ]; then
+            echo "API health check FAILED (curl exit $CURL_EXIT)"
+            exit 0   # don't fail the step — let verdict aggregate
+          fi
+          # Validate JSON contains "status":"ok"
+          STATUS=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))" 2>/dev/null)
+          if [ "$STATUS" != "ok" ]; then
+            echo "API returned unexpected status: $STATUS"
+            echo "exit_code=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "API health check OK (status=$STATUS)"
+          fi
+
+      - name: Check LiveKit
+        id: livekit
+        run: |
+          set +e
+          RESPONSE=$(curl -sS -f -m 10 https://livekit.echo-messenger.us/ 2>&1)
+          CURL_EXIT=$?
+          echo "exit_code=$CURL_EXIT" >> "$GITHUB_OUTPUT"
+          echo "response<<BODY_EOF" >> "$GITHUB_OUTPUT"
+          echo "$RESPONSE" >> "$GITHUB_OUTPUT"
+          echo "BODY_EOF" >> "$GITHUB_OUTPUT"
+          if [ "$CURL_EXIT" -ne 0 ]; then
+            echo "LiveKit check FAILED (curl exit $CURL_EXIT)"
+          else
+            echo "LiveKit check OK"
+          fi
+
+      - name: Compute verdict
+        id: verdict
+        run: |
+          API_OK=${{ steps.api.outputs.exit_code == '0' }}
+          LK_OK=${{ steps.livekit.outputs.exit_code == '0' }}
+
+          FAILED_CHECKS=""
+          if [ "${{ steps.api.outputs.exit_code }}" != "0" ]; then
+            FAILED_CHECKS="$FAILED_CHECKS api"
+          fi
+          if [ "${{ steps.livekit.outputs.exit_code }}" != "0" ]; then
+            FAILED_CHECKS="$FAILED_CHECKS livekit"
+          fi
+
+          if [ -z "$FAILED_CHECKS" ]; then
+            echo "result=ok" >> "$GITHUB_OUTPUT"
+            echo "summary=All checks passed." >> "$GITHUB_OUTPUT"
+          else
+            echo "result=fail" >> "$GITHUB_OUTPUT"
+            echo "summary=Failed checks:$FAILED_CHECKS" >> "$GITHUB_OUTPUT"
+          fi
+
+  open-issue:
+    name: Open / update outage issue
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: check
+    if: needs.check.outputs.result == 'fail'
+    steps:
+      - name: Build issue body
+        run: |
+          cat > /tmp/outage-issue.md <<EOF
+          ## Production health check failing
+
+          One or more uptime checks failed for echo-messenger.us.
+
+          **${{ needs.check.outputs.summary }}**
+
+          | Check | Endpoint | Result |
+          |-------|----------|--------|
+          | API health | \`https://echo-messenger.us/api/health\` | ${{ needs.check.outputs.result == 'fail' && '❌ see details below' || '✅ ok' }} |
+          | LiveKit | \`https://livekit.echo-messenger.us/\` | ${{ needs.check.outputs.result == 'fail' && '❌ see details below' || '✅ ok' }} |
+
+          **Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          **Triggered**: \`${{ github.event_name }}\` at \`${{ github.run_started_at }}\`
+
+          ---
+
+          ### Manual verification
+
+          \`\`\`bash
+          curl -sS https://echo-messenger.us/api/health
+          curl -sS -I https://livekit.echo-messenger.us/
+          \`\`\`
+
+          This issue is updated on each failed run and closed automatically when all checks pass.
+          EOF
+
+      - name: Find existing open outage issue
+        id: find-issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ISSUE_NUMBER=$(gh issue list \
+            --repo "${{ github.repository }}" \
+            --label "${{ env.ISSUE_LABEL }}" \
+            --state open \
+            --json number,title \
+            --jq ".[] | select(.title == \"${{ env.ISSUE_TITLE }}\") | .number" \
+            | head -1)
+          echo "issue_number=${ISSUE_NUMBER}" >> "$GITHUB_OUTPUT"
+          if [ -n "$ISSUE_NUMBER" ]; then
+            echo "Found existing open issue #$ISSUE_NUMBER"
+          else
+            echo "No existing open issue found — will create one"
+          fi
+
+      - name: Open or update issue
+        uses: peter-evans/create-issue-from-file@e8ef132d6df98ed982188e460ebb3b5d4ef3a9cd # v5.0.1
+        with:
+          title: ${{ env.ISSUE_TITLE }}
+          content-filepath: /tmp/outage-issue.md
+          labels: ${{ env.ISSUE_LABEL }}
+          # Pass existing issue number so the action updates rather than creates a duplicate.
+          # Empty string means "create new".
+          issue-number: ${{ steps.find-issue.outputs.issue_number }}
+
+  close-issue:
+    name: Close outage issue on recovery
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: check
+    if: needs.check.outputs.result == 'ok'
+    steps:
+      - name: Find open outage issue
+        id: find-issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ISSUE_NUMBER=$(gh issue list \
+            --repo "${{ github.repository }}" \
+            --label "${{ env.ISSUE_LABEL }}" \
+            --state open \
+            --json number,title \
+            --jq ".[] | select(.title == \"${{ env.ISSUE_TITLE }}\") | .number" \
+            | head -1)
+          echo "issue_number=${ISSUE_NUMBER}" >> "$GITHUB_OUTPUT"
+          if [ -n "$ISSUE_NUMBER" ]; then
+            echo "Will close issue #$ISSUE_NUMBER"
+          else
+            echo "No open outage issue to close"
+          fi
+
+      - name: Close issue and comment
+        if: steps.find-issue.outputs.issue_number != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue comment "${{ steps.find-issue.outputs.issue_number }}" \
+            --repo "${{ github.repository }}" \
+            --body "All health checks are passing again as of run [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}). Closing automatically."
+          gh issue close "${{ steps.find-issue.outputs.issue_number }}" \
+            --repo "${{ github.repository }}" \
+            --reason completed
