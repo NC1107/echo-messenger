@@ -14,6 +14,7 @@
 
 #![allow(dead_code)]
 
+use ipnet::IpNet;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
@@ -38,11 +39,16 @@ pub async fn spawn_server() -> String {
 
 /// Spawn a test server that treats `trusted_proxies` as trusted reverse proxies
 /// for IP extraction in rate-limit middleware.
+///
+/// Accepts bare `IpAddr` values for ergonomics; they are converted to host-route
+/// `IpNet` entries (`/32` for IPv4, `/128` for IPv6) before being passed to the
+/// router so the internal type is always `Vec<IpNet>`.
 pub async fn spawn_server_with_trusted_proxies(trusted_proxies: Vec<IpAddr>) -> String {
-    spawn_server_inner(trusted_proxies).await
+    let nets: Vec<IpNet> = trusted_proxies.into_iter().map(IpNet::from).collect();
+    spawn_server_inner(nets).await
 }
 
-async fn spawn_server_inner(trusted_proxies: Vec<IpAddr>) -> String {
+async fn spawn_server_inner(trusted_proxies: Vec<IpNet>) -> String {
     let database_url = std::env::var("TEST_DATABASE_URL")
         .or_else(|_| std::env::var("DATABASE_URL"))
         .expect("TEST_DATABASE_URL or DATABASE_URL must be set for integration tests");

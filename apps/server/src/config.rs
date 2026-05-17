@@ -1,7 +1,7 @@
 //! Server configuration from environment variables.
 
+use ipnet::IpNet;
 use std::env;
-use std::net::IpAddr;
 
 #[derive(Clone)]
 pub struct Config {
@@ -9,11 +9,12 @@ pub struct Config {
     pub jwt_secret: String,
     pub host: String,
     pub port: u16,
-    /// IPs of trusted reverse proxies whose `X-Real-IP` / `X-Forwarded-For`
-    /// headers are honored for rate limiting.  Parsed from the
-    /// `TRUSTED_PROXIES` env var (comma-separated IPs).  Empty by default,
-    /// meaning proxy headers are **ignored**.
-    pub trusted_proxies: Vec<IpAddr>,
+    /// CIDRs (or individual IPs) of trusted reverse proxies whose
+    /// `X-Real-IP` / `X-Forwarded-For` headers are honored for rate limiting.
+    /// Parsed from the `TRUSTED_PROXIES` env var (comma-separated CIDRs or
+    /// plain IPs, e.g. `127.0.0.1,172.16.0.0/12`).  Empty by default, meaning
+    /// proxy headers are **ignored** and the peer IP is used directly.
+    pub trusted_proxies: Vec<IpNet>,
 }
 
 impl Config {
@@ -25,7 +26,7 @@ impl Config {
             "JWT_SECRET must be at least 32 characters for security"
         );
 
-        let trusted_proxies: Vec<IpAddr> = env::var("TRUSTED_PROXIES")
+        let trusted_proxies: Vec<IpNet> = env::var("TRUSTED_PROXIES")
             .unwrap_or_default()
             .split(',')
             .filter_map(|s| {
@@ -33,13 +34,20 @@ impl Config {
                 if trimmed.is_empty() {
                     return None;
                 }
-                match trimmed.parse::<IpAddr>() {
-                    Ok(ip) => Some(ip),
-                    Err(e) => {
-                        tracing::warn!("Ignoring invalid TRUSTED_PROXIES entry '{trimmed}': {e}");
+                // Accept bare IPs (e.g. `127.0.0.1`) by normalising them to
+                // host routes (`/32` for IPv4, `/128` for IPv6) so the storage
+                // type is always `IpNet`.
+                trimmed
+                    .parse::<IpNet>()
+                    .ok()
+                    .or_else(|| trimmed.parse::<std::net::IpAddr>().ok().map(IpNet::from))
+                    .or_else(|| {
+                        tracing::warn!(
+                            "Ignoring invalid TRUSTED_PROXIES entry '{trimmed}': \
+                             expected an IP address or CIDR (e.g. 127.0.0.1 or 172.16.0.0/12)"
+                        );
                         None
-                    }
-                }
+                    })
             })
             .collect();
 
@@ -124,50 +132,74 @@ fn resolve_port<F: Fn(&str) -> Option<String>>(get: F) -> u16 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ipnet::IpNet;
+    use std::net::IpAddr;
 
-    #[test]
-    fn parse_trusted_proxies_empty() {
-        // Simulate empty env var
-        let proxies: Vec<IpAddr> = ""
-            .split(',')
+    /// Helper: parse a `TRUSTED_PROXIES`-style string using the same logic as
+    /// `Config::from_env` without touching the real process environment.
+    fn parse_proxies(raw: &str) -> Vec<IpNet> {
+        raw.split(',')
             .filter_map(|s| {
                 let t = s.trim();
-                if t.is_empty() { None } else { t.parse().ok() }
+                if t.is_empty() {
+                    return None;
+                }
+                t.parse::<IpNet>()
+                    .ok()
+                    .or_else(|| t.parse::<IpAddr>().ok().map(IpNet::from))
             })
-            .collect();
-        assert!(proxies.is_empty());
+            .collect()
     }
 
     #[test]
-    fn parse_trusted_proxies_single() {
-        let proxies: Vec<IpAddr> = "10.0.0.1"
-            .split(',')
-            .filter_map(|s| s.trim().parse().ok())
-            .collect();
-        assert_eq!(proxies, vec!["10.0.0.1".parse::<IpAddr>().unwrap()]);
+    fn parse_trusted_proxies_empty() {
+        assert!(parse_proxies("").is_empty());
+    }
+
+    #[test]
+    fn parse_trusted_proxies_single_bare_ip() {
+        let proxies = parse_proxies("10.0.0.1");
+        assert_eq!(proxies.len(), 1);
+        // Bare IP becomes a host route.
+        assert!(proxies[0].contains(&"10.0.0.1".parse::<IpAddr>().unwrap()));
+    }
+
+    #[test]
+    fn parse_trusted_proxies_cidr() {
+        let proxies = parse_proxies("172.16.0.0/12");
+        assert_eq!(proxies.len(), 1);
+        // Addresses inside the CIDR must match.
+        assert!(proxies[0].contains(&"172.16.0.1".parse::<IpAddr>().unwrap()));
+        assert!(proxies[0].contains(&"172.31.255.254".parse::<IpAddr>().unwrap()));
+        // Address outside the CIDR must not match.
+        assert!(!proxies[0].contains(&"172.32.0.1".parse::<IpAddr>().unwrap()));
+    }
+
+    #[test]
+    fn parse_trusted_proxies_mixed_ip_and_cidr() {
+        let proxies = parse_proxies("127.0.0.1,172.16.0.0/12,172.20.0.0/16");
+        assert_eq!(proxies.len(), 3);
+        // 127.0.0.1 host route
+        assert!(proxies[0].contains(&"127.0.0.1".parse::<IpAddr>().unwrap()));
+        // 172.16.0.0/12 includes 172.20.x.x
+        assert!(proxies[1].contains(&"172.20.0.1".parse::<IpAddr>().unwrap()));
+        // Narrower /16 subnet
+        assert!(proxies[2].contains(&"172.20.0.1".parse::<IpAddr>().unwrap()));
+        assert!(!proxies[2].contains(&"172.21.0.1".parse::<IpAddr>().unwrap()));
     }
 
     #[test]
     fn parse_trusted_proxies_multiple_with_whitespace() {
-        let proxies: Vec<IpAddr> = " 10.0.0.1 , 172.17.0.1 , ::1 "
-            .split(',')
-            .filter_map(|s| s.trim().parse().ok())
-            .collect();
+        let proxies = parse_proxies(" 10.0.0.1 , 172.17.0.1 , ::1 ");
         assert_eq!(proxies.len(), 3);
-        assert_eq!(proxies[0], "10.0.0.1".parse::<IpAddr>().unwrap());
-        assert_eq!(proxies[1], "172.17.0.1".parse::<IpAddr>().unwrap());
-        assert_eq!(proxies[2], "::1".parse::<IpAddr>().unwrap());
+        assert!(proxies[0].contains(&"10.0.0.1".parse::<IpAddr>().unwrap()));
+        assert!(proxies[1].contains(&"172.17.0.1".parse::<IpAddr>().unwrap()));
+        assert!(proxies[2].contains(&"::1".parse::<IpAddr>().unwrap()));
     }
 
     #[test]
     fn parse_trusted_proxies_skips_invalid() {
-        let proxies: Vec<IpAddr> = "10.0.0.1, not-an-ip, 172.17.0.1"
-            .split(',')
-            .filter_map(|s| {
-                let t = s.trim();
-                if t.is_empty() { None } else { t.parse().ok() }
-            })
-            .collect();
+        let proxies = parse_proxies("10.0.0.1, not-an-ip, 172.17.0.1");
         assert_eq!(proxies.len(), 2);
     }
 

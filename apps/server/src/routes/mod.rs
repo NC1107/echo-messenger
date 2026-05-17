@@ -10,6 +10,7 @@ pub mod keys;
 pub mod link_preview;
 pub mod media;
 pub mod messages;
+pub mod polls;
 pub mod push;
 pub mod reactions;
 pub mod search;
@@ -26,8 +27,8 @@ use axum::middleware;
 use axum::response::IntoResponse;
 use axum::routing::{delete, get, patch, post, put};
 use dashmap::DashMap;
+use ipnet::IpNet;
 use sqlx::PgPool;
-use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Instant;
 use tower_http::cors::{AllowOrigin, CorsLayer};
@@ -83,7 +84,7 @@ impl FromRef<Arc<AppState>> for AuthExtract {
     }
 }
 
-pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Router {
+pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpNet>) -> Router {
     let cors_origins = std::env::var("CORS_ORIGINS")
         .unwrap_or_else(|_| "https://echo-messenger.us,http://localhost:8081".into());
 
@@ -242,7 +243,12 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Rout
         .route(
             "/messages/{message_id}/reactions/{emoji}",
             delete(reactions::remove_reaction),
-        );
+        )
+        .route(
+            "/messages/{id}/poll",
+            post(polls::create_poll).get(polls::get_poll),
+        )
+        .route("/messages/{id}/poll/vote", post(polls::vote_poll));
 
     let key_routes = Router::new()
         .route("/upload", post(keys::upload_bundle))

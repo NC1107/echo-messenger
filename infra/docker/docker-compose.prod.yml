@@ -8,6 +8,14 @@ services:
       RUST_LOG: echo_server=info
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: 8080
+      # Comma-separated CIDRs (or bare IPs) of reverse proxies whose
+      # X-Forwarded-For / X-Real-IP headers the rate limiter should trust.
+      # Without this, all requests arrive from Traefik's loopback address and
+      # share one rate-limit bucket, making trivial DoS lockout trivial.
+      # 127.0.0.1     -- Traefik on the same host
+      # 172.16.0.0/12 -- default Docker bridge and overlay subnets
+      # 172.20.0.0/16 -- echo-internal compose network (adjust if yours differs)
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1,172.16.0.0/12,172.20.0.0/16}
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
       # Optional: explicit LiveKit signaling URL returned to clients on

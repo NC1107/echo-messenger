@@ -34,6 +34,7 @@ import 'message/reply_quote.dart';
 import 'message/retry_row.dart';
 import 'message/rich_text_content.dart';
 import 'message/sender_name_label.dart';
+import 'message/poll_widget.dart';
 import 'message/system_event_pill.dart';
 import 'message/youtube_embed.dart';
 
@@ -1042,6 +1043,22 @@ class _MessageItemState extends State<MessageItem>
     required bool isFailed,
     required bool hasMedia,
   }) {
+    // Poll messages render as an interactive vote widget.
+    if (isPollContent(msg.content)) {
+      final parsed = parsePollTag(msg.content);
+      if (parsed != null &&
+          widget.serverUrl != null &&
+          widget.authToken != null) {
+        return PollWidget(
+          messageId: msg.id,
+          serverUrl: widget.serverUrl!,
+          authToken: widget.authToken!,
+          question: parsed.question,
+          options: parsed.options,
+        );
+      }
+    }
+
     if (hasMedia) {
       final mediaWidget = MediaContent(
         content: msg.content,

@@ -155,27 +155,54 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
   }
 
   Widget _buildSuccess(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Column(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Icon(
-          Icons.mark_email_read_outlined,
-          size: 48,
-          color: Theme.of(context).colorScheme.primary,
+        // Info banner -- make the manual-only flow explicit.
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: colorScheme.secondaryContainer,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.info_outline,
+                size: 20,
+                color: colorScheme.onSecondaryContainer,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Password reset is not yet automated. Please contact an '
+                  'admin at admin@echo-messenger.us with your username and '
+                  'a way to verify your identity. We\'ll generate a reset '
+                  'link for you within 24 hours.',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSecondaryContainer,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 20),
         Text(
-          'Request sent',
+          'Request received',
           style: Theme.of(context).textTheme.headlineSmall,
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 12),
         Text(
-          'If that username exists, your server admin will receive a reset '
-          'token in the server logs. Ask them to share it with you, then '
-          'use it on the next screen to set a new password.\n\n'
-          'Note: resetting your password will delete your encrypted message '
-          'history, as the server cannot access it.',
+          'If that username is registered, your request has been logged. '
+          'Reach out to the admin using the contact above and include your '
+          'username so they can locate the reset token.\n\n'
+          'Note: resetting your password will permanently delete your '
+          'encrypted message history, as the server cannot access it.',
           style: Theme.of(context).textTheme.bodyMedium,
           textAlign: TextAlign.center,
         ),

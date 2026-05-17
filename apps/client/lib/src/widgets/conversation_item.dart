@@ -98,6 +98,14 @@ class ConversationItem extends ConsumerStatefulWidget {
   final VoidCallback onTap;
   final void Function(Offset position)? onContextMenu;
 
+  /// Called when the user picks "Pin" or "Unpin" from the long-press sheet.
+  /// The parent is responsible for toggling the pinned state.
+  final VoidCallback? onTogglePin;
+
+  /// Called when the user picks "Leave" (group) or "Delete" (DM) from the
+  /// long-press sheet.
+  final VoidCallback? onLeave;
+
   /// Number of group members (other than the current user) currently online.
   /// Only consulted when [Conversation.isGroup] is true.
   final int onlineMemberCount;
@@ -115,6 +123,8 @@ class ConversationItem extends ConsumerStatefulWidget {
     required this.timestamp,
     required this.onTap,
     this.onContextMenu,
+    this.onTogglePin,
+    this.onLeave,
     this.onlineMemberCount = 0,
   });
 
@@ -166,9 +176,10 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
     };
   }
 
-  /// Long-press bottom sheet with the per-conversation mute toggle.
+  /// Long-press bottom sheet with per-conversation actions.
   /// Mobile-only — desktop users get the right-click popup menu instead.
-  void _showMuteSheet() {
+  /// Mirrors the desktop [_showConversationContextMenu] items in sheet form.
+  void _showActionSheet() {
     final conv = widget.conversation;
     final displayName = conv.displayName(widget.myUserId);
 
@@ -198,6 +209,28 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                   ),
                 ),
                 Divider(color: context.border, height: 8),
+                // Pin / Unpin
+                if (widget.onTogglePin != null)
+                  ListTile(
+                    leading: Icon(
+                      widget.isPinned
+                          ? Icons.push_pin
+                          : Icons.push_pin_outlined,
+                      color: context.textSecondary,
+                    ),
+                    title: Text(
+                      widget.isPinned ? 'Unpin' : 'Pin to top',
+                      style: GoogleFonts.inter(
+                        color: context.textPrimary,
+                        fontSize: 14,
+                      ),
+                    ),
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      widget.onTogglePin!();
+                    },
+                  ),
+                // Mute / Unmute
                 Consumer(
                   builder: (ctx, sheetRef, _) {
                     final live = sheetRef
@@ -206,13 +239,25 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                         .where((c) => c.id == conv.id)
                         .firstOrNull;
                     final currentMuted = live?.isMuted ?? conv.isMuted;
-                    return SwitchListTile(
-                      value: currentMuted,
-                      onChanged: (value) async {
+                    return ListTile(
+                      leading: Icon(
+                        currentMuted
+                            ? Icons.notifications_outlined
+                            : Icons.notifications_off_outlined,
+                        color: context.textSecondary,
+                      ),
+                      title: Text(
+                        currentMuted ? 'Unmute' : 'Mute',
+                        style: GoogleFonts.inter(
+                          color: context.textPrimary,
+                          fontSize: 14,
+                        ),
+                      ),
+                      onTap: () async {
                         Navigator.of(sheetContext).pop();
                         final success = await ref
                             .read(conversationsProvider.notifier)
-                            .setMuted(conv.id, value);
+                            .toggleMute(conv.id);
                         if (!success && mounted) {
                           ToastService.show(
                             context,
@@ -221,22 +266,28 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                           );
                         }
                       },
-                      title: Text(
-                        'Mute notifications',
-                        style: GoogleFonts.inter(
-                          color: context.textPrimary,
-                          fontSize: 14,
-                        ),
-                      ),
-                      secondary: Icon(
-                        currentMuted
-                            ? Icons.notifications_off_outlined
-                            : Icons.notifications_outlined,
-                        color: context.textSecondary,
-                      ),
                     );
                   },
                 ),
+                // Leave (group) / Delete (DM)
+                if (widget.onLeave != null)
+                  ListTile(
+                    leading: Icon(
+                      conv.isGroup ? Icons.exit_to_app : Icons.delete_outline,
+                      color: EchoTheme.danger,
+                    ),
+                    title: Text(
+                      conv.isGroup ? 'Leave Group' : 'Delete Conversation',
+                      style: GoogleFonts.inter(
+                        color: EchoTheme.danger,
+                        fontSize: 14,
+                      ),
+                    ),
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      widget.onLeave!();
+                    },
+                  ),
               ],
             ),
           ),
@@ -370,7 +421,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
               onSecondaryTapUp: (details) {
                 widget.onContextMenu?.call(details.globalPosition);
               },
-              onLongPress: _enableLongPressMenu ? _showMuteSheet : null,
+              onLongPress: _enableLongPressMenu ? _showActionSheet : null,
               child: AnimatedContainer(
                 duration: MotionDurations.quick,
                 curve: MotionCurves.emphasis,

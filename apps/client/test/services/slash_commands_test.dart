@@ -72,4 +72,86 @@ void main() {
       expect(cmd!.args, 'Spaced');
     });
   });
+
+  group('rewriteSlashCommand', () {
+    test('/shrug with text', () {
+      const cmd = SlashCommand(name: 'shrug', args: 'hello');
+      final result = rewriteSlashCommand(cmd, senderUsername: 'alice');
+      expect(result, 'hello ¯\\_(ツ)_/¯');
+    });
+
+    test('/shrug without text', () {
+      const cmd = SlashCommand(name: 'shrug', args: '');
+      final result = rewriteSlashCommand(cmd, senderUsername: 'alice');
+      expect(result, '¯\\_(ツ)_/¯');
+    });
+
+    test('/tableflip with text', () {
+      const cmd = SlashCommand(name: 'tableflip', args: 'oops');
+      final result = rewriteSlashCommand(cmd, senderUsername: 'alice');
+      expect(result, 'oops (╯°□°)╯︵ ┻━┻');
+    });
+
+    test('/tableflip without text', () {
+      const cmd = SlashCommand(name: 'tableflip', args: '');
+      final result = rewriteSlashCommand(cmd, senderUsername: 'alice');
+      expect(result, '(╯°□°)╯︵ ┻━┻');
+    });
+
+    test('/unflip with text', () {
+      const cmd = SlashCommand(name: 'unflip', args: 'sorry');
+      final result = rewriteSlashCommand(cmd, senderUsername: 'alice');
+      expect(result, 'sorry ┬─┬ノ( º_ºノ)');
+    });
+
+    test('/unflip without text', () {
+      const cmd = SlashCommand(name: 'unflip', args: '');
+      final result = rewriteSlashCommand(cmd, senderUsername: 'alice');
+      expect(result, '┬─┬ノ( º_ºノ)');
+    });
+
+    test('/me with action', () {
+      const cmd = SlashCommand(name: 'me', args: 'waves hello');
+      final result = rewriteSlashCommand(cmd, senderUsername: 'bob');
+      expect(result, '_bob waves hello_');
+    });
+
+    test('/me without action returns null', () {
+      const cmd = SlashCommand(name: 'me', args: '');
+      final result = rewriteSlashCommand(cmd, senderUsername: 'bob');
+      expect(result, isNull);
+    });
+
+    test('/lenny with text', () {
+      const cmd = SlashCommand(name: 'lenny', args: 'hehe');
+      final result = rewriteSlashCommand(cmd, senderUsername: 'alice');
+      expect(result, 'hehe ( ͡° ͜ʖ ͡°)');
+    });
+
+    test('/lenny without text', () {
+      const cmd = SlashCommand(name: 'lenny', args: '');
+      final result = rewriteSlashCommand(cmd, senderUsername: 'alice');
+      expect(result, '( ͡° ͜ʖ ͡°)');
+    });
+
+    test('/flip with text reverses and maps characters', () {
+      const cmd = SlashCommand(name: 'flip', args: 'hello');
+      final result = rewriteSlashCommand(cmd, senderUsername: 'alice');
+      // 'hello' -> map each: h->ɥ, e->ǝ, l->l, l->l, o->o -> 'ɥǝllo'
+      // then reverse: 'ollǝɥ'
+      expect(result, 'ollǝɥ');
+    });
+
+    test('/flip without text returns null', () {
+      const cmd = SlashCommand(name: 'flip', args: '');
+      final result = rewriteSlashCommand(cmd, senderUsername: 'alice');
+      expect(result, isNull);
+    });
+
+    test('unknown command returns null', () {
+      const cmd = SlashCommand(name: 'unknown', args: 'text');
+      final result = rewriteSlashCommand(cmd, senderUsername: 'alice');
+      expect(result, isNull);
+    });
+  });
 }

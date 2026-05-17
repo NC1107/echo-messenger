@@ -1705,6 +1705,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       onTap: () => widget.onConversationTap(conv),
       onContextMenu: (position) =>
           _showConversationContextMenu(context, conv, position),
+      onTogglePin: () => _togglePin(conv.id),
+      onLeave: () => conv.isGroup ? _leaveGroup(conv) : _deleteDm(conv),
       onlineMemberCount: onlineMemberCount,
     );
 

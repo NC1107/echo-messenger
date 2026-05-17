@@ -7,6 +7,7 @@ pub mod media;
 pub mod mentions;
 pub mod messages;
 pub mod password_reset;
+pub mod polls;
 pub mod push_tokens;
 pub mod reactions;
 pub mod tokens;
