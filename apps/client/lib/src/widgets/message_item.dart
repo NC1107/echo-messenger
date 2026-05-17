@@ -497,6 +497,54 @@ class _MessageItemState extends State<MessageItem>
     );
   }
 
+  /// Tiles specific to media messages (image action + download).
+  List<Widget> _buildMediaActionTiles({
+    required BuildContext sheetContext,
+    required ChatMessage msg,
+    required String? mediaUrl,
+    required bool isImage,
+  }) {
+    return [
+      if (isImage)
+        _actionTile(
+          sheetContext: sheetContext,
+          icon: _isMobilePlatform
+              ? Icons.save_alt_outlined
+              : Icons.image_outlined,
+          label: _isMobilePlatform ? 'Save image' : 'Copy image',
+          onTap: () => _handleImageAction(mediaUrl!),
+        ),
+      if (mediaUrl != null)
+        _actionTile(
+          sheetContext: sheetContext,
+          icon: Icons.download_outlined,
+          label: 'Download',
+          onTap: () => _downloadMedia(mediaUrl),
+        ),
+    ];
+  }
+
+  /// Pin / unpin tile based on the message's current pinned state.
+  Widget? _buildPinActionTile(BuildContext sheetContext, ChatMessage msg) {
+    if (msg.pinnedAt == null && widget.onPin != null) {
+      return _actionTile(
+        sheetContext: sheetContext,
+        icon: Icons.push_pin_outlined,
+        label: 'Pin',
+        onTap: () => widget.onPin?.call(msg),
+      );
+    }
+    if (msg.pinnedAt != null && widget.onUnpin != null) {
+      return _actionTile(
+        sheetContext: sheetContext,
+        icon: Icons.push_pin,
+        label: 'Unpin',
+        onTap: () => widget.onUnpin?.call(msg),
+      );
+    }
+    return null;
+  }
+
   /// Contextual action tiles for the mobile action sheet.
   List<Widget> _buildActionTiles({
     required BuildContext sheetContext,
@@ -505,6 +553,7 @@ class _MessageItemState extends State<MessageItem>
     required String? mediaUrl,
   }) {
     final isImage = mediaUrl != null && _isImageMedia(msg.content, mediaUrl);
+    final pinTile = _buildPinActionTile(sheetContext, msg);
     return [
       if (widget.onReply != null)
         _actionTile(
@@ -527,15 +576,12 @@ class _MessageItemState extends State<MessageItem>
         label: 'Forward',
         onTap: () => widget.onForward?.call(msg),
       ),
-      if (isImage)
-        _actionTile(
-          sheetContext: sheetContext,
-          icon: _isMobilePlatform
-              ? Icons.save_alt_outlined
-              : Icons.image_outlined,
-          label: _isMobilePlatform ? 'Save image' : 'Copy image',
-          onTap: () => _handleImageAction(mediaUrl),
-        ),
+      ..._buildMediaActionTiles(
+        sheetContext: sheetContext,
+        msg: msg,
+        mediaUrl: mediaUrl,
+        isImage: isImage,
+      ),
       _actionTile(
         sheetContext: sheetContext,
         icon: Icons.copy_outlined,
@@ -552,13 +598,6 @@ class _MessageItemState extends State<MessageItem>
           );
         },
       ),
-      if (mediaUrl != null)
-        _actionTile(
-          sheetContext: sheetContext,
-          icon: Icons.download_outlined,
-          label: 'Download',
-          onTap: () => _downloadMedia(mediaUrl),
-        ),
       if (isMine && widget.onEdit != null)
         _actionTile(
           sheetContext: sheetContext,
@@ -580,20 +619,7 @@ class _MessageItemState extends State<MessageItem>
           label: 'Unsave',
           onTap: () => widget.onUnsave?.call(msg),
         ),
-      if (msg.pinnedAt == null && widget.onPin != null)
-        _actionTile(
-          sheetContext: sheetContext,
-          icon: Icons.push_pin_outlined,
-          label: 'Pin',
-          onTap: () => widget.onPin?.call(msg),
-        ),
-      if (msg.pinnedAt != null && widget.onUnpin != null)
-        _actionTile(
-          sheetContext: sheetContext,
-          icon: Icons.push_pin,
-          label: 'Unpin',
-          onTap: () => widget.onUnpin?.call(msg),
-        ),
+      ?pinTile,
       if (widget.onDelete != null)
         _actionTile(
           sheetContext: sheetContext,
@@ -795,6 +821,171 @@ class _MessageItemState extends State<MessageItem>
     );
   }
 
+  void _handleOverflowMenuSelection(
+    String value,
+    ChatMessage msg,
+    String? mediaUrl,
+  ) {
+    switch (value) {
+      case 'copy':
+        final copyText = mediaUrl != null ? _resolveUrl(mediaUrl) : msg.content;
+        Clipboard.setData(ClipboardData(text: copyText));
+        ToastService.show(
+          context,
+          mediaUrl != null ? 'Link copied' : 'Copied to clipboard',
+          type: ToastType.success,
+        );
+      case 'copy_image':
+        _handleImageAction(mediaUrl!);
+      case 'download':
+        _downloadMedia(mediaUrl!);
+      case 'pin':
+        widget.onPin?.call(msg);
+      case 'unpin':
+        widget.onUnpin?.call(msg);
+      case 'save':
+        widget.onSave?.call(msg);
+      case 'unsave':
+        widget.onUnsave?.call(msg);
+      case 'forward':
+        widget.onForward?.call(msg);
+      case 'edit':
+        widget.onEdit?.call(msg);
+      case 'delete':
+        widget.onDelete?.call(msg);
+    }
+  }
+
+  List<PopupMenuEntry<String>> _buildOverflowMenuItems(
+    ChatMessage msg,
+    bool isMine, {
+    String? mediaUrl,
+    bool isImage = false,
+  }) {
+    return [
+      PopupMenuItem(
+        value: 'copy',
+        child: Row(
+          children: [
+            const Icon(Icons.copy_outlined, size: 16),
+            const SizedBox(width: 8),
+            Text(mediaUrl != null ? 'Copy link' : 'Copy'),
+          ],
+        ),
+      ),
+      if (isImage)
+        PopupMenuItem(
+          value: 'copy_image',
+          child: Row(
+            children: [
+              Icon(
+                _isMobilePlatform
+                    ? Icons.save_alt_outlined
+                    : Icons.image_outlined,
+                size: 16,
+              ),
+              const SizedBox(width: 8),
+              Text(_isMobilePlatform ? 'Save image' : 'Copy image'),
+            ],
+          ),
+        ),
+      if (mediaUrl != null)
+        const PopupMenuItem(
+          value: 'download',
+          child: Row(
+            children: [
+              Icon(Icons.download_outlined, size: 16),
+              SizedBox(width: 8),
+              Text('Download'),
+            ],
+          ),
+        ),
+      if (msg.pinnedAt == null && widget.onPin != null)
+        const PopupMenuItem(
+          value: 'pin',
+          child: Row(
+            children: [
+              Icon(Icons.push_pin_outlined, size: 16),
+              SizedBox(width: 8),
+              Text('Pin'),
+            ],
+          ),
+        ),
+      if (msg.pinnedAt != null && widget.onUnpin != null)
+        const PopupMenuItem(
+          value: 'unpin',
+          child: Row(
+            children: [
+              Icon(Icons.push_pin, size: 16),
+              SizedBox(width: 8),
+              Text('Unpin'),
+            ],
+          ),
+        ),
+      if (!widget.isSaved && widget.onSave != null)
+        const PopupMenuItem(
+          value: 'save',
+          child: Row(
+            children: [
+              Icon(Icons.bookmark_border_outlined, size: 16),
+              SizedBox(width: 8),
+              Text('Save'),
+            ],
+          ),
+        ),
+      if (widget.isSaved && widget.onUnsave != null)
+        const PopupMenuItem(
+          value: 'unsave',
+          child: Row(
+            children: [
+              Icon(Icons.bookmark_remove_outlined, size: 16),
+              SizedBox(width: 8),
+              Text('Unsave'),
+            ],
+          ),
+        ),
+      const PopupMenuItem(
+        value: 'forward',
+        child: Row(
+          children: [
+            Icon(Icons.forward_outlined, size: 16),
+            SizedBox(width: 8),
+            Text('Forward'),
+          ],
+        ),
+      ),
+      if (isMine && widget.onEdit != null)
+        const PopupMenuItem(
+          value: 'edit',
+          child: Row(
+            children: [
+              Icon(Icons.edit_outlined, size: 16),
+              SizedBox(width: 8),
+              Text('Edit'),
+            ],
+          ),
+        ),
+      if (widget.onDelete != null)
+        PopupMenuItem(
+          value: 'delete',
+          child: Row(
+            children: [
+              Icon(
+                Icons.delete_outlined,
+                size: 16,
+                color: isMine ? EchoTheme.danger : null,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Delete',
+                style: isMine ? const TextStyle(color: EchoTheme.danger) : null,
+              ),
+            ],
+          ),
+        ),
+    ];
+  }
+
   Widget _buildOverflowMenu(
     ChatMessage msg,
     bool isMine, {
@@ -823,162 +1014,14 @@ class _MessageItemState extends State<MessageItem>
               color: hoverStyle.iconColor,
             ),
           ),
-          onSelected: (value) {
-            switch (value) {
-              case 'copy':
-                final copyText = mediaUrl != null
-                    ? _resolveUrl(mediaUrl)
-                    : msg.content;
-                Clipboard.setData(ClipboardData(text: copyText));
-                ToastService.show(
-                  context,
-                  mediaUrl != null ? 'Link copied' : 'Copied to clipboard',
-                  type: ToastType.success,
-                );
-              case 'copy_image':
-                _handleImageAction(mediaUrl!);
-              case 'download':
-                _downloadMedia(mediaUrl!);
-              case 'pin':
-                widget.onPin?.call(msg);
-              case 'unpin':
-                widget.onUnpin?.call(msg);
-              case 'save':
-                widget.onSave?.call(msg);
-              case 'unsave':
-                widget.onUnsave?.call(msg);
-              case 'forward':
-                widget.onForward?.call(msg);
-              case 'edit':
-                widget.onEdit?.call(msg);
-              case 'delete':
-                widget.onDelete?.call(msg);
-            }
-          },
-          itemBuilder: (_) => [
-            PopupMenuItem(
-              value: 'copy',
-              child: Row(
-                children: [
-                  const Icon(Icons.copy_outlined, size: 16),
-                  const SizedBox(width: 8),
-                  Text(mediaUrl != null ? 'Copy link' : 'Copy'),
-                ],
-              ),
-            ),
-            if (isImage)
-              PopupMenuItem(
-                value: 'copy_image',
-                child: Row(
-                  children: [
-                    Icon(
-                      _isMobilePlatform
-                          ? Icons.save_alt_outlined
-                          : Icons.image_outlined,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(_isMobilePlatform ? 'Save image' : 'Copy image'),
-                  ],
-                ),
-              ),
-            if (mediaUrl != null)
-              const PopupMenuItem(
-                value: 'download',
-                child: Row(
-                  children: [
-                    Icon(Icons.download_outlined, size: 16),
-                    SizedBox(width: 8),
-                    Text('Download'),
-                  ],
-                ),
-              ),
-            if (msg.pinnedAt == null && widget.onPin != null)
-              const PopupMenuItem(
-                value: 'pin',
-                child: Row(
-                  children: [
-                    Icon(Icons.push_pin_outlined, size: 16),
-                    SizedBox(width: 8),
-                    Text('Pin'),
-                  ],
-                ),
-              ),
-            if (msg.pinnedAt != null && widget.onUnpin != null)
-              const PopupMenuItem(
-                value: 'unpin',
-                child: Row(
-                  children: [
-                    Icon(Icons.push_pin, size: 16),
-                    SizedBox(width: 8),
-                    Text('Unpin'),
-                  ],
-                ),
-              ),
-            if (!widget.isSaved && widget.onSave != null)
-              const PopupMenuItem(
-                value: 'save',
-                child: Row(
-                  children: [
-                    Icon(Icons.bookmark_border_outlined, size: 16),
-                    SizedBox(width: 8),
-                    Text('Save'),
-                  ],
-                ),
-              ),
-            if (widget.isSaved && widget.onUnsave != null)
-              const PopupMenuItem(
-                value: 'unsave',
-                child: Row(
-                  children: [
-                    Icon(Icons.bookmark_remove_outlined, size: 16),
-                    SizedBox(width: 8),
-                    Text('Unsave'),
-                  ],
-                ),
-              ),
-            const PopupMenuItem(
-              value: 'forward',
-              child: Row(
-                children: [
-                  Icon(Icons.forward_outlined, size: 16),
-                  SizedBox(width: 8),
-                  Text('Forward'),
-                ],
-              ),
-            ),
-            if (isMine && widget.onEdit != null)
-              const PopupMenuItem(
-                value: 'edit',
-                child: Row(
-                  children: [
-                    Icon(Icons.edit_outlined, size: 16),
-                    SizedBox(width: 8),
-                    Text('Edit'),
-                  ],
-                ),
-              ),
-            if (widget.onDelete != null)
-              PopupMenuItem(
-                value: 'delete',
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.delete_outlined,
-                      size: 16,
-                      color: isMine ? EchoTheme.danger : null,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Delete',
-                      style: isMine
-                          ? const TextStyle(color: EchoTheme.danger)
-                          : null,
-                    ),
-                  ],
-                ),
-              ),
-          ],
+          onSelected: (value) =>
+              _handleOverflowMenuSelection(value, msg, mediaUrl),
+          itemBuilder: (_) => _buildOverflowMenuItems(
+            msg,
+            isMine,
+            mediaUrl: mediaUrl,
+            isImage: isImage,
+          ),
         ),
       ),
     );
@@ -1032,6 +1075,84 @@ class _MessageItemState extends State<MessageItem>
     if (widget._isPlain) return context.textPrimary;
     if (isMine) return Theme.of(context).colorScheme.onPrimary;
     return context.textPrimary;
+  }
+
+  /// Build the link-preview widget for [url], returning null when the URL
+  /// belongs to the same server (avoid self-previews) or content starts with
+  /// an attachment prefix.
+  Widget? _buildLinkPreviewWidget(String displayContent) {
+    if (displayContent.startsWith('[img:') ||
+        displayContent.startsWith('[file:')) {
+      return null;
+    }
+    final urlMatch = urlRegex.firstMatch(displayContent);
+    if (urlMatch == null) return null;
+
+    final previewUrl = urlMatch.group(0)!;
+    final serverHost = Uri.tryParse(widget.serverUrl ?? '')?.host;
+    final previewHost = Uri.tryParse(previewUrl)?.host;
+    if (serverHost != null &&
+        previewHost != null &&
+        previewHost == serverHost) {
+      return null;
+    }
+    final ytId = YouTubeEmbed.extractId(previewUrl);
+    if (ytId != null) return YouTubeEmbed(videoId: ytId);
+    return LinkPreviewCard(
+      url: previewUrl,
+      serverUrl: widget.serverUrl ?? '',
+      token: widget.authToken ?? '',
+    );
+  }
+
+  /// Build a single embedded-image tile (GIF via `Image.network`,
+  /// everything else via `CachedNetworkImage`).
+  Widget _buildEmbeddedImageWidget(String imgUrl) {
+    final headers = _mediaHeaders();
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: GestureDetector(
+        onTap: () => widget.onImageTap != null
+            ? widget.onImageTap!(imgUrl)
+            : _showImageViewer(imageUrl: imgUrl),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 400, maxHeight: 320),
+          child: imgUrl.endsWith('.gif')
+              ? Image.network(
+                  imgUrl,
+                  headers: headers,
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                )
+              : CachedNetworkImage(
+                  imageUrl: imgUrl,
+                  cacheKey: stableMediaCacheKey(imgUrl),
+                  fit: BoxFit.cover,
+                  httpHeaders: headers,
+                  cacheManager: chatMediaCacheManager,
+                  errorWidget: (_, _, _) => const SizedBox.shrink(),
+                  // Reserve the expected image area while loading so
+                  // the scroll position does not jump when the image
+                  // finally decodes.
+                  placeholder: (_, _) => Container(
+                    height: 200,
+                    width: 300,
+                    color: context.surface,
+                    alignment: Alignment.center,
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: context.textMuted,
+                      ),
+                    ),
+                  ),
+                ),
+        ),
+      ),
+    );
   }
 
   /// Select and build the primary message content (media, decrypt error, or
@@ -1104,34 +1225,10 @@ class _MessageItemState extends State<MessageItem>
     );
 
     final embeddedImages = extractEmbeddedImageUrls(displayContent);
-
     // Link preview for the first URL (skip attachment-only messages and
     // internal server links). YouTube URLs short-circuit to an embed card
     // with thumbnail + red play button.
-    Widget? linkPreview;
-    if (!displayContent.startsWith('[img:') &&
-        !displayContent.startsWith('[file:')) {
-      final urlMatch = urlRegex.firstMatch(displayContent);
-      if (urlMatch != null) {
-        final previewUrl = urlMatch.group(0)!;
-        final serverHost = Uri.tryParse(widget.serverUrl ?? '')?.host;
-        final previewHost = Uri.tryParse(previewUrl)?.host;
-        if (serverHost == null ||
-            previewHost == null ||
-            previewHost != serverHost) {
-          final ytId = YouTubeEmbed.extractId(previewUrl);
-          if (ytId != null) {
-            linkPreview = YouTubeEmbed(videoId: ytId);
-          } else {
-            linkPreview = LinkPreviewCard(
-              url: previewUrl,
-              serverUrl: widget.serverUrl ?? '',
-              token: widget.authToken ?? '',
-            );
-          }
-        }
-      }
-    }
+    final linkPreview = _buildLinkPreviewWidget(displayContent);
 
     if (embeddedImages.isEmpty && linkPreview == null) return textWidget;
     if (embeddedImages.isEmpty) {
@@ -1142,7 +1239,6 @@ class _MessageItemState extends State<MessageItem>
       );
     }
 
-    final headers = _mediaHeaders();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -1151,53 +1247,7 @@ class _MessageItemState extends State<MessageItem>
         ?linkPreview,
         for (final imgUrl in embeddedImages) ...[
           const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: GestureDetector(
-              onTap: () => widget.onImageTap != null
-                  ? widget.onImageTap!(imgUrl)
-                  : _showImageViewer(imageUrl: imgUrl),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(
-                  maxWidth: 400,
-                  maxHeight: 320,
-                ),
-                child: imgUrl.endsWith('.gif')
-                    ? Image.network(
-                        imgUrl,
-                        headers: _mediaHeaders(),
-                        fit: BoxFit.cover,
-                        gaplessPlayback: true,
-                        errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                      )
-                    : CachedNetworkImage(
-                        imageUrl: imgUrl,
-                        cacheKey: stableMediaCacheKey(imgUrl),
-                        fit: BoxFit.cover,
-                        httpHeaders: headers,
-                        cacheManager: chatMediaCacheManager,
-                        errorWidget: (_, _, _) => const SizedBox.shrink(),
-                        // Reserve the expected image area while loading so
-                        // the scroll position does not jump when the image
-                        // finally decodes.
-                        placeholder: (_, _) => Container(
-                          height: 200,
-                          width: 300,
-                          color: context.surface,
-                          alignment: Alignment.center,
-                          child: SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: context.textMuted,
-                            ),
-                          ),
-                        ),
-                      ),
-              ),
-            ),
-          ),
+          _buildEmbeddedImageWidget(imgUrl),
         ],
       ],
     );
@@ -1672,6 +1722,161 @@ class _MessageItemState extends State<MessageItem>
     return '${parts.join('. ')}.';
   }
 
+  /// Density+header-aware top padding for the message row.
+  double _buildTopPad() {
+    if (widget.showHeader) {
+      // Phase 2 follow-up: density-driven gap between bubbles from
+      // the same sender, replacing the old MessageLayout-derived
+      // ternary so layout (bubble style) and density (vertical
+      // spacing) are independent knobs.
+      return switch (widget.density) {
+        UIDensity.cozy => 12,
+        UIDensity.normal => 8,
+        UIDensity.compact => 3,
+      };
+    }
+    // Slice 3: collapse same-sender gap to 1-2px to remove "floaty" look.
+    return switch (widget.density) {
+      UIDensity.cozy => 2,
+      UIDensity.normal => 2,
+      UIDensity.compact => 1,
+    };
+  }
+
+  /// Row hover decoration: tint + border. Plain layout uses a 3px left accent
+  /// rule (Slack style); other layouts use a thin all-sides border (#834).
+  BoxDecoration? _buildRowHoverDecoration(
+    bool isHovered,
+    _HoverStyleSpec hoverSpec,
+  ) {
+    if (!isHovered) return null;
+    if (widget._isPlain) {
+      return BoxDecoration(
+        color: hoverSpec.rowHoverColor,
+        border: Border(
+          left: BorderSide(
+            color: context.accent.withValues(alpha: 0.4),
+            width: 3,
+          ),
+        ),
+      );
+    }
+    return BoxDecoration(
+      color: hoverSpec.rowHoverColor,
+      border: Border.all(color: hoverSpec.rowHoverBorderColor, width: 0.5),
+      borderRadius: BorderRadius.circular(4),
+    );
+  }
+
+  /// Inner column: bubble row + optional reply badge/preview + timestamp +
+  /// optional retry row.
+  Widget _buildMessageColumn({
+    required ChatMessage msg,
+    required bool isMine,
+    required bool isFailed,
+    required bool isAlignedEnd,
+    required bool hasReactions,
+    required Widget bubbleWithReactions,
+    required String? mediaUrl,
+  }) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Column(
+          crossAxisAlignment: isAlignedEnd
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: isAlignedEnd
+                  ? MainAxisAlignment.end
+                  : MainAxisAlignment.start,
+              // Bubbles: avatar anchors to the bottom of the bubble (iMessage
+              // style). Discord/Slack: avatar anchors to the top so it lines
+              // up with the sender name on the first line of the group.
+              crossAxisAlignment: widget.compactLayout
+                  ? CrossAxisAlignment.start
+                  : CrossAxisAlignment.end,
+              children: _buildMessageRowChildren(
+                msg: msg,
+                isMine: isMine,
+                bubbleWithReactions: bubbleWithReactions,
+              ),
+            ),
+            if (msg.replyCount > 0)
+              ReplyCountBadge(
+                message: msg,
+                isMine: isMine,
+                onTap: widget.onViewThread,
+                inlineStyle: widget._isPlain,
+              ),
+            if (msg.replyCount > 0 &&
+                (msg.latestReplyPreview?.trim().isNotEmpty ?? false) &&
+                !msg.isEncrypted)
+              _LatestReplyPreview(
+                preview: msg.latestReplyPreview!,
+                isMine: isMine,
+              ),
+            if (widget.isLastInGroup)
+              _buildTimestampRow(msg: msg, isMine: isMine)
+            else
+              _buildHoverTimestamp(msg: msg, isMine: isMine),
+            if (isFailed && isMine)
+              RetryRow(
+                message: msg,
+                onRetry: widget.onRetry,
+                onDelete: widget.onDelete,
+              ),
+          ],
+        ),
+        if (!hasReactions)
+          _buildHoverOverlay(msg: msg, isMine: isMine, mediaUrl: mediaUrl),
+      ],
+    );
+  }
+
+  /// GestureDetector that wraps [child] with swipe-to-reply handlers when
+  /// [canSwipeToReply] is true, plus the long-press semantics.
+  Widget _buildGestureDetector({
+    required ChatMessage msg,
+    required bool isMine,
+    required bool canSwipeToReply,
+    required bool hasReactions,
+    required String? mediaUrl,
+    required Widget child,
+  }) {
+    return GestureDetector(
+      onLongPressStart: (details) =>
+          _handleLongPress(details, msg, isMine, mediaUrl, hasReactions),
+      onHorizontalDragUpdate: canSwipeToReply
+          ? (details) {
+              // Guard against iOS system back gesture zone (left 30px).
+              if (details.globalPosition.dx < 30) return;
+              final newDx = (_swipeDx + details.delta.dx).clamp(0.0, 72.0);
+              setState(() => _swipeDx = newDx);
+              if (!_swipeTriggered && newDx >= 60) {
+                _swipeTriggered = true;
+                HapticFeedback.lightImpact();
+              }
+            }
+          : null,
+      onHorizontalDragEnd: canSwipeToReply
+          ? (_) {
+              if (_swipeTriggered) widget.onReply?.call(msg);
+              _swipeTriggered = false;
+              _startSpringBack();
+            }
+          : null,
+      onHorizontalDragCancel: canSwipeToReply
+          ? () {
+              _swipeTriggered = false;
+              _startSpringBack();
+            }
+          : null,
+      child: child,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final msg = widget.message;
@@ -1688,8 +1893,8 @@ class _MessageItemState extends State<MessageItem>
 
     final mediaUrl = extractMediaUrl(msg.content);
     final hasMedia = mediaUrl != null;
-
     final hasReactions = msg.reactions.isNotEmpty;
+
     final reactionPill = ReactionBar(
       reactions: msg.reactions,
       currentUserId: widget.myUserId,
@@ -1716,51 +1921,12 @@ class _MessageItemState extends State<MessageItem>
     final isAlignedEnd = isMine && !widget.compactLayout;
     final canSwipeToReply =
         _isMobileTouch && widget.onReply != null && !msg.isSystemEvent;
-
-    // Phase 2 follow-up: density-driven gap between bubbles from
-    // the same sender, replacing the old MessageLayout-derived
-    // ternary so layout (bubble style) and density (vertical
-    // spacing) are independent knobs.
-    final double topPad;
-    if (widget.showHeader) {
-      topPad = switch (widget.density) {
-        UIDensity.cozy => 12,
-        UIDensity.normal => 8,
-        UIDensity.compact => 3,
-      };
-    } else {
-      // Slice 3: collapse same-sender gap to 1-2px to remove "floaty" look.
-      topPad = switch (widget.density) {
-        UIDensity.cozy => 2,
-        UIDensity.normal => 2,
-        UIDensity.compact => 1,
-      };
-    }
-
+    final topPad = _buildTopPad();
     // On hover: tint the row background and draw a subtle border so the
     // focused message stands out. Plain (Slack) layout also keeps its
     // 3px left accent rule. All colors come from _HoverStyleSpec so
     // they are fully theme-aware.
     final hoverSpec = _hoverStyle;
-    BoxDecoration? rowHoverDecoration(bool isHovered) {
-      if (!isHovered) return null;
-      if (widget._isPlain) {
-        return BoxDecoration(
-          color: hoverSpec.rowHoverColor,
-          border: Border(
-            left: BorderSide(
-              color: context.accent.withValues(alpha: 0.4),
-              width: 3,
-            ),
-          ),
-        );
-      }
-      return BoxDecoration(
-        color: hoverSpec.rowHoverColor,
-        border: Border.all(color: hoverSpec.rowHoverBorderColor, width: 0.5),
-        borderRadius: BorderRadius.circular(4),
-      );
-    }
 
     final messageWidget = ValueListenableBuilder<bool>(
       valueListenable: _hoverNotifier,
@@ -1771,62 +1937,17 @@ class _MessageItemState extends State<MessageItem>
           top: topPad,
           bottom: hasReactions ? 4 : 2,
         ),
-        decoration: rowHoverDecoration(isHovered),
+        decoration: _buildRowHoverDecoration(isHovered, hoverSpec),
         child: child,
       ),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Column(
-            crossAxisAlignment: isAlignedEnd
-                ? CrossAxisAlignment.end
-                : CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: isAlignedEnd
-                    ? MainAxisAlignment.end
-                    : MainAxisAlignment.start,
-                // Bubbles: avatar anchors to the bottom of the bubble (iMessage
-                // style). Discord/Slack: avatar anchors to the top so it lines
-                // up with the sender name on the first line of the group.
-                crossAxisAlignment: widget.compactLayout
-                    ? CrossAxisAlignment.start
-                    : CrossAxisAlignment.end,
-                children: _buildMessageRowChildren(
-                  msg: msg,
-                  isMine: isMine,
-                  bubbleWithReactions: bubbleWithReactions,
-                ),
-              ),
-              if (msg.replyCount > 0)
-                ReplyCountBadge(
-                  message: msg,
-                  isMine: isMine,
-                  onTap: widget.onViewThread,
-                  inlineStyle: widget._isPlain,
-                ),
-              if (msg.replyCount > 0 &&
-                  (msg.latestReplyPreview?.trim().isNotEmpty ?? false) &&
-                  !msg.isEncrypted)
-                _LatestReplyPreview(
-                  preview: msg.latestReplyPreview!,
-                  isMine: isMine,
-                ),
-              if (widget.isLastInGroup)
-                _buildTimestampRow(msg: msg, isMine: isMine)
-              else
-                _buildHoverTimestamp(msg: msg, isMine: isMine),
-              if (isFailed && isMine)
-                RetryRow(
-                  message: msg,
-                  onRetry: widget.onRetry,
-                  onDelete: widget.onDelete,
-                ),
-            ],
-          ),
-          if (!hasReactions)
-            _buildHoverOverlay(msg: msg, isMine: isMine, mediaUrl: mediaUrl),
-        ],
+      child: _buildMessageColumn(
+        msg: msg,
+        isMine: isMine,
+        isFailed: isFailed,
+        isAlignedEnd: isAlignedEnd,
+        hasReactions: hasReactions,
+        bubbleWithReactions: bubbleWithReactions,
+        mediaUrl: mediaUrl,
       ),
     );
 
@@ -1849,37 +1970,12 @@ class _MessageItemState extends State<MessageItem>
             mediaUrl,
             hasReactions,
           ),
-          child: GestureDetector(
-            onLongPressStart: (details) =>
-                _handleLongPress(details, msg, isMine, mediaUrl, hasReactions),
-            onHorizontalDragUpdate: canSwipeToReply
-                ? (details) {
-                    // Guard against iOS system back gesture zone (left 30px).
-                    if (details.globalPosition.dx < 30) return;
-                    final newDx = (_swipeDx + details.delta.dx).clamp(
-                      0.0,
-                      72.0,
-                    );
-                    setState(() => _swipeDx = newDx);
-                    if (!_swipeTriggered && newDx >= 60) {
-                      _swipeTriggered = true;
-                      HapticFeedback.lightImpact();
-                    }
-                  }
-                : null,
-            onHorizontalDragEnd: canSwipeToReply
-                ? (_) {
-                    if (_swipeTriggered) widget.onReply?.call(msg);
-                    _swipeTriggered = false;
-                    _startSpringBack();
-                  }
-                : null,
-            onHorizontalDragCancel: canSwipeToReply
-                ? () {
-                    _swipeTriggered = false;
-                    _startSpringBack();
-                  }
-                : null,
+          child: _buildGestureDetector(
+            msg: msg,
+            isMine: isMine,
+            canSwipeToReply: canSwipeToReply,
+            hasReactions: hasReactions,
+            mediaUrl: mediaUrl,
             child: _buildSwipeToReplyWrapper(
               canSwipe: canSwipeToReply,
               msg: msg,

@@ -27,6 +27,116 @@ bool _useLiveKitPicker() {
   return false;
 }
 
+/// Unpublish, stop, and dispose every screen-share publication on [local].
+///
+/// Used both when stopping an active share (#936) and as a defensive sweep
+/// before starting a new one on platforms that may have stale publications.
+Future<void> _cleanupScreenSharePubs(lk.LocalParticipant local) async {
+  final pubs = local.videoTrackPublications
+      .where((pub) => pub.source == lk.TrackSource.screenShareVideo)
+      .toList();
+  for (final pub in pubs) {
+    final track = pub.track;
+    try {
+      await local.removePublishedTrack(pub.sid);
+    } catch (e) {
+      debugPrint('[ScreenShare] removePublishedTrack failed: $e');
+    }
+    if (track is lk.LocalVideoTrack) {
+      try {
+        await track.stop();
+      } catch (e) {
+        debugPrint('[ScreenShare] track.stop failed: $e');
+      }
+      try {
+        await track.dispose();
+      } catch (e) {
+        debugPrint('[ScreenShare] track.dispose failed: $e');
+      }
+    }
+  }
+}
+
+/// Stop an active screen share and flip provider state to inactive.
+Future<void> _stopScreenShare(
+  LiveKitVoiceNotifier lkNotifier,
+  ScreenShare ssNotifier,
+) async {
+  // #936: Explicitly unpublish + stop + dispose the screen-share publication
+  // so the next start request acquires a brand-new portal source instead of
+  // reusing a stale reference that would publish white frames.
+  final local = lkNotifier.room?.localParticipant;
+  if (local != null) {
+    await _cleanupScreenSharePubs(local);
+  }
+  // Still call the LiveKit notifier so its internal flag flips false and
+  // any SDK-side bookkeeping (audio capture, signaling) settles cleanly.
+  await lkNotifier.setScreenShareEnabled(false);
+  ssNotifier.setLiveKitScreenShareActive(false);
+}
+
+/// Start screen share via the custom Echo source-picker dialog (macOS/Windows).
+Future<void> _startScreenShareWithPicker(
+  BuildContext context,
+  LiveKitVoiceNotifier lkNotifier,
+  ScreenShare ssNotifier,
+) async {
+  try {
+    // Use our custom picker instead of lk.ScreenSelectDialog, which has two
+    // bugs: Image.memory without errorBuilder (crashes on non-decodable
+    // thumbnail bytes) and a setState-after-dispose race on dismiss.
+    final source = await showEchoScreenSelectDialog(context);
+    if (source == null || !context.mounted) return;
+    final track = await lk.LocalVideoTrack.createScreenShareTrack(
+      lk.ScreenShareCaptureOptions(sourceId: source.id, maxFrameRate: 15.0),
+    );
+    final room = lkNotifier.room;
+    if (room != null) {
+      // #910: explicit single-layer VP8 publish for screen-share. Without
+      // this, the SDK falls back to `roomOptions.defaultVideoPublishOptions`
+      // which is tuned for camera (simulcast=true + a camera-shaped
+      // VideoEncoding). On macOS/Windows that combination negotiates a
+      // simulcast layout that the SFU silently drops for remote viewers —
+      // the sharer keeps their local preview (no SFU round-trip) but
+      // remotes see no track. A single-layer VP8 publish matches what
+      // LiveKit's own meet sample uses for screen-share and is decodable
+      // everywhere flutter_webrtc runs.
+      await room.localParticipant?.publishVideoTrack(
+        track,
+        publishOptions: const lk.VideoPublishOptions(
+          simulcast: false,
+          videoCodec: 'vp8',
+        ),
+      );
+      ssNotifier.setLiveKitScreenShareActive(true);
+    }
+  } catch (e) {
+    debugPrint('[ScreenShare] Desktop screen share failed: $e');
+  }
+}
+
+/// Start screen share via the platform's native picker (Linux/mobile/web).
+Future<void> _startScreenShareNative(
+  LiveKitVoiceNotifier lkNotifier,
+  ScreenShare ssNotifier,
+) async {
+  // #936: defensively sweep any leftover screen-share publication before
+  // asking LiveKit to enable one. If the toggle state in
+  // [screenShareProvider] ever drifts out of sync with LiveKit's internal
+  // `getTrackPublicationBySource`, the SDK would take the
+  // `unmute(stale-track)` branch and publish white frames instead of
+  // creating a fresh track from the portal source the user just picked.
+  // Cheap no-op when there's nothing stale to clear.
+  final local = lkNotifier.room?.localParticipant;
+  if (local != null) {
+    await _cleanupScreenSharePubs(local);
+  }
+  final ok = await lkNotifier.setScreenShareEnabled(true);
+  if (ok) {
+    ssNotifier.setLiveKitScreenShareActive(true);
+  }
+}
+
 /// Toggle screen share for the current LiveKit room.
 ///
 /// On desktop, opens LiveKit's [ScreenSelectDialog] so the user can pick a
@@ -41,111 +151,13 @@ Future<void> toggleScreenShare(BuildContext context, WidgetRef ref) async {
   final ssNotifier = ref.read(screenShareProvider.notifier);
 
   if (screenShare.isScreenSharing) {
-    // #936: On Linux, LiveKit's `setScreenShareEnabled(false)` only mutes /
-    // unpublishes the track but can leave the underlying `LocalVideoTrack`
-    // (and its now-dead xdg-desktop-portal MediaStream) cached on the
-    // participant. A subsequent `setScreenShareEnabled(true)` then reuses
-    // that stale reference and the freshly-picked source publishes as a
-    // white frame. Explicitly unpublish + stop + dispose the screen-share
-    // publication so the next start request is forced to acquire a brand
-    // new portal source. Safe on every platform because we walk only the
-    // screen-share publication and skip camera tracks.
-    final room = lkNotifier.room;
-    final local = room?.localParticipant;
-    if (local != null) {
-      final screenPubs = local.videoTrackPublications
-          .where((pub) => pub.source == lk.TrackSource.screenShareVideo)
-          .toList();
-      for (final pub in screenPubs) {
-        final track = pub.track;
-        try {
-          await local.removePublishedTrack(pub.sid);
-        } catch (e) {
-          debugPrint('[ScreenShare] removePublishedTrack failed: $e');
-        }
-        if (track is lk.LocalVideoTrack) {
-          try {
-            await track.stop();
-          } catch (e) {
-            debugPrint('[ScreenShare] track.stop failed: $e');
-          }
-          try {
-            await track.dispose();
-          } catch (e) {
-            debugPrint('[ScreenShare] track.dispose failed: $e');
-          }
-        }
-      }
-    }
-    // Still call the LiveKit notifier so its internal flag flips false and
-    // any SDK-side bookkeeping (audio capture, signaling) settles cleanly.
-    await lkNotifier.setScreenShareEnabled(false);
-    ssNotifier.setLiveKitScreenShareActive(false);
+    await _stopScreenShare(lkNotifier, ssNotifier);
     return;
   }
 
   if (_useLiveKitPicker()) {
-    try {
-      // Use our custom picker instead of lk.ScreenSelectDialog, which has two
-      // bugs: Image.memory without errorBuilder (crashes on non-decodable
-      // thumbnail bytes) and a setState-after-dispose race on dismiss.
-      final source = await showEchoScreenSelectDialog(context);
-      if (source == null || !context.mounted) return;
-      final track = await lk.LocalVideoTrack.createScreenShareTrack(
-        lk.ScreenShareCaptureOptions(sourceId: source.id, maxFrameRate: 15.0),
-      );
-      final room = lkNotifier.room;
-      if (room != null) {
-        // #910: explicit single-layer VP8 publish for screen-share. Without
-        // this, the SDK falls back to `roomOptions.defaultVideoPublishOptions`
-        // which is tuned for camera (simulcast=true + a camera-shaped
-        // VideoEncoding). On macOS/Windows that combination negotiates a
-        // simulcast layout that the SFU silently drops for remote viewers —
-        // the sharer keeps their local preview (no SFU round-trip) but
-        // remotes see no track. A single-layer VP8 publish matches what
-        // LiveKit's own meet sample uses for screen-share and is decodable
-        // everywhere flutter_webrtc runs.
-        await room.localParticipant?.publishVideoTrack(
-          track,
-          publishOptions: const lk.VideoPublishOptions(
-            simulcast: false,
-            videoCodec: 'vp8',
-          ),
-        );
-        ssNotifier.setLiveKitScreenShareActive(true);
-      }
-    } catch (e) {
-      debugPrint('[ScreenShare] Desktop screen share failed: $e');
-    }
+    await _startScreenShareWithPicker(context, lkNotifier, ssNotifier);
   } else {
-    // Mobile / Web / Linux: let LiveKit route through the platform's
-    // native picker (xdg-desktop-portal on Linux Wayland, system sheet
-    // on iOS / Android, the browser's getDisplayMedia chooser on web).
-    //
-    // #936: defensively sweep any leftover screen-share publication
-    // before asking LiveKit to enable one. If the toggle state in
-    // [screenShareProvider] ever drifts out of sync with LiveKit's
-    // internal `getTrackPublicationBySource`, the SDK would take the
-    // `unmute(stale-track)` branch and publish white frames instead of
-    // creating a fresh track from the portal source the user just
-    // picked. Cheap no-op when there's nothing stale to clear.
-    final room = lkNotifier.room;
-    final local = room?.localParticipant;
-    if (local != null) {
-      final stalePubs = local.videoTrackPublications
-          .where((pub) => pub.source == lk.TrackSource.screenShareVideo)
-          .toList();
-      for (final pub in stalePubs) {
-        try {
-          await local.removePublishedTrack(pub.sid);
-        } catch (e) {
-          debugPrint('[ScreenShare] stale pub cleanup failed: $e');
-        }
-      }
-    }
-    final ok = await lkNotifier.setScreenShareEnabled(true);
-    if (ok) {
-      ssNotifier.setLiveKitScreenShareActive(true);
-    }
+    await _startScreenShareNative(lkNotifier, ssNotifier);
   }
 }

@@ -611,6 +611,106 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
 
   void _closeSubmenu() => setState(() => _activeSubmenu = null);
 
+  /// Builds the username -> avatarUrl map from the active conversation's members.
+  Map<String, String?> _buildMemberAvatars(String conversationId) {
+    final serverUrl = ref.read(serverUrlProvider);
+    final conversations = ref.watch(conversationsProvider).conversations;
+    final conversation = conversations
+        .where((c) => c.id == conversationId)
+        .firstOrNull;
+    final avatars = <String, String?>{};
+    if (conversation == null) return avatars;
+    for (final m in conversation.members) {
+      final resolved = m.avatarUrl != null && m.avatarUrl!.isNotEmpty
+          ? (m.avatarUrl!.startsWith('http')
+                ? m.avatarUrl
+                : '$serverUrl${m.avatarUrl}')
+          : null;
+      avatars[m.username] = resolved;
+    }
+    return avatars;
+  }
+
+  /// Shared scaffold: [Listener] + [Container] + [ClipRect] + [Stack].
+  /// [layers] are inserted into the [Stack] in order.
+  Widget _buildLoungeScaffold(BuildContext context, List<Widget> layers) {
+    return Listener(
+      onPointerDown: (e) {
+        if (e.buttons == kSecondaryButton && _isDrawing) {
+          setState(() => _isDrawing = false);
+        }
+      },
+      child: Container(
+        color: context.mainBg,
+        child: ClipRect(child: Stack(children: layers)),
+      ),
+    );
+  }
+
+  /// Landscape layout: floating badge instead of header bar.
+  Widget _buildLandscapeLayout(
+    BuildContext context,
+    Widget contentArea,
+    Widget dock,
+    Widget drawingOverlay,
+    String conversationId,
+    String channelName,
+    int totalParticipants,
+  ) {
+    return _buildLoungeScaffold(context, [
+      Positioned.fill(child: _buildBackground(context)),
+      Column(children: [Expanded(child: contentArea)]),
+      if (!_spotlightMode) Positioned.fill(child: drawingOverlay),
+      ..._buildSubmenuFollowers(conversationId),
+      Positioned(bottom: 16, left: 0, right: 0, child: dock),
+      Positioned(
+        top: 16,
+        left: 60,
+        child: _buildHeaderBadge(context, channelName, totalParticipants),
+      ),
+      Positioned(
+        top: 16,
+        right: 16,
+        child: _buildBackgroundPickerButton(context),
+      ),
+    ]);
+  }
+
+  /// Portrait layout: full [LoungeHeader] + content + floating dock.
+  Widget _buildPortraitLayout(
+    BuildContext context,
+    Widget contentArea,
+    Widget dock,
+    Widget drawingOverlay,
+    String conversationId,
+    String channelName,
+    int totalParticipants,
+  ) {
+    return _buildLoungeScaffold(context, [
+      Positioned.fill(child: _buildBackground(context)),
+      Column(
+        children: [
+          LoungeHeader(
+            channelName: channelName,
+            participantCount: totalParticipants,
+            onBackToChat: widget.onBackToChat,
+          ),
+          Expanded(child: contentArea),
+          // Space for the floating dock
+          const SizedBox(height: 80),
+        ],
+      ),
+      if (!_spotlightMode) Positioned.fill(child: drawingOverlay),
+      ..._buildSubmenuFollowers(conversationId),
+      Positioned(bottom: 16, left: 0, right: 0, child: dock),
+      Positioned(
+        top: 12,
+        right: 12,
+        child: _buildBackgroundPickerButton(context),
+      ),
+    ]);
+  }
+
   /// Build all dock submenu follower widgets for the current [_activeSubmenu].
   List<Widget> _buildSubmenuFollowers(String conversationId) {
     if (_activeSubmenu == null) return const [];
@@ -678,25 +778,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     final activeChannel = channels.where((c) => c.id == channelId).firstOrNull;
     final channelName = activeChannel?.name ?? 'Voice';
 
-    // Build a username -> avatarUrl map from conversation members so remote
-    // participant tiles can display profile pictures.
-    final serverUrl = ref.read(serverUrlProvider);
-    final conversations = ref.watch(conversationsProvider).conversations;
-    final conversation = conversations
-        .where((c) => c.id == conversationId)
-        .firstOrNull;
-    final memberAvatars = <String, String?>{};
-    if (conversation != null) {
-      for (final m in conversation.members) {
-        final resolved = m.avatarUrl != null && m.avatarUrl!.isNotEmpty
-            ? (m.avatarUrl!.startsWith('http')
-                  ? m.avatarUrl
-                  : '$serverUrl${m.avatarUrl}')
-            : null;
-        memberAvatars[m.username] = resolved;
-      }
-    }
-
+    final memberAvatars = _buildMemberAvatars(conversationId);
     final room = ref.read(livekitVoiceProvider.notifier).room;
     final totalParticipants = 1 + (room?.remoteParticipants.length ?? 0);
 
@@ -744,80 +826,25 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
         // In landscape: drop the 56-px header bar to maximise stream height,
         // replacing it with a small floating badge in the top-left corner.
         if (orientation == Orientation.landscape) {
-          return Listener(
-            onPointerDown: (e) {
-              if (e.buttons == kSecondaryButton && _isDrawing) {
-                setState(() => _isDrawing = false);
-              }
-            },
-            child: Container(
-              color: context.mainBg,
-              child: ClipRect(
-                child: Stack(
-                  children: [
-                    Positioned.fill(child: _buildBackground(context)),
-                    Column(children: [Expanded(child: contentArea)]),
-                    if (!_spotlightMode) Positioned.fill(child: drawingOverlay),
-                    ..._buildSubmenuFollowers(conversationId),
-                    Positioned(bottom: 16, left: 0, right: 0, child: dock),
-                    Positioned(
-                      top: 16,
-                      left: 60,
-                      child: _buildHeaderBadge(
-                        context,
-                        channelName,
-                        totalParticipants,
-                      ),
-                    ),
-                    Positioned(
-                      top: 16,
-                      right: 16,
-                      child: _buildBackgroundPickerButton(context),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+          return _buildLandscapeLayout(
+            context,
+            contentArea,
+            dock,
+            drawingOverlay,
+            conversationId,
+            channelName,
+            totalParticipants,
           );
         }
-
         // Portrait: full header bar + content + floating dock
-        return Listener(
-          onPointerDown: (e) {
-            if (e.buttons == kSecondaryButton && _isDrawing) {
-              setState(() => _isDrawing = false);
-            }
-          },
-          child: Container(
-            color: context.mainBg,
-            child: ClipRect(
-              child: Stack(
-                children: [
-                  Positioned.fill(child: _buildBackground(context)),
-                  Column(
-                    children: [
-                      LoungeHeader(
-                        channelName: channelName,
-                        participantCount: totalParticipants,
-                        onBackToChat: widget.onBackToChat,
-                      ),
-                      Expanded(child: contentArea),
-                      // Space for the floating dock
-                      const SizedBox(height: 80),
-                    ],
-                  ),
-                  if (!_spotlightMode) Positioned.fill(child: drawingOverlay),
-                  ..._buildSubmenuFollowers(conversationId),
-                  Positioned(bottom: 16, left: 0, right: 0, child: dock),
-                  Positioned(
-                    top: 12,
-                    right: 12,
-                    child: _buildBackgroundPickerButton(context),
-                  ),
-                ],
-              ),
-            ),
-          ),
+        return _buildPortraitLayout(
+          context,
+          contentArea,
+          dock,
+          drawingOverlay,
+          conversationId,
+          channelName,
+          totalParticipants,
         );
       },
     );
