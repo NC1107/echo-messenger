@@ -26,6 +26,16 @@ Future<void> _safeSetToolTip(String text) async {
 /// actions; the close button minimises the app to the tray instead of
 /// quitting.
 ///
+/// **Known startup warnings (harmless)**:
+/// - **libayatana-appindicator deprecation**: "libayatana-appindicator is
+///   deprecated. Please use libayatana-appindicator-glib" is emitted by the
+///   tray_manager package's native dependency on Linux. This is a known
+///   upstream issue and safe to ignore until tray_manager updates.
+/// - **Gdk-CRITICAL (pointer events)**: "gdk_device_get_source: assertion
+///   'GDK_IS_DEVICE (device)' failed" occurs when a widget receives a pointer
+///   event from a device that's been removed (e.g., hover + display sleep on
+///   Linux). This is a Flutter embedder-level issue upstream and harmless.
+///
 /// **Platform behavior**:
 /// - **Windows / macOS**: left-click toggles the window directly via
 ///   [onTrayIconMouseDown]; right-click opens the context menu.

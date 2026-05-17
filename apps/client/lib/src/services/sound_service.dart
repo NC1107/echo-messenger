@@ -124,7 +124,10 @@ class SoundService {
   Future<void> playMessageSent() async {
     if (!_enabled) return;
     try {
-      await _sentPlayer.play(AssetSource('sounds/sent.mp3'), volume: 0.4);
+      await _sentPlayer.play(
+        AssetSource('assets/sounds/sent.mp3'),
+        volume: 0.4,
+      );
     } catch (e) {
       debugPrint('[Sound] Failed to play sent sound: $e');
     }
@@ -136,7 +139,7 @@ class SoundService {
     final path = _notificationSound.assetPath;
     if (path == null) return;
     try {
-      await _receivedPlayer.play(AssetSource(path), volume: 0.3);
+      await _receivedPlayer.play(AssetSource('assets/$path'), volume: 0.3);
     } catch (e) {
       debugPrint('[Sound] Failed to play received sound: $e');
     }
@@ -147,7 +150,7 @@ class SoundService {
     final path = sound.assetPath;
     if (path == null) return;
     try {
-      await _receivedPlayer.play(AssetSource(path), volume: 0.3);
+      await _receivedPlayer.play(AssetSource('assets/$path'), volume: 0.3);
     } catch (e) {
       debugPrint('[Sound] Failed to preview sound: $e');
     }
@@ -158,7 +161,7 @@ class SoundService {
     if (!_enabled) return;
     try {
       await _voiceJoinPlayer.play(
-        AssetSource('sounds/voice_join.mp3'),
+        AssetSource('assets/sounds/voice_join.mp3'),
         volume: 0.5,
       );
     } catch (e) {
@@ -171,7 +174,7 @@ class SoundService {
     if (!_enabled) return;
     try {
       await _voiceLeavePlayer.play(
-        AssetSource('sounds/voice_leave.mp3'),
+        AssetSource('assets/sounds/voice_leave.mp3'),
         volume: 0.5,
       );
     } catch (e) {

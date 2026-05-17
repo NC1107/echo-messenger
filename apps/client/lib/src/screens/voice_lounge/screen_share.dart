@@ -1,6 +1,8 @@
 /// Screen share viewer, draggable floating window, and fullscreen overlay.
 library;
 
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -294,15 +296,29 @@ class FullscreenVideoPage extends StatefulWidget {
 }
 
 class _FullscreenVideoPageState extends State<FullscreenVideoPage> {
+  /// Desktop platforms (Linux/macOS/Windows) have no system UI bars to hide
+  /// and some Linux window managers respond to SystemUiMode.immersive by
+  /// graying out the Flutter window chrome, causing the lounge UI behind this
+  /// route to appear grey (#17a). Skip the calls on desktop/web.
+  static bool get _supportsSystemUiMode {
+    if (kIsWeb) return false;
+    return defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+  }
+
   @override
   void initState() {
     super.initState();
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
+    if (_supportsSystemUiMode) {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
+    }
   }
 
   @override
   void dispose() {
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    if (_supportsSystemUiMode) {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    }
     super.dispose();
   }
 

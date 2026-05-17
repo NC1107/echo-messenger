@@ -43,6 +43,11 @@ void main() {
             showHeader: true,
             isLastInGroup: true,
             myUserId: 'me',
+            // After the hover-action overhaul, the reply/forward buttons
+            // are gated on callbacks being non-null — pass stubs here so
+            // the 33×33 hit-target contract still has a button to check.
+            onReply: (_) {},
+            onForward: (_) {},
           ),
         );
         await tester.pump();

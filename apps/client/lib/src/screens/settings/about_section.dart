@@ -1000,6 +1000,25 @@ class _DebugLogEntryTile extends StatelessWidget {
 
   const _DebugLogEntryTile({required this.entry});
 
+  void _copySingleEntry(BuildContext context) {
+    final h = entry.timestamp.hour.toString().padLeft(2, '0');
+    final m = entry.timestamp.minute.toString().padLeft(2, '0');
+    final s = entry.timestamp.second.toString().padLeft(2, '0');
+    final level = switch (entry.level) {
+      LogLevel.info => 'INF',
+      LogLevel.warning => 'WRN',
+      LogLevel.error => 'ERR',
+      LogLevel.fatal => 'FTL',
+    };
+    final text = '$h:$m:$s [$level] ${entry.source}: ${entry.message}';
+    Clipboard.setData(ClipboardData(text: text));
+    ToastService.show(
+      context,
+      'Log entry copied to clipboard',
+      type: ToastType.success,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -1045,6 +1064,15 @@ class _DebugLogEntryTile extends StatelessWidget {
                 height: 1.4,
               ),
             ),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            icon: const Icon(Icons.copy_outlined, size: 14),
+            color: context.textMuted,
+            tooltip: 'Copy entry',
+            onPressed: () => _copySingleEntry(context),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
           ),
         ],
       ),

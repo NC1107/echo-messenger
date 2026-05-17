@@ -31,6 +31,10 @@ class CanvasController extends _$CanvasController {
   Timer? _imageThrottle;
   Map<String, dynamic>? _pendingImageMove;
 
+  /// Throttle timer for partial stroke broadcasts (~30 fps max).
+  Timer? _strokeThrottle;
+  List<CanvasPoint>? _pendingStrokePoints;
+
   /// Events buffered while [_channelId] is not yet set (attach race window).
   final List<Map<String, dynamic>> _pendingEvents = [];
 
@@ -39,6 +43,7 @@ class CanvasController extends _$CanvasController {
     ref.onDispose(() {
       _avatarThrottle?.cancel();
       _imageThrottle?.cancel();
+      _strokeThrottle?.cancel();
     });
     return const CanvasState();
   }
@@ -71,6 +76,9 @@ class CanvasController extends _$CanvasController {
     _imageThrottle?.cancel();
     _imageThrottle = null;
     _pendingImageMove = null;
+    _strokeThrottle?.cancel();
+    _strokeThrottle = null;
+    _pendingStrokePoints = null;
     _pendingEvents.clear();
     _channelId = null;
     state = const CanvasState();
@@ -128,16 +136,49 @@ class CanvasController extends _$CanvasController {
 
   void startStroke(CanvasPoint point) {
     state = state.copyWith(activePoints: [point]);
+    _pendingStrokePoints = [point];
   }
 
   void continueStroke(CanvasPoint point) {
     final pts = List<CanvasPoint>.from(state.activePoints)..add(point);
     state = state.copyWith(activePoints: pts);
+
+    // Buffer the new point for throttled broadcast.
+    _pendingStrokePoints ??= [];
+    _pendingStrokePoints!.add(point);
+
+    // Start throttle timer if not already running.
+    _strokeThrottle ??= Timer.periodic(
+      const Duration(milliseconds: 33), // ~30 fps
+      (_) => _flushStrokePoints(),
+    );
+  }
+
+  void _flushStrokePoints() {
+    final pending = _pendingStrokePoints;
+    if (pending == null || pending.isEmpty) {
+      _strokeThrottle?.cancel();
+      _strokeThrottle = null;
+      return;
+    }
+    _pendingStrokePoints = null;
+    final isEraser = state.selectedTool == CanvasTool.eraser;
+    _sendCanvasEvent('stroke_partial', {
+      'points': pending.map((p) => {'x': p.x, 'y': p.y}).toList(),
+      'color': isEraser ? '#00000000' : colorToHex(state.currentColor),
+      'width': isEraser ? state.strokeWidth * 3 : state.strokeWidth,
+      'kind': isEraser ? 'eraser' : 'pen',
+    });
   }
 
   void endStroke() {
     if (state.activePoints.isEmpty) return;
     if (_channelId == null) return;
+
+    // Flush any remaining pending points immediately.
+    _strokeThrottle?.cancel();
+    _strokeThrottle = null;
+    _pendingStrokePoints = null;
 
     final isEraser = state.selectedTool == CanvasTool.eraser;
     final stroke = CanvasStroke(
@@ -152,7 +193,7 @@ class CanvasController extends _$CanvasController {
     final newStrokes = List<CanvasStroke>.from(state.strokes)..add(stroke);
     state = state.copyWith(strokes: newStrokes, activePoints: []);
 
-    // Broadcast and persist via WebSocket.
+    // Broadcast complete stroke and persist via WebSocket.
     _sendCanvasEvent('stroke', stroke.toJson());
   }
 
@@ -297,10 +338,56 @@ class CanvasController extends _$CanvasController {
     final fromUserId = json['from_user_id'] as String? ?? '';
 
     switch (kind) {
+      case 'stroke_partial':
+        // Partial stroke delta: points arriving incrementally.
+        // Build a temporary stroke and add it for live display.
+        final pointsList = (payload['points'] as List? ?? [])
+            .map(
+              (p) => CanvasPoint(
+                x: (p['x'] as num?)?.toDouble() ?? 0.0,
+                y: (p['y'] as num?)?.toDouble() ?? 0.0,
+              ),
+            )
+            .toList();
+        final color = payload['color'] as String? ?? '#000000';
+        final width = (payload['width'] as num?)?.toDouble() ?? 2.0;
+        final kind = payload['kind'] as String? ?? 'pen';
+
+        if (pointsList.isEmpty) return;
+
+        // Look for an existing partial stroke from this user.
+        final partialId = 'partial_${fromUserId}_in_progress';
+        final existingIdx = state.strokes.indexWhere((s) => s.id == partialId);
+
+        if (existingIdx != -1) {
+          // Append points to existing partial stroke.
+          final existing = state.strokes[existingIdx];
+          final updated = existing.copyWith(
+            points: List.from(existing.points)..addAll(pointsList),
+          );
+          final newStrokes = List<CanvasStroke>.from(state.strokes)
+            ..[existingIdx] = updated;
+          state = state.copyWith(strokes: newStrokes);
+        } else {
+          // Create new partial stroke.
+          final partialStroke = CanvasStroke(
+            id: partialId,
+            color: color,
+            width: width,
+            points: pointsList,
+            kind: kind == 'eraser' ? StrokeKind.eraser : StrokeKind.pen,
+          );
+          final newStrokes = List<CanvasStroke>.from(state.strokes)
+            ..add(partialStroke);
+          state = state.copyWith(strokes: newStrokes);
+        }
       case 'stroke':
         final stroke = CanvasStroke.fromJson(payload);
-        final newStrokes = List<CanvasStroke>.from(state.strokes)..add(stroke);
-        state = state.copyWith(strokes: newStrokes);
+        // Remove the partial stroke placeholder if it exists.
+        final partialId = 'partial_${fromUserId}_in_progress';
+        final strokes = state.strokes.where((s) => s.id != partialId).toList()
+          ..add(stroke);
+        state = state.copyWith(strokes: strokes);
       case 'clear':
         state = state.copyWith(strokes: [], images: []);
       case 'image_add':

@@ -11,6 +11,7 @@ import '../utils/version_utils.dart';
 import '../widgets/auth/auth_layout.dart';
 import '../widgets/auth/auth_scaffold_chrome.dart';
 import '../widgets/echo_logo_icon.dart';
+import '../widgets/window_chrome.dart';
 
 /// Larger bottom padding in debug builds leaves room for the multi-line
 /// version footer (server reachability + web bundle), which would otherwise
@@ -160,53 +161,65 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     _versionFuture ??= fetchVersionInfo(serverUrl);
 
     return Scaffold(
-      body: Stack(
+      body: Column(
         children: [
-          const AuthBackground(),
-          AuthLayout(
-            tagline: 'Sign up. Talk privately.',
-            formTitle: 'Create your account',
-            compactHeader: _buildHeader(context),
-            narrowPadding: const EdgeInsets.fromLTRB(24, 24, 24, _bottomPad),
-            formColumn: Form(
-              key: _formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildUsernameField(),
-                  const SizedBox(height: 16),
-                  _buildPasswordField(),
-                  if (_passwordText.isNotEmpty ||
-                      _passwordFocused ||
-                      _hasAttemptedSubmit)
-                    _buildPasswordHint(context)
-                  else
-                    const SizedBox.shrink(),
-                  _buildStrengthIndicator(context, strength),
-                  const SizedBox(height: 12),
-                  _buildConfirmPasswordField(),
-                  _buildErrorMessage(context, authState),
-                  const SizedBox(height: 24),
-                  _buildSubmitButton(authState),
-                  const SizedBox(height: 12),
-                  TextButton(
-                    onPressed: () => context.go('/login'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: context.textSecondary,
-                    ),
-                    child: const Text('Already have an account? Log in'),
+          const AppTitleBar(),
+          Expanded(
+            child: Stack(
+              children: [
+                const AuthBackground(),
+                AuthLayout(
+                  tagline: 'Sign up. Talk privately.',
+                  formTitle: 'Create your account',
+                  compactHeader: _buildHeader(context),
+                  narrowPadding: const EdgeInsets.fromLTRB(
+                    24,
+                    24,
+                    24,
+                    _bottomPad,
                   ),
-                ],
-              ),
-            ),
-          ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 16,
-            child: SafeArea(
-              top: false,
-              child: AuthVersionFooter(versionFuture: _versionFuture),
+                  formColumn: Form(
+                    key: _formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildUsernameField(),
+                        const SizedBox(height: 16),
+                        _buildPasswordField(),
+                        if (_passwordText.isNotEmpty ||
+                            _passwordFocused ||
+                            _hasAttemptedSubmit)
+                          _buildPasswordHint(context)
+                        else
+                          const SizedBox.shrink(),
+                        _buildStrengthIndicator(context, strength),
+                        const SizedBox(height: 12),
+                        _buildConfirmPasswordField(),
+                        _buildErrorMessage(context, authState),
+                        const SizedBox(height: 24),
+                        _buildSubmitButton(authState),
+                        const SizedBox(height: 12),
+                        TextButton(
+                          onPressed: () => context.go('/login'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: context.textSecondary,
+                          ),
+                          child: const Text('Already have an account? Log in'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 16,
+                  child: SafeArea(
+                    top: false,
+                    child: AuthVersionFooter(versionFuture: _versionFuture),
+                  ),
+                ),
+              ],
             ),
           ),
         ],

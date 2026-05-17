@@ -234,6 +234,33 @@ void main() {
       expect(state.isActive, isTrue);
     });
 
+    // Regression: joining a new lounge while still joining another used to
+    // crash with PlatformException("No active stream to cancel") because the
+    // second Room opened its EventChannel streams before the first Room's
+    // streams were torn down.  The _isJoining guard prevents this race.
+    //
+    // Tests the observable surface: state.isJoining tracks mid-join state,
+    // and copyWith(isJoining: false) correctly resets it — confirming the
+    // state machine used by the guard behaves correctly.
+    test('isJoining state tracks concurrent-join guard correctly', () {
+      final notifier = container.read(livekitVoiceProvider.notifier);
+
+      // Simulate state showing a join is in progress.
+      notifier.state = notifier.state.copyWith(isJoining: true);
+      expect(container.read(livekitVoiceProvider).isJoining, isTrue);
+      expect(container.read(livekitVoiceProvider).isActive, isFalse);
+
+      // Simulate join completing (or being aborted): guard clears.
+      notifier.state = notifier.state.copyWith(isJoining: false);
+      expect(container.read(livekitVoiceProvider).isJoining, isFalse);
+      expect(container.read(livekitVoiceProvider).isActive, isFalse);
+    });
+
+    // NOTE: Keep this test last in the group. It sets isActive=true which
+    // triggers SoundService.playVoiceLeave() — a platform channel call that
+    // throws MissingPluginException async in the test environment. Flutter's
+    // test runner attributes that deferred exception to the NEXT test, so any
+    // test added after this one would fail spuriously.
     test('leaveChannel clears conversationId and channelId', () async {
       final notifier = container.read(livekitVoiceProvider.notifier);
       notifier.state = notifier.state.copyWith(

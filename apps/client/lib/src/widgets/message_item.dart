@@ -785,29 +785,20 @@ class _MessageItemState extends State<MessageItem>
                 onPressed: () => widget.onReply?.call(msg),
               ),
             ),
-          // Inline quick-reaction emojis (Slack/Discord style). One tap
-          // dispatches the reaction directly; the full picker is still
-          // reachable via the "+" button to the right of this row.
-          if (widget.onReactionSelect != null)
-            for (final emoji in reactionEmojis)
-              _QuickReactionButton(
-                emoji: emoji,
-                size: style.buttonSize,
-                onPressed: () => widget.onReactionSelect?.call(msg, emoji),
+          if (widget.onForward != null)
+            Semantics(
+              label: 'Forward message',
+              button: true,
+              child: HoverActionButton(
+                icon: Icons.forward_outlined,
+                tooltip: 'Forward',
+                iconSize: style.iconSize,
+                iconOpacity: style.iconOpacity,
+                iconColor: style.iconColor,
+                cornerRadius: style.buttonRadius,
+                onPressed: () => widget.onForward?.call(msg),
               ),
-          HoverActionButton(
-            icon: Icons.add_reaction_outlined,
-            tooltip: 'More reactions',
-            iconSize: style.iconSize,
-            iconOpacity: style.iconOpacity,
-            iconColor: style.iconColor,
-            cornerRadius: style.buttonRadius,
-            onPressed: () {
-              final box = context.findRenderObject() as RenderBox?;
-              final pos = box?.localToGlobal(Offset.zero) ?? Offset.zero;
-              widget.onReactionTap?.call(msg, pos);
-            },
-          ),
+            ),
           // Overflow menu: copy, pin, edit, delete
           _buildOverflowMenu(
             msg,
@@ -2042,49 +2033,6 @@ class _MessageItemState extends State<MessageItem>
               canSwipe: canSwipeToReply,
               msg: msg,
               messageWidget: messageWidget,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Inline quick-reaction button: renders a single emoji with the same hit
-/// area as [HoverActionButton] so the hover bar stays visually consistent.
-/// Sized to honor the WCAG 24px minimum even when the bar uses a compact
-/// 21×21 visual chip (the 44×44 ink target stays full-width).
-class _QuickReactionButton extends StatelessWidget {
-  final String emoji;
-  final double size;
-  final VoidCallback onPressed;
-
-  const _QuickReactionButton({
-    required this.emoji,
-    required this.size,
-    required this.onPressed,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final minTarget = size < 44 ? 44.0 : size;
-    return Semantics(
-      label: 'React with $emoji',
-      button: true,
-      child: Tooltip(
-        message: emoji,
-        waitDuration: const Duration(milliseconds: 600),
-        child: SizedBox(
-          width: minTarget,
-          height: minTarget,
-          child: Material(
-            type: MaterialType.transparency,
-            child: InkWell(
-              onTap: onPressed,
-              borderRadius: BorderRadius.circular(4),
-              child: Center(
-                child: Text(emoji, style: TextStyle(fontSize: size * 0.6)),
-              ),
             ),
           ),
         ),

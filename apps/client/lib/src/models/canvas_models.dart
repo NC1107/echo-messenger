@@ -78,6 +78,20 @@ class CanvasStroke {
     'points': points.map((p) => p.toJson()).toList(),
     'kind': kind == StrokeKind.eraser ? 'eraser' : 'pen',
   };
+
+  CanvasStroke copyWith({
+    String? id,
+    String? color,
+    double? width,
+    List<CanvasPoint>? points,
+    StrokeKind? kind,
+  }) => CanvasStroke(
+    id: id ?? this.id,
+    color: color ?? this.color,
+    width: width ?? this.width,
+    points: points ?? this.points,
+    kind: kind ?? this.kind,
+  );
 }
 
 // ---------------------------------------------------------------------------

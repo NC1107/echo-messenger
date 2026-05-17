@@ -131,40 +131,43 @@ class _MediaPickerPanelState extends State<MediaPickerPanel>
   }
 
   Widget _buildEmojiTab(BuildContext context) {
-    return EmojiPicker(
-      onEmojiSelected: widget.onEmojiSelected,
-      config: Config(
-        height: 312,
-        checkPlatformCompatibility: true,
-        emojiViewConfig: EmojiViewConfig(
-          backgroundColor: context.surface,
-          columns: 9,
-          emojiSizeMax: 28,
-          verticalSpacing: 0,
-          horizontalSpacing: 0,
-          noRecents: Text(
-            'No recents yet.',
-            style: TextStyle(fontSize: 12, color: context.textMuted),
+    return DefaultTextStyle(
+      style: const TextStyle(fontFamilyFallback: ['NotoEmoji']),
+      child: EmojiPicker(
+        onEmojiSelected: widget.onEmojiSelected,
+        config: Config(
+          height: 312,
+          checkPlatformCompatibility: true,
+          emojiViewConfig: EmojiViewConfig(
+            backgroundColor: context.surface,
+            columns: 9,
+            emojiSizeMax: 28,
+            verticalSpacing: 0,
+            horizontalSpacing: 0,
+            noRecents: Text(
+              'No recents yet.',
+              style: TextStyle(fontSize: 12, color: context.textMuted),
+            ),
           ),
-        ),
-        categoryViewConfig: CategoryViewConfig(
-          initCategory: Category.SMILEYS,
-          recentTabBehavior: RecentTabBehavior.RECENT,
-          backgroundColor: context.surface,
-          indicatorColor: context.accent,
-          iconColorSelected: context.accent,
-          iconColor: context.textMuted,
-        ),
-        skinToneConfig: SkinToneConfig(
-          enabled: true,
-          dialogBackgroundColor: context.surface,
-          indicatorColor: context.accent,
-        ),
-        bottomActionBarConfig: const BottomActionBarConfig(enabled: false),
-        searchViewConfig: SearchViewConfig(
-          backgroundColor: context.surface,
-          buttonIconColor: context.textSecondary,
-          hintText: 'Find an emoji...',
+          categoryViewConfig: CategoryViewConfig(
+            initCategory: Category.SMILEYS,
+            recentTabBehavior: RecentTabBehavior.RECENT,
+            backgroundColor: context.surface,
+            indicatorColor: context.accent,
+            iconColorSelected: context.accent,
+            iconColor: context.textMuted,
+          ),
+          skinToneConfig: SkinToneConfig(
+            enabled: true,
+            dialogBackgroundColor: context.surface,
+            indicatorColor: context.accent,
+          ),
+          bottomActionBarConfig: const BottomActionBarConfig(enabled: false),
+          searchViewConfig: SearchViewConfig(
+            backgroundColor: context.surface,
+            buttonIconColor: context.textSecondary,
+            hintText: 'Find an emoji...',
+          ),
         ),
       ),
     );

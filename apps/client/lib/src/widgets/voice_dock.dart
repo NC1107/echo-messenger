@@ -143,10 +143,15 @@ class VoiceDock extends ConsumerWidget {
         padding: EdgeInsets.symmetric(horizontal: m.hPad, vertical: m.vPad),
         decoration: BoxDecoration(
           color: context.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(8),
+            bottom: Radius.circular(8),
+          ),
           border: Border(
             top: BorderSide(color: context.border, width: 1),
             right: BorderSide(color: context.border, width: 1),
+            bottom: BorderSide(color: context.border, width: 1),
+            left: BorderSide(color: context.border, width: 1),
           ),
         ),
         child: Row(
@@ -195,20 +200,25 @@ class VoiceDock extends ConsumerWidget {
       onTap: onNavigateToLounge,
       child: Container(
         width: 60,
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 4),
         decoration: BoxDecoration(
           color: context.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(8),
+            bottom: Radius.circular(8),
+          ),
           border: Border(
             top: BorderSide(color: context.border, width: 1),
             right: BorderSide(color: context.border, width: 1),
+            bottom: BorderSide(color: context.border, width: 1),
+            left: BorderSide(color: context.border, width: 1),
           ),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
-              padding: const EdgeInsets.only(bottom: 2),
+              padding: const EdgeInsets.only(bottom: 1),
               child: Container(
                 width: 8,
                 height: 8,
@@ -220,7 +230,7 @@ class VoiceDock extends ConsumerWidget {
             ),
             if (callStartedAt != null)
               Padding(
-                padding: const EdgeInsets.only(bottom: 2),
+                padding: const EdgeInsets.only(bottom: 1),
                 child: ValueListenableBuilder<DateTime>(
                   valueListenable: _voiceClock,
                   builder: (context, now, _) {

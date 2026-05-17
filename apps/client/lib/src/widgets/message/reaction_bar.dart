@@ -224,6 +224,7 @@ class _ReactionPillState extends State<_ReactionPill>
                 style: TextStyle(
                   fontSize: m.emojiSize,
                   decoration: TextDecoration.none,
+                  fontFamilyFallback: const ['NotoEmoji'],
                 ),
               ),
               SizedBox(width: m.gap),

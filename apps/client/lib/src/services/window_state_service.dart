@@ -74,6 +74,9 @@ class WindowStateService {
       // Keep the window frameless permanently for the integrated title bar.
       await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
 
+      // Set minimum window size so users can't shrink into an unusable state.
+      await windowManager.setMinimumSize(const Size(720, 480));
+
       final prefs = await SharedPreferences.getInstance();
       final width = prefs.getDouble(_kWidthKey) ?? defaultSize.width;
       final height = prefs.getDouble(_kHeightKey) ?? defaultSize.height;

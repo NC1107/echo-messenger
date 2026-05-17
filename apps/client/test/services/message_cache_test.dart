@@ -225,6 +225,53 @@ void main() {
     });
   });
 
+  // #26 — isMessageCachedSync for replay suppression
+  group("MessageCache.isMessageCachedSync", () {
+    test("returns false when no box is open for the conversation", () async {
+      await MessageCache.initForUser("user-sync-1", "example.com");
+      // conv-not-opened has never been accessed so no box is open.
+      expect(
+        MessageCache.isMessageCachedSync("conv-not-opened", "any-msg-id"),
+        isFalse,
+      );
+    });
+
+    test("returns false for unknown message in an open box", () async {
+      await MessageCache.initForUser("user-sync-2", "example.com");
+      // Open the box by caching a message.
+      await MessageCache.cacheMessages("conv-sync-2", [
+        _msg(id: "sync-msg-1", conversationId: "conv-sync-2"),
+      ]);
+      // Check for a different, non-existent message.
+      expect(
+        MessageCache.isMessageCachedSync("conv-sync-2", "does-not-exist"),
+        isFalse,
+      );
+    });
+
+    test(
+      "returns true for a message that was cached and box is open",
+      () async {
+        await MessageCache.initForUser("user-sync-3", "example.com");
+        await MessageCache.cacheMessages("conv-sync-3", [
+          _msg(id: "sync-msg-3", conversationId: "conv-sync-3"),
+        ]);
+        expect(
+          MessageCache.isMessageCachedSync("conv-sync-3", "sync-msg-3"),
+          isTrue,
+        );
+      },
+    );
+
+    test("returns false for empty message ID", () async {
+      await MessageCache.initForUser("user-sync-4", "example.com");
+      await MessageCache.cacheMessages("conv-sync-4", [
+        _msg(id: "sync-msg-4", conversationId: "conv-sync-4"),
+      ]);
+      expect(MessageCache.isMessageCachedSync("conv-sync-4", ""), isFalse);
+    });
+  });
+
   group("MessageCacheException", () {
     test("toString includes message", () {
       final ex = MessageCacheException("test error");

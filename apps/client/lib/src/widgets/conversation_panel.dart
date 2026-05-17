@@ -846,6 +846,9 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   }
 
   Widget _buildSearchBar(BuildContext context) {
+    final isMobile = MediaQuery.sizeOf(context).width < 600;
+    if (!isMobile) return const SizedBox.shrink();
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: GestureDetector(

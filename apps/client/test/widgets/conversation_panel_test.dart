@@ -185,7 +185,14 @@ void main() {
       expect(tappedConversation!.id, 'conv-1');
     });
 
-    testWidgets('shows search bar area', (tester) async {
+    testWidgets('shows search bar area on mobile', (tester) async {
+      // Sidebar search is hidden on desktop (≥600px) — global search is
+      // the only entrypoint. Force a mobile-sized viewport so the search
+      // bar still renders here.
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
       await tester.pumpApp(
         ConversationPanel(onConversationTap: (_) {}),
         overrides: standardOverrides(),
