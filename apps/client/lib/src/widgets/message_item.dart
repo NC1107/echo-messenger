@@ -863,17 +863,35 @@ class _MessageItemState extends State<MessageItem>
     bool isImage = false,
   }) {
     return [
-      PopupMenuItem(
-        value: 'copy',
-        child: Row(
-          children: [
-            const Icon(Icons.copy_outlined, size: 16),
-            const SizedBox(width: 8),
-            Text(mediaUrl != null ? 'Copy link' : 'Copy'),
-          ],
-        ),
+      _buildCopyMenuItem(mediaUrl),
+      ..._buildMediaMenuItems(isImage, mediaUrl),
+      ..._buildPinMenuItems(msg),
+      ..._buildSaveMenuItems(),
+      _buildForwardMenuItem(),
+      ..._buildEditDeleteMenuItems(isMine),
+    ];
+  }
+
+  PopupMenuItem<String> _buildCopyMenuItem(String? mediaUrl) {
+    return PopupMenuItem(
+      value: 'copy',
+      child: Row(
+        children: [
+          const Icon(Icons.copy_outlined, size: 16),
+          const SizedBox(width: 8),
+          Text(mediaUrl != null ? 'Copy link' : 'Copy'),
+        ],
       ),
-      if (isImage)
+    );
+  }
+
+  List<PopupMenuEntry<String>> _buildMediaMenuItems(
+    bool isImage,
+    String? mediaUrl,
+  ) {
+    final items = <PopupMenuEntry<String>>[];
+    if (isImage) {
+      items.add(
         PopupMenuItem(
           value: 'copy_image',
           child: Row(
@@ -889,7 +907,10 @@ class _MessageItemState extends State<MessageItem>
             ],
           ),
         ),
-      if (mediaUrl != null)
+      );
+    }
+    if (mediaUrl != null) {
+      items.add(
         const PopupMenuItem(
           value: 'download',
           child: Row(
@@ -900,7 +921,15 @@ class _MessageItemState extends State<MessageItem>
             ],
           ),
         ),
-      if (msg.pinnedAt == null && widget.onPin != null)
+      );
+    }
+    return items;
+  }
+
+  List<PopupMenuEntry<String>> _buildPinMenuItems(ChatMessage msg) {
+    final items = <PopupMenuEntry<String>>[];
+    if (msg.pinnedAt == null && widget.onPin != null) {
+      items.add(
         const PopupMenuItem(
           value: 'pin',
           child: Row(
@@ -911,7 +940,10 @@ class _MessageItemState extends State<MessageItem>
             ],
           ),
         ),
-      if (msg.pinnedAt != null && widget.onUnpin != null)
+      );
+    }
+    if (msg.pinnedAt != null && widget.onUnpin != null) {
+      items.add(
         const PopupMenuItem(
           value: 'unpin',
           child: Row(
@@ -922,7 +954,15 @@ class _MessageItemState extends State<MessageItem>
             ],
           ),
         ),
-      if (!widget.isSaved && widget.onSave != null)
+      );
+    }
+    return items;
+  }
+
+  List<PopupMenuEntry<String>> _buildSaveMenuItems() {
+    final items = <PopupMenuEntry<String>>[];
+    if (!widget.isSaved && widget.onSave != null) {
+      items.add(
         const PopupMenuItem(
           value: 'save',
           child: Row(
@@ -933,7 +973,10 @@ class _MessageItemState extends State<MessageItem>
             ],
           ),
         ),
-      if (widget.isSaved && widget.onUnsave != null)
+      );
+    }
+    if (widget.isSaved && widget.onUnsave != null) {
+      items.add(
         const PopupMenuItem(
           value: 'unsave',
           child: Row(
@@ -944,17 +987,28 @@ class _MessageItemState extends State<MessageItem>
             ],
           ),
         ),
-      const PopupMenuItem(
-        value: 'forward',
-        child: Row(
-          children: [
-            Icon(Icons.forward_outlined, size: 16),
-            SizedBox(width: 8),
-            Text('Forward'),
-          ],
-        ),
+      );
+    }
+    return items;
+  }
+
+  PopupMenuItem<String> _buildForwardMenuItem() {
+    return const PopupMenuItem(
+      value: 'forward',
+      child: Row(
+        children: [
+          Icon(Icons.forward_outlined, size: 16),
+          SizedBox(width: 8),
+          Text('Forward'),
+        ],
       ),
-      if (isMine && widget.onEdit != null)
+    );
+  }
+
+  List<PopupMenuEntry<String>> _buildEditDeleteMenuItems(bool isMine) {
+    final items = <PopupMenuEntry<String>>[];
+    if (isMine && widget.onEdit != null) {
+      items.add(
         const PopupMenuItem(
           value: 'edit',
           child: Row(
@@ -965,7 +1019,10 @@ class _MessageItemState extends State<MessageItem>
             ],
           ),
         ),
-      if (widget.onDelete != null)
+      );
+    }
+    if (widget.onDelete != null) {
+      items.add(
         PopupMenuItem(
           value: 'delete',
           child: Row(
@@ -983,7 +1040,9 @@ class _MessageItemState extends State<MessageItem>
             ],
           ),
         ),
-    ];
+      );
+    }
+    return items;
   }
 
   Widget _buildOverflowMenu(
