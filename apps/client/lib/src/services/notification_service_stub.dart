@@ -179,6 +179,21 @@ class _NativeNotificationService implements NotificationService {
     _loadPreferences();
   }
 
+  /// Check if app is focused beyond the 5-second grace period.
+  static bool _isAppFocusedBeyondGracePeriod() {
+    if (!_appFocused) return false;
+    final elapsed = DateTime.now().difference(_lastForeground);
+    return elapsed.inSeconds > 5;
+  }
+
+  /// Check if notification is blocked by user preferences.
+  static bool _isBlockedByPreferences(bool isGroup) {
+    if (!_notificationsEnabled) return true;
+    if (isGroup && !_groupEnabled) return true;
+    if (!isGroup && !_dmEnabled) return true;
+    return false;
+  }
+
   @override
   void showMessageNotification({
     required String senderUsername,
@@ -194,17 +209,10 @@ class _NativeNotificationService implements NotificationService {
 
     // Suppress when the app is focused, but allow a 5-second grace period
     // after foregrounding so WS-reconnect messages still trigger notifications.
-    if (_appFocused && !forceShow) {
-      final elapsed = DateTime.now().difference(_lastForeground);
-      if (elapsed.inSeconds > 5) return;
-    }
+    if (!forceShow && _isAppFocusedBeyondGracePeriod()) return;
 
     // Respect user notification preferences.
-    if (!forceShow) {
-      if (!_notificationsEnabled) return;
-      if (isGroup && !_groupEnabled) return;
-      if (!isGroup && !_dmEnabled) return;
-    }
+    if (!forceShow && _isBlockedByPreferences(isGroup)) return;
 
     // Check Do Not Disturb and Quiet Hours (async, suppress if active).
     if (!forceShow) {
