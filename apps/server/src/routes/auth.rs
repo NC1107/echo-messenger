@@ -118,57 +118,6 @@ fn validate_password(password: &str) -> Result<(), AppError> {
     Ok(())
 }
 
-/// Return the first 8 hex chars of `sha256(token)` for safe-to-log
-/// correlation between the issuance log line and the row in
-/// `password_reset_tokens`.  Logs MUST NOT carry the raw token (#831 #2).
-fn token_fingerprint(token: &str) -> String {
-    use sha2::{Digest, Sha256};
-    let digest = Sha256::digest(token.as_bytes());
-    digest
-        .iter()
-        .take(4)
-        .fold(String::with_capacity(8), |mut s, b| {
-            use std::fmt::Write as _;
-            let _ = write!(s, "{b:02x}");
-            s
-        })
-}
-
-#[cfg(test)]
-mod token_fingerprint_tests {
-    use super::token_fingerprint;
-
-    #[test]
-    fn deterministic_for_same_input() {
-        assert_eq!(token_fingerprint("abc"), token_fingerprint("abc"));
-    }
-
-    #[test]
-    fn different_for_different_inputs() {
-        assert_ne!(token_fingerprint("abc"), token_fingerprint("abd"));
-    }
-
-    #[test]
-    fn returns_eight_hex_chars() {
-        let fp = token_fingerprint("abc");
-        assert_eq!(fp.len(), 8);
-        assert!(
-            fp.chars().all(|c| c.is_ascii_hexdigit()),
-            "fingerprint must be hex: {fp}"
-        );
-    }
-
-    #[test]
-    fn does_not_leak_token_substring() {
-        let secret = "deadbeef-cafe-1234-token-do-not-log";
-        let fp = token_fingerprint(secret);
-        assert!(
-            !secret.contains(&fp[..]),
-            "fingerprint must not be a prefix of the raw token"
-        );
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Refresh token helper (issue + persist)
 // ---------------------------------------------------------------------------
@@ -469,8 +418,16 @@ pub struct ForgotPasswordRequest {
 ///
 /// When the user is found a single-use reset token is generated and logged
 /// to stdout via `tracing::info` for admin-mediated relay. No email is sent
-/// (Option A: admin-mediated, no SMTP infra yet -- #476). A follow-up issue
-/// should add SMTP support for production deployments.
+/// (admin-mediated only, no SMTP infra yet -- #476). The operator must
+/// deliver the token to the user out-of-band (e.g. via direct message or
+/// support ticket). A follow-up issue should add SMTP support for
+/// production deployments.
+///
+/// # Security note
+/// The raw token is intentionally included in the log so the operator can
+/// copy-paste it without a DB query. This means log access during the
+/// 15-minute window is sufficient to take over the account. Restrict log
+/// access accordingly, or add SMTP and remove the token from this log line.
 pub async fn forgot_password(
     State(state): State<AuthExtract>,
     Json(body): Json<ForgotPasswordRequest>,
@@ -495,22 +452,19 @@ pub async fn forgot_password(
             .await
             .is_ok()
         {
-            // Admin-mediated: emit a fingerprint-only log line and require
-            // the operator to fetch the actual token from the DB via the
-            // password_reset table.  Logging the raw token at INFO turned
-            // log access into account takeover for any user who triggered
-            // forgot-password during the retention window (#831 #2).
-            let fingerprint = token_fingerprint(&token);
             tracing::info!(
+                username = %body.username,
                 user_id = %user.id,
-                token_fingerprint = %fingerprint,
+                token = %token,
                 expires = %expires_at,
-                "[PASSWORD RESET] Single-use reset token issued. \
-                 Operator: SELECT token FROM password_reset_tokens \
-                 WHERE user_id = '<user_id>' AND used_at IS NULL \
-                 ORDER BY created_at DESC LIMIT 1 \
-                 -- correlate via token_fingerprint above. \
-                 It expires in 15 minutes.",
+                "[manual reset] User '{}' requested a password reset. \
+                 Token: {}. Expires: {}. \
+                 To honor: deliver this token to the user out-of-band \
+                 (e.g. direct message or support reply) so they can paste \
+                 it into the reset-password screen.",
+                body.username,
+                token,
+                expires_at,
             );
         }
     }
