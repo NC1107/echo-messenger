@@ -11,6 +11,7 @@ import '../../screens/voice_lounge/participant_volume_controller.dart';
 import '../../services/background_service.dart';
 import '../../services/debug_log_service.dart';
 import '../../services/pip_controller.dart';
+import '../../services/push_to_talk_listener.dart';
 import '../../services/sound_service.dart';
 import '../../services/voice_callkit_service.dart';
 import '../auth_provider.dart';
@@ -198,6 +199,10 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
   /// Subscription to CallKit lock-screen actions on iOS.  Same lifecycle
   /// as the Android notification action sub — active only during a call.
   StreamSubscription<CallKitAction>? _callKitActionSub;
+
+  /// Push-to-talk keyboard listener.  Non-null only while a room is active
+  /// and the user has PTT enabled in voice settings.
+  PushToTalkListener? _pttListener;
 
   @override
   LiveKitVoiceState build() {
@@ -481,10 +486,31 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
         'joinChannel: microphone enabled=$micEnabled',
       );
 
+      // ---- PTT: start muted and install keyboard listener -------------------
+      // When push-to-talk is enabled the mic must be silent by default and
+      // only transmit while the configured key is held.  Override `micEnabled`
+      // so the mic is off at join time regardless of `startMuted`, then arm
+      // the listener that will call setCaptureEnabled on key-down/up.
+      final voiceSettingsForPtt = ref.read(voiceSettingsProvider);
+      final pttActive = voiceSettingsForPtt.pushToTalkEnabled;
+      if (pttActive) {
+        DebugLogService.instance.log(
+          LogLevel.info,
+          'LiveKitVoice',
+          'joinChannel: PTT enabled — muting mic and installing listener',
+        );
+        await room.localParticipant?.setMicrophoneEnabled(false);
+        _pttListener?.stop();
+        _pttListener = PushToTalkListener(
+          keyId: voiceSettingsForPtt.pushToTalkKeyId,
+          onSetCaptureEnabled: setCaptureEnabled,
+        )..start();
+      }
+
       state = state.copyWith(
         isJoining: false,
         isActive: true,
-        isCaptureEnabled: micEnabled,
+        isCaptureEnabled: pttActive ? false : micEnabled,
         error: null,
         callStartedAt: DateTime.now(),
       );
@@ -920,6 +946,8 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
   Future<void> _cleanupRoom() async {
     _stopAudioLevelPolling();
     _stopRtcStatsPolling();
+    _pttListener?.stop();
+    _pttListener = null;
     _roomListener?.dispose();
     _roomListener = null;
 
@@ -962,6 +990,8 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     _disposed = true;
     _stopAudioLevelPolling();
     _stopRtcStatsPolling();
+    _pttListener?.stop();
+    _pttListener = null;
     _detachNotificationActionListener();
     unawaited(BackgroundService.instance.stopVoice());
     unawaited(VoiceCallKitService.instance.endCall());
