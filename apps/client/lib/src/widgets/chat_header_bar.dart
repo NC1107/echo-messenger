@@ -20,6 +20,7 @@ import '../theme/responsive.dart';
 import '../utils/time_utils.dart';
 import 'avatar_utils.dart' show buildAvatar, groupAvatarColor, resolveAvatarUrl;
 import 'chat_header_widgets.dart';
+import 'group_members_sheet.dart' show showGroupMembersSheet;
 import 'shared_media_gallery.dart';
 
 const _disappearingMessagesLabel = 'Disappearing messages';
@@ -238,10 +239,7 @@ class ChatHeaderBar extends ConsumerWidget {
       final onlineCount = conv.members
           .where((m) => wsState.isUserOnline(m.userId))
           .length;
-      final isNarrow = MediaQuery.of(context).size.width < 500;
-      final memberLabel = isNarrow
-          ? '$memberCount'
-          : '$memberCount member${memberCount == 1 ? '' : 's'}';
+      final memberLabel = '$memberCount member${memberCount == 1 ? '' : 's'}';
       return Text(
         onlineCount > 0 ? '$memberLabel · $onlineCount online' : memberLabel,
         maxLines: 1,
@@ -286,7 +284,8 @@ class ChatHeaderBar extends ConsumerWidget {
     return _buildWideActionButtons(context, ref, conv, pinnedCount);
   }
 
-  /// Narrow layout: voice call + search visible, rest in overflow menu.
+  /// Narrow layout: voice call (DMs) + members (groups) + search visible;
+  /// remaining actions in overflow menu.
   List<Widget> _buildNarrowActionButtons(
     BuildContext context,
     WidgetRef ref,
@@ -300,6 +299,15 @@ class ChatHeaderBar extends ConsumerWidget {
           color: context.textSecondary,
           tooltip: 'Start call',
           onPressed: () => _startVoiceCall(context, ref, conv),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+        ),
+      if (conv.isGroup)
+        IconButton(
+          icon: const Icon(Icons.people_outline, size: 20),
+          color: context.textSecondary,
+          tooltip: 'Members',
+          onPressed: () => showGroupMembersSheet(context, conv),
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
         ),
@@ -369,15 +377,10 @@ class ChatHeaderBar extends ConsumerWidget {
             label: 'Shared media',
           ),
         ),
-      if (!isWide && conv.isGroup && onMembersToggle != null)
-        PopupMenuItem<String>(
-          value: 'members',
-          child: _overflowItem(
-            context,
-            icon: Icons.people_outline,
-            label: 'Members',
-          ),
-        ),
+      // "Members" is now always surfaced as an inline icon:
+      //   • narrow layout → people_outline button added by _buildNarrowActionButtons
+      //   • wide layout   → people_outline inline button in _buildWideActionButtons
+      // No overflow entry is needed for either layout.
       if (!conv.isGroup)
         PopupMenuItem<String>(
           value: 'disappearing',
