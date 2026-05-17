@@ -396,15 +396,26 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     // Slash-command interception: parse before encrypting/sending.
     final slashCmd = parseSlashCommand(text);
     if (slashCmd != null) {
+      String? rewrittenText;
       final handled = await dispatchSlashCommand(
         slashCmd,
         widget.conversation,
         ref,
         context,
+        onRewrite: (newText) {
+          rewrittenText = newText;
+        },
       );
       if (handled) {
         _messageController.clear();
         _saveDraftImmediate(widget.conversation.id, '');
+        // If a fun command rewrote the text, send the rewritten version
+        if (rewrittenText != null) {
+          await _doSend(rewrittenText!);
+          if (_showMediaPicker) setState(() => _showMediaPicker = false);
+          if (_showInlinePicker) setState(() => _showInlinePicker = false);
+          widget.onMessageSent();
+        }
         return;
       }
       // Unknown command — fall through and send as plain text.

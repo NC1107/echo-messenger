@@ -52,7 +52,151 @@ const _kAdminCommands = [
   ('/kick @username', 'Remove a member from the group'),
 ];
 
+const _kFunCommands = [
+  ('/shrug [text]', 'Send text with shrug emoticon'),
+  ('/tableflip [text]', 'Send text with table flip emoticon'),
+  ('/unflip [text]', 'Send text with unflip emoticon'),
+  ('/me <action>', 'Send an action line (italicized)'),
+  ('/lenny [text]', 'Send text with Lenny face'),
+  ('/flip [text]', 'Send text upside down'),
+];
+
+const _kPollCommands = [
+  ('/poll "Question?" Opt1 | Opt2 | Opt3', 'Create a poll'),
+];
+
 const _kEveryoneCommands = [('/help or /?', 'Show this help dialog')];
+
+// ---------------------------------------------------------------------------
+// Fun command rewriting
+// ---------------------------------------------------------------------------
+
+/// Maps a character to its upside-down equivalent for /flip command.
+const Map<String, String> _flipMap = {
+  'a': 'ɐ',
+  'b': 'q',
+  'c': 'ɔ',
+  'd': 'p',
+  'e': 'ǝ',
+  'f': 'ɟ',
+  'g': 'ƃ',
+  'h': 'ɥ',
+  'i': 'ᴉ',
+  'j': 'ɾ',
+  'k': 'ʞ',
+  'l': 'l',
+  'm': 'ɯ',
+  'n': 'u',
+  'o': 'o',
+  'p': 'd',
+  'q': 'b',
+  'r': 'ɹ',
+  's': 's',
+  't': 'ʇ',
+  'u': 'n',
+  'v': 'ʌ',
+  'w': 'ʍ',
+  'x': 'x',
+  'y': 'ʎ',
+  'z': 'z',
+  'A': '∀',
+  'B': 'ᙠ',
+  'C': 'Ɔ',
+  'D': 'ᗡ',
+  'E': 'Ǝ',
+  'F': 'Ⅎ',
+  'G': '⅁',
+  'H': 'H',
+  'I': 'I',
+  'J': 'ſ',
+  'K': 'ʞ',
+  'L': '˥',
+  'M': 'W',
+  'N': 'N',
+  'O': 'O',
+  'P': 'Ԁ',
+  'Q': 'Ὸ',
+  'R': 'ᴚ',
+  'S': 'S',
+  'T': '⊥',
+  'U': '∩',
+  'V': 'Λ',
+  'W': 'M',
+  'X': 'X',
+  'Y': '⅄',
+  'Z': 'Z',
+  '0': '0',
+  '1': 'Ɩ',
+  '2': 'ᄅ',
+  '3': 'Ɛ',
+  '4': 'ㄣ',
+  '5': 'ϛ',
+  '6': '9',
+  '7': 'ㄥ',
+  '8': '8',
+  '9': '6',
+  '.': '˙',
+  ',': "'",
+  "'": ',',
+  '"': '„',
+  '!': '¡',
+  '?': '¿',
+  '(': ')',
+  ')': '(',
+  '[': ']',
+  ']': '[',
+  '{': '}',
+  '}': '{',
+  '<': '>',
+  '>': '<',
+  '&': '⅋',
+};
+
+/// Rewrites a fun slash command to its message text equivalent.
+///
+/// Returns the rewritten message string for fun commands, or null for
+/// admin commands (which are handled by the dispatcher separately).
+String? rewriteSlashCommand(
+  SlashCommand cmd, {
+  required String senderUsername,
+}) {
+  switch (cmd.name) {
+    case 'shrug':
+      final text = cmd.args.isEmpty ? '' : '${cmd.args} ';
+      return '$text¯\\_(ツ)_/¯';
+
+    case 'tableflip':
+      final text = cmd.args.isEmpty ? '' : '${cmd.args} ';
+      return '$text(╯°□°)╯︵ ┻━┻';
+
+    case 'unflip':
+      final text = cmd.args.isEmpty ? '' : '${cmd.args} ';
+      return '$text┬─┬ノ( º_ºノ)';
+
+    case 'me':
+      if (cmd.args.isEmpty) {
+        return null; // No-op if no action provided
+      }
+      return '_$senderUsername ${cmd.args}_';
+
+    case 'lenny':
+      final text = cmd.args.isEmpty ? '' : '${cmd.args} ';
+      return '$text( ͡° ͜ʖ ͡°)';
+
+    case 'flip':
+      if (cmd.args.isEmpty) {
+        return null; // No rewrite if empty
+      }
+      // Flip the text and reverse the order
+      final chars = cmd.args.split('');
+      final flipped = chars.map((c) => _flipMap[c] ?? c).toList();
+      flipped.reversed;
+      return flipped.reversed.join('');
+
+    default:
+      return null; // Not a fun command
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Dispatcher
@@ -64,12 +208,27 @@ const _kEveryoneCommands = [('/help or /?', 'Show this help dialog')];
 /// Returns `true` when the command was recognised and handled (caller must
 /// NOT send the text as a regular message), `false` when the command is
 /// unknown.
+///
+/// When this returns true and the caller receives a rewritten message text via
+/// [onRewrite], the caller should send that text as a regular message.
 Future<bool> dispatchSlashCommand(
   SlashCommand cmd,
   Conversation conversation,
   WidgetRef ref,
-  BuildContext context,
-) async {
+  BuildContext context, {
+  void Function(String)? onRewrite,
+}) async {
+  // Check if this is a fun command that rewrites to a message
+  final senderUsername = ref.read(authProvider).username ?? 'User';
+  final rewrittenText = rewriteSlashCommand(
+    cmd,
+    senderUsername: senderUsername,
+  );
+  if (rewrittenText != null) {
+    // This is a fun command; notify caller to send the rewritten text
+    onRewrite?.call(rewrittenText);
+    return true;
+  }
   switch (cmd.name) {
     case 'help':
     case '?':
@@ -126,6 +285,19 @@ Future<bool> dispatchSlashCommand(
         return true;
       }
       await _kickMember(conversation, cmd.args, ref, context);
+      return true;
+
+    case 'poll':
+      final pollTag = _buildPollTag(cmd.args);
+      if (pollTag == null) {
+        _toast(
+          context,
+          'Usage: /poll "Question?" Option 1 | Option 2 | Option 3',
+          ToastType.info,
+        );
+        return true;
+      }
+      onRewrite?.call(pollTag);
       return true;
 
     default:
@@ -285,6 +457,51 @@ Future<void> _kickMember(
 }
 
 // ---------------------------------------------------------------------------
+// Poll tag builder
+// ---------------------------------------------------------------------------
+
+/// Parses `/poll` args of the form `"Question?" Option 1 | Option 2 | ...`
+/// and returns the wire tag `[poll:"Question?"|Option 1|Option 2|...]`.
+///
+/// Returns `null` when the args are malformed (missing question or fewer than
+/// 2 options) so the dispatcher can show a usage hint.
+String? _buildPollTag(String args) {
+  if (args.isEmpty) return null;
+
+  String question;
+  String rest;
+
+  // Accept quoted question: "Question?" Opt1 | Opt2
+  if (args.startsWith('"')) {
+    final closeQuote = args.indexOf('"', 1);
+    if (closeQuote < 0) return null;
+    question = args.substring(1, closeQuote).trim();
+    rest = args.substring(closeQuote + 1).trim();
+    if (rest.startsWith('|')) rest = rest.substring(1);
+  } else {
+    // Unquoted: first pipe-delimited segment is the question
+    final parts = args.split('|');
+    if (parts.length < 3) return null;
+    question = parts.first.trim();
+    rest = parts.sublist(1).join('|');
+  }
+
+  if (question.isEmpty) return null;
+
+  final options = rest
+      .split('|')
+      .map((s) => s.trim())
+      .where((s) => s.isNotEmpty)
+      .toList();
+
+  if (options.length < 2) return null;
+
+  // Encode as [poll:"Question?"|Opt1|Opt2|...]
+  final optPart = options.join('|');
+  return '[poll:"$question"|$optPart]';
+}
+
+// ---------------------------------------------------------------------------
 // Help dialog
 // ---------------------------------------------------------------------------
 
@@ -309,6 +526,20 @@ void _showHelp(BuildContext context, Conversation conversation, WidgetRef ref) {
               ..._kAdminCommands.map((e) => _CommandRow(cmd: e.$1, desc: e.$2)),
               const SizedBox(height: 12),
             ],
+            const Text(
+              'Fun',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+            const SizedBox(height: 6),
+            ..._kFunCommands.map((e) => _CommandRow(cmd: e.$1, desc: e.$2)),
+            const SizedBox(height: 12),
+            const Text(
+              'Polls',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+            const SizedBox(height: 6),
+            ..._kPollCommands.map((e) => _CommandRow(cmd: e.$1, desc: e.$2)),
+            const SizedBox(height: 12),
             const Text(
               'Everyone',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
