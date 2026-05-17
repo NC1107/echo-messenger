@@ -3,6 +3,28 @@ part of '../ws_message_handler.dart';
 /// Sentinel prefix used by system messages (#663).
 const String _systemPrefix = '__system__:';
 
+/// Parameters for plaintext and encrypted message delivery.
+class _MessageDeliveryParams {
+  _MessageDeliveryParams({
+    required this.json,
+    required this.rawContent,
+    required this.myUserId,
+    required this.conversationId,
+    required this.timestamp,
+    required this.senderUsername,
+    required this.fromUserId,
+    required this.alreadySeen,
+  });
+  final Map<String, dynamic> json;
+  final String rawContent;
+  final String myUserId;
+  final String conversationId;
+  final String timestamp;
+  final String senderUsername;
+  final String fromUserId;
+  final bool alreadySeen;
+}
+
 extension MessageHandlersOn on WsMessageHandler {
   void _handleMessageSent(Map<String, dynamic> json) {
     final messageId = json['message_id'] as String;
@@ -129,30 +151,34 @@ extension MessageHandlersOn on WsMessageHandler {
     if (isPlaintextGroup ||
         (isObviouslyPlaintext && !cryptoState.isInitialized)) {
       _deliverPlaintextMessage(
-        json,
-        myUserId,
-        rawContent,
-        conversationId,
-        timestamp,
-        senderUsername,
-        fromUserId,
+        _MessageDeliveryParams(
+          json: json,
+          rawContent: rawContent,
+          myUserId: myUserId,
+          conversationId: conversationId,
+          timestamp: timestamp,
+          senderUsername: senderUsername,
+          fromUserId: fromUserId,
+          alreadySeen: alreadySeen,
+        ),
         isKnownConversation,
-        alreadySeen: alreadySeen,
       );
       return;
     }
 
     if (cryptoState.isInitialized) {
       _deliverEncryptedMessageNow(
-        json,
-        rawContent,
-        fromUserId,
-        myUserId,
-        conversationId,
-        timestamp,
-        senderUsername,
+        _MessageDeliveryParams(
+          json: json,
+          rawContent: rawContent,
+          myUserId: myUserId,
+          conversationId: conversationId,
+          timestamp: timestamp,
+          senderUsername: senderUsername,
+          fromUserId: fromUserId,
+          alreadySeen: alreadySeen,
+        ),
         fromDeviceId,
-        alreadySeen: alreadySeen,
       );
     } else {
       _queueEncryptedMessageForLater(
@@ -218,65 +244,55 @@ extension MessageHandlersOn on WsMessageHandler {
   }
 
   void _deliverPlaintextMessage(
-    Map<String, dynamic> json,
-    String myUserId,
-    String rawContent,
-    String conversationId,
-    String timestamp,
-    String senderUsername,
-    String fromUserId,
-    bool isKnownConversation, {
-    bool alreadySeen = false,
-  }) {
-    final msg = ChatMessage.fromServerJson(json, myUserId);
+    _MessageDeliveryParams params,
+    bool isKnownConversation,
+  ) {
+    final msg = ChatMessage.fromServerJson(params.json, params.myUserId);
     ref.read(chatProvider.notifier).addMessage(msg);
     if (!msg.id.startsWith('pending_')) {
-      MessageCache.cacheMessages(conversationId, [msg]);
+      MessageCache.cacheMessages(params.conversationId, [msg]);
     }
     ref
         .read(conversationsProvider.notifier)
         .onNewMessage(
-          conversationId: conversationId,
-          content: rawContent,
-          timestamp: timestamp,
-          senderUsername: senderUsername,
+          conversationId: params.conversationId,
+          content: params.rawContent,
+          timestamp: params.timestamp,
+          senderUsername: params.senderUsername,
           // #26: replayed messages (already in cache) must not re-bump unread.
-          incrementUnread: !alreadySeen,
+          incrementUnread: !params.alreadySeen,
         );
     if (!isKnownConversation) {
       ref.read(conversationsProvider.notifier).loadConversations();
     }
     // #26: don't re-notify for messages the user already saw.
-    if (fromUserId != myUserId && !alreadySeen) {
-      _notifyIfAllowed(conversationId, senderUsername, rawContent);
+    if (params.fromUserId != params.myUserId && !params.alreadySeen) {
+      _notifyIfAllowed(
+        params.conversationId,
+        params.senderUsername,
+        params.rawContent,
+      );
     }
   }
 
   void _deliverEncryptedMessageNow(
-    Map<String, dynamic> json,
-    String rawContent,
-    String fromUserId,
-    String myUserId,
-    String conversationId,
-    String timestamp,
-    String senderUsername,
-    int? fromDeviceId, {
-    bool alreadySeen = false,
-  }) {
+    _MessageDeliveryParams params,
+    int? fromDeviceId,
+  ) {
     final crypto = ref.read(cryptoServiceProvider);
     final token = ref.read(authProvider).token ?? '';
     crypto.setToken(token);
     _decryptAndDeliverWithPreview(
       crypto,
-      json,
-      rawContent,
-      fromUserId,
-      myUserId,
-      conversationId,
-      timestamp,
-      senderUsername,
+      params.json,
+      params.rawContent,
+      params.fromUserId,
+      params.myUserId,
+      params.conversationId,
+      params.timestamp,
+      params.senderUsername,
       fromDeviceId: fromDeviceId,
-      alreadySeen: alreadySeen,
+      alreadySeen: params.alreadySeen,
     );
   }
 

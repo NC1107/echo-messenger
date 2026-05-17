@@ -12,6 +12,72 @@ import '../../utils/semantics_preview.dart';
 import '../chat_panel_controller.dart';
 import 'message_actions.dart' show fullMonthName;
 
+/// Parameters for updating the floating date pill.
+typedef FloatingDateParams = ({
+  WidgetRef ref,
+  Conversation conv,
+  ScrollController scrollController,
+  Map<String, GlobalKey> messageKeys,
+  String? selectedTextChannelId,
+  List<ChatMessage> Function(Conversation, ChatState, String?, bool)
+  resolveMessages,
+  ChatPanelController controller,
+  void Function(VoidCallback) setState,
+  bool Function() mounted,
+});
+
+/// Parameters for announcing incoming messages to assistive tech.
+typedef AnnounceNewMessageParams = ({
+  ChatMessage newest,
+  String? lastAnnouncedId,
+  String myUserId,
+  Timer? Function() getLiveRegionClearTimer,
+  void Function(String?) setLastAnnouncedMessageId,
+  void Function(String) setLiveRegionAnnouncement,
+  void Function(Timer?) setLiveRegionClearTimer,
+  void Function(VoidCallback) setState,
+  bool Function() mounted,
+});
+
+/// Parameters for handling incoming message updates.
+typedef IncomingMessagesParams = ({
+  int prevCount,
+  int nextCount,
+  ChatState next,
+  Conversation conv,
+  WidgetRef ref,
+  String? Function() getLastAnnouncedMessageId,
+  void Function(String?) setLastAnnouncedMessageId,
+  void Function(String) setLiveRegionAnnouncement,
+  Timer? Function() getLiveRegionClearTimer,
+  void Function(Timer?) setLiveRegionClearTimer,
+  bool Function() isNearBottom,
+  void Function() scrollToBottom,
+  ChatPanelController controller,
+  void Function(VoidCallback) setState,
+  bool Function() mounted,
+});
+
+/// Parameters for setting up auto-scroll functionality.
+typedef AutoScrollParams = ({
+  WidgetRef ref,
+  Conversation conv,
+  String? selectedChannelId,
+  bool includeUnchanneled,
+  ChatPanelController controller,
+  String? Function() getLastAnnouncedMessageId,
+  void Function(String?) setLastAnnouncedMessageId,
+  void Function(String) setLiveRegionAnnouncement,
+  Timer? Function() getLiveRegionClearTimer,
+  void Function(Timer?) setLiveRegionClearTimer,
+  bool Function() isNearBottom,
+  void Function() scrollToBottom,
+  void Function() onCaptureUnreadBoundary,
+  void Function() onScrollToUnreadBoundary,
+  void Function(VoidCallback) setState,
+  bool Function() mounted,
+});
+
 /// Find the topmost rendered message by querying RenderBox positions.
 String? _findTopmostMessageId(Map<String, GlobalKey> messageKeys) {
   String? topmostId;
@@ -46,32 +112,24 @@ String _formatDateLabel(DateTime dt, DateTime now) {
 
 /// Update the floating date pill so it reflects the date of the topmost
 /// rendered message. Cancels and reschedules the 2s fade-out timer.
-void updateFloatingDate({
-  required WidgetRef ref,
-  required Conversation conv,
-  required ScrollController scrollController,
-  required Map<String, GlobalKey> messageKeys,
-  required String? selectedTextChannelId,
-  required List<ChatMessage> Function(Conversation, ChatState, String?, bool)
-  resolveMessages,
-  required ChatPanelController controller,
-  required void Function(VoidCallback) setState,
-  required bool Function() mounted,
-}) {
-  if (!scrollController.hasClients) return;
+void updateFloatingDate(FloatingDateParams params) {
+  if (!params.scrollController.hasClients) return;
 
-  final chatState = ref.read(chatProvider);
-  final selectedChannelId = conv.isGroup ? selectedTextChannelId : null;
-  final includeUnchanneled = conv.isGroup && selectedTextChannelId == null;
-  final messages = resolveMessages(
-    conv,
+  final chatState = params.ref.read(chatProvider);
+  final selectedChannelId = params.conv.isGroup
+      ? params.selectedTextChannelId
+      : null;
+  final includeUnchanneled =
+      params.conv.isGroup && params.selectedTextChannelId == null;
+  final messages = params.resolveMessages(
+    params.conv,
     chatState,
     selectedChannelId,
     includeUnchanneled,
   );
   if (messages.isEmpty) return;
 
-  final topmostId = _findTopmostMessageId(messageKeys);
+  final topmostId = _findTopmostMessageId(params.messageKeys);
   final msgIndex = topmostId == null
       ? 0
       : messages
@@ -83,19 +141,22 @@ void updateFloatingDate({
     final now = DateTime.now();
     final label = _formatDateLabel(dt, now);
 
-    if (label != controller.floatingDate || !controller.floatingDateVisible) {
-      setState(() {
-        controller.floatingDate = label;
-        controller.floatingDateVisible = true;
+    if (label != params.controller.floatingDate ||
+        !params.controller.floatingDateVisible) {
+      params.setState(() {
+        params.controller.floatingDate = label;
+        params.controller.floatingDateVisible = true;
       });
     }
   } catch (_) {
     return;
   }
 
-  controller.floatingDateTimer?.cancel();
-  controller.floatingDateTimer = Timer(const Duration(seconds: 2), () {
-    if (mounted()) setState(() => controller.floatingDateVisible = false);
+  params.controller.floatingDateTimer?.cancel();
+  params.controller.floatingDateTimer = Timer(const Duration(seconds: 2), () {
+    if (params.mounted()) {
+      params.setState(() => params.controller.floatingDateVisible = false);
+    }
   });
 }
 
@@ -237,80 +298,55 @@ void _handleInitialMessageLoad(
 }
 
 /// Announce new message to assistive tech and manage timer.
-void _announceNewMessage(
-  ChatMessage newest,
-  String? lastAnnouncedId,
-  String myUserId,
-  Timer? Function() getLiveRegionClearTimer,
-  void Function(String?) setLastAnnouncedMessageId,
-  void Function(String) setLiveRegionAnnouncement,
-  void Function(Timer?) setLiveRegionClearTimer,
-  void Function(VoidCallback) setState,
-  bool Function() mounted,
-) {
-  if (newest.id == lastAnnouncedId ||
-      newest.fromUserId == myUserId ||
-      newest.isSystemEvent) {
+void _announceNewMessage(AnnounceNewMessageParams params) {
+  if (params.newest.id == params.lastAnnouncedId ||
+      params.newest.fromUserId == params.myUserId ||
+      params.newest.isSystemEvent) {
     return;
   }
-  setLastAnnouncedMessageId(newest.id);
-  final preview = previewForSemantics(newest.content);
-  setState(() {
-    setLiveRegionAnnouncement(
+  params.setLastAnnouncedMessageId(params.newest.id);
+  final preview = previewForSemantics(params.newest.content);
+  params.setState(() {
+    params.setLiveRegionAnnouncement(
       preview.isEmpty
-          ? 'New message from ${newest.fromUsername}'
-          : 'New message from ${newest.fromUsername}: $preview',
+          ? 'New message from ${params.newest.fromUsername}'
+          : 'New message from ${params.newest.fromUsername}: $preview',
     );
   });
-  getLiveRegionClearTimer()?.cancel();
-  setLiveRegionClearTimer(
+  params.getLiveRegionClearTimer()?.cancel();
+  params.setLiveRegionClearTimer(
     Timer(const Duration(seconds: 3), () {
-      if (!mounted()) return;
-      setState(() => setLiveRegionAnnouncement(''));
+      if (!params.mounted()) return;
+      params.setState(() => params.setLiveRegionAnnouncement(''));
     }),
   );
 }
 
 /// Handle auto-scroll and new message notification for incoming messages.
-void _handleIncomingMessages(
-  int prevCount,
-  int nextCount,
-  ChatState next,
-  Conversation conv,
-  WidgetRef ref,
-  String? Function() getLastAnnouncedMessageId,
-  void Function(String?) setLastAnnouncedMessageId,
-  void Function(String) setLiveRegionAnnouncement,
-  Timer? Function() getLiveRegionClearTimer,
-  void Function(Timer?) setLiveRegionClearTimer,
-  bool Function() isNearBottom,
-  void Function() scrollToBottom,
-  ChatPanelController controller,
-  void Function(VoidCallback) setState,
-  bool Function() mounted,
-) {
-  final myUserId = ref.read(authProvider.select((s) => s.userId)) ?? '';
-  final newest = next.messagesForConversation(conv.id).lastOrNull;
-  if (newest != null && prevCount > 0) {
-    _announceNewMessage(
-      newest,
-      getLastAnnouncedMessageId(),
-      myUserId,
-      getLiveRegionClearTimer,
-      setLastAnnouncedMessageId,
-      setLiveRegionAnnouncement,
-      setLiveRegionClearTimer,
-      setState,
-      mounted,
-    );
+void _handleIncomingMessages(IncomingMessagesParams params) {
+  final myUserId = params.ref.read(authProvider.select((s) => s.userId)) ?? '';
+  final newest = params.next.messagesForConversation(params.conv.id).lastOrNull;
+  if (newest != null && params.prevCount > 0) {
+    _announceNewMessage((
+      newest: newest,
+      lastAnnouncedId: params.getLastAnnouncedMessageId(),
+      myUserId: myUserId,
+      getLiveRegionClearTimer: params.getLiveRegionClearTimer,
+      setLastAnnouncedMessageId: params.setLastAnnouncedMessageId,
+      setLiveRegionAnnouncement: params.setLiveRegionAnnouncement,
+      setLiveRegionClearTimer: params.setLiveRegionClearTimer,
+      setState: params.setState,
+      mounted: params.mounted,
+    ));
   }
 
-  if (isNearBottom()) {
-    scrollToBottom();
+  if (params.isNearBottom()) {
+    params.scrollToBottom();
   } else {
-    setState(() {
-      controller.hasNewMessagesBelow = true;
-      controller.newMessagesBelowCount += nextCount - prevCount;
+    params.setState(() {
+      params.controller.hasNewMessagesBelow = true;
+      params.controller.newMessagesBelowCount +=
+          params.nextCount - params.prevCount;
     });
   }
 }
@@ -318,36 +354,21 @@ void _handleIncomingMessages(
 /// Wire up the per-channel-session `ref.listen<ChatState>(chatProvider)`
 /// that drives auto-scroll on incoming messages and the assistive-tech
 /// live-region announcement (#495).
-void setupAutoScroll({
-  required WidgetRef ref,
-  required Conversation conv,
-  required String? selectedChannelId,
-  required bool includeUnchanneled,
-  required ChatPanelController controller,
-  required String? Function() getLastAnnouncedMessageId,
-  required void Function(String?) setLastAnnouncedMessageId,
-  required void Function(String) setLiveRegionAnnouncement,
-  required Timer? Function() getLiveRegionClearTimer,
-  required void Function(Timer?) setLiveRegionClearTimer,
-  required bool Function() isNearBottom,
-  required void Function() scrollToBottom,
-  required void Function() onCaptureUnreadBoundary,
-  required void Function() onScrollToUnreadBoundary,
-  required void Function(VoidCallback) setState,
-  required bool Function() mounted,
-}) {
-  final key = '${conv.id}:${selectedChannelId ?? ""}';
-  if (controller.autoScrollConversationKey == key) return;
-  controller.autoScrollConversationKey = key;
+void setupAutoScroll(AutoScrollParams params) {
+  final key = '${params.conv.id}:${params.selectedChannelId ?? ""}';
+  if (params.controller.autoScrollConversationKey == key) return;
+  params.controller.autoScrollConversationKey = key;
 
-  ref.listen<ChatState>(chatProvider, (prev, next) {
+  params.ref.listen<ChatState>(chatProvider, (prev, next) {
     int visibleCount(ChatState s) {
-      if (!conv.isGroup) return s.messagesForConversation(conv.id).length;
+      if (!params.conv.isGroup) {
+        return s.messagesForConversation(params.conv.id).length;
+      }
       return s
           .messagesForConversationChannel(
-            conv.id,
-            channelId: selectedChannelId,
-            includeUnchanneled: includeUnchanneled,
+            params.conv.id,
+            channelId: params.selectedChannelId,
+            includeUnchanneled: params.includeUnchanneled,
           )
           .length;
     }
@@ -358,29 +379,29 @@ void setupAutoScroll({
     _handleInitialMessageLoad(
       prevCount,
       nextCount,
-      controller,
-      onCaptureUnreadBoundary,
-      onScrollToUnreadBoundary,
+      params.controller,
+      params.onCaptureUnreadBoundary,
+      params.onScrollToUnreadBoundary,
     );
 
     if (nextCount > prevCount) {
-      _handleIncomingMessages(
-        prevCount,
-        nextCount,
-        next,
-        conv,
-        ref,
-        getLastAnnouncedMessageId,
-        setLastAnnouncedMessageId,
-        setLiveRegionAnnouncement,
-        getLiveRegionClearTimer,
-        setLiveRegionClearTimer,
-        isNearBottom,
-        scrollToBottom,
-        controller,
-        setState,
-        mounted,
-      );
+      _handleIncomingMessages((
+        prevCount: prevCount,
+        nextCount: nextCount,
+        next: next,
+        conv: params.conv,
+        ref: params.ref,
+        getLastAnnouncedMessageId: params.getLastAnnouncedMessageId,
+        setLastAnnouncedMessageId: params.setLastAnnouncedMessageId,
+        setLiveRegionAnnouncement: params.setLiveRegionAnnouncement,
+        getLiveRegionClearTimer: params.getLiveRegionClearTimer,
+        setLiveRegionClearTimer: params.setLiveRegionClearTimer,
+        isNearBottom: params.isNearBottom,
+        scrollToBottom: params.scrollToBottom,
+        controller: params.controller,
+        setState: params.setState,
+        mounted: params.mounted,
+      ));
     }
   });
 }

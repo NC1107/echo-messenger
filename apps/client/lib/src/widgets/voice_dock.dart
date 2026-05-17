@@ -135,6 +135,16 @@ class VoiceDock extends ConsumerWidget {
       );
     }
 
+    final spec = (
+      context: context,
+      ref: ref,
+      voiceLk: voiceLk,
+      voiceSettings: voiceSettings,
+      screenShare: screenShare,
+      conversationId: conversationId,
+      channelId: channelId,
+      m: m,
+    );
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTap: onNavigateToLounge,
@@ -157,25 +167,15 @@ class VoiceDock extends ConsumerWidget {
         child: Row(
           children: [
             _buildStatusLabel(
-              context,
+              spec,
               statusColor,
               voiceLk.isJoining,
               peerCount,
               channelName,
               voiceLk.localConnectionQuality,
               voiceLk.callStartedAt,
-              m,
             ),
-            ..._buildControlButtons(
-              context,
-              ref,
-              voiceLk,
-              voiceSettings,
-              screenShare,
-              conversationId,
-              channelId,
-              m,
-            ),
+            ..._buildControlButtons(spec),
           ],
         ),
       ),
@@ -278,19 +278,22 @@ class VoiceDock extends ConsumerWidget {
 
   /// Status indicator icon + channel name / peer count.
   Widget _buildStatusLabel(
-    BuildContext context,
+    _DockButtonSpec spec,
     Color statusColor,
     bool isJoining,
     int peerCount,
     String channelName,
     ConnectionQuality quality,
     DateTime? callStartedAt,
-    _DockMetrics m,
   ) {
     return Expanded(
       child: Row(
         children: [
-          Icon(Icons.graphic_eq, size: m.statusIconSize, color: statusColor),
+          Icon(
+            Icons.graphic_eq,
+            size: spec.m.statusIconSize,
+            color: statusColor,
+          ),
           if (quality != ConnectionQuality.unknown) ...[
             const SizedBox(width: 4),
             Tooltip(
@@ -299,13 +302,13 @@ class VoiceDock extends ConsumerWidget {
                 width: 6,
                 height: 6,
                 decoration: BoxDecoration(
-                  color: _qualityColor(context, quality),
+                  color: _qualityColor(spec.context, quality),
                   shape: BoxShape.circle,
                 ),
               ),
             ),
           ],
-          SizedBox(width: m.gap),
+          SizedBox(width: spec.m.gap),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -315,7 +318,7 @@ class VoiceDock extends ConsumerWidget {
                   _voiceStatusLabel(isJoining, peerCount),
                   style: TextStyle(
                     color: statusColor,
-                    fontSize: m.statusBigFontSize,
+                    fontSize: spec.m.statusBigFontSize,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -323,8 +326,8 @@ class VoiceDock extends ConsumerWidget {
                   channelName: channelName,
                   peerCount: peerCount,
                   callStartedAt: callStartedAt,
-                  fontSize: m.statusSmallFontSize,
-                  color: context.textMuted,
+                  fontSize: spec.m.statusSmallFontSize,
+                  color: spec.context.textMuted,
                 ),
               ],
             ),
@@ -336,29 +339,25 @@ class VoiceDock extends ConsumerWidget {
 
   /// All control icon buttons: video, mute, mic level, deafen, screen share,
   /// and hangup.
-  List<Widget> _buildControlButtons(
-    BuildContext context,
-    WidgetRef ref,
-    LiveKitVoiceState voiceLk,
-    VoiceSettingsState voiceSettings,
-    ScreenShareState screenShare,
-    String conversationId,
-    String channelId,
-    _DockMetrics m,
-  ) {
+  List<Widget> _buildControlButtons(_DockButtonSpec spec) {
     return [
-      _buildVideoButton(context, ref, voiceLk, m),
-      _buildMuteButton(context, ref, voiceSettings, m),
-      _buildDeafenButton(context, ref, voiceSettings, m),
+      _buildVideoButton(spec.context, spec.ref, spec.voiceLk, spec.m),
+      _buildMuteButton(spec.context, spec.ref, spec.voiceSettings, spec.m),
+      _buildDeafenButton(spec.context, spec.ref, spec.voiceSettings, spec.m),
       if (_supportsScreenShare)
-        _buildScreenShareButton(context, ref, screenShare, m),
+        _buildScreenShareButton(
+          spec.context,
+          spec.ref,
+          spec.screenShare,
+          spec.m,
+        ),
       _buildHangupButton(
-        context,
-        ref,
-        screenShare,
-        conversationId,
-        channelId,
-        m,
+        spec.context,
+        spec.ref,
+        spec.screenShare,
+        spec.conversationId,
+        spec.channelId,
+        spec.m,
       ),
     ];
   }
@@ -475,6 +474,18 @@ class VoiceDock extends ConsumerWidget {
     );
   }
 }
+
+/// Parameters for dock button construction, reducing parameter counts from 8 to 2.
+typedef _DockButtonSpec = ({
+  BuildContext context,
+  WidgetRef ref,
+  LiveKitVoiceState voiceLk,
+  VoiceSettingsState voiceSettings,
+  ScreenShareState screenShare,
+  String conversationId,
+  String channelId,
+  _DockMetrics m,
+});
 
 Color _muteColor(BuildContext context, VoiceSettingsState vs) {
   if (vs.selfMuted) return EchoTheme.danger;

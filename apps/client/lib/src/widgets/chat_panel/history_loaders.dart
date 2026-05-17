@@ -13,6 +13,33 @@ import '../chat_panel_controller.dart';
 /// `#prod-2026-05-08` pagination cursor rationale lives on
 /// [ChatPanelController.paginationCursor].
 
+/// Parameters for a single pagination pass searching for a reply-to ancestor.
+class _PaginationParams {
+  _PaginationParams({
+    required this.ref,
+    required this.conv,
+    required this.selectedTextChannelId,
+    required this.selectedChannelId,
+    required this.includeUnchanneled,
+    required this.replyToId,
+    required this.controller,
+    required this.a,
+    required this.mounted,
+    required this.resolveMessages,
+  });
+  final WidgetRef ref;
+  final Conversation conv;
+  final String? selectedTextChannelId;
+  final String? selectedChannelId;
+  final bool includeUnchanneled;
+  final String replyToId;
+  final ChatPanelController controller;
+  final _HistoryAuth a;
+  final bool Function() mounted;
+  final List<ChatMessage> Function(Conversation, ChatState, String?, bool)
+  resolveMessages;
+}
+
 /// Auth + crypto bundle resolved for a single history call. Returns `null`
 /// when the user isn't authenticated; otherwise [groupCrypto] is populated
 /// for group convs and [crypto] for 1:1 DMs (when crypto is initialized).
@@ -155,54 +182,45 @@ bool _isReplyLoaded(
   return loaded.indexWhere((m) => m.id == replyToId) >= 0;
 }
 
-Future<bool> _paginateOnceForReply(
-  WidgetRef ref,
-  Conversation conv,
-  String? selectedTextChannelId,
-  String? selectedChannelId,
-  bool includeUnchanneled,
-  String replyToId,
-  ChatPanelController controller,
-  _HistoryAuth a,
-  bool Function() mounted,
-  List<ChatMessage> Function(Conversation, ChatState, String?, bool)
-  resolveMessages,
-) async {
-  if (!mounted()) return false;
-  final state = ref.read(chatProvider);
-  if (!state.conversationHasMore(conv.id, channelId: selectedTextChannelId)) {
+Future<bool> _paginateOnceForReply(_PaginationParams params) async {
+  if (!params.mounted()) return false;
+  final state = params.ref.read(chatProvider);
+  if (!state.conversationHasMore(
+    params.conv.id,
+    channelId: params.selectedTextChannelId,
+  )) {
     return false;
   }
-  final loaded = resolveMessages(
-    conv,
+  final loaded = params.resolveMessages(
+    params.conv,
     state,
-    selectedChannelId,
-    includeUnchanneled,
+    params.selectedChannelId,
+    params.includeUnchanneled,
   );
   if (loaded.isEmpty) return false;
 
-  final cursor = controller.paginationCursor(loaded);
-  await ref
+  final cursor = params.controller.paginationCursor(loaded);
+  await params.ref
       .read(chatProvider.notifier)
       .loadHistoryWithUserId(
-        conv.id,
-        a.token,
-        a.userId,
-        channelId: selectedTextChannelId,
+        params.conv.id,
+        params.a.token,
+        params.a.userId,
+        channelId: params.selectedTextChannelId,
         before: cursor.timestamp,
-        crypto: a.crypto,
-        isGroup: conv.isGroup,
-        groupCrypto: a.groupCrypto,
+        crypto: params.a.crypto,
+        isGroup: params.conv.isGroup,
+        groupCrypto: params.a.groupCrypto,
       );
 
-  if (!mounted()) return false;
+  if (!params.mounted()) return false;
   return _isReplyLoaded(
-    ref,
-    conv,
-    selectedChannelId,
-    includeUnchanneled,
-    replyToId,
-    resolveMessages,
+    params.ref,
+    params.conv,
+    params.selectedChannelId,
+    params.includeUnchanneled,
+    params.replyToId,
+    params.resolveMessages,
   );
 }
 
@@ -245,16 +263,18 @@ Future<void> jumpToReplyQuote({
   while (round < 30) {
     round++;
     final found = await _paginateOnceForReply(
-      ref,
-      conv,
-      selectedTextChannelId,
-      selectedChannelId,
-      includeUnchanneled,
-      replyToId,
-      controller,
-      a,
-      mounted,
-      resolveMessages,
+      _PaginationParams(
+        ref: ref,
+        conv: conv,
+        selectedTextChannelId: selectedTextChannelId,
+        selectedChannelId: selectedChannelId,
+        includeUnchanneled: includeUnchanneled,
+        replyToId: replyToId,
+        controller: controller,
+        a: a,
+        mounted: mounted,
+        resolveMessages: resolveMessages,
+      ),
     );
     if (!found) break;
     onHighlight();
