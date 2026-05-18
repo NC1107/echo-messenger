@@ -145,4 +145,60 @@ void main() {
       expect(decrypted, equals(plaintext));
     });
   });
+
+  group('GroupCryptoService.assertGroupKeyShape (audit P1-2)', () {
+    final service = GroupCryptoService(serverUrl: 'http://example.invalid');
+
+    test('accepts a freshly-generated 32-byte AES-256 key', () {
+      final key = GroupCryptoService.generateGroupKey();
+      // Should not throw.
+      service.assertGroupKeyShape('conv-A', 0, key);
+    });
+
+    test('rejects an envelope-ciphertext-shaped candidate (the regression '
+        'P1-2 closes)', () {
+      // A typical AES-GCM-wrapped envelope is ~96 bytes: 12-byte nonce
+      // + 32-byte key + 16-byte tag + ECDH ephemeral overhead. The
+      // pre-fix fallback silently cached this as if it were the key.
+      final envelopeShapedBlob = base64Encode(List<int>.filled(96, 0));
+      expect(
+        () => service.assertGroupKeyShape('conv-A', 5, envelopeShapedBlob),
+        throwsA(
+          isA<GroupEnvelopeUnwrapException>()
+              .having((e) => e.conversationId, 'conv', 'conv-A')
+              .having((e) => e.keyVersion, 'version', 5)
+              .having((e) => e.reason, 'reason', contains('wrong length')),
+        ),
+      );
+    });
+
+    test('rejects a too-short candidate (< 32 bytes)', () {
+      final shortBlob = base64Encode(List<int>.filled(16, 0));
+      expect(
+        () => service.assertGroupKeyShape('conv-A', 1, shortBlob),
+        throwsA(isA<GroupEnvelopeUnwrapException>()),
+      );
+    });
+
+    test('rejects a non-base64 candidate', () {
+      expect(
+        () => service.assertGroupKeyShape('conv-A', 1, 'not!valid!base64!'),
+        throwsA(
+          isA<GroupEnvelopeUnwrapException>().having(
+            (e) => e.reason,
+            'reason',
+            contains('valid base64'),
+          ),
+        ),
+      );
+    });
+
+    test('GroupEnvelopeUnwrapException.toString includes context', () {
+      const exc = GroupEnvelopeUnwrapException('conv-X', 7, 'bad shape');
+      final s = exc.toString();
+      expect(s, contains('conv-X'));
+      expect(s, contains('version=7'));
+      expect(s, contains('bad shape'));
+    });
+  });
 }

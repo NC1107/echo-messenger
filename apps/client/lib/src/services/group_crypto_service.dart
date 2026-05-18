@@ -18,12 +18,46 @@ import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../utils/crypto_perf.dart';
 import 'crypto_service.dart';
 import 'secure_key_store.dart';
 
 /// Prefix used to mark group-encrypted payloads so we can distinguish them
 /// from plaintext or Signal-encrypted DM payloads.
 const groupEncryptedPrefix = 'GRP1:';
+
+/// AES-256 key size in bytes. Used to structurally validate that a
+/// candidate group key — whether unwrapped from a per-member envelope or
+/// taken from the legacy plaintext-key migration path — is at least
+/// shaped like an AES-256 key before we cache it and start encrypting
+/// production messages with it. Audit P1-2 / MED-2.
+const int _groupKeyBytesLength = 32;
+
+/// Thrown when a group-key envelope cannot be unwrapped AND the legacy
+/// plaintext-key fallback also fails the structural check (32 bytes of
+/// AES-256-key shape). The caller is expected to return `null` from the
+/// fetch path and let the UI surface a "rotate group key" affordance.
+///
+/// The previous behaviour at `group_crypto_service.dart:225` silently
+/// cached the ciphertext blob as if it were the key, which produced an
+/// endless stream of `[Could not decrypt…]` placeholders for every
+/// message in the group with no signal that the actual problem was a
+/// malformed envelope. Audit MED-2 / P1-2.
+class GroupEnvelopeUnwrapException implements Exception {
+  final String conversationId;
+  final int keyVersion;
+  final String reason;
+  const GroupEnvelopeUnwrapException(
+    this.conversationId,
+    this.keyVersion,
+    this.reason,
+  );
+
+  @override
+  String toString() =>
+      'GroupEnvelopeUnwrapException(conv=$conversationId, '
+      'version=$keyVersion): $reason';
+}
 
 class GroupCryptoService {
   final String serverUrl;
@@ -215,6 +249,13 @@ class GroupCryptoService {
       // Try to decrypt the envelope using our identity key.
       // If _cryptoService is available, the encrypted_key is a per-member
       // envelope that must be unwrapped. If not, assume legacy plaintext key.
+      //
+      // Audit P1-2: whichever branch produces the candidate key, validate
+      // it is 32 bytes (AES-256 key size) before caching. Pre-fix, an
+      // unwrap failure would silently cache the ~96-byte ciphertext blob
+      // as if it were the key, producing endless decrypt failures on
+      // every subsequent group message with no signal that the actual
+      // problem was a malformed envelope.
       String rawKeyB64;
       if (_cryptoService != null && encryptedKey != '__envelope__') {
         try {
@@ -223,7 +264,10 @@ class GroupCryptoService {
           );
           rawKeyB64 = base64Encode(rawKeyBytes);
         } catch (e) {
-          // Fallback: treat as legacy plaintext key (migration path)
+          // Fallback: treat as legacy plaintext key (migration path).
+          // We accept this only if the structural check below confirms
+          // the bytes are AES-256-key-shaped; an envelope ciphertext
+          // would not pass.
           debugPrint(
             '[GroupCrypto] Envelope decrypt failed, trying as legacy: $e',
           );
@@ -233,11 +277,53 @@ class GroupCryptoService {
         rawKeyB64 = encryptedKey;
       }
 
+      assertGroupKeyShape(conversationId, version, rawKeyB64);
       await _cacheKey(conversationId, version, rawKeyB64);
       return (version, rawKeyB64);
+    } on GroupEnvelopeUnwrapException catch (e) {
+      // Typed structural failure — log and return null so the UI sees the
+      // group as "no key available" instead of caching a known-bad key.
+      debugPrint('[GroupCrypto] $e');
+      return null;
     } catch (e) {
       debugPrint('[GroupCrypto] fetchGroupKey error: $e');
       return null;
+    }
+  }
+
+  /// Validate that `rawKeyB64` is a base64 string that decodes to exactly
+  /// 32 bytes — the only shape that can be an AES-256 group key. Throws
+  /// [GroupEnvelopeUnwrapException] when the structural check fails so
+  /// the caller can short-circuit without caching a garbage key.
+  ///
+  /// This is the audit P1-2 sanity check. It does NOT prove the key is
+  /// the *right* key for this group (symmetric crypto has no per-key
+  /// verifier), but it does rule out the specific footgun where an
+  /// envelope-ciphertext blob silently gets cached as a key.
+  @visibleForTesting
+  void assertGroupKeyShape(
+    String conversationId,
+    int keyVersion,
+    String rawKeyB64,
+  ) {
+    final Uint8List bytes;
+    try {
+      bytes = base64Decode(rawKeyB64);
+    } catch (_) {
+      throw GroupEnvelopeUnwrapException(
+        conversationId,
+        keyVersion,
+        'candidate key is not valid base64',
+      );
+    }
+    if (bytes.length != _groupKeyBytesLength) {
+      throw GroupEnvelopeUnwrapException(
+        conversationId,
+        keyVersion,
+        'candidate key has wrong length: ${bytes.length} bytes '
+        '(expected $_groupKeyBytesLength). Likely an envelope-ciphertext '
+        'blob slipped through the unwrap-failure fallback.',
+      );
     }
   }
 
@@ -266,6 +352,27 @@ class GroupCryptoService {
   /// online member crashes mid-rotation the group is wedged until someone
   /// retries.
   Future<int?> performRotation(
+    String conversationId,
+    int keyVersion, {
+    required Future<List<Map<String, dynamic>>> Function() fetchMembers,
+    required Future<Uint8List?> Function(String userId) fetchIdentityKey,
+  }) {
+    // Audit P1-4: timeline event captures the full rotation cost (member
+    // fetch + N ECDH envelope wraps + server POST). Rotation is rare in
+    // steady state but expensive when it fires.
+    return timedCryptoOp(
+      'GroupCryptoService.performRotation',
+      () => _performRotationImpl(
+        conversationId,
+        keyVersion,
+        fetchMembers: fetchMembers,
+        fetchIdentityKey: fetchIdentityKey,
+      ),
+      args: {'conversation': conversationId, 'keyVersion': keyVersion},
+    );
+  }
+
+  Future<int?> _performRotationImpl(
     String conversationId,
     int keyVersion, {
     required Future<List<Map<String, dynamic>>> Function() fetchMembers,

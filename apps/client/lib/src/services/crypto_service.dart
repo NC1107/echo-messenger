@@ -19,6 +19,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../utils/crypto_perf.dart';
 import 'crypto_exceptions.dart';
 import 'debug_log_service.dart';
 import 'safety_number_service.dart';
@@ -226,6 +227,30 @@ class CryptoService {
       'Crypto',
       'Loaded ${_sessions.length} session(s) from storage on init',
     );
+
+    // Audit P1-3: surface any torn-write intents that survived the last
+    // shutdown. Each entry means the process died between the pre- and
+    // post-decrypt session save; that session is now at risk of being
+    // out-of-sync with the sender's ratchet on its next inbound message.
+    // We log structured events for telemetry but do NOT auto-discard —
+    // forcing a session reset on every torn-write would over-correct,
+    // and the next decrypt will either succeed (sender's ratchet survived
+    // the same way ours did) or fail through the existing P0-3
+    // out-of-sync banner. Once we have a real rate from production we
+    // can decide whether to upgrade this to a true write-ahead log.
+    try {
+      final torn = await scanAndClearTornSessionWrites();
+      if (torn.isNotEmpty) {
+        DebugLogService.instance.log(
+          LogLevel.warning,
+          'Crypto',
+          'Torn session write detected for ${torn.length} session(s): '
+              '${torn.join(", ")} — see audit P1-3',
+        );
+      }
+    } catch (e) {
+      debugPrint('[Crypto] scanAndClearTornSessionWrites failed: $e');
+    }
   }
 
   /// Force-reset a corrupted or broken session with a peer.
@@ -246,6 +271,77 @@ class CryptoService {
     final store = SecureKeyStore.instance;
     final json = await session.toJson();
     await store.write('$_sessionPrefix$peerId', jsonEncode(json));
+  }
+
+  /// Audit P1-3: torn-write instrumentation. `_decryptNormalMessage` saves
+  /// session state twice — once as a pre-isolate write-ahead intent, once
+  /// after the post-decrypt state is back from the isolate. If the process
+  /// crashes between the two, on the next launch we'd silently keep the
+  /// pre-state on disk and re-decrypt the next inbound message against a
+  /// stale ratchet, wedging the session.
+  ///
+  /// To observe how often this actually happens, [_beginSessionWriteIntent]
+  /// drops a small intent marker into secure storage before the pre-save,
+  /// and [_endSessionWriteIntent] removes it after the post-save. On init,
+  /// [scanAndClearTornSessionWrites] surfaces any markers that survived as
+  /// a structured `crypto.session_torn_write` log line.
+  ///
+  /// We deliberately do NOT auto-discard the half-state: this is
+  /// observation only. If telemetry shows a non-negligible rate, the
+  /// follow-up is a real write-ahead log (audit P1-3 → "decide on full
+  /// WAL after instrumentation"). Hot path cost: one extra
+  /// `SecureKeyStore.write` per decrypt.
+  ///
+  /// **Prefix discipline**: deliberately does NOT start with
+  /// `_sessionPrefix` (`echo_signal_session_`). If it did, `_loadSessions`
+  /// would try to `jsonDecode` the timestamp value and quarantine the
+  /// intent entry as a "corrupted session", deleting the very signal
+  /// we're trying to surface. Keep this prefix orthogonal.
+  static const _sessionIntentPrefix = 'echo_session_writeahead_';
+
+  Future<void> _beginSessionWriteIntent(String sessionKey) async {
+    try {
+      await SecureKeyStore.instance.write(
+        '$_sessionIntentPrefix$sessionKey',
+        DateTime.now().toIso8601String(),
+      );
+    } catch (_) {
+      // Best-effort. A failed intent-write is itself a torn-write hazard,
+      // but since we have nothing better to fall back to, we just proceed —
+      // the surrounding session-save will surface the underlying storage
+      // problem via the existing typed-exception path.
+    }
+  }
+
+  Future<void> _endSessionWriteIntent(String sessionKey) async {
+    try {
+      await SecureKeyStore.instance.delete('$_sessionIntentPrefix$sessionKey');
+    } catch (_) {
+      // Leaving the marker behind biases the next startup scan toward a
+      // false positive, which is the safe failure mode for instrumentation.
+    }
+  }
+
+  /// Called from [_loadSessions] at startup. Returns the list of session
+  /// keys that were mid-write at the last process shutdown. The intent
+  /// markers are cleared as a side effect so we don't re-log the same
+  /// torn write on every subsequent launch.
+  @visibleForTesting
+  Future<List<String>> scanAndClearTornSessionWrites() async {
+    final store = SecureKeyStore.instance;
+    final all = await store.readAll();
+    final torn = <String>[];
+    for (final entry in all.entries) {
+      if (entry.key.startsWith(_sessionIntentPrefix)) {
+        torn.add(entry.key.substring(_sessionIntentPrefix.length));
+        try {
+          await store.delete(entry.key);
+        } catch (_) {
+          // Failure to clear means we re-surface on next launch — also fine.
+        }
+      }
+    }
+    return torn;
   }
 
   /// On cache miss, attempt to reload a single session from secure storage
@@ -551,12 +647,18 @@ class CryptoService {
       }
     }
 
-    // Perform X3DH as Alice (initiator) -- 4-DH with OTP if available
-    final x3dhResult = await X3DH.initiate(
-      aliceIdentity: _identityKeyPair!,
-      bobIdentityKey: bobIdentityKey,
-      bobSignedPrekey: bobSignedPrekey,
-      bobOneTimePrekey: bobOneTimePrekey,
+    // Perform X3DH as Alice (initiator) -- 4-DH with OTP if available.
+    // P1-4 timeline event lets us see how much of the encrypt budget is
+    // the one-time X3DH cost vs the per-message ratchet.
+    final x3dhResult = await timedCryptoOp(
+      'X3DH.initiate',
+      () => X3DH.initiate(
+        aliceIdentity: _identityKeyPair!,
+        bobIdentityKey: bobIdentityKey,
+        bobSignedPrekey: bobSignedPrekey,
+        bobOneTimePrekey: bobOneTimePrekey,
+      ),
+      args: {'otp': bobOneTimePrekey != null},
     );
 
     // Initialize Double Ratchet as Alice.
@@ -626,7 +728,11 @@ class CryptoService {
   Future<String> encryptMessage(String peerUserId, String plaintext) =>
       _withSessionLock(
         peerUserId,
-        () => _encryptMessageImpl(peerUserId, plaintext),
+        () => timedCryptoOp(
+          'CryptoService.encryptMessage',
+          () => _encryptMessageImpl(peerUserId, plaintext),
+          args: {'peer': peerUserId},
+        ),
       );
 
   Future<String> _encryptMessageImpl(
@@ -693,7 +799,11 @@ class CryptoService {
     final sessionKey = _sessionKeyFor(peerUserId, fromDeviceId);
     return _withSessionLock(
       sessionKey,
-      () => _decryptMessageImpl(peerUserId, ciphertextB64, fromDeviceId),
+      () => timedCryptoOp(
+        'CryptoService.decryptMessage',
+        () => _decryptMessageImpl(peerUserId, ciphertextB64, fromDeviceId),
+        args: {'peer': peerUserId, 'fromDevice': fromDeviceId},
+      ),
     );
   }
 
@@ -921,6 +1031,9 @@ class CryptoService {
     // Serialise session state before any mutation (write-ahead for crash
     // recovery) and before passing into the isolate.
     final sessionJsonBefore = await session.toJson();
+    // Audit P1-3: drop a torn-write intent marker so we can detect on
+    // next launch that this decrypt was in-flight when the process died.
+    await _beginSessionWriteIntent(sessionKey);
     await _saveSession(sessionKey, session);
     try {
       // Run pure Double Ratchet crypto off the UI thread.  The isolate
@@ -937,6 +1050,8 @@ class CryptoService {
         result['session'] as Map<String, dynamic>,
       );
       await _saveSession(sessionKey, updatedSession);
+      // Audit P1-3: post-state committed — clear the intent marker.
+      await _endSessionWriteIntent(sessionKey);
       // Refresh LRU ordering after state update.
       _sessions.put(sessionKey, updatedSession);
       return utf8.decode(result['plaintext'] as Uint8List);
