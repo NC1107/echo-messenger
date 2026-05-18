@@ -4,6 +4,15 @@ The whole point. Every place a group message could be lost in the new design, wi
 
 The headline question from the user — *"I fear losing user messages due to the finickiness of the encryption setup"* — applied to GRP2.
 
+## How these scenarios get tested
+
+Per the QA review pass on this design, the 10 scenarios below need different test layers:
+
+- **Unit-testable**: L1, L2 (server-only), L5, L6, L7 (server-only), L8 (server-only extension), L10.
+- **Needs multi-client simulation harness**: **L4** (rotation never completes) and **L9** (client crashes mid-send). Neither is exercisable by today's test infrastructure. The harness itself is tracked as audit item P1-1 (see [`../crypto-audit/06-recommendations.md`](../crypto-audit/06-recommendations.md)) and **must land before this phase's Phase 3** so the rotation-state-machine work has a place to be tested.
+
+Without the harness, Phases 3+ would ship without coverage of the failure modes the design claims to close. That is the same trap that left GRP1 half-wired — design says "we handle X", code says "we trust we handle X", no test exists to confirm.
+
 ## L1 — Sender has no active group key cached
 
 - **Scenario**: First message after launch; cache is cold; network is flaky.

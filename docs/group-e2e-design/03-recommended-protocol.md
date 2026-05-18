@@ -25,7 +25,7 @@ Where `version=0x02`. The signature covers ciphertext + nonce + the server-side 
 
 Compared to GRP1:
 - `GRP2:` prefix instead of `GRP1:`.
-- One leading version byte after the prefix (so we can grow to GRP2 v2 without a wire-format flag day).
+- One leading version byte after the prefix (so we can grow to subsequent GRP2 revisions without a wire-format flag day).
 - A 64-byte Ed25519 signature at the tail.
 
 Receivers detect GRP2 by prefix, verify the signature against the from-user's identity key, then decrypt. A failed signature is a hard error — surfaces as `[Could not verify sender]`, not the same UX as `[Could not decrypt…]`.
@@ -48,20 +48,37 @@ Receivers detect GRP2 by prefix, verify the signature against the from-user's id
 2. Admin clicks "Rotate group key" in the group settings.
 3. Time-based rotation (30 days since last rotation).
 
-### Rotation flow with deterministic leader election (closes #658)
+### Rotation flow with server-led leader election (closes #658)
 
-The previous "first writer wins" race is replaced with a deterministic candidate ordering. All online members hear the trigger, but only one tries first.
+*(Revised after the security + backend review. Earlier drafts proposed a client-side `hash(group_id || trigger_event_id) mod N` scheme; both specialists pushed back because (a) client-side membership-list disagreement during a partition can produce different elected leaders across clients, and (b) the deterministic-leader framing oversold what is actually "UNIQUE constraint + randomised jitter". This version moves election to the server, where the authoritative member list and online-status registry already live.)*
 
-1. Compute `leader = members[hash(group_id || trigger_event_id) mod len(members)]` where `members` is the current member list sorted by user ID. `trigger_event_id` is a UUID minted by the server on the triggering event so all clients agree on it.
-2. If `self == leader`: start rotation immediately.
-3. If `self != leader`: wait `1.5 s × rank` where `rank` is the position in the sorted ordering. Then check whether the new key version exists on the server; if yes, abort (someone else did it). If no, attempt rotation yourself.
-4. The server-side `(conversation_id, key_version) UNIQUE` constraint is still the ultimate tie-breaker. Two clients colliding (e.g. on a network partition) still lose gracefully — one wins, the other gets 409 and re-fetches.
+The server is the only component that always sees every membership change in causal order and always knows which members are currently online via the WebSocket hub (DashMap of `user_id → sender`). It is the right component to pick the leader.
 
-This is **PaxosLite-for-rotation**: pre-agreed candidate order makes "everyone immediately tries" no longer the failure mode. Liveness: as long as one online member completes the rotation, we're done. The trigger event is re-broadcast on rotation completion so straggler clients pick up the new version.
+**Server side** — when emitting a rotation trigger event (membership change OR `POST /api/group-keys/:conversation_id/rotate`):
+
+1. Snapshot the current member list **and** the online set from the WS hub.
+2. Pick `leader = lowest user_id among online members` (deterministic, no consensus needed). If no member is online, defer the trigger and re-emit on the next member's reconnect.
+3. Compute a `fallback_order` = remaining online members sorted by user_id ascending.
+4. Emit `group_key_rotation_requested { trigger_event_id, conversation_id, leader_user_id, fallback_order: [u2, u3, ...], deadline_ms: 7500 }` to all online members.
+
+**Client side**:
+
+1. Receive the event.
+2. If `self.user_id == leader_user_id`: start rotation immediately.
+3. Otherwise: wait `deadline_ms` (7.5 s default). On expiry, check whether a new key version has appeared on the server; if yes, abort. If no, walk `fallback_order` — the client at position 0 attempts, then waits another `deadline_ms`, then the client at position 1 attempts, etc.
+4. The server-side `(conversation_id, key_version) UNIQUE` constraint remains the **actual safety**. If two clients race (split-brain, recoverable error, retried trigger event), one wins and the other gets HTTP 409 and re-fetches the active version.
+
+**What this design honestly does and does not promise**:
+
+- ✅ Liveness when *any* online member can complete a rotation. The leader is an optimisation that reduces 409 traffic and stampedes, not a consensus protocol.
+- ✅ Safety from concurrent rotations is owned by the database UNIQUE constraint, not by the election. The election makes the happy path quiet; the constraint makes the bad path correct.
+- ❌ This is not PaxosLite. It is "server picks first candidate; UNIQUE catches races." Earlier doc framing was sloppy.
+- ❌ It does not guarantee progress when *no* member is online. The trigger is re-emitted on next reconnect.
 
 ### Out-of-band recovery
 
-- If after `members.length × 1.5 s` no rotation has been confirmed, *any* online member can self-elect by holding shift-clicking "Rotate group key" in settings. This is a manual escape valve — almost never needed, but available.
+- Manual escape valve: any group admin can re-trigger a rotation from settings. This goes through the same flow above; the server elects a leader again.
+- If a partition leaves part of the group permanently disconnected from the server, that subgroup obviously cannot complete a rotation. There is no design fix for this — it is a property of "we have a server".
 
 ## Membership changes
 
@@ -81,7 +98,9 @@ This is **PaxosLite-for-rotation**: pre-agreed candidate order makes "everyone i
 
 ## Per-message authenticity
 
-The sender signature solves the "anyone with the group key can forge as anyone else" problem from [`02-protocol-options.md`](02-protocol-options.md). Recipients verify against the sender's Ed25519 identity public key, which they already have cached for 1:1 sessions.
+The sender signature closes the "anyone with the group key can forge as anyone else" attack from [`02-protocol-options.md`](02-protocol-options.md). Recipients verify against the sender's Ed25519 identity public key, which they already have cached for 1:1 sessions.
+
+Honest framing: this only holds *as long as the sender's identity key has not itself been compromised*. A compromised-then-removed member who still has both their identity key and the v_N-1 group key can produce signed ciphertext attributed to themselves. This is unavoidable without forward-secure identity keys (out of scope). What the signature does buy is preventing a *different* member from forging as someone they aren't.
 
 Signature failures are *louder* than decryption failures. The placeholder text is different (`[Could not verify sender]` not `[Could not decrypt…]`) and the chat row is rendered with a danger-colored side stripe. This is intentional — a forged-signature event is more alarming than a normal decrypt failure and should not be confused with the "key out of sync" UX.
 

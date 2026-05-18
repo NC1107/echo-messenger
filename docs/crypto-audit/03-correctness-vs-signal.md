@@ -14,10 +14,10 @@ References:
 | Verify signed-prekey signature with the peer's identity key (Ed25519) before any DH | `signal_x3dh.dart:initiate` does this | ✅ |
 | Run DH1 = DH(IK_A, SPK_B); DH2 = DH(EK_A, IK_B); DH3 = DH(EK_A, SPK_B); DH4 = DH(EK_A, OPK_B) if available | Implemented in correct order | ✅ |
 | Derive shared secret with HKDF over `F || DH1 || DH2 || DH3 [|| DH4]` where `F = 32 0xFF bytes` for X25519 | `signal_x3dh.dart` matches | ✅ |
-| Wipe ephemeral private key after key derivation | Dart's GC + zeroize on `Uint8List` regions | ⚠️ Best-effort — Dart `Uint8List` is GC'd, not deterministically zeroed |
+| Wipe ephemeral private key after key derivation | Dart `Uint8List` private-key regions are dereferenced and left to GC; we do **not** explicitly overwrite the bytes (no `fillRange(0, n, 0)` calls in the crypto path) | ⚠️ Gap — Dart `Uint8List` is GC'd, not deterministically zeroed. Theoretical post-compromise issue only. |
 | Deletion of one-time prekey on responder side after first successful decrypt | `crypto_service.dart:_decryptInitialMessage` deletes the OPK after success | ✅ |
 
-**Risk note**: Dart's lack of deterministic zeroing on `Uint8List` is a theoretical post-compromise-recovery weakness, not a message-loss issue. Flagged for awareness, not the audit's focus.
+**Risk note**: Dart's lack of deterministic zeroing on `Uint8List` is a theoretical post-compromise-recovery weakness, not a message-loss issue. Flagged for awareness, not the audit's focus. The original draft of this audit used the word "zeroize" here; that was sloppy — we do not actively zero key material, we merely drop the reference. Reviewers should not read the absence of zeroing as a Signal-spec deviation that affects forward secrecy *during normal operation*; it only affects what an attacker with post-process-exit memory access could recover. If we ever decide to harden this, the fix is a `KeyMaterial` wrapper that calls `bytes.fillRange(0, bytes.length, 0)` on `dispose()`.
 
 ## Double Ratchet
 
@@ -26,13 +26,13 @@ References:
 | Root key & chain keys derived via HKDF-SHA256 | `signal_session.dart` uses `kdfRk` / `kdfCk` from `signal_protocol.dart` | ✅ |
 | New DH ratchet step on each direction change | `_diffieHellmanRatchet` (line ~250) | ✅ |
 | Skipped message keys stored for out-of-order delivery | `skippedKeys` map, capped via `maxSkip=1000` | ✅ (cap is a hazard — see [`02`](02-message-loss-surface.md)) |
-| Header encryption ("HE" variant) | **Not implemented** — we use unencrypted headers | ⚠️ Conscious choice; Signal mobile clients also skip HE |
+| Header encryption ("HE" variant) | **Not implemented** — we use unencrypted headers | ⚠️ Gap. Signal's own mobile apps achieve a similar metadata-protection goal via **Sealed Sender**, which we also don't implement. The two are different mechanisms; we have neither. |
 | Constant-time AEAD usage | `package:cryptography` AES-GCM | ✅ |
-| Detect and reject replays inside the skipped-key window | Map lookup on `(ratchet_pub, message_number)` — replay would silently re-derive the same plaintext | ⚠️ |
+| Detect and reject replays inside the skipped-key window | `signal_session.dart:217` removes the message key from `skippedKeys` on first successful consume — a replayed ciphertext at the same `(ratchet_pub, message_number)` finds an empty slot and fails. | ✅ |
 
-**Header encryption**: Skipping HE means a passive observer of the WebSocket can see ratchet-public-keys and message numbers in cleartext. This does not leak content but does leak some metadata about conversation activity. Not a message-loss issue; mention for completeness.
+**Header encryption**: Skipping HE means a passive observer of the WebSocket can see ratchet-public-keys and message numbers in cleartext. This does not leak content but does leak some metadata about conversation activity. Not a message-loss issue; mention for completeness. Earlier drafts framed this as "consistent with Signal mobile clients" — that framing was misleading. Signal's mobile clients address the same metadata goal via Sealed Sender, which we also don't implement. Be honest: we have no equivalent metadata-protection mechanism.
 
-**Replay**: A re-sent ciphertext within the skipped-key window will produce the same plaintext (correct) and bubble it as a "new" message (incorrect — UI dedup happens upstream by server message ID). The server enforces unique IDs, so we believe this is closed off at the storage layer, but a hostile sender bypassing the server could theoretically inject. Action item: file a follow-up to confirm message-ID uniqueness is enforced before the crypto layer ever sees a duplicate.
+**Replay**: A re-sent ciphertext fails to decrypt because `signal_session.dart:217` removes the corresponding message key from `skippedKeys` on first successful consume — confirmed against the source. The earlier draft of this audit confused this with server-side row uniqueness; the server's `messages.id UUID PRIMARY KEY DEFAULT gen_random_uuid()` does *not* dedup replays at the storage layer (it mints a fresh row per accepted send), so the crypto-layer defence is the only thing standing between us and a duplicate-bubble bug. That defence is correct. Row in the table above updated from ⚠️ to ✅.
 
 ## Wire format
 

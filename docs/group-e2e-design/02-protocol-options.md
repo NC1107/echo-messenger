@@ -2,7 +2,15 @@
 
 Three honest options. Each is described as a *protocol choice* — UX work is the same for all three.
 
-## Option A — Minimal extension of GRP1 (Sender Keys-style)
+## Terminology
+
+Naming conventions used throughout this directory:
+
+- **GRP1** / **GRP2** — logical protocol names. Use unadorned when discussing the protocol.
+- **`GRP1:`** / **`GRP2:`** — literal wire-prefix bytes. Use the colon suffix and code-font only when literally referring to the bytes on the wire.
+- **Sender Keys** (proper noun, capitalised) — the published group-protocol pattern used by Signal and WhatsApp. Defined here on first use; not lowercase'd anywhere in this doc tree.
+
+## Option A — Minimal extension of GRP1 (Sender Keys)
 
 What Signal Messenger ships for groups today. We are 70% of the way there already.
 
