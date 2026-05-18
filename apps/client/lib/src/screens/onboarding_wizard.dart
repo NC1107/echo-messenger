@@ -616,6 +616,15 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           ),
           const SizedBox(height: 24),
 
+          // Helper line so users know what's required vs optional at a
+          // glance. Mirrors the "(optional)" suffix already used on Pronouns.
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              'Only Display Name is required. Everything else is optional and editable from Settings later.',
+              style: TextStyle(color: context.textMuted, fontSize: 12),
+            ),
+          ),
           _buildField(
             controller: _displayNameController,
             label: 'Display Name',
@@ -625,7 +634,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           const SizedBox(height: 12),
           _buildField(
             controller: _bioController,
-            label: 'Bio',
+            label: 'Bio (optional)',
             hint: 'Tell people a little about yourself',
             maxLength: 200,
             maxLines: 3,
@@ -891,51 +900,37 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           const SizedBox(height: 24),
           LayoutBuilder(
             builder: (context, constraints) {
-              // Wide (desktop/tablet): show all cards in a single row grid.
-              // Narrow (phone): fall back to horizontal scroll.
-              // Use 700 so a 600px-wide screen doesn't overflow the 6-card row.
-              final isWide = constraints.maxWidth >= 700;
-              if (isWide) {
-                return GridView.count(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  crossAxisCount: _wizardThemes.length,
-                  mainAxisSpacing: 10,
-                  crossAxisSpacing: 10,
-                  childAspectRatio: 96 / 96,
-                  children: [
-                    for (final t in _wizardThemes)
-                      _WizardThemeCard(
-                        label: t.label,
-                        swatch: t.swatch,
-                        isSelected: current == t.selection,
-                        onTap: () => ref
-                            .read(themeProvider.notifier)
-                            .setTheme(t.selection),
-                      ),
-                  ],
-                );
+              // Choose the column count from the available width so the cards
+              // always read as a tidy grid instead of a cramped horizontal
+              // scroll. 540 covers the right pane of the desktop 2-pane
+              // wizard layout (≈ 576 px after padding).
+              final w = constraints.maxWidth;
+              final int cols;
+              if (w >= 540) {
+                cols = 3; // desktop pane → 2×3 grid
+              } else if (w >= 360) {
+                cols = 3; // narrow tablet / phone landscape
+              } else {
+                cols = 2; // phone portrait
               }
-              return SizedBox(
-                height: 120,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  itemCount: _wizardThemes.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 10),
-                  itemBuilder: (_, i) {
-                    final t = _wizardThemes[i];
-                    final isSelected = current == t.selection;
-                    return _WizardThemeCard(
+              return GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: cols,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                childAspectRatio: 1.1,
+                children: [
+                  for (final t in _wizardThemes)
+                    _WizardThemeCard(
                       label: t.label,
                       swatch: t.swatch,
-                      isSelected: isSelected,
+                      isSelected: current == t.selection,
                       onTap: () => ref
                           .read(themeProvider.notifier)
                           .setTheme(t.selection),
-                    );
-                  },
-                ),
+                    ),
+                ],
               );
             },
           ),
