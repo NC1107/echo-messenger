@@ -1238,15 +1238,21 @@ class _MessageItemState extends State<MessageItem>
     }
 
     if (hasMedia) {
+      // Forwarded messages: strip the `[Forwarded] ` prefix so the
+      // marker regex inside MediaContent can match. The "Forwarded"
+      // badge above the bubble still signals provenance.
+      final mediaContent = msg.content.startsWith(_forwardedPrefix)
+          ? msg.content.substring(_forwardedPrefix.length)
+          : msg.content;
       final mediaWidget = MediaContent(
-        content: msg.content,
+        content: mediaContent,
         isMine: isMine,
         serverUrl: widget.serverUrl,
         authToken: widget.authToken,
         mediaTicket: widget.mediaTicket,
         onImageTap: widget.onImageTap,
       );
-      final caption = extractMediaCaption(msg.content);
+      final caption = extractMediaCaption(mediaContent);
       if (caption == null) return mediaWidget;
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1951,7 +1957,14 @@ class _MessageItemState extends State<MessageItem>
       return const SizedBox.shrink();
     }
 
-    final mediaUrl = extractMediaUrl(msg.content);
+    // Strip the `[Forwarded] ` prefix before regex media detection — the
+    // media-marker patterns are start-anchored (`^\[video:`) so the
+    // prefix would otherwise hide the marker and render `[video:url]`
+    // raw in the bubble.
+    final contentForMedia = msg.content.startsWith(_forwardedPrefix)
+        ? msg.content.substring(_forwardedPrefix.length)
+        : msg.content;
+    final mediaUrl = extractMediaUrl(contentForMedia);
     final hasMedia = mediaUrl != null;
     final hasReactions = msg.reactions.isNotEmpty;
 

@@ -273,6 +273,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
+  // Inline "What's New" notes for the desktop overlay path. When non-null
+  // the body Stack renders a [WhatsNewInlineOverlay] above the page so
+  // the AppTitleBar remains draggable.
+  ReleaseNotesView? _whatsNewNotes;
+
   Future<void> _showWhatsNewIfNeeded() async {
     if (!mounted) return;
     // Force AsyncNotifier.build() to run before reading .value — the
@@ -280,7 +285,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // need the resolved snapshot.
     await ref.read(releaseNotesProvider.future);
     if (!mounted) return;
-    await maybeShowWhatsNew(context, ref);
+    await maybeShowWhatsNew(
+      context,
+      ref,
+      onShow: (notes) {
+        if (!mounted) return;
+        setState(() => _whatsNewNotes = notes);
+      },
+    );
   }
 
   void _startPendingRefreshLoop() {
@@ -1087,6 +1099,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 ),
                 if (voiceActive && !_showSettings)
                   _buildDesktopVoiceDock(animatedSidebarWidth),
+                if (_whatsNewNotes != null)
+                  WhatsNewInlineOverlay(
+                    notes: _whatsNewNotes!,
+                    onDismiss: () => setState(() => _whatsNewNotes = null),
+                  ),
               ],
             ),
           ),
@@ -1134,6 +1151,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             _userDismissedLounge = true;
           });
         },
+        membersPanelVisible: _showMembers,
+        onToggleMembersPanel: _toggleMembers,
       );
     }
     if (_selectedConversation != null) {
@@ -1287,6 +1306,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             _userDismissedLounge = true;
           });
         },
+        membersPanelVisible: _showMembers,
+        onToggleMembersPanel: _toggleMembers,
       );
     } else if (_selectedConversation != null) {
       rightPanel = ChatPanel(
@@ -1312,17 +1333,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         children: [
           AppTitleBar(title: titleBarText),
           Expanded(
-            child: Row(
+            child: Stack(
               children: [
-                // Left sidebar
-                if (_showSettings)
-                  _buildSettingsSidebar(300)
-                else
-                  SizedBox(width: 300, child: _buildConversationPanel()),
-                // Thin vertical divider
-                Container(width: 1, color: context.border),
-                // Right: content area
-                Expanded(child: rightPanel),
+                Row(
+                  children: [
+                    // Left sidebar
+                    if (_showSettings)
+                      _buildSettingsSidebar(300)
+                    else
+                      SizedBox(width: 300, child: _buildConversationPanel()),
+                    // Thin vertical divider
+                    Container(width: 1, color: context.border),
+                    // Right: content area
+                    Expanded(child: rightPanel),
+                  ],
+                ),
+                if (_whatsNewNotes != null)
+                  WhatsNewInlineOverlay(
+                    notes: _whatsNewNotes!,
+                    onDismiss: () => setState(() => _whatsNewNotes = null),
+                  ),
               ],
             ),
           ),

@@ -1,5 +1,5 @@
 import 'dart:io' show Platform;
-import 'dart:ui' show Offset, Size;
+import 'dart:ui' show Color, Offset, Size;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:screen_retriever/screen_retriever.dart';
@@ -129,6 +129,12 @@ class WindowStateService {
   /// screen — matches Discord's boot flow. The title bar is removed via
   /// [TitleBarStyle.hidden] and re-attached by [restore] on completion.
   ///
+  /// Also makes the window transparent so the splash card's rounded
+  /// corners aren't framed by a rectangular OS chrome around them
+  /// (Discord-style).  Reverted by [restore].  Window-level transparency
+  /// requires a compositing window manager; if unsupported the window
+  /// just stays opaque, which is also acceptable.
+  ///
   /// Centering is done AFTER the size change and again after a short
   /// settle so window managers that snap the resize against the old anchor
   /// don't leave the splash hanging off the edge of the display.
@@ -137,6 +143,15 @@ class WindowStateService {
     try {
       await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
       await windowManager.setSize(const Size(300, 300));
+      // Make the window background transparent so the splash card's
+      // rounded corners blend into the desktop instead of being framed
+      // by a rectangular OS surface.
+      try {
+        await windowManager.setBackgroundColor(const Color(0x00000000));
+        await windowManager.setHasShadow(false);
+      } catch (_) {
+        // Transparency is best-effort; not every compositor supports it.
+      }
       await windowManager.center();
       // Some Wayland/X11 compositors apply the size change asynchronously,
       // so the first center() can race against the resize. Re-center on
