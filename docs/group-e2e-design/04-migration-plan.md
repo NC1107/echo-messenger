@@ -16,13 +16,20 @@ These are the audit's three P0 items (the third was upgraded after the security 
 
 ## Phase 1 — Server-side ciphertext-only enforcement (#591)
 
-**Goal**: make it impossible for a buggy client to send plaintext into an `is_encrypted=true` group.
+**Goal**: make it impossible for a buggy client to send plaintext into an `is_encrypted=true` group, AND make it possible for a correctly-encrypting client to send anything at all.
 
-- One PR. Server-only. Adds the structural validator from [`03-recommended-protocol.md`](03-recommended-protocol.md) §"Server-side enforcement".
-- Rolled out in **shadow mode first** (log violations, don't reject) for 1 week so we can detect non-malicious clients still emitting plaintext.
-- Then flip the rejection flag.
+**Status**: ✅ Landed on `dev` ahead of this design doc. The earlier-existing `validate_encrypted_payload` had a bug: `is_valid_ciphertext_shape` only recognised 1:1 wire formats (initial V1/V2 magic byte + normal-message `header_len=40`). Group ciphertext arrives as `GRP1:<base64>` and `:` is not a valid base64 character, so the validator was silently dropping every encrypted-group send.
 
-Estimate: 2 days code + 1 week shadow soak.
+**What landed**:
+- `is_valid_ciphertext_shape` now strips the `GRP1:` or `GRP2:` textual prefix BEFORE attempting base64 decode.
+- Decoded payload must be ≥ 28 bytes (12-byte AES-GCM nonce + 16-byte tag floor).
+- 7 new unit tests cover GRP1 accept, GRP2 accept, invalid base64 after prefix, payload too short, empty payload, case-sensitive prefix, and the regression itself.
+
+**Shadow-mode discussion is moot** for this specific fix — the validator was rejecting all encrypted-group sends, not "letting plaintext through". The fix strictly *enables* a path that didn't work. There is no production client today that needs a soak window to migrate.
+
+**Cost**: ~50 LOC + 7 tests, server-only. No client change. Already on `dev` in commit `<TBD>`.
+
+A separate, future Phase 1.5 (still unbuilt) would extend the validator to also enforce that **the sender's user_id is currently a member** of the conversation (closes the "removed member tries to send" attack from `05-message-loss-analysis.md` L2). That's tracked in the audit P1-2 bucket, not here.
 
 ## Phase 2 — GRP2 wire format (client + server)
 

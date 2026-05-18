@@ -36,9 +36,9 @@ What is shipped today, what is half-wired, what is missing. Sources: `apps/clien
 
 ### Server-side enforcement
 
-- The server *accepts* both plaintext and ciphertext messages on encrypted groups. The "is_encrypted=true" flag is a client-side hint, not a server-side requirement.
-- **GitHub issue #591** tracks "server should reject plaintext sends on encrypted groups".
-- Until that lands, a buggy or malicious client can send plaintext into an encrypted group and the server will store + relay it.
+- The server's `validate_encrypted_payload` gate (`apps/server/src/ws/message_service/validate.rs:213`) rejects plaintext on encrypted DMs **today**. The encrypted-group branch existed but was misshapen: `is_valid_ciphertext_shape` only knew about the 1:1 wire formats (initial V1/V2 prefix + normal-message `header_len=40`) and tried to base64-decode the entire content. Group ciphertext arrives as `GRP1:<base64>`, and `:` is not a base64 character — so every encrypted-group message was getting silently rejected. Result: encrypted groups couldn't send anything through prod, but plaintext groups still worked.
+- This validator was extended with `GRP1:` + `GRP2:` prefix awareness in the same dev branch that produced this doc — see [`docs/group-e2e-design/04-migration-plan.md`](04-migration-plan.md) Phase 1 for the rollout note.
+- **GitHub issue #591** tracked "server should reject plaintext sends on encrypted groups"; the fix above closes that gap.
 
 ### `@here` / `@everyone` mention semantics
 

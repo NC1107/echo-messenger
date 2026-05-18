@@ -27,15 +27,51 @@ use super::types::RecipientDeviceContents;
 
 pub(in crate::ws::message_service) const MAX_MESSAGE_LENGTH: usize = 10_000;
 
+/// Group-message wire prefix used by `group_crypto_service.dart` to
+/// distinguish AES-GCM group envelopes (prefix + base64 payload) from the
+/// 1:1 Signal Protocol wire formats. The colon is intentionally part of
+/// the prefix and is NOT a valid base64 character, so a naive
+/// `BASE64.decode(content)` on a group payload fails — this validator
+/// must inspect the textual prefix BEFORE attempting any base64 decode.
+///
+/// `GRP1:` is shipping today. `GRP2:` is reserved for the design in
+/// `docs/group-e2e-design/03-recommended-protocol.md` which adds per-
+/// message Ed25519 sender signatures. Both prefixes are accepted here
+/// so a future client rollout doesn't need a coordinated server flip.
+pub(in crate::ws::message_service) const GROUP_WIRE_PREFIX_V1: &str = "GRP1:";
+pub(in crate::ws::message_service) const GROUP_WIRE_PREFIX_V2: &str = "GRP2:";
+
 // ── Wire-frame shape ────────────────────────────────────────────────────────
 
-/// Validate that a base64-encoded payload is shaped like an Echo
-/// ciphertext wire frame. We do NOT decrypt or otherwise validate
-/// authenticity here — this is a belt-and-suspenders shape gate that
-/// prevents a malicious or buggy client from storing/relaying
-/// plaintext on conversations marked `is_encrypted = true`.
-pub(in crate::ws::message_service) fn is_valid_ciphertext_shape(b64: &str) -> bool {
-    let Ok(bytes) = BASE64.decode(b64.as_bytes()) else {
+/// Validate that a payload is shaped like an Echo ciphertext wire frame.
+/// We do NOT decrypt or otherwise validate authenticity here — this is a
+/// belt-and-suspenders shape gate that prevents a malicious or buggy
+/// client from storing/relaying plaintext on conversations marked
+/// `is_encrypted = true`.
+///
+/// Accepts three shapes:
+/// - **1:1 initial V1/V2** — base64 of `[0xEC, version] + ...`.
+/// - **1:1 normal** — base64 whose first 4 LE bytes equal `header_len=40`.
+/// - **Group GRP1: / GRP2:** — literal textual prefix followed by base64.
+///   The group form is checked BEFORE base64 decoding because the `:`
+///   character is not a valid base64 alphabet member.
+pub(in crate::ws::message_service) fn is_valid_ciphertext_shape(payload: &str) -> bool {
+    // Group wires carry a textual prefix that breaks naive base64 decode.
+    // Strip the prefix and verify the remainder is non-empty + valid base64
+    // with enough bytes for `nonce(12) || ct || tag(16)`.
+    for prefix in [GROUP_WIRE_PREFIX_V1, GROUP_WIRE_PREFIX_V2] {
+        if let Some(after_prefix) = payload.strip_prefix(prefix) {
+            let Ok(bytes) = BASE64.decode(after_prefix.as_bytes()) else {
+                return false;
+            };
+            // Minimum: 12-byte nonce + 16-byte AEAD tag = 28 bytes. A real
+            // message will be longer, but we only gate the structural floor.
+            return bytes.len() >= 28;
+        }
+    }
+
+    // 1:1 wires are pure base64.
+    let Ok(bytes) = BASE64.decode(payload.as_bytes()) else {
         return false;
     };
 
@@ -383,5 +419,79 @@ mod tests {
         // A realistic ASCII message that should not pass the gate
         let payload = b64(b"Hello, world!");
         assert!(!is_valid_ciphertext_shape(&payload));
+    }
+
+    // ── Group wire-prefix awareness (#591) ───────────────────────────────────
+
+    /// Group AES-GCM envelope: 12-byte nonce + ciphertext + 16-byte tag,
+    /// minimum 28 bytes when ct is empty. We accept anything ≥ 28 bytes
+    /// of decoded payload after the prefix.
+    fn group_envelope(ct_len: usize) -> String {
+        let total = 12 + ct_len + 16;
+        b64(&vec![0u8; total])
+    }
+
+    #[test]
+    fn shape_grp1_prefix_accepted() {
+        // Real client emits `GRP1:` + base64(nonce(12) || ct || tag(16)).
+        // Smallest valid payload: ct is empty -> 28 bytes total.
+        let payload = format!("{GROUP_WIRE_PREFIX_V1}{}", group_envelope(0));
+        assert!(is_valid_ciphertext_shape(&payload));
+    }
+
+    #[test]
+    fn shape_grp2_prefix_accepted() {
+        // Future GRP2 wires also flow through this validator without a
+        // coordinated server flip. Payload after the prefix is base64 of
+        // version(1) + nonce(12) + ct + tag(16) + sig(64); the structural
+        // floor here is just "≥ 28 bytes of decoded payload".
+        let payload = format!("{GROUP_WIRE_PREFIX_V2}{}", group_envelope(64));
+        assert!(is_valid_ciphertext_shape(&payload));
+    }
+
+    #[test]
+    fn shape_grp1_prefix_with_invalid_base64_rejected() {
+        // Prefix is right, body is junk that doesn't decode.
+        let payload = format!("{GROUP_WIRE_PREFIX_V1}not!valid!base64!");
+        assert!(!is_valid_ciphertext_shape(&payload));
+    }
+
+    #[test]
+    fn shape_grp1_prefix_with_too_short_payload_rejected() {
+        // Decoded body shorter than the 28-byte AEAD floor (nonce+tag).
+        let payload = format!("{GROUP_WIRE_PREFIX_V1}{}", b64(&[0u8; 16]));
+        assert!(!is_valid_ciphertext_shape(&payload));
+    }
+
+    #[test]
+    fn shape_grp1_prefix_empty_payload_rejected() {
+        // Just the prefix with no base64 body.
+        assert!(!is_valid_ciphertext_shape(GROUP_WIRE_PREFIX_V1));
+    }
+
+    #[test]
+    fn shape_grp_lowercase_prefix_rejected() {
+        // Prefix is case-sensitive — a `grp1:` would not match.
+        let payload = format!("grp1:{}", group_envelope(0));
+        assert!(!is_valid_ciphertext_shape(&payload));
+    }
+
+    /// Regression test for the audit's findings doc: prior to the GRP-prefix
+    /// fix, naïve base64-decoding a `GRP1:` payload would fail because `:`
+    /// is not a valid base64 alphabet member — meaning every encrypted-group
+    /// message hitting this validator got silently dropped. This test
+    /// ensures we never regress that path. (#591 audit follow-up.)
+    #[test]
+    fn shape_regression_grp1_was_silently_failing_pre_fix() {
+        let payload = format!("{GROUP_WIRE_PREFIX_V1}{}", group_envelope(0));
+        // Documented expectation: accepted under the fixed validator.
+        assert!(
+            is_valid_ciphertext_shape(&payload),
+            "GRP1-prefixed group ciphertext must be accepted",
+        );
+        // Sanity-check the failure mode the fix corrects: dropping the prefix
+        // recovers a base64-decodable payload, but the FULL string with the
+        // `:` does not.
+        assert!(BASE64.decode(payload.as_bytes()).is_err());
     }
 }
