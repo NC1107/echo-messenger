@@ -49,7 +49,13 @@ class Biometric extends _$Biometric {
 
   @override
   BiometricState build() {
-    _init();
+    // Defer the platform check to the next microtask. The Linux/web early
+    // return inside `_init` would otherwise touch `state` before `build()`
+    // returns the initial state — Riverpod treats that as
+    // "uninitialized provider" and the resulting error cascades into a
+    // flood of `DiagnosticsProperty<void>` exceptions during the first
+    // build. See https://riverpod.dev/docs/concepts/providers#notifier.
+    Future.microtask(_init);
     return const BiometricState();
   }
 

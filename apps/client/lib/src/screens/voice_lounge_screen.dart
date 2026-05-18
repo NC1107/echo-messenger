@@ -34,11 +34,29 @@ import 'voice_lounge/screen_share.dart';
 
 /// Discord-style voice lounge that replaces the chat content area when the
 /// user is in a voice call and chooses to view the lounge.
+/// Voice lounge screen. The hide-members toggle in the header actually
+/// controls the HomeScreen's right-side group-members panel (the "Owner /
+/// Members" sidebar visible to the right of the lounge), not the
+/// participant grid inside the lounge itself.
 class VoiceLoungeScreen extends ConsumerStatefulWidget {
   /// Called when the user taps "Back to chat".
   final VoidCallback? onBackToChat;
 
-  const VoiceLoungeScreen({super.key, this.onBackToChat});
+  /// Current visibility of the right-side group-members panel.  Owned by
+  /// HomeScreen, threaded through so the lounge header eye-icon shows the
+  /// correct state.
+  final bool membersPanelVisible;
+
+  /// Called when the lounge-header eye-icon is tapped.  HomeScreen flips
+  /// its own `_showMembers` flag in response.
+  final VoidCallback? onToggleMembersPanel;
+
+  const VoiceLoungeScreen({
+    super.key,
+    this.onBackToChat,
+    this.membersPanelVisible = true,
+    this.onToggleMembersPanel,
+  });
 
   @override
   ConsumerState<VoiceLoungeScreen> createState() => _VoiceLoungeScreenState();
@@ -52,8 +70,8 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   /// Whether the drawing canvas overlay is active.
   bool _isDrawing = false;
 
-  /// Whether the members sidebar is collapsed (hidden).
-  bool _membersSidebarCollapsed = false;
+  // Members-panel collapse state lives on HomeScreen; this widget only
+  // forwards the toggle. See [VoiceLoungeScreen.onToggleMembersPanel].
 
   /// Anchors for dock submenu panels.
   final LayerLink _drawingToolsLayerLink = LayerLink();
@@ -303,16 +321,13 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
               ),
               const SizedBox(height: 16),
             ],
-            Visibility(
-              visible: !_membersSidebarCollapsed,
-              child: ParticipantGrid(
-                room: room,
-                voiceState: voiceLk,
-                localAvatarUrl: _buildAvatarUrl(),
-                memberAvatars: memberAvatars,
-                authToken: ref.read(authProvider).token,
-                onTileTap: (key) => setState(() => _focusedTileKey = key),
-              ),
+            ParticipantGrid(
+              room: room,
+              voiceState: voiceLk,
+              localAvatarUrl: _buildAvatarUrl(),
+              memberAvatars: memberAvatars,
+              authToken: ref.read(authProvider).token,
+              onTileTap: (key) => setState(() => _focusedTileKey = key),
             ),
           ],
         ),
@@ -362,16 +377,13 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
               child: const ScreenShareViewer(),
             ),
           if (screenShare.isScreenSharing) const SizedBox(height: 16),
-          Visibility(
-            visible: !_membersSidebarCollapsed,
-            child: ParticipantGrid(
-              room: room,
-              voiceState: voiceLk,
-              localAvatarUrl: _buildAvatarUrl(),
-              memberAvatars: memberAvatars,
-              authToken: ref.read(authProvider).token,
-              onTileTap: (key) => setState(() => _focusedTileKey = key),
-            ),
+          ParticipantGrid(
+            room: room,
+            voiceState: voiceLk,
+            localAvatarUrl: _buildAvatarUrl(),
+            memberAvatars: memberAvatars,
+            authToken: ref.read(authProvider).token,
+            onTileTap: (key) => setState(() => _focusedTileKey = key),
           ),
         ],
       ),
@@ -779,10 +791,10 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
             channelName: channelName,
             participantCount: totalParticipants,
             onBackToChat: widget.onBackToChat,
-            membersSidebarCollapsed: _membersSidebarCollapsed,
-            onToggleMembers: () => setState(
-              () => _membersSidebarCollapsed = !_membersSidebarCollapsed,
-            ),
+            // The eye toggle in the header controls HomeScreen's
+            // right-side group-members panel — not the participant grid.
+            membersSidebarCollapsed: !widget.membersPanelVisible,
+            onToggleMembers: widget.onToggleMembersPanel,
           ),
           Expanded(child: contentArea),
           // Space for the floating dock
@@ -792,8 +804,10 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       if (!_spotlightMode) Positioned.fill(child: drawingOverlay),
       ..._buildSubmenuFollowers(conversationId),
       Positioned(bottom: 16, left: 0, right: 0, child: dock),
+      // Pushed below the LoungeHeader (48 + 12 margin) so it doesn't
+      // overlap the eye-toggle / back-to-chat controls.
       Positioned(
-        top: 12,
+        top: 60,
         right: 12,
         child: _buildBackgroundPickerButton(context),
       ),

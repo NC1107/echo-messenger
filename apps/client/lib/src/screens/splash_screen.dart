@@ -371,11 +371,26 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     // Boot card matches the update-prompt card style: rounded surface,
     // 16-px border-radius, themed border. Keeps the small splash window
     // visually consistent with the in-app update modal.
+    //
+    // Background is transparent on desktop so the window's setBackgroundColor
+    // takes effect — gives the splash a floating-card look on compositors
+    // that support window transparency.
     return Scaffold(
-      backgroundColor: context.mainBg,
+      backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-          const AnimatedGradientBackground(),
+          // Animated gradient is clipped to the card's rounded shape so it
+          // doesn't poke out as a rectangular frame around the splash.
+          Center(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: const SizedBox(
+                width: 260,
+                height: 260,
+                child: AnimatedGradientBackground(),
+              ),
+            ),
+          ),
           Center(
             child: FadeTransition(
               opacity: _fadeAnimation,

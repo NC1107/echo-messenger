@@ -180,59 +180,71 @@ class WhatsNewModal extends ConsumerWidget {
   }
 }
 
-/// Height of the integrated [AppTitleBar] in `window_chrome.dart` — kept in
-/// sync so the dialog barrier leaves the title-bar drag region uncovered.
-const double _kTitleBarHeight = 36;
+/// Inline What's-New overlay rendered as a sibling of the page content
+/// (NOT a route), so that the integrated AppTitleBar above it remains
+/// draggable.  Earlier attempts used `showGeneralDialog` with a
+/// transparent barrier — but Flutter's [ModalRoute] always inserts a
+/// pointer-absorbing barrier across the full screen regardless of color,
+/// which left users unable to drag the window when the "Got it" button
+/// landed off-screen.
+class WhatsNewInlineOverlay extends ConsumerWidget {
+  final ReleaseNotesView notes;
+  final VoidCallback onDismiss;
+
+  const WhatsNewInlineOverlay({
+    super.key,
+    required this.notes,
+    required this.onDismiss,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Stack(
+      children: [
+        // Dim layer covers only the body area; the AppTitleBar above this
+        // overlay continues to receive pointer events.
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () async {
+              await ref.read(releaseNotesProvider.notifier).markShown();
+              onDismiss();
+            },
+            child: Container(color: Colors.black54),
+          ),
+        ),
+        Center(
+          child: GestureDetector(
+            // Absorb taps on the card itself so they don't fall through to
+            // the dim layer above.
+            behavior: HitTestBehavior.opaque,
+            onTap: () {},
+            child: WhatsNewModal(notes: notes, isDialog: true),
+          ),
+        ),
+      ],
+    );
+  }
+}
 
 /// Convenience wrapper called by `home_screen` once after login.  Shows
 /// the modal if-and-only-if [releaseNotesProvider] has populated
-/// [ReleaseNotesView] data (i.e. the user updated since they last saw
-/// notes AND we have a non-empty body to render).
-Future<void> maybeShowWhatsNew(BuildContext context, WidgetRef ref) async {
+/// [ReleaseNotesView] data.  On mobile uses a bottom sheet; on desktop
+/// signals back to the caller via [onShow] so the caller can render
+/// [WhatsNewInlineOverlay] inline below its title bar.
+Future<void> maybeShowWhatsNew(
+  BuildContext context,
+  WidgetRef ref, {
+  void Function(ReleaseNotesView)? onShow,
+}) async {
   final view = ref.read(releaseNotesProvider).value;
   if (view == null) return;
   if (!context.mounted) return;
   final isDesktop = MediaQuery.sizeOf(context).width >= 600;
   if (isDesktop) {
-    // showGeneralDialog with a transparent system barrier + our own dim
-    // overlay positioned BELOW the title bar. Otherwise the dialog blocks
-    // the window-drag region and a user whose "Got it" button is offscreen
-    // can't move the window to reach it.
-    await showGeneralDialog<void>(
-      context: context,
-      barrierLabel: "What's New",
-      barrierDismissible: true,
-      barrierColor: Colors.transparent,
-      pageBuilder: (ctx, _, _) {
-        return Stack(
-          children: [
-            // Manual dim layer that leaves the top title-bar strip clickable.
-            Positioned(
-              left: 0,
-              right: 0,
-              top: _kTitleBarHeight,
-              bottom: 0,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () async {
-                  await ref.read(releaseNotesProvider.notifier).markShown();
-                  if (ctx.mounted) Navigator.of(ctx).pop();
-                },
-                child: Container(color: Colors.black54),
-              ),
-            ),
-            // Center the actual modal inside the body region.
-            Positioned(
-              left: 0,
-              right: 0,
-              top: _kTitleBarHeight,
-              bottom: 0,
-              child: Center(child: WhatsNewModal(notes: view, isDialog: true)),
-            ),
-          ],
-        );
-      },
-    );
+    // Hand the notes back to the caller — home_screen renders an inline
+    // overlay so the title bar stays draggable.
+    onShow?.call(view);
   } else {
     await showModalBottomSheet<void>(
       context: context,
