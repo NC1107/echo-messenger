@@ -32,6 +32,18 @@ pub struct UploadGroupKeyRequest {
     /// Per-member encrypted envelopes. Each contains the group AES key
     /// encrypted specifically for that member using their identity public key.
     pub envelopes: Vec<KeyEnvelope>,
+    /// Minimum on-wire group-message format version that receivers will
+    /// accept against this key version. Defaults to 1 (GRP1 + GRP2 both
+    /// accepted) for backwards compatibility. GRP2-capable rotators
+    /// should send 2 to lock the receiver into the signature-bearing
+    /// wire format and close the downgrade-attack vector described in
+    /// `docs/group-e2e-design/04-migration-plan.md`.
+    #[serde(default = "default_min_wire_version")]
+    pub min_wire_version: i16,
+}
+
+fn default_min_wire_version() -> i16 {
+    1
 }
 
 #[derive(Debug, Serialize)]
@@ -63,6 +75,11 @@ pub struct GroupKeyEnvelopeResponse {
     pub conversation_id: Uuid,
     pub key_version: i32,
     pub encrypted_key: String,
+    /// Minimum on-wire format version the rotator pinned for this key —
+    /// see [`UploadGroupKeyRequest::min_wire_version`]. Defaults to 1.
+    /// Receivers must refuse incoming messages whose wire prefix is
+    /// older than this value at this key version.
+    pub min_wire_version: i16,
     pub created_at: String,
 }
 
@@ -73,6 +90,7 @@ impl GroupKeyEnvelopeResponse {
             conversation_id: row.conversation_id,
             key_version: row.key_version,
             encrypted_key: row.encrypted_key,
+            min_wire_version: row.min_wire_version,
             created_at: row.created_at.to_rfc3339(),
         }
     }
@@ -107,6 +125,15 @@ pub async fn upload_group_key(
     if body.key_version < 1 {
         return Err(AppError::bad_request(
             "key_version must be a positive integer",
+        ));
+    }
+    // The CHECK constraint on the column enforces 1..=255, but a clear
+    // 400 with a typed message beats the bare 23514 db error on the
+    // happy mistake (a client passing 0 to "disable" or a future GRPN
+    // value the server hasn't shipped support for yet).
+    if !(1..=255).contains(&body.min_wire_version) {
+        return Err(AppError::bad_request(
+            "min_wire_version must be between 1 and 255",
         ));
     }
 
@@ -166,7 +193,12 @@ pub async fn upload_group_key(
         }
     })?;
 
-    // Store per-member envelopes inside the same tx.
+    // Store per-member envelopes inside the same tx. Every envelope at a
+    // given key_version shares the same min_wire_version — the constraint
+    // is "this key version requires GRP-N or newer", not "this member
+    // requires GRP-N". Per-member differences would let a hostile rotator
+    // pin GRP1 for one recipient and GRP2 for another, leaving the GRP1
+    // recipient open to downgrade.
     for envelope in &body.envelopes {
         db::keys::store_group_key_envelope(
             &mut *tx,
@@ -174,6 +206,7 @@ pub async fn upload_group_key(
             body.key_version,
             envelope.user_id,
             &envelope.encrypted_key,
+            body.min_wire_version,
         )
         .await
         .db_ctx("upload_group_key/store_envelope")?;
