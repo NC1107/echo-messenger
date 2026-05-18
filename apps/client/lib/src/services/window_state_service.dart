@@ -24,6 +24,12 @@ class WindowStateService {
   /// `gtk_window_set_default_size(1280, 720)`).
   static const Size defaultSize = Size(1280, 720);
 
+  /// Default top-left anchor on first launch — small inset off the screen
+  /// corner so the title bar doesn't kiss the edge. Both [enterSplash] and
+  /// [restore] use this so the splash and the post-splash window line up
+  /// (no visible jump when the window grows).
+  static const Offset _kTopLeftAnchor = Offset(40, 40);
+
   /// True on a desktop platform where `window_manager` is supported.
   static bool get _isDesktop {
     if (kIsWeb) return false;
@@ -37,7 +43,7 @@ class WindowStateService {
   ///
   /// Skips saving when the window is in splash state (smaller than the
   /// minimum restore thresholds of 720×480). Without this guard, closing the
-  /// app during the 300×300 splash would write the splash's top-left position
+  /// app during the 320×440 splash would write the splash's top-left position
   /// — which sits near the center of the monitor — and on the next launch
   /// [restore] would apply those center-screen coordinates to the full-size
   /// window, pushing it off the bottom-right edge.
@@ -47,7 +53,7 @@ class WindowStateService {
       final prefs = await SharedPreferences.getInstance();
       final size = await windowManager.getSize();
       // Do not persist geometry while the window is in the small splash state.
-      // The splash is 300×300; the minimum restore size is 720×480. Any window
+      // The splash is 320×440; the minimum restore size is 720×480. Any window
       // smaller than those thresholds means we are still in (or were left in)
       // the splash phase and the coordinates would corrupt the next launch.
       if (size.width < 720.0 || size.height < 480.0) return;
@@ -98,7 +104,11 @@ class WindowStateService {
           await _isOnScreen(savedX, savedY, size)) {
         await windowManager.setPosition(Offset(savedX, savedY));
       } else {
-        await windowManager.center();
+        // First-launch default: anchor to the top-left of the primary
+        // display with a small inset so the window doesn't kiss the screen
+        // edge. Matches where enterSplash now puts the splash, so there's
+        // no visible jump when the window grows (#splash-position).
+        await windowManager.setPosition(_kTopLeftAnchor);
       }
     } catch (_) {
       // Falling back to whatever size the splash set is acceptable.
@@ -125,24 +135,22 @@ class WindowStateService {
     }
   }
 
-  /// Shrink the window to a 300×300 chromeless splash and center it on
-  /// screen — matches Discord's boot flow. The title bar is removed via
+  /// Shrink the window to a 320×440 chromeless splash and anchor it near
+  /// the top-left of the primary display so it lines up with where the
+  /// post-splash window will appear (eliminating the small-to-large jump
+  /// users were seeing on first launch). The title bar is removed via
   /// [TitleBarStyle.hidden] and re-attached by [restore] on completion.
   ///
-  /// Also makes the window transparent so the splash card's rounded
-  /// corners aren't framed by a rectangular OS chrome around them
-  /// (Discord-style).  Reverted by [restore].  Window-level transparency
-  /// requires a compositing window manager; if unsupported the window
-  /// just stays opaque, which is also acceptable.
-  ///
-  /// Centering is done AFTER the size change and again after a short
-  /// settle so window managers that snap the resize against the old anchor
-  /// don't leave the splash hanging off the edge of the display.
+  /// Also makes the window transparent so the splash's rounded corners
+  /// aren't framed by a rectangular OS chrome around them. Reverted by
+  /// [restore]. Window-level transparency requires a compositing window
+  /// manager; if unsupported the window just stays opaque with squared
+  /// corners, which is also acceptable.
   static Future<void> enterSplash() async {
     if (!_isDesktop) return;
     try {
       await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
-      await windowManager.setSize(const Size(300, 300));
+      await windowManager.setSize(const Size(320, 440));
       // Make the window background transparent so the splash card's
       // rounded corners blend into the desktop instead of being framed
       // by a rectangular OS surface.
@@ -152,12 +160,14 @@ class WindowStateService {
       } catch (_) {
         // Transparency is best-effort; not every compositor supports it.
       }
-      await windowManager.center();
-      // Some Wayland/X11 compositors apply the size change asynchronously,
-      // so the first center() can race against the resize. Re-center on
-      // the next frame to land where the user expects.
+      // Anchor the splash near the top-left of the primary display so the
+      // post-splash window (which restores to a saved position OR the same
+      // top-left anchor) doesn't visibly jump on first launch. Wayland/X11
+      // compositors can apply the size change asynchronously, so we set
+      // the position again on the next frame as a safety net.
+      await windowManager.setPosition(_kTopLeftAnchor);
       await Future<void>.delayed(const Duration(milliseconds: 16));
-      await windowManager.center();
+      await windowManager.setPosition(_kTopLeftAnchor);
     } catch (_) {
       // Splash-size failures are non-fatal; the user just sees the default
       // material window during boot.

@@ -1,6 +1,7 @@
 import 'dart:async' show unawaited;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -21,7 +22,6 @@ import '../services/window_state_service.dart';
 import '../router/app_router.dart' show pendingDeepLinkProvider;
 import '../screens/onboarding_wizard.dart' show kOnboardingCompletedKey;
 import '../theme/echo_theme.dart';
-import '../widgets/auth/animated_gradient_background.dart';
 import '../widgets/echo_logo_icon.dart';
 import '../version.dart';
 
@@ -71,7 +71,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   Future<void> _init() async {
     final stopwatch = Stopwatch()..start();
 
-    // Slice 10: shrink the desktop window to a 300×300 splash before doing
+    // Slice 10: shrink the desktop window to a 320×440 splash before doing
     // any async work, Discord-style. The window expands back to the user's
     // last-known size after navigation lands on home/login.
     await WindowStateService.enterSplash();
@@ -362,90 +362,375 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     );
   }
 
+  static const String _tagline = 'End-to-end encrypted. Zero telemetry.';
+
   @override
   Widget build(BuildContext context) {
     if (_showUpdatePrompt) {
       return _buildUpdatePrompt(context);
     }
 
-    // Boot card matches the update-prompt card style: rounded surface,
-    // 16-px border-radius, themed border. Keeps the small splash window
-    // visually consistent with the in-app update modal.
-    //
-    // Background is transparent on desktop so the window's setBackgroundColor
-    // takes effect — gives the splash a floating-card look on compositors
-    // that support window transparency.
+    // Desktop splash is a 320×440 chromeless window (see WindowStateService.
+    // enterSplash). Mobile/web render full-screen with the same composition.
+    final isCompact =
+        !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.linux ||
+            defaultTargetPlatform == TargetPlatform.windows ||
+            defaultTargetPlatform == TargetPlatform.macOS);
+
+    final body = _SplashBody(
+      compact: isCompact,
+      fade: _fadeAnimation,
+      statusText: _statusText,
+      tagline: _tagline,
+    );
+
+    if (isCompact) {
+      // Desktop: transparent Scaffold + rounded-clipped surface so the splash
+      // reads as a floating card on compositors that honour window
+      // transparency, and degrades gracefully to a squared-off card on those
+      // that don't.
+      return Scaffold(
+        backgroundColor: Colors.transparent,
+        body: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: context.mainBg,
+              border: Border.all(color: context.border),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: body,
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Stack(
+      backgroundColor: context.mainBg,
+      body: SafeArea(child: body),
+    );
+  }
+}
+
+/// Echo "Classic" startup composition: ambient halo, centred logo + wordmark,
+/// single boot-status caption with cycling-dot indicator, indigo sweep, and a
+/// monospace version footer. Layout adapts between the 320×440 desktop popup
+/// and a full-screen mobile/web splash via [compact].
+class _SplashBody extends StatelessWidget {
+  const _SplashBody({
+    required this.compact,
+    required this.fade,
+    required this.statusText,
+    required this.tagline,
+  });
+
+  final bool compact;
+  final Animation<double> fade;
+  final String statusText;
+  final String tagline;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = context.accent;
+    final logoSize = compact ? 64.0 : 84.0;
+    final wordmarkSize = compact ? 22.0 : 28.0;
+    final taglineSize = compact ? 12.0 : 13.0;
+    final outerPadding = compact
+        ? const EdgeInsets.fromLTRB(28, 44, 28, 22)
+        : const EdgeInsets.fromLTRB(36, 24, 36, 38);
+
+    return FadeTransition(
+      opacity: fade,
+      child: Stack(
         children: [
-          // Animated gradient is clipped to the card's rounded shape so it
-          // doesn't poke out as a rectangular frame around the splash.
-          Center(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: const SizedBox(
-                width: 260,
-                height: 260,
-                child: AnimatedGradientBackground(),
+          // Ambient indigo halo behind the logo. Painted with a low-opacity
+          // accent so it picks up the current theme without overpowering it.
+          Positioned(
+            top: compact ? -120 : -40,
+            left: 0,
+            right: 0,
+            child: IgnorePointer(
+              child: Center(
+                child: Container(
+                  width: compact ? 360 : 420,
+                  height: compact ? 360 : 420,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [
+                        accent.withValues(alpha: 0.13),
+                        accent.withValues(alpha: 0.0),
+                      ],
+                      stops: const [0.0, 0.6],
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
-          Center(
-            child: FadeTransition(
-              opacity: _fadeAnimation,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 28,
-                  vertical: 24,
+          Padding(
+            padding: outerPadding,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // Brand block (logo + wordmark + tagline)
+                Padding(
+                  padding: EdgeInsets.only(top: compact ? 12 : 60),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      EchoLogoIcon(size: logoSize),
+                      SizedBox(height: compact ? 18 : 24),
+                      Text(
+                        'Echo',
+                        style: TextStyle(
+                          fontSize: wordmarkSize,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.5,
+                          height: 1.0,
+                          color: context.textPrimary,
+                        ),
+                      ),
+                      SizedBox(height: compact ? 8 : 10),
+                      Text(
+                        tagline,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: taglineSize,
+                          color: context.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                decoration: BoxDecoration(
-                  color: context.surface,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: context.border),
-                ),
-                child: Column(
+                // Status caption + progress sweep
+                Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const EchoLogoIcon(size: 56),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Echo',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.5,
-                        color: context.accent,
+                    _StatusCaption(text: statusText),
+                    const SizedBox(height: 14),
+                    const _ProgressSweep(),
+                    if (!compact) ...[
+                      const SizedBox(height: 18),
+                      Text(
+                        'v$appVersion',
+                        style: EchoTheme.mono(
+                          fontSize: 10,
+                          color: context.textMuted,
+                          letterSpacing: 0.3,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        color: context.accent.withValues(alpha: 0.6),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      _statusText,
-                      style: TextStyle(fontSize: 12, color: context.textMuted),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'v$appVersion',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: context.textMuted.withValues(alpha: 0.5),
-                      ),
-                    ),
+                    ],
                   ],
                 ),
-              ),
+                if (compact)
+                  Text(
+                    'v$appVersion',
+                    style: EchoTheme.mono(
+                      fontSize: 10,
+                      color: context.textMuted,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+              ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Boot-status caption with a three-dot pulse indicator. The caption text is
+/// driven by [_SplashScreenState._statusText] so it reflects the actual
+/// init phase ("Checking session…", "Loading messages…") instead of a
+/// canned animation that lies about progress.
+class _StatusCaption extends StatelessWidget {
+  const _StatusCaption({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 350),
+      transitionBuilder: (child, anim) {
+        final slide = Tween<Offset>(
+          begin: const Offset(0, 0.15),
+          end: Offset.zero,
+        ).animate(anim);
+        return FadeTransition(
+          opacity: anim,
+          child: SlideTransition(position: slide, child: child),
+        );
+      },
+      child: Row(
+        key: ValueKey<String>(text),
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            text,
+            style: TextStyle(fontSize: 12, color: context.textSecondary),
+          ),
+          const SizedBox(width: 6),
+          _DotPulse(color: context.textMuted),
+        ],
+      ),
+    );
+  }
+}
+
+/// Three small dots that fade up and down in sequence (staggered 0.18s) for a
+/// subtle "working…" affordance next to the boot caption.
+class _DotPulse extends StatefulWidget {
+  const _DotPulse({required this.color});
+
+  final Color color;
+
+  @override
+  State<_DotPulse> createState() => _DotPulseState();
+}
+
+class _DotPulseState extends State<_DotPulse>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  double _dotOpacity(double t, double offset) {
+    // 0..1 sawtooth driving the keyframe shape from the design CSS:
+    // 0%/80%/100% -> .25, 40% -> 1. Smoothed with a triangle wave so the
+    // peak rises and falls instead of snapping.
+    final shifted = (t - offset) % 1.0;
+    final clamped = shifted < 0 ? shifted + 1.0 : shifted;
+    if (clamped < 0.4) {
+      return 0.25 + (clamped / 0.4) * 0.75;
+    }
+    if (clamped < 0.8) {
+      return 1.0 - ((clamped - 0.4) / 0.4) * 0.75;
+    }
+    return 0.25;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final t = _controller.value;
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(3, (i) {
+            final opacity = _dotOpacity(t, i * 0.15);
+            return Padding(
+              padding: EdgeInsets.only(left: i == 0 ? 0 : 4),
+              child: Container(
+                width: 4,
+                height: 4,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: widget.color.withValues(alpha: opacity),
+                ),
+              ),
+            );
+          }),
+        );
+      },
+    );
+  }
+}
+
+/// Indeterminate accent sweep: 40%-wide bar that slides from left to right
+/// inside a 3px-tall track. Mirrors the design's `echo-sweep` keyframes
+/// (translateX -100% → 350%, 1.6s cubic-bezier).
+class _ProgressSweep extends StatefulWidget {
+  const _ProgressSweep();
+
+  @override
+  State<_ProgressSweep> createState() => _ProgressSweepState();
+}
+
+class _ProgressSweepState extends State<_ProgressSweep>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _slide;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    )..repeat();
+    _slide = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeInOutCubicEmphasized,
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = context.accent;
+    final track = context.surface;
+    return SizedBox(
+      height: 3,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth;
+          const barFraction = 0.4;
+          final barWidth = width * barFraction;
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: Container(
+              color: track,
+              child: AnimatedBuilder(
+                animation: _slide,
+                builder: (context, _) {
+                  // Slide from -barWidth to width (full traversal).
+                  final dx = -barWidth + (_slide.value * (width + barWidth));
+                  return Stack(
+                    children: [
+                      Positioned(
+                        left: dx,
+                        top: 0,
+                        bottom: 0,
+                        width: barWidth,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: accent,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          );
+        },
       ),
     );
   }
