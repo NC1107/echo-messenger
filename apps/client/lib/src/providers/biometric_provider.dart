@@ -49,23 +49,21 @@ class Biometric extends _$Biometric {
 
   @override
   BiometricState build() {
-    // Defer the platform check to the next microtask. The Linux/web early
-    // return inside `_init` would otherwise touch `state` before `build()`
-    // returns the initial state — Riverpod treats that as
-    // "uninitialized provider" and the resulting error cascades into a
-    // flood of `DiagnosticsProperty<void>` exceptions during the first
-    // build. See https://riverpod.dev/docs/concepts/providers#notifier.
-    Future.microtask(_init);
+    // Bake the platform decision into the initial state instead of
+    // mutating `state` from an async callback later — touching `state`
+    // before `build()` returns trips Riverpod's "uninitialized provider"
+    // guard, which cascades into a flood of `DiagnosticsProperty<void>`
+    // exceptions during first build on web + Linux (where local_auth has
+    // no implementation).  Only platforms that actually support biometric
+    // checks fire the async `_init` path below.
+    if (kIsWeb || Platform.isLinux) {
+      return const BiometricState(isAvailable: false, isLoading: false);
+    }
+    _init();
     return const BiometricState();
   }
 
   Future<void> _init() async {
-    // local_auth has no Linux implementation and throws MissingPluginException.
-    // Skip biometric init on Linux to avoid the error; web is also unsupported.
-    if (kIsWeb || Platform.isLinux) {
-      state = state.copyWith(isAvailable: false, isLoading: false);
-      return;
-    }
     try {
       final available = await _auth.isDeviceSupported();
       final canCheck = await _auth.canCheckBiometrics;
