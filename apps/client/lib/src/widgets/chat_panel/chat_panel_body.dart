@@ -12,6 +12,7 @@ import '../../theme/echo_theme.dart';
 import '../channel_bar.dart';
 import '../chat_header_bar.dart';
 import '../chat_input_bar.dart';
+import '../encryption_status_banner.dart';
 import '../message_search_overlay.dart';
 import 'chat_message_list.dart';
 import 'drop_overlay.dart';
@@ -180,6 +181,11 @@ Widget buildChatContentBox(
                 onVoiceChannelChanged: p.onVoiceChannelChanged,
                 onShowLounge: p.onShowLounge,
               ),
+            // Audit P0-1/P0-2/P0-3: surface keyring-lock, OTP-heal failure,
+            // and wedged-session states above the message list with an
+            // action button where applicable. Renders a SizedBox.shrink()
+            // when no flag is active.
+            EncryptionStatusBanner(conversation: p.conv),
             if (p.showSearch)
               MessageSearchOverlay(
                 conversationId: p.conv.id,

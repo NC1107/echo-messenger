@@ -17,7 +17,18 @@ void main() {
       expect(state.isUploading, isFalse);
       expect(state.keysUploadFailed, isFalse);
       expect(state.keysWereRegenerated, isFalse);
+      expect(state.secureStorageUnavailable, isFalse);
       expect(state.error, isNull);
+    });
+
+    test('audit P0-1: secureStorageUnavailable flag round-trips through '
+        'copyWith', () {
+      const state = CryptoState();
+      final flipped = state.copyWith(secureStorageUnavailable: true);
+      expect(flipped.secureStorageUnavailable, isTrue);
+      expect(flipped.isInitialized, isFalse, reason: 'unrelated fields stay');
+      final cleared = flipped.copyWith(secureStorageUnavailable: false);
+      expect(cleared.secureStorageUnavailable, isFalse);
     });
 
     test('copyWith preserves values', () {

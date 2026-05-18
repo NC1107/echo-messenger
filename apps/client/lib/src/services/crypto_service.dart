@@ -112,6 +112,28 @@ class CryptoService {
 
   CryptoService({required this.serverUrl});
 
+  /// Callback invoked when the secure-storage backend is detected to be
+  /// unavailable (libsecret locked, Keychain prompt denied, etc.).
+  /// `CryptoNotifier` wires this through to its state so the UI can render
+  /// a "keyring locked" banner. Audit P0-1.
+  void Function()? _onSecureStorageUnavailable;
+
+  /// Callback invoked when the OTP-replenishment / key-upload heal flow has
+  /// failed terminally (5 retries with exponential backoff). The provider
+  /// flips `keysUploadFailed` based on this so the existing settings banner
+  /// becomes visible. Audit P0-2.
+  void Function()? _onKeyUploadTerminalFailure;
+
+  /// Install observability callbacks. Called once from the provider on init.
+  /// Either argument may be null; nulls clear the corresponding hook.
+  void setObservers({
+    void Function()? onSecureStorageUnavailable,
+    void Function()? onKeyUploadTerminalFailure,
+  }) {
+    _onSecureStorageUnavailable = onSecureStorageUnavailable;
+    _onKeyUploadTerminalFailure = onKeyUploadTerminalFailure;
+  }
+
   /// Serialize async operations on a per-peer session to prevent interleaved
   /// encrypt/decrypt calls from corrupting the chain state.
   Future<T> _withSessionLock<T>(
@@ -238,6 +260,13 @@ class CryptoService {
       final session = SignalSession.fromJson(json);
       _sessions.put(key, session);
       return session;
+    } on StorageUnavailableException {
+      // The keyring is locked / Keychain denied / etc.  This is NOT the same
+      // as "no session on disk" — the session very likely IS on disk, we just
+      // can't read it right now. Let the exception propagate so the caller
+      // can keep the in-memory session alive and surface a banner. Audit
+      // P0-1: "session_reload_failure_does_not_zero_in_memory_session".
+      rethrow;
     } catch (e) {
       debugPrint('[Crypto] Failed to reload session for $key: $e');
       return null;
@@ -264,6 +293,46 @@ class CryptoService {
   /// - X25519 identity key
   /// - Ed25519 signing key (for prekey signature verification)
   /// - Signed prekey with real Ed25519 signature
+  /// Heal a stale prekey bundle by retrying [uploadKeys] with exponential
+  /// backoff. Up to 5 attempts spaced 1s / 2s / 4s / 8s / 16s. On terminal
+  /// failure, invokes `_onKeyUploadTerminalFailure` so the provider can flip
+  /// `keysUploadFailed` and show the settings banner. Audit P0-2 / #662.
+  ///
+  /// Visible-for-test override: pass a non-null [delayOverride] to short-
+  /// circuit real timer waits.
+  @visibleForTesting
+  Future<bool> healUploadKeysForTest({
+    Future<void> Function(Duration)? delayOverride,
+  }) {
+    return _healUploadKeysWithBackoff(delayOverride: delayOverride);
+  }
+
+  Future<bool> _healUploadKeysWithBackoff({
+    Future<void> Function(Duration)? delayOverride,
+  }) async {
+    const maxAttempts = 5;
+    final delay = delayOverride ?? Future<void>.delayed;
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await uploadKeys();
+        debugPrint('[Crypto] heal uploadKeys succeeded on attempt $attempt');
+        return true;
+      } catch (e) {
+        debugPrint(
+          '[Crypto] heal uploadKeys attempt $attempt/$maxAttempts failed: $e',
+        );
+        if (attempt == maxAttempts) {
+          debugPrint('[Crypto] heal uploadKeys exhausted — alerting UI');
+          _onKeyUploadTerminalFailure?.call();
+          return false;
+        }
+        // Exponential backoff: 1, 2, 4, 8, 16 seconds.
+        await delay(Duration(seconds: 1 << (attempt - 1)));
+      }
+    }
+    return false;
+  }
+
   /// - One-time prekeys (only when replenishment is needed)
   Future<void> uploadKeys() async {
     if (_identityKeyPair == null) await init();
@@ -726,11 +795,7 @@ class CryptoService {
         'scheduling key re-upload to heal stale bundle',
       );
       _needsOtpReplenishment = true;
-      unawaited(
-        uploadKeys().catchError((upErr) {
-          debugPrint('[Crypto] heal uploadKeys failed: $upErr');
-        }),
-      );
+      unawaited(_healUploadKeysWithBackoff());
       throw InitialDecryptFailedException(peerUserId);
     }
     _sessions.put(sessionKey, session);
@@ -836,7 +901,17 @@ class CryptoService {
   }) async {
     // Cache miss may be a TTL/LRU eviction -- try to reload from disk first.
     var session = _sessions.get(sessionKey);
-    session ??= await _reloadSession(sessionKey);
+    try {
+      session ??= await _reloadSession(sessionKey);
+    } on StorageUnavailableException catch (e) {
+      // Keyring locked at decrypt time. Do NOT clear anything — the session
+      // on disk is presumed intact, and our in-memory map is unchanged (the
+      // session var was never reassigned). Surface as a typed error so the
+      // chat layer can render a "keyring locked" banner instead of the
+      // generic "[Could not decrypt…]" placeholder.
+      _onSecureStorageUnavailable?.call();
+      throw SessionStorageUnavailableException(sessionKey, e);
+    }
     if (session == null) {
       throw Exception(
         'No session for $sessionKey — cannot decrypt normal message. '
@@ -865,6 +940,14 @@ class CryptoService {
       // Refresh LRU ordering after state update.
       _sessions.put(sessionKey, updatedSession);
       return utf8.decode(result['plaintext'] as Uint8List);
+    } on StorageUnavailableException catch (e) {
+      // Storage unavailable during post-save: don't touch the in-memory
+      // session, surface the typed error.  The recipient already got the
+      // plaintext from the isolate but we can't persist the new ratchet
+      // state — on next decrypt we'll see the same session and either
+      // succeed (if storage came back) or fail again the same way.
+      _onSecureStorageUnavailable?.call();
+      throw SessionStorageUnavailableException(sessionKey, e);
     } catch (e) {
       // Session is stale/corrupted — clear it. The next incoming initial
       // message from this peer will establish a fresh session via X3DH.
