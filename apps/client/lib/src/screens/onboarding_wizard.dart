@@ -309,49 +309,11 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
               child: Center(
                 child: LayoutBuilder(
                   builder: (context, outerConstraints) {
-                    final effectiveMax = outerConstraints.maxWidth < 500
-                        ? double.infinity
-                        : 520.0;
-                    return ConstrainedBox(
-                      constraints: BoxConstraints(maxWidth: effectiveMax),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 16,
-                        ),
-                        child: Column(
-                          children: [
-                            // Logo
-                            const SizedBox(height: 12),
-                            const EchoLogoIcon(size: 36),
-                            const SizedBox(height: 20),
-
-                            // Pages
-                            Expanded(
-                              child: PageView(
-                                controller: _pageController,
-                                physics: const NeverScrollableScrollPhysics(),
-                                onPageChanged: (i) =>
-                                    setState(() => _currentPage = i),
-                                children: [
-                                  _buildWelcomePage(context),
-                                  _buildThemePage(context),
-                                  _buildAccessibilityPage(context),
-                                  _buildNotificationsPage(context),
-                                  _buildEncryptionPage(context),
-                                  _buildContactPage(context),
-                                ],
-                              ),
-                            ),
-
-                            // Dot indicator + buttons
-                            const SizedBox(height: 16),
-                            _buildBottomControls(context),
-                            const SizedBox(height: 12),
-                          ],
-                        ),
-                      ),
-                    );
+                    final w = outerConstraints.maxWidth;
+                    if (w >= 900) {
+                      return _buildWideLayout(context);
+                    }
+                    return _buildNarrowLayout(context, w);
                   },
                 ),
               ),
@@ -359,6 +321,163 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           ),
         ],
       ),
+    );
+  }
+
+  /// Phone / narrow-tablet layout: single centred column, 520 px max.
+  Widget _buildNarrowLayout(BuildContext context, double width) {
+    final effectiveMax = width < 500 ? double.infinity : 520.0;
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: effectiveMax),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        child: Column(
+          children: [
+            const SizedBox(height: 12),
+            const EchoLogoIcon(size: 36),
+            const SizedBox(height: 20),
+            Expanded(child: _buildPageView()),
+            const SizedBox(height: 16),
+            _buildBottomControls(context),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Desktop / wide-tablet layout (≥ 900 px): two-pane card with a brand
+  /// panel on the left and the active step on the right. Keeps the wizard
+  /// visually balanced in horizontal viewports instead of rendering as a
+  /// phone-tall column on a 1920 px screen.
+  Widget _buildWideLayout(BuildContext context) {
+    final stepTitles = [
+      'Welcome',
+      'Choose your look',
+      'Comfort settings',
+      'Notifications',
+      'Encryption',
+      'Add a contact',
+    ];
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 960, maxHeight: 640),
+      child: Container(
+        decoration: BoxDecoration(
+          color: context.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: context.border),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Brand panel
+            SizedBox(
+              width: 320,
+              child: Container(
+                color: context.accent.withValues(alpha: 0.08),
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const EchoLogoIcon(size: 48),
+                    const SizedBox(height: 24),
+                    Text(
+                      'Welcome to Echo',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
+                        color: context.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'A few quick questions to set up your profile.',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: context.textSecondary,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                    for (var i = 0; i < stepTitles.length; i++) ...[
+                      _stepIndicatorRow(context, i, stepTitles[i]),
+                      const SizedBox(height: 12),
+                    ],
+                    const Spacer(),
+                    Text(
+                      'Step ${_currentPage + 1} of ${stepTitles.length}',
+                      style: TextStyle(fontSize: 12, color: context.textMuted),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            // Step content
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(32, 32, 32, 16),
+                child: Column(
+                  children: [
+                    Expanded(child: _buildPageView()),
+                    const SizedBox(height: 12),
+                    _buildBottomControls(context),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _stepIndicatorRow(BuildContext context, int index, String label) {
+    final isActive = index == _currentPage;
+    final isDone = index < _currentPage;
+    final dotColor = isActive
+        ? context.accent
+        : isDone
+        ? context.accent.withValues(alpha: 0.6)
+        : context.border;
+    final textColor = isActive
+        ? context.textPrimary
+        : isDone
+        ? context.textSecondary
+        : context.textMuted;
+    return Row(
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            color: textColor,
+            fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPageView() {
+    return PageView(
+      controller: _pageController,
+      physics: const NeverScrollableScrollPhysics(),
+      onPageChanged: (i) => setState(() => _currentPage = i),
+      children: [
+        _buildWelcomePage(context),
+        _buildThemePage(context),
+        _buildAccessibilityPage(context),
+        _buildNotificationsPage(context),
+        _buildEncryptionPage(context),
+        _buildContactPage(context),
+      ],
     );
   }
 
