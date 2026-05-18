@@ -148,3 +148,8 @@ All messages are base64-encoded over WebSocket. The server relays them without i
 | Session state | Platform secure storage | Full Double Ratchet state per peer |
 | Decrypted messages | Hive local DB | Plaintext cache for instant display |
 | Encrypted messages | Server PostgreSQL | Ciphertext only -- server cannot decrypt |
+
+## Implementation notes
+
+- A May 2026 audit of the Dart implementation — message-loss surfaces, Signal-spec conformance, performance, and the rust-core / Dart dual-implementation question — lives in [`crypto-audit/`](crypto-audit/).
+- The design proposal for extending the current half-wired group-key envelopes into a full group E2E protocol lives in [`group-e2e-design/`](group-e2e-design/).
