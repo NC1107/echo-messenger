@@ -22,9 +22,47 @@ import '../utils/crypto_perf.dart';
 import 'crypto_service.dart';
 import 'secure_key_store.dart';
 
-/// Prefix used to mark group-encrypted payloads so we can distinguish them
-/// from plaintext or Signal-encrypted DM payloads.
+/// Prefix used to mark legacy group-encrypted payloads (no sender signature).
+/// Receivers continue to accept this for backward compatibility at envelope
+/// versions with `min_wire_version = 1`.
 const groupEncryptedPrefix = 'GRP1:';
+
+/// Prefix used to mark GRP2-format group-encrypted payloads. GRP2 wires
+/// carry a per-message Ed25519 sender signature so any current OR former
+/// member with the group key cannot forge messages as someone else
+/// (audit OQ-1, OQ-12). Wire layout AFTER the prefix:
+///
+///     version_byte(1) || nonce(12) || ciphertext || tag(16) || sig(64)
+///
+/// Signature is Ed25519 over:
+///
+///     version_byte || conv_id(16 raw uuid bytes) || msg_id(16 raw uuid bytes)
+///                  || nonce || ciphertext || tag
+///
+/// `conv_id` + `msg_id` are bound into the signature to prevent cross-
+/// conversation replay and to give the sender a content-anchored commitment
+/// the server cannot rewrite.
+const groupEncryptedPrefixV2 = 'GRP2:';
+
+/// Current GRP2 revision. Future revisions bump this byte without changing
+/// the textual prefix so receivers can dispatch on the leading version byte.
+const int groupEncryptedV2Version = 0x01;
+
+/// Length of the Ed25519 signature appended to a GRP2 wire.
+const int _ed25519SignatureLength = 64;
+
+/// Thrown when a GRP2 sender signature fails to verify. Surfaced as a
+/// distinct exception (and a distinct UI placeholder) from
+/// [GroupEnvelopeUnwrapException] so users see "this message's author
+/// can't be confirmed" rather than the generic "[Could not decrypt…]".
+/// Audit OQ-1 + design §"Per-message authenticity".
+class GroupSenderSignatureException implements Exception {
+  final String reason;
+  const GroupSenderSignatureException(this.reason);
+
+  @override
+  String toString() => 'GroupSenderSignatureException: $reason';
+}
 
 /// AES-256 key size in bytes. Used to structurally validate that a
 /// candidate group key — whether unwrapped from a per-member envelope or
@@ -171,6 +209,217 @@ class GroupCryptoService {
 
     final plainBytes = await _aesGcm.decrypt(secretBox, secretKey: secretKey);
 
+    return utf8.decode(plainBytes);
+  }
+
+  // -----------------------------------------------------------------------
+  // GRP2 — Encrypt + sign (audit OQ-1, OQ-11, OQ-12)
+  // -----------------------------------------------------------------------
+
+  /// Build the signature payload bound to a GRP2 message. Lives as a
+  /// helper because both [encryptGroupMessageV2] and
+  /// [verifyAndDecryptGroupMessageV2] need to reproduce it byte-for-byte
+  /// — any divergence between sign and verify breaks every message.
+  ///
+  /// Layout: `version_byte || conv_id(16) || msg_id(16) || nonce(12) ||
+  /// ciphertext || tag(16)`. UUIDs are passed in as their 16-byte raw
+  /// form (not the 36-char string form) so the signature payload is
+  /// deterministic across UUID parsers.
+  static Uint8List _grpV2SignaturePayload({
+    required int version,
+    required Uint8List conversationIdBytes,
+    required Uint8List messageIdBytes,
+    required Uint8List nonce,
+    required Uint8List ciphertext,
+    required Uint8List tag,
+  }) {
+    if (conversationIdBytes.length != 16) {
+      throw ArgumentError(
+        'conversationIdBytes must be 16 bytes (raw UUID), got '
+        '${conversationIdBytes.length}',
+      );
+    }
+    if (messageIdBytes.length != 16) {
+      throw ArgumentError(
+        'messageIdBytes must be 16 bytes (raw UUID), got '
+        '${messageIdBytes.length}',
+      );
+    }
+    final total =
+        1 +
+        conversationIdBytes.length +
+        messageIdBytes.length +
+        nonce.length +
+        ciphertext.length +
+        tag.length;
+    final out = Uint8List(total);
+    var offset = 0;
+    out[offset++] = version & 0xFF;
+    out.setRange(offset, offset + 16, conversationIdBytes);
+    offset += 16;
+    out.setRange(offset, offset + 16, messageIdBytes);
+    offset += 16;
+    out.setRange(offset, offset + 12, nonce);
+    offset += 12;
+    out.setRange(offset, offset + ciphertext.length, ciphertext);
+    offset += ciphertext.length;
+    out.setRange(offset, offset + tag.length, tag);
+    return out;
+  }
+
+  /// Encrypt [plaintext] with a GRP2 wire frame and sign the result with
+  /// the sender's Ed25519 device identity key.
+  ///
+  /// The `conversationId` + `messageId` UUIDs are bound into the
+  /// signature so a hostile server cannot rewrite the (conv, msg)
+  /// metadata without invalidating the signature. The sender mints the
+  /// `messageId` locally; the server is expected to respect it on
+  /// storage (this is a Phase 2C server-side change).
+  ///
+  /// Returns `GRP2:` + base64( version(1) || nonce(12) || ct || tag(16)
+  /// || sig(64) ). Wire prefix dispatch lets receivers route this past
+  /// the existing GRP1 decryption path without ambiguity.
+  static Future<String> encryptGroupMessageV2({
+    required String plaintext,
+    required String keyBase64,
+    required Uint8List conversationIdBytes,
+    required Uint8List messageIdBytes,
+    required SimpleKeyPair senderSigningKey,
+  }) async {
+    final keyBytes = base64Decode(keyBase64);
+    if (keyBytes.length != _groupKeyBytesLength) {
+      throw ArgumentError(
+        'GRP2 keyBase64 must decode to $_groupKeyBytesLength bytes, got '
+        '${keyBytes.length}',
+      );
+    }
+    final secretKey = SecretKey(keyBytes);
+    final plaintextBytes = utf8.encode(plaintext);
+
+    final secretBox = await _aesGcm.encrypt(
+      plaintextBytes,
+      secretKey: secretKey,
+    );
+    final nonce = Uint8List.fromList(secretBox.nonce);
+    final ciphertext = Uint8List.fromList(secretBox.cipherText);
+    final tag = Uint8List.fromList(secretBox.mac.bytes);
+
+    final sigPayload = _grpV2SignaturePayload(
+      version: groupEncryptedV2Version,
+      conversationIdBytes: conversationIdBytes,
+      messageIdBytes: messageIdBytes,
+      nonce: nonce,
+      ciphertext: ciphertext,
+      tag: tag,
+    );
+    final signature = await Ed25519().sign(
+      sigPayload,
+      keyPair: senderSigningKey,
+    );
+    final sigBytes = Uint8List.fromList(signature.bytes);
+    if (sigBytes.length != _ed25519SignatureLength) {
+      throw StateError(
+        'Ed25519 signature must be $_ed25519SignatureLength bytes, got '
+        '${sigBytes.length}',
+      );
+    }
+
+    final wireLen =
+        1 + nonce.length + ciphertext.length + tag.length + sigBytes.length;
+    final wire = Uint8List(wireLen);
+    var offset = 0;
+    wire[offset++] = groupEncryptedV2Version & 0xFF;
+    wire.setRange(offset, offset + nonce.length, nonce);
+    offset += nonce.length;
+    wire.setRange(offset, offset + ciphertext.length, ciphertext);
+    offset += ciphertext.length;
+    wire.setRange(offset, offset + tag.length, tag);
+    offset += tag.length;
+    wire.setRange(offset, offset + sigBytes.length, sigBytes);
+
+    return '$groupEncryptedPrefixV2${base64Encode(wire)}';
+  }
+
+  /// Verify the sender signature on a GRP2 wire then decrypt the payload.
+  ///
+  /// Two-stage failure surface: signature failures throw
+  /// [GroupSenderSignatureException] (rendered as "Could not verify
+  /// sender"), AES-GCM failures throw the underlying cryptography
+  /// exception (rendered as the existing "[Could not decrypt…]"). The
+  /// caller's UI distinguishes the two — signature failure is more
+  /// alarming and must not be confused with a key-out-of-sync state.
+  ///
+  /// `expectedConversationIdBytes` + `expectedMessageIdBytes` MUST be
+  /// the same UUIDs the sender bound into the signature. The caller is
+  /// responsible for plumbing them through from the WS frame metadata.
+  static Future<String> verifyAndDecryptGroupMessageV2({
+    required String ciphertextWithPrefix,
+    required String keyBase64,
+    required Uint8List expectedConversationIdBytes,
+    required Uint8List expectedMessageIdBytes,
+    required SimplePublicKey senderVerifyKey,
+  }) async {
+    if (!ciphertextWithPrefix.startsWith(groupEncryptedPrefixV2)) {
+      throw const FormatException(
+        'Not a GRP2 group-encrypted message (missing GRP2: prefix)',
+      );
+    }
+    final b64 = ciphertextWithPrefix.substring(groupEncryptedPrefixV2.length);
+    final wire = Uint8List.fromList(base64Decode(b64));
+
+    // Minimum: version(1) + nonce(12) + tag(16) + sig(64) = 93 bytes
+    // (ciphertext can be empty for a zero-byte plaintext).
+    const minLen = 1 + 12 + 16 + _ed25519SignatureLength;
+    if (wire.length < minLen) {
+      throw FormatException('GRP2 wire too short: ${wire.length} bytes');
+    }
+
+    final version = wire[0];
+    if (version != groupEncryptedV2Version) {
+      // Unknown future GRP2 revision. We fail loud so receivers don't
+      // silently produce garbage when they meet a v2 they don't know yet.
+      throw FormatException(
+        'Unsupported GRP2 revision: 0x${version.toRadixString(16)}',
+      );
+    }
+
+    final nonce = wire.sublist(1, 13);
+    final sigStart = wire.length - _ed25519SignatureLength;
+    final tagStart = sigStart - 16;
+    final ciphertext = wire.sublist(13, tagStart);
+    final tag = wire.sublist(tagStart, sigStart);
+    final signatureBytes = wire.sublist(sigStart);
+
+    // Verify the sender signature BEFORE running AEAD. Catching a forged
+    // signature early avoids paying the AEAD cost and prevents a
+    // timing channel that could leak whether AEAD passed independently.
+    final sigPayload = _grpV2SignaturePayload(
+      version: version,
+      conversationIdBytes: expectedConversationIdBytes,
+      messageIdBytes: expectedMessageIdBytes,
+      nonce: nonce,
+      ciphertext: ciphertext,
+      tag: tag,
+    );
+    final signature = Signature(signatureBytes, publicKey: senderVerifyKey);
+    final sigOk = await Ed25519().verify(sigPayload, signature: signature);
+    if (!sigOk) {
+      throw const GroupSenderSignatureException(
+        'Ed25519 sender signature did not verify against the expected '
+        'sender public key',
+      );
+    }
+
+    final keyBytes = base64Decode(keyBase64);
+    if (keyBytes.length != _groupKeyBytesLength) {
+      throw FormatException(
+        'GRP2 keyBase64 must decode to $_groupKeyBytesLength bytes, got '
+        '${keyBytes.length}',
+      );
+    }
+    final secretKey = SecretKey(keyBytes);
+    final secretBox = SecretBox(ciphertext, nonce: nonce, mac: Mac(tag));
+    final plainBytes = await _aesGcm.decrypt(secretBox, secretKey: secretKey);
     return utf8.decode(plainBytes);
   }
 

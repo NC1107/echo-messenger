@@ -33,6 +33,8 @@ A separate, future Phase 1.5 (still unbuilt) would extend the validator to also 
 
 ## Phase 2 — GRP2 wire format (client + server)
 
+**Status**: Phase 2A ✅ (server schema + API for `min_wire_version`). Phase 2B ✅ (client-side static GRP2 packer/unpacker with Ed25519 sender signature). Phase 2C ⏳ (production wire-up: mint message_id client-side, plumb conv/msg context through WS frames, dispatch encrypt by cached `min_wire_version`).
+
 **Goal**: support GRP2 alongside GRP1. Senders default to GRP2; receivers accept both — *within the bounds of the downgrade-attack mitigation below*.
 
 - One PR. Adds the GRP2 packer/unpacker in `group_crypto_service.dart`. Adds Ed25519 sender signature.
