@@ -105,11 +105,16 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       }
     }
 
-    // Brief splash to let the logo animation complete
+    // Keep the splash visible long enough to read the wordmark + tagline
+    // and let the indigo sweep complete one cycle, even when auto-login is
+    // instant. 1500 ms was tuned by hand: short enough that re-launchers
+    // don't feel held up, long enough that the design's animation reads
+    // as a moment instead of a flicker.
     stopwatch.stop();
     final elapsed = stopwatch.elapsedMilliseconds;
-    if (elapsed < 800) {
-      await Future<void>.delayed(Duration(milliseconds: 800 - elapsed));
+    const minSplashMs = 1500;
+    if (elapsed < minSplashMs) {
+      await Future<void>.delayed(Duration(milliseconds: minSplashMs - elapsed));
     }
 
     if (!mounted) return;

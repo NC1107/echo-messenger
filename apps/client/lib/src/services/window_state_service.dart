@@ -104,11 +104,19 @@ class WindowStateService {
           await _isOnScreen(savedX, savedY, size)) {
         await windowManager.setPosition(Offset(savedX, savedY));
       } else {
-        // First-launch default: anchor to the top-left of the primary
-        // display with a small inset so the window doesn't kiss the screen
-        // edge. Matches where enterSplash now puts the splash, so there's
-        // no visible jump when the window grows (#splash-position).
-        await windowManager.setPosition(_kTopLeftAnchor);
+        // First-launch default: centre the full-size window on the primary
+        // display. Earlier this snapped to the same top-left anchor as the
+        // splash, which made the post-splash window appear to "grow" out of
+        // the splash's exact corner instead of being a separate window
+        // landing in a natural place. center() handles multi-monitor and
+        // window-manager work-area quirks better than us math'ing it.
+        try {
+          await windowManager.center();
+        } catch (_) {
+          // Fall back to the safe inset if center() is unsupported on
+          // this compositor.
+          await windowManager.setPosition(_kTopLeftAnchor);
+        }
       }
     } catch (_) {
       // Falling back to whatever size the splash set is acceptable.
