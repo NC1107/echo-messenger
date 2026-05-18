@@ -12,7 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/channels_provider.dart';
 import '../providers/conversations_provider.dart';
-import '../providers/livekit_voice_provider.dart';
+import '../providers/livekit_voice/livekit_voice_provider.dart';
 import '../providers/screen_share_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/voice_lounge_background_provider.dart';

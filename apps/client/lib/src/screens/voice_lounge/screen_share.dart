@@ -8,7 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
 
-import '../../providers/livekit_voice_provider.dart';
+import '../../providers/livekit_voice/livekit_voice_provider.dart';
 import '../../providers/screen_share_provider.dart';
 import '../../theme/echo_theme.dart';
 

@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:echo_app/src/models/channel.dart';
 import 'package:echo_app/src/providers/channels_provider.dart';
-import 'package:echo_app/src/providers/livekit_voice_provider.dart';
+import 'package:echo_app/src/providers/livekit_voice/livekit_voice_provider.dart';
 import 'package:echo_app/src/widgets/voice_footer.dart';
 
 import '../helpers/mock_providers.dart';

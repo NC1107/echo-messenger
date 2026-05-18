@@ -7,7 +7,7 @@ import 'package:echo_app/src/providers/channels_provider.dart';
 import 'package:echo_app/src/providers/chat_provider.dart';
 import 'package:echo_app/src/providers/privacy_provider.dart';
 import 'package:echo_app/src/providers/theme_provider.dart';
-import 'package:echo_app/src/providers/livekit_voice_provider.dart';
+import 'package:echo_app/src/providers/livekit_voice/livekit_voice_provider.dart';
 import 'package:echo_app/src/providers/voice_settings_provider.dart';
 import 'package:echo_app/src/services/crypto_service.dart';
 import 'package:echo_app/src/services/group_crypto_service.dart';

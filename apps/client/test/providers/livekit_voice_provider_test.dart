@@ -7,13 +7,13 @@
 // The bug caused `flutter analyze` to fail with:
 //   error • The named parameter 'audioBitrate' isn't defined
 //   error • Undefined name 'AudioPreset'
-// on lib/src/providers/livekit_voice_provider.dart.
+// on lib/src/providers/livekit_voice/livekit_voice_provider.dart.
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:livekit_client/livekit_client.dart';
 
-import 'package:echo_app/src/providers/livekit_voice_provider.dart';
+import 'package:echo_app/src/providers/livekit_voice/livekit_voice_provider.dart';
 import 'package:echo_app/src/providers/livekit_voice/rtc_stats_poll.dart';
 
 void main() {
