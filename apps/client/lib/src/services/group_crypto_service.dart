@@ -105,8 +105,13 @@ class GroupCryptoService {
   /// per-user encryption/decryption (ECDH key wrapping).
   CryptoService? _cryptoService;
 
-  /// In-memory cache: conversationId -> (version, raw key bytes).
-  final Map<String, (int, Uint8List)> _keyCache = {};
+  /// In-memory cache: conversationId -> (key_version, raw key bytes,
+  /// min_wire_version). Phase 2C extended the tuple with min_wire_version
+  /// so the send path can dispatch GRP1 vs GRP2 without an extra server
+  /// round-trip per message. Entries restored from `SecureKeyStore`
+  /// default to min_wire_version=1 (existing pre-Phase-2 data); fresh
+  /// entries from `fetchGroupKey` carry whatever the server returned.
+  final Map<String, (int, Uint8List, int)> _keyCache = {};
 
   /// Groups known to not have encryption enabled. Prevents repeated 400
   /// requests against the server for plaintext groups.
@@ -438,7 +443,7 @@ class GroupCryptoService {
 
     // 1. In-memory cache
     if (_keyCache.containsKey(conversationId)) {
-      final (version, bytes) = _keyCache[conversationId]!;
+      final (version, bytes, _) = _keyCache[conversationId]!;
       return (version, base64Encode(bytes));
     }
 
@@ -459,15 +464,46 @@ class GroupCryptoService {
       }
     }
     if (bestVersion != null && bestKey != null) {
+      // Pre-Phase-2C disk entries have no recorded min_wire_version;
+      // default to 1 (GRP1). A subsequent fetchGroupKey will overwrite
+      // the cache with the server's authoritative value.
       _keyCache[conversationId] = (
         bestVersion,
         Uint8List.fromList(base64Decode(bestKey)),
+        1,
       );
       return (bestVersion, bestKey);
     }
 
     // 3. Fetch from server
     return fetchGroupKey(conversationId);
+  }
+
+  /// Phase 2C: read the cached `min_wire_version` for a conversation.
+  /// Returns null if no key is cached. Callers SHOULD prime the cache
+  /// via [getGroupKey] before reading this; the value is only correct
+  /// for the current envelope (rotations bump it).
+  ///
+  /// Send path dispatches GRP1 vs GRP2 based on this value: >= 2 means
+  /// "this envelope rejects GRP1 wires; you MUST send GRP2".
+  int? cachedMinWireVersion(String conversationId) {
+    final entry = _keyCache[conversationId];
+    if (entry == null) return null;
+    return entry.$3;
+  }
+
+  /// Test-only seam: prime the cache directly for [conversationId]
+  /// without going through HTTP. Production code never calls this;
+  /// tests use it to set up Phase 2C dispatch scenarios.
+  @visibleForTesting
+  void primeCacheForTest(
+    String conversationId, {
+    required int version,
+    required String keyBase64,
+    int minWireVersion = 1,
+  }) {
+    final bytes = Uint8List.fromList(base64Decode(keyBase64));
+    _keyCache[conversationId] = (version, bytes, minWireVersion);
   }
 
   /// Fetch the latest group key from the server and cache it.
@@ -494,6 +530,10 @@ class GroupCryptoService {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final encryptedKey = data['encrypted_key'] as String;
       final version = data['key_version'] as int;
+      // Phase 2A added min_wire_version to the envelope response. Older
+      // servers won't send it; default to 1 (legacy GRP1-only) so
+      // Phase 2C dispatch is conservative against unknown servers.
+      final minWireVersion = (data['min_wire_version'] as int?) ?? 1;
 
       // Try to decrypt the envelope using our identity key.
       // If _cryptoService is available, the encrypted_key is a per-member
@@ -527,7 +567,12 @@ class GroupCryptoService {
       }
 
       assertGroupKeyShape(conversationId, version, rawKeyB64);
-      await _cacheKey(conversationId, version, rawKeyB64);
+      await _cacheKey(
+        conversationId,
+        version,
+        rawKeyB64,
+        minWireVersion: minWireVersion,
+      );
       return (version, rawKeyB64);
     } on GroupEnvelopeUnwrapException catch (e) {
       // Typed structural failure — log and return null so the UI sees the
@@ -804,10 +849,11 @@ class GroupCryptoService {
   Future<void> _cacheKey(
     String conversationId,
     int version,
-    String keyBase64,
-  ) async {
+    String keyBase64, {
+    int minWireVersion = 1,
+  }) async {
     final bytes = Uint8List.fromList(base64Decode(keyBase64));
-    _keyCache[conversationId] = (version, bytes);
+    _keyCache[conversationId] = (version, bytes, minWireVersion);
 
     final store = SecureKeyStore.instance;
     await store.write('group_key_${conversationId}_$version', keyBase64);

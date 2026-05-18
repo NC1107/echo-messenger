@@ -201,4 +201,92 @@ void main() {
       expect(s, contains('bad shape'));
     });
   });
+
+  // ── Phase 2C: cachedMinWireVersion accessor ────────────────────────────
+  //
+  // Production send-path dispatch in Phase 2C will read this value to
+  // decide GRP1 vs GRP2 encrypt. Tests here cover the accessor's
+  // contract independent of the network/HTTP fetch.
+  group(
+    'GroupCryptoService.cachedMinWireVersion (Phase 2C dispatch surface)',
+    () {
+      late GroupCryptoService service;
+
+      setUp(() {
+        service = GroupCryptoService(serverUrl: 'http://example.invalid');
+      });
+
+      test('returns null when no key is cached for the conversation', () {
+        expect(service.cachedMinWireVersion('conv-not-cached'), isNull);
+      });
+
+      test('returns 1 when a GRP1-era key is cached', () {
+        service.primeCacheForTest(
+          'conv-a',
+          version: 1,
+          keyBase64: GroupCryptoService.generateGroupKey(),
+        );
+        expect(service.cachedMinWireVersion('conv-a'), 1);
+      });
+
+      test('returns 2 when a GRP2-pinned key is cached', () {
+        service.primeCacheForTest(
+          'conv-b',
+          version: 4,
+          keyBase64: GroupCryptoService.generateGroupKey(),
+          minWireVersion: 2,
+        );
+        expect(service.cachedMinWireVersion('conv-b'), 2);
+      });
+
+      test('per-conversation cache values are isolated', () {
+        service.primeCacheForTest(
+          'conv-grp1',
+          version: 1,
+          keyBase64: GroupCryptoService.generateGroupKey(),
+          minWireVersion: 1,
+        );
+        service.primeCacheForTest(
+          'conv-grp2',
+          version: 1,
+          keyBase64: GroupCryptoService.generateGroupKey(),
+          minWireVersion: 2,
+        );
+        expect(service.cachedMinWireVersion('conv-grp1'), 1);
+        expect(service.cachedMinWireVersion('conv-grp2'), 2);
+        expect(service.cachedMinWireVersion('conv-other'), isNull);
+      });
+
+      test('production send-path dispatch shape: read cache + branch by '
+          'min_wire_version (this is what websocket_provider will do)', () {
+        // Conv A is on GRP1 (min_wire_version = 1).
+        service.primeCacheForTest(
+          'a',
+          version: 1,
+          keyBase64: GroupCryptoService.generateGroupKey(),
+          minWireVersion: 1,
+        );
+        // Conv B has been rotated and pinned to GRP2.
+        service.primeCacheForTest(
+          'b',
+          version: 2,
+          keyBase64: GroupCryptoService.generateGroupKey(),
+          minWireVersion: 2,
+        );
+
+        // Shape of the dispatch code the WS send path will use. We
+        // test the BRANCHING here, not the actual encrypt (covered by
+        // group_crypto_v2_test.dart).
+        String pickWireFor(String convId) {
+          final min = service.cachedMinWireVersion(convId);
+          if (min == null) return 'no-key';
+          return min >= 2 ? 'GRP2' : 'GRP1';
+        }
+
+        expect(pickWireFor('a'), 'GRP1');
+        expect(pickWireFor('b'), 'GRP2');
+        expect(pickWireFor('unknown'), 'no-key');
+      });
+    },
+  );
 }
