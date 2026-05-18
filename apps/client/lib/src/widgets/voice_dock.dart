@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:livekit_client/livekit_client.dart' show ConnectionQuality;
 
 import '../providers/channels_provider.dart';
-import '../providers/livekit_voice_provider.dart';
+import '../providers/livekit_voice/livekit_voice_provider.dart';
 import '../providers/screen_share_provider.dart';
 import '../screens/voice_lounge/screen_share_actions.dart';
 import '../providers/theme_provider.dart' show UIDensity, uiDensityProvider;

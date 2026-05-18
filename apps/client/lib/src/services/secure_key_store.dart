@@ -10,10 +10,31 @@ library;
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import '../utils/debug_log.dart';
+
+/// Thrown when the underlying platform secure-storage backend is **unavailable**
+/// — distinct from "the key does not exist" (which returns null). Examples:
+/// the Linux libsecret keyring is locked, the macOS Keychain prompt was
+/// dismissed, the Android Keystore is reporting a transient hardware fault.
+///
+/// Callers that previously caught all errors and treated them as "no session"
+/// must now distinguish this case so they can (a) keep the in-memory session
+/// alive across a transient storage outage, and (b) surface a "keyring is
+/// locked" banner to the user instead of silently regenerating identity keys.
+/// See audit P0-1 in `docs/crypto-audit/06-recommendations.md`.
+class StorageUnavailableException implements Exception {
+  final String operation;
+  final Object cause;
+  StorageUnavailableException(this.operation, this.cause);
+
+  @override
+  String toString() =>
+      'StorageUnavailableException($operation): backend unavailable: $cause';
+}
 
 class SecureKeyStore {
   /// Singleton instance.
@@ -85,6 +106,13 @@ class SecureKeyStore {
   Future<String?> read(String key) async {
     try {
       return await _storage.read(key: '$_userPrefix$key');
+    } on PlatformException catch (e) {
+      // Backend unavailable (libsecret locked, Keychain prompt denied, etc.)
+      // is a different failure mode from "key absent"; surface it as a typed
+      // exception so callers can keep the in-memory session alive across the
+      // outage instead of treating it as a permanent deletion.
+      debugLog('read($key) failed: $e', 'SecureKeyStore');
+      throw StorageUnavailableException('read($key)', e);
     } catch (e) {
       debugLog('read($key) failed: $e', 'SecureKeyStore');
       rethrow;
@@ -153,6 +181,9 @@ class SecureKeyStore {
   Future<String?> readGlobal(String key) async {
     try {
       return await _storage.read(key: key);
+    } on PlatformException catch (e) {
+      debugLog('readGlobal($key) failed: $e', 'SecureKeyStore');
+      throw StorageUnavailableException('readGlobal($key)', e);
     } catch (e) {
       debugLog('readGlobal($key) failed: $e', 'SecureKeyStore');
       rethrow;

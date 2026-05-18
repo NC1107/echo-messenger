@@ -18,7 +18,7 @@ import '../providers/auth_provider.dart';
 import '../providers/channels_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/server_url_provider.dart';
-import '../providers/livekit_voice_provider.dart';
+import '../providers/livekit_voice/livekit_voice_provider.dart';
 import '../providers/voice_settings_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../screens/settings/privacy_section.dart'

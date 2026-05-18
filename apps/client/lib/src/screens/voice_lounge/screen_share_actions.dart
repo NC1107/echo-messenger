@@ -10,7 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
 
-import '../../providers/livekit_voice_provider.dart';
+import '../../providers/livekit_voice/livekit_voice_provider.dart';
 import '../../providers/screen_share_provider.dart';
 import 'echo_screen_select_dialog.dart';
 

@@ -19,6 +19,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../utils/crypto_perf.dart';
 import 'crypto_exceptions.dart';
 import 'debug_log_service.dart';
 import 'safety_number_service.dart';
@@ -53,6 +54,15 @@ class CryptoService {
   static const _signedPrekeyCreatedAtPref = 'echo_signed_prekey_created_at';
   static const _signedPrekeyPreviousPref = 'echo_signed_prekey_previous';
   static const _signedPrekeyPreviousPubPref = 'echo_signed_prekey_previous_pub';
+
+  /// Timestamp at which the *previous* signed prekey was generated.
+  /// Used by `_cleanupPreviousPrekey` to drop the previous prekey
+  /// exactly `_signedPrekeyGracePeriod` after it was minted, rather
+  /// than the audit P2-1 pre-fix behaviour where cleanup compared
+  /// against the *current* prekey's age (which let the previous key
+  /// linger up to `gracePeriod + maxAge` instead of `gracePeriod`).
+  static const _signedPrekeyPreviousCreatedAtPref =
+      'echo_signed_prekey_previous_created_at';
   static const _otpNextIdPref = 'echo_otp_next_id';
 
   /// Duration after which the signed prekey should be rotated.
@@ -73,6 +83,7 @@ class CryptoService {
     _signedPrekeyCreatedAtPref,
     _signedPrekeyPreviousPref,
     _signedPrekeyPreviousPubPref,
+    _signedPrekeyPreviousCreatedAtPref,
   ];
 
   final String serverUrl;
@@ -111,6 +122,28 @@ class CryptoService {
   final _ed25519 = Ed25519();
 
   CryptoService({required this.serverUrl});
+
+  /// Callback invoked when the secure-storage backend is detected to be
+  /// unavailable (libsecret locked, Keychain prompt denied, etc.).
+  /// `CryptoNotifier` wires this through to its state so the UI can render
+  /// a "keyring locked" banner. Audit P0-1.
+  void Function()? _onSecureStorageUnavailable;
+
+  /// Callback invoked when the OTP-replenishment / key-upload heal flow has
+  /// failed terminally (5 retries with exponential backoff). The provider
+  /// flips `keysUploadFailed` based on this so the existing settings banner
+  /// becomes visible. Audit P0-2.
+  void Function()? _onKeyUploadTerminalFailure;
+
+  /// Install observability callbacks. Called once from the provider on init.
+  /// Either argument may be null; nulls clear the corresponding hook.
+  void setObservers({
+    void Function()? onSecureStorageUnavailable,
+    void Function()? onKeyUploadTerminalFailure,
+  }) {
+    _onSecureStorageUnavailable = onSecureStorageUnavailable;
+    _onKeyUploadTerminalFailure = onKeyUploadTerminalFailure;
+  }
 
   /// Serialize async operations on a per-peer session to prevent interleaved
   /// encrypt/decrypt calls from corrupting the chain state.
@@ -204,6 +237,30 @@ class CryptoService {
       'Crypto',
       'Loaded ${_sessions.length} session(s) from storage on init',
     );
+
+    // Audit P1-3: surface any torn-write intents that survived the last
+    // shutdown. Each entry means the process died between the pre- and
+    // post-decrypt session save; that session is now at risk of being
+    // out-of-sync with the sender's ratchet on its next inbound message.
+    // We log structured events for telemetry but do NOT auto-discard —
+    // forcing a session reset on every torn-write would over-correct,
+    // and the next decrypt will either succeed (sender's ratchet survived
+    // the same way ours did) or fail through the existing P0-3
+    // out-of-sync banner. Once we have a real rate from production we
+    // can decide whether to upgrade this to a true write-ahead log.
+    try {
+      final torn = await scanAndClearTornSessionWrites();
+      if (torn.isNotEmpty) {
+        DebugLogService.instance.log(
+          LogLevel.warning,
+          'Crypto',
+          'Torn session write detected for ${torn.length} session(s): '
+              '${torn.join(", ")} — see audit P1-3',
+        );
+      }
+    } catch (e) {
+      debugPrint('[Crypto] scanAndClearTornSessionWrites failed: $e');
+    }
   }
 
   /// Force-reset a corrupted or broken session with a peer.
@@ -226,6 +283,77 @@ class CryptoService {
     await store.write('$_sessionPrefix$peerId', jsonEncode(json));
   }
 
+  /// Audit P1-3: torn-write instrumentation. `_decryptNormalMessage` saves
+  /// session state twice — once as a pre-isolate write-ahead intent, once
+  /// after the post-decrypt state is back from the isolate. If the process
+  /// crashes between the two, on the next launch we'd silently keep the
+  /// pre-state on disk and re-decrypt the next inbound message against a
+  /// stale ratchet, wedging the session.
+  ///
+  /// To observe how often this actually happens, [_beginSessionWriteIntent]
+  /// drops a small intent marker into secure storage before the pre-save,
+  /// and [_endSessionWriteIntent] removes it after the post-save. On init,
+  /// [scanAndClearTornSessionWrites] surfaces any markers that survived as
+  /// a structured `crypto.session_torn_write` log line.
+  ///
+  /// We deliberately do NOT auto-discard the half-state: this is
+  /// observation only. If telemetry shows a non-negligible rate, the
+  /// follow-up is a real write-ahead log (audit P1-3 → "decide on full
+  /// WAL after instrumentation"). Hot path cost: one extra
+  /// `SecureKeyStore.write` per decrypt.
+  ///
+  /// **Prefix discipline**: deliberately does NOT start with
+  /// `_sessionPrefix` (`echo_signal_session_`). If it did, `_loadSessions`
+  /// would try to `jsonDecode` the timestamp value and quarantine the
+  /// intent entry as a "corrupted session", deleting the very signal
+  /// we're trying to surface. Keep this prefix orthogonal.
+  static const _sessionIntentPrefix = 'echo_session_writeahead_';
+
+  Future<void> _beginSessionWriteIntent(String sessionKey) async {
+    try {
+      await SecureKeyStore.instance.write(
+        '$_sessionIntentPrefix$sessionKey',
+        DateTime.now().toIso8601String(),
+      );
+    } catch (_) {
+      // Best-effort. A failed intent-write is itself a torn-write hazard,
+      // but since we have nothing better to fall back to, we just proceed —
+      // the surrounding session-save will surface the underlying storage
+      // problem via the existing typed-exception path.
+    }
+  }
+
+  Future<void> _endSessionWriteIntent(String sessionKey) async {
+    try {
+      await SecureKeyStore.instance.delete('$_sessionIntentPrefix$sessionKey');
+    } catch (_) {
+      // Leaving the marker behind biases the next startup scan toward a
+      // false positive, which is the safe failure mode for instrumentation.
+    }
+  }
+
+  /// Called from [_loadSessions] at startup. Returns the list of session
+  /// keys that were mid-write at the last process shutdown. The intent
+  /// markers are cleared as a side effect so we don't re-log the same
+  /// torn write on every subsequent launch.
+  @visibleForTesting
+  Future<List<String>> scanAndClearTornSessionWrites() async {
+    final store = SecureKeyStore.instance;
+    final all = await store.readAll();
+    final torn = <String>[];
+    for (final entry in all.entries) {
+      if (entry.key.startsWith(_sessionIntentPrefix)) {
+        torn.add(entry.key.substring(_sessionIntentPrefix.length));
+        try {
+          await store.delete(entry.key);
+        } catch (_) {
+          // Failure to clear means we re-surface on next launch — also fine.
+        }
+      }
+    }
+    return torn;
+  }
+
   /// On cache miss, attempt to reload a single session from secure storage
   /// before falling back to X3DH (#343 -- non-destructive eviction).
   /// Returns null if no persisted session exists or it cannot be parsed.
@@ -238,6 +366,13 @@ class CryptoService {
       final session = SignalSession.fromJson(json);
       _sessions.put(key, session);
       return session;
+    } on StorageUnavailableException {
+      // The keyring is locked / Keychain denied / etc.  This is NOT the same
+      // as "no session on disk" — the session very likely IS on disk, we just
+      // can't read it right now. Let the exception propagate so the caller
+      // can keep the in-memory session alive and surface a banner. Audit
+      // P0-1: "session_reload_failure_does_not_zero_in_memory_session".
+      rethrow;
     } catch (e) {
       debugPrint('[Crypto] Failed to reload session for $key: $e');
       return null;
@@ -264,6 +399,46 @@ class CryptoService {
   /// - X25519 identity key
   /// - Ed25519 signing key (for prekey signature verification)
   /// - Signed prekey with real Ed25519 signature
+  /// Heal a stale prekey bundle by retrying [uploadKeys] with exponential
+  /// backoff. Up to 5 attempts spaced 1s / 2s / 4s / 8s / 16s. On terminal
+  /// failure, invokes `_onKeyUploadTerminalFailure` so the provider can flip
+  /// `keysUploadFailed` and show the settings banner. Audit P0-2 / #662.
+  ///
+  /// Visible-for-test override: pass a non-null [delayOverride] to short-
+  /// circuit real timer waits.
+  @visibleForTesting
+  Future<bool> healUploadKeysForTest({
+    Future<void> Function(Duration)? delayOverride,
+  }) {
+    return _healUploadKeysWithBackoff(delayOverride: delayOverride);
+  }
+
+  Future<bool> _healUploadKeysWithBackoff({
+    Future<void> Function(Duration)? delayOverride,
+  }) async {
+    const maxAttempts = 5;
+    final delay = delayOverride ?? Future<void>.delayed;
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await uploadKeys();
+        debugPrint('[Crypto] heal uploadKeys succeeded on attempt $attempt');
+        return true;
+      } catch (e) {
+        debugPrint(
+          '[Crypto] heal uploadKeys attempt $attempt/$maxAttempts failed: $e',
+        );
+        if (attempt == maxAttempts) {
+          debugPrint('[Crypto] heal uploadKeys exhausted — alerting UI');
+          _onKeyUploadTerminalFailure?.call();
+          return false;
+        }
+        // Exponential backoff: 1, 2, 4, 8, 16 seconds.
+        await delay(Duration(seconds: 1 << (attempt - 1)));
+      }
+    }
+    return false;
+  }
+
   /// - One-time prekeys (only when replenishment is needed)
   Future<void> uploadKeys() async {
     if (_identityKeyPair == null) await init();
@@ -482,12 +657,18 @@ class CryptoService {
       }
     }
 
-    // Perform X3DH as Alice (initiator) -- 4-DH with OTP if available
-    final x3dhResult = await X3DH.initiate(
-      aliceIdentity: _identityKeyPair!,
-      bobIdentityKey: bobIdentityKey,
-      bobSignedPrekey: bobSignedPrekey,
-      bobOneTimePrekey: bobOneTimePrekey,
+    // Perform X3DH as Alice (initiator) -- 4-DH with OTP if available.
+    // P1-4 timeline event lets us see how much of the encrypt budget is
+    // the one-time X3DH cost vs the per-message ratchet.
+    final x3dhResult = await timedCryptoOp(
+      'X3DH.initiate',
+      () => X3DH.initiate(
+        aliceIdentity: _identityKeyPair!,
+        bobIdentityKey: bobIdentityKey,
+        bobSignedPrekey: bobSignedPrekey,
+        bobOneTimePrekey: bobOneTimePrekey,
+      ),
+      args: {'otp': bobOneTimePrekey != null},
     );
 
     // Initialize Double Ratchet as Alice.
@@ -557,7 +738,11 @@ class CryptoService {
   Future<String> encryptMessage(String peerUserId, String plaintext) =>
       _withSessionLock(
         peerUserId,
-        () => _encryptMessageImpl(peerUserId, plaintext),
+        () => timedCryptoOp(
+          'CryptoService.encryptMessage',
+          () => _encryptMessageImpl(peerUserId, plaintext),
+          args: {'peer': peerUserId},
+        ),
       );
 
   Future<String> _encryptMessageImpl(
@@ -624,7 +809,11 @@ class CryptoService {
     final sessionKey = _sessionKeyFor(peerUserId, fromDeviceId);
     return _withSessionLock(
       sessionKey,
-      () => _decryptMessageImpl(peerUserId, ciphertextB64, fromDeviceId),
+      () => timedCryptoOp(
+        'CryptoService.decryptMessage',
+        () => _decryptMessageImpl(peerUserId, ciphertextB64, fromDeviceId),
+        args: {'peer': peerUserId, 'fromDevice': fromDeviceId},
+      ),
     );
   }
 
@@ -726,11 +915,7 @@ class CryptoService {
         'scheduling key re-upload to heal stale bundle',
       );
       _needsOtpReplenishment = true;
-      unawaited(
-        uploadKeys().catchError((upErr) {
-          debugPrint('[Crypto] heal uploadKeys failed: $upErr');
-        }),
-      );
+      unawaited(_healUploadKeysWithBackoff());
       throw InitialDecryptFailedException(peerUserId);
     }
     _sessions.put(sessionKey, session);
@@ -836,7 +1021,17 @@ class CryptoService {
   }) async {
     // Cache miss may be a TTL/LRU eviction -- try to reload from disk first.
     var session = _sessions.get(sessionKey);
-    session ??= await _reloadSession(sessionKey);
+    try {
+      session ??= await _reloadSession(sessionKey);
+    } on StorageUnavailableException catch (e) {
+      // Keyring locked at decrypt time. Do NOT clear anything — the session
+      // on disk is presumed intact, and our in-memory map is unchanged (the
+      // session var was never reassigned). Surface as a typed error so the
+      // chat layer can render a "keyring locked" banner instead of the
+      // generic "[Could not decrypt…]" placeholder.
+      _onSecureStorageUnavailable?.call();
+      throw SessionStorageUnavailableException(sessionKey, e);
+    }
     if (session == null) {
       throw Exception(
         'No session for $sessionKey — cannot decrypt normal message. '
@@ -846,6 +1041,9 @@ class CryptoService {
     // Serialise session state before any mutation (write-ahead for crash
     // recovery) and before passing into the isolate.
     final sessionJsonBefore = await session.toJson();
+    // Audit P1-3: drop a torn-write intent marker so we can detect on
+    // next launch that this decrypt was in-flight when the process died.
+    await _beginSessionWriteIntent(sessionKey);
     await _saveSession(sessionKey, session);
     try {
       // Run pure Double Ratchet crypto off the UI thread.  The isolate
@@ -862,9 +1060,19 @@ class CryptoService {
         result['session'] as Map<String, dynamic>,
       );
       await _saveSession(sessionKey, updatedSession);
+      // Audit P1-3: post-state committed — clear the intent marker.
+      await _endSessionWriteIntent(sessionKey);
       // Refresh LRU ordering after state update.
       _sessions.put(sessionKey, updatedSession);
       return utf8.decode(result['plaintext'] as Uint8List);
+    } on StorageUnavailableException catch (e) {
+      // Storage unavailable during post-save: don't touch the in-memory
+      // session, surface the typed error.  The recipient already got the
+      // plaintext from the isolate but we can't persist the new ratchet
+      // state — on next decrypt we'll see the same session and either
+      // succeed (if storage came back) or fail again the same way.
+      _onSecureStorageUnavailable?.call();
+      throw SessionStorageUnavailableException(sessionKey, e);
     } catch (e) {
       // Session is stale/corrupted — clear it. The next incoming initial
       // message from this peer will establish a fresh session via X3DH.

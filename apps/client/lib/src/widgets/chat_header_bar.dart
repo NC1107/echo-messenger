@@ -13,7 +13,7 @@ import '../providers/server_url_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../screens/safety_number_screen.dart';
 import '../screens/user_profile_screen.dart';
-import '../providers/livekit_voice_provider.dart';
+import '../providers/livekit_voice/livekit_voice_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';

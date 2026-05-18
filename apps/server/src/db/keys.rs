@@ -687,6 +687,13 @@ pub async fn get_group_key(
 // -------------------------------------------------------------------------
 
 /// Row returned by group_key_envelopes queries.
+///
+/// `min_wire_version` was added in migration `20260518000000` to support
+/// the GRP1→GRP2 downgrade-attack mitigation from
+/// `docs/group-e2e-design/04-migration-plan.md`. The receiver checks this
+/// against the wire prefix of each incoming message and refuses
+/// `GRP1:`-framed payloads at a key version pinned to `>= 2`. Existing
+/// rows default to 1, so old GRP1-only clients keep working.
 #[derive(Debug, serde::Serialize, sqlx::FromRow)]
 pub struct GroupKeyEnvelopeRow {
     pub id: Uuid,
@@ -694,36 +701,41 @@ pub struct GroupKeyEnvelopeRow {
     pub key_version: i32,
     pub recipient_user_id: Uuid,
     pub encrypted_key: String,
+    pub min_wire_version: i16,
     pub created_at: DateTime<Utc>,
 }
 
 /// Store an encrypted group key envelope for a specific recipient.
 ///
 /// Generic over `Executor` so callers can run this against a transaction
-/// alongside `store_group_key`.
+/// alongside `store_group_key`. The new `min_wire_version` parameter
+/// defaults to 1 for backwards compatibility — pass 2 from GRP2-capable
+/// rotators to lock the receiver into the signature-bearing wire format.
 pub async fn store_group_key_envelope<'e, E>(
     executor: E,
     conversation_id: Uuid,
     key_version: i32,
     recipient_user_id: Uuid,
     encrypted_key: &str,
+    min_wire_version: i16,
 ) -> Result<GroupKeyEnvelopeRow, sqlx::Error>
 where
     E: sqlx::Executor<'e, Database = sqlx::Postgres>,
 {
     sqlx::query_as::<_, GroupKeyEnvelopeRow>(
         "INSERT INTO group_key_envelopes \
-             (conversation_id, key_version, recipient_user_id, encrypted_key) \
-         VALUES ($1, $2, $3, $4) \
+             (conversation_id, key_version, recipient_user_id, encrypted_key, min_wire_version) \
+         VALUES ($1, $2, $3, $4, $5) \
          ON CONFLICT (conversation_id, key_version, recipient_user_id) \
-         DO UPDATE SET encrypted_key = $4 \
+         DO UPDATE SET encrypted_key = $4, min_wire_version = $5 \
          RETURNING id, conversation_id, key_version, recipient_user_id, \
-                   encrypted_key, created_at",
+                   encrypted_key, min_wire_version, created_at",
     )
     .bind(conversation_id)
     .bind(key_version)
     .bind(recipient_user_id)
     .bind(encrypted_key)
+    .bind(min_wire_version)
     .fetch_one(executor)
     .await
 }
@@ -736,7 +748,7 @@ pub async fn get_my_group_key_envelope(
 ) -> Result<Option<GroupKeyEnvelopeRow>, sqlx::Error> {
     sqlx::query_as::<_, GroupKeyEnvelopeRow>(
         "SELECT id, conversation_id, key_version, recipient_user_id, \
-                encrypted_key, created_at \
+                encrypted_key, min_wire_version, created_at \
          FROM group_key_envelopes \
          WHERE conversation_id = $1 AND recipient_user_id = $2 \
          ORDER BY key_version DESC \
@@ -757,7 +769,7 @@ pub async fn get_my_group_key_envelope_version(
 ) -> Result<Option<GroupKeyEnvelopeRow>, sqlx::Error> {
     sqlx::query_as::<_, GroupKeyEnvelopeRow>(
         "SELECT id, conversation_id, key_version, recipient_user_id, \
-                encrypted_key, created_at \
+                encrypted_key, min_wire_version, created_at \
          FROM group_key_envelopes \
          WHERE conversation_id = $1 AND recipient_user_id = $2 \
                AND key_version = $3",

@@ -16,3 +16,7 @@ Use GitHub Security Advisories: go to the Security tab and click "Report a vulne
 - Server application
 - Flutter client
 - Protocol definitions
+
+### Known issues (read before filing)
+
+We track our own crypto-stack risk inventory in [crypto-audit/02-message-loss-surface.md](crypto-audit/02-message-loss-surface.md). If a report duplicates a finding already catalogued there, please link to the entry rather than filing fresh.

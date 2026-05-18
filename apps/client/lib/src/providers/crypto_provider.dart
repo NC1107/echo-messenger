@@ -35,6 +35,15 @@ class CryptoState {
   final bool isUploading;
   final bool keysUploadFailed;
   final bool keysWereRegenerated;
+
+  /// True when the platform secure-storage backend is currently unavailable
+  /// (libsecret keyring locked, macOS Keychain prompt denied, etc.). Distinct
+  /// from `keysWereRegenerated`: the keys are presumed to exist on disk; we
+  /// just can't read them right now. UI surfaces a "Echo can't read its
+  /// encryption keys. Unlock your system keyring and tap Retry." banner.
+  /// Audit P0-1.
+  final bool secureStorageUnavailable;
+
   final String? error;
 
   const CryptoState({
@@ -42,6 +51,7 @@ class CryptoState {
     this.isUploading = false,
     this.keysUploadFailed = false,
     this.keysWereRegenerated = false,
+    this.secureStorageUnavailable = false,
     this.error,
   });
 
@@ -50,6 +60,7 @@ class CryptoState {
     bool? isUploading,
     bool? keysUploadFailed,
     bool? keysWereRegenerated,
+    bool? secureStorageUnavailable,
     String? error,
   }) {
     return CryptoState(
@@ -57,6 +68,8 @@ class CryptoState {
       isUploading: isUploading ?? this.isUploading,
       keysUploadFailed: keysUploadFailed ?? this.keysUploadFailed,
       keysWereRegenerated: keysWereRegenerated ?? this.keysWereRegenerated,
+      secureStorageUnavailable:
+          secureStorageUnavailable ?? this.secureStorageUnavailable,
       error: error,
     );
   }
@@ -72,6 +85,46 @@ class CryptoNotifier extends _$CryptoNotifier {
   @override
   CryptoState build() {
     return const CryptoState();
+  }
+
+  /// Mark secure storage as unavailable (audit P0-1). Idempotent — only
+  /// updates state when the flag flips so widget rebuilds stay minimal.
+  void _markSecureStorageUnavailable() {
+    if (state.secureStorageUnavailable) return;
+    DebugLogService.instance.log(
+      LogLevel.warning,
+      'Crypto',
+      'Secure storage unavailable — surfacing banner',
+    );
+    state = state.copyWith(secureStorageUnavailable: true);
+  }
+
+  /// Mark the OTP-heal upload as having exhausted its retries (audit P0-2).
+  /// Idempotent.
+  void _markKeyUploadTerminalFailure() {
+    if (state.keysUploadFailed) return;
+    DebugLogService.instance.log(
+      LogLevel.error,
+      'Crypto',
+      'OTP-heal upload exhausted retries — surfacing settings banner',
+    );
+    state = state.copyWith(keysUploadFailed: true);
+  }
+
+  /// Clear the secureStorageUnavailable flag and force a session-storage
+  /// retry. Called by the "Retry" button in the keyring-locked banner.
+  /// Audit P0-1.
+  Future<void> retryStorageUnlock() async {
+    if (!state.secureStorageUnavailable) return;
+    state = state.copyWith(secureStorageUnavailable: false);
+    // The next decrypt against any session will re-read from secure storage.
+    // If the keyring is still locked the flag will be re-set automatically
+    // via the observer callback. Drain pending messages to give the retry
+    // an immediate chance to either succeed or re-flip the flag.
+    final myUserId = ref.read(authProvider).userId ?? '';
+    if (myUserId.isNotEmpty) {
+      ref.read(websocketProvider.notifier).drainPendingDecryptQueue(myUserId);
+    }
   }
 
   /// Attempt key upload with one automatic retry.
@@ -130,6 +183,13 @@ class CryptoNotifier extends _$CryptoNotifier {
 
       final crypto = ref.read(cryptoServiceProvider);
       crypto.setToken(token);
+      // Audit P0-1 / P0-2: wire observability callbacks so transient
+      // keyring failures and exhausted upload-heal retries become visible
+      // UI banners instead of silent debugPrints.
+      crypto.setObservers(
+        onSecureStorageUnavailable: _markSecureStorageUnavailable,
+        onKeyUploadTerminalFailure: _markKeyUploadTerminalFailure,
+      );
       await crypto.init();
       if (crypto.keysAreFresh) {
         final uploadError = await _uploadKeysWithRetry(crypto);

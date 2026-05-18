@@ -7,7 +7,7 @@ import 'package:livekit_client/livekit_client.dart' as lk;
 import '../models/channel.dart';
 import '../providers/auth_provider.dart';
 import '../providers/channels_provider.dart';
-import '../providers/livekit_voice_provider.dart';
+import '../providers/livekit_voice/livekit_voice_provider.dart';
 import '../providers/theme_provider.dart' show UIDensity, uiDensityProvider;
 import '../providers/voice_settings_provider.dart';
 import '../services/debug_log_service.dart';

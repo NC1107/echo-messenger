@@ -10,6 +10,7 @@ import '../models/reaction.dart';
 import '../services/crypto_service.dart';
 import '../services/debug_log_service.dart';
 import '../services/group_crypto_service.dart';
+import 'crypto_provider.dart' show cryptoServiceProvider;
 import '../services/message_cache.dart';
 import '../utils/crypto_utils.dart';
 import 'auth_provider.dart';
@@ -50,13 +51,32 @@ class ChatState {
   /// The message being replied to (shown in the input bar).
   final ChatMessage? replyToMessage;
 
+  /// Per-conversation count of *consecutive* "[Could not decrypt…]"
+  /// placeholders. Resets to 0 when any message in the conversation decrypts
+  /// successfully. The chat UI shows an "encryption out of sync — reset?"
+  /// banner once this crosses [outOfSyncThreshold]. Audit P0-3.
+  final Map<String, int> consecutiveDecryptFailures;
+
+  /// Threshold at which the per-conversation banner becomes visible.
+  /// Three is the audit's recommended default; tuning lives in
+  /// `06-recommendations.md`.
+  static const int outOfSyncThreshold = 3;
+
   const ChatState({
     this.messagesByConversation = const {},
     Map<String, Set<String>> messageIdIndex = const {},
     this.loadingHistory = const {},
     this.hasMore = const {},
     this.replyToMessage,
+    this.consecutiveDecryptFailures = const {},
   }) : _messageIdIndex = messageIdIndex;
+
+  /// True when the named conversation has crossed [outOfSyncThreshold]
+  /// consecutive decrypt failures and should render the reset banner.
+  bool isConversationOutOfSync(String conversationId) {
+    return (consecutiveDecryptFailures[conversationId] ?? 0) >=
+        outOfSyncThreshold;
+  }
 
   /// Get messages for a conversation ID.
   List<ChatMessage> messagesForConversation(String conversationId) {
@@ -103,6 +123,23 @@ class ChatState {
     // reference-equal so Riverpod selectors for unaffected convs don't rebuild.
     var updatedConvMap = messagesByConversation;
     var updatedIndexMap = _messageIdIndex;
+    var updatedFailures = consecutiveDecryptFailures;
+
+    // Audit P0-3: track consecutive decrypt-failure placeholders so the
+    // chat UI can surface a "reset session" banner after the threshold is
+    // crossed. Reset to 0 on any successful decrypt.
+    if (msg.conversationId.isNotEmpty) {
+      final isDecryptFailure = msg.content.startsWith('[Could not decrypt');
+      final prev = updatedFailures[msg.conversationId] ?? 0;
+      if (isDecryptFailure) {
+        updatedFailures = {...updatedFailures, msg.conversationId: prev + 1};
+      } else if (prev > 0 &&
+          !_isPlaceholderContent(msg.content) &&
+          !msg.isSystemEvent) {
+        // Genuine success after one or more failures — clear the counter.
+        updatedFailures = {...updatedFailures}..remove(msg.conversationId);
+      }
+    }
 
     if (msg.conversationId.isNotEmpty) {
       final ids = Set<String>.from(
@@ -143,6 +180,25 @@ class ChatState {
       loadingHistory: loadingHistory,
       hasMore: hasMore,
       replyToMessage: replyToMessage,
+      consecutiveDecryptFailures: updatedFailures,
+    );
+  }
+
+  /// Reset the consecutive-decrypt-failures counter for a conversation.
+  /// Called by the "Reset Session" affordance after the user has explicitly
+  /// asked to recover. Audit P0-3.
+  ChatState withSyncRestored(String conversationId) {
+    if (!consecutiveDecryptFailures.containsKey(conversationId)) {
+      return this;
+    }
+    final next = {...consecutiveDecryptFailures}..remove(conversationId);
+    return ChatState(
+      messagesByConversation: messagesByConversation,
+      messageIdIndex: _messageIdIndex,
+      loadingHistory: loadingHistory,
+      hasMore: hasMore,
+      replyToMessage: replyToMessage,
+      consecutiveDecryptFailures: next,
     );
   }
 
@@ -153,6 +209,7 @@ class ChatState {
     Map<String, bool>? hasMore,
     ChatMessage? replyToMessage,
     bool clearReply = false,
+    Map<String, int>? consecutiveDecryptFailures,
   }) {
     return ChatState(
       messagesByConversation:
@@ -163,6 +220,8 @@ class ChatState {
       replyToMessage: clearReply
           ? null
           : (replyToMessage ?? this.replyToMessage),
+      consecutiveDecryptFailures:
+          consecutiveDecryptFailures ?? this.consecutiveDecryptFailures,
     );
   }
 }
@@ -258,6 +317,23 @@ class Chat extends _$Chat {
   /// Clear the active reply.
   void clearReplyTo() {
     state = state.copyWith(clearReply: true);
+  }
+
+  /// Force-reset the 1:1 Signal session backing [conversationId] and clear
+  /// the consecutive-decrypt-failure counter. Called by the "Reset Session"
+  /// button on the wedged-session banner. Audit P0-3.
+  ///
+  /// The peer's next initial message after this call will re-establish the
+  /// session via X3DH. Messages from before the reset whose keys were in
+  /// the discarded skipped-key window remain undecryptable — the banner
+  /// copy warns the user of this.
+  Future<void> resetWedgedSession(
+    String conversationId,
+    String peerUserId,
+  ) async {
+    final crypto = ref.read(cryptoServiceProvider);
+    await crypto.forceResetSession(peerUserId);
+    state = state.withSyncRestored(conversationId);
   }
 
   void addSystemEvent(String conversationId, String event) {

@@ -359,3 +359,122 @@ async fn upload_group_key_non_member_recipient_rejected_and_no_partial_state() {
         "no envelope row should have been committed (transaction must have rolled back)"
     );
 }
+
+// ---------------------------------------------------------------------------
+// min_wire_version (Phase 2A — GRP1→GRP2 downgrade-attack mitigation)
+// ---------------------------------------------------------------------------
+//
+// These tests cover the schema + API contract introduced by migration
+// 20260518000000. Receiver-side enforcement (refusing GRP1 wires against
+// a min_wire_version=2 envelope) lives in the client and is tested
+// separately in apps/client/test/.
+
+#[tokio::test]
+async fn upload_group_key_without_min_wire_version_defaults_to_1() {
+    // Existing clients (pre-Phase-2) don't send min_wire_version. The
+    // server must accept their payload and default to 1 so backwards
+    // compatibility holds.
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (owner_token, owner_id, _) = common::register_and_login(&client, &base, "gkmwvdef").await;
+    let group_id = common::create_group(&client, &base, &owner_token, "GKMWVDef").await;
+
+    let body = serde_json::json!({
+        "key_version": 1,
+        "envelopes": [
+            { "user_id": owner_id, "encrypted_key": "envelope-v1" }
+        ]
+    });
+    let resp = client
+        .post(format!("{base}/api/groups/{group_id}/keys"))
+        .header("Authorization", format!("Bearer {owner_token}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 201);
+
+    let resp = client
+        .get(format!("{base}/api/groups/{group_id}/keys/latest"))
+        .header("Authorization", format!("Bearer {owner_token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["min_wire_version"], 1,
+        "omitted min_wire_version must default to 1"
+    );
+}
+
+#[tokio::test]
+async fn upload_group_key_with_min_wire_version_2_round_trips() {
+    // A GRP2-capable rotator pins min_wire_version=2 to lock receivers
+    // out of the legacy GRP1 wire format. The server stores it; the GET
+    // endpoint surfaces it.
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (owner_token, owner_id, _) = common::register_and_login(&client, &base, "gkmwv2").await;
+    let group_id = common::create_group(&client, &base, &owner_token, "GKMWV2").await;
+
+    let body = serde_json::json!({
+        "key_version": 1,
+        "min_wire_version": 2,
+        "envelopes": [
+            { "user_id": owner_id, "encrypted_key": "envelope-v2" }
+        ]
+    });
+    let resp = client
+        .post(format!("{base}/api/groups/{group_id}/keys"))
+        .header("Authorization", format!("Bearer {owner_token}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 201);
+
+    let resp = client
+        .get(format!("{base}/api/groups/{group_id}/keys/latest"))
+        .header("Authorization", format!("Bearer {owner_token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["min_wire_version"], 2);
+    assert_eq!(body["encrypted_key"], "envelope-v2");
+}
+
+#[tokio::test]
+async fn upload_group_key_with_invalid_min_wire_version_returns_400() {
+    // Out-of-range values are rejected with a typed 400 before they hit
+    // the CHECK constraint, so clients get a clear error rather than a
+    // database 23514.
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (owner_token, owner_id, _) = common::register_and_login(&client, &base, "gkmwvbad").await;
+    let group_id = common::create_group(&client, &base, &owner_token, "GKMWVBad").await;
+
+    for bad in [0i32, -1, 256, 9999] {
+        let body = serde_json::json!({
+            "key_version": 1,
+            "min_wire_version": bad,
+            "envelopes": [
+                { "user_id": owner_id, "encrypted_key": "x" }
+            ]
+        });
+        let resp = client
+            .post(format!("{base}/api/groups/{group_id}/keys"))
+            .header("Authorization", format!("Bearer {owner_token}"))
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status().as_u16(),
+            400,
+            "min_wire_version={bad} must be rejected with 400"
+        );
+    }
+}

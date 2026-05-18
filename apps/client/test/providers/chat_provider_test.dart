@@ -1176,4 +1176,84 @@ void main() {
       expect(updated3.status, MessageStatus.sent, reason: 'Others unchanged');
     });
   });
+
+  group('ChatState consecutive decrypt-failure counter (audit P0-3)', () {
+    ChatMessage failureMsg(String id, String conv) => ChatMessage(
+      id: id,
+      fromUserId: 'peer',
+      fromUsername: 'peer',
+      conversationId: conv,
+      content: '[Could not decrypt - encryption keys may be out of sync]',
+      timestamp: '2026-05-18T00:00:00Z',
+      isMine: false,
+    );
+
+    ChatMessage okMsg(String id, String conv, String text) => ChatMessage(
+      id: id,
+      fromUserId: 'peer',
+      fromUsername: 'peer',
+      conversationId: conv,
+      content: text,
+      timestamp: '2026-05-18T00:00:01Z',
+      isMine: false,
+    );
+
+    test('starts at zero for a conversation with no failures', () {
+      const state = ChatState();
+      expect(state.consecutiveDecryptFailures['conv-A'] ?? 0, 0);
+      expect(state.isConversationOutOfSync('conv-A'), isFalse);
+    });
+
+    test('increments on each [Could not decrypt] placeholder', () {
+      const state = ChatState();
+      final s1 = state.withMessage(failureMsg('m1', 'conv-A'));
+      final s2 = s1.withMessage(failureMsg('m2', 'conv-A'));
+      expect(s1.consecutiveDecryptFailures['conv-A'], 1);
+      expect(s2.consecutiveDecryptFailures['conv-A'], 2);
+      expect(
+        s2.isConversationOutOfSync('conv-A'),
+        isFalse,
+        reason: 'threshold is 3, two failures should not trip the banner',
+      );
+    });
+
+    test('crosses outOfSync threshold on third consecutive failure', () {
+      var state = const ChatState();
+      state = state.withMessage(failureMsg('m1', 'conv-A'));
+      state = state.withMessage(failureMsg('m2', 'conv-A'));
+      state = state.withMessage(failureMsg('m3', 'conv-A'));
+      expect(state.consecutiveDecryptFailures['conv-A'], 3);
+      expect(state.isConversationOutOfSync('conv-A'), isTrue);
+    });
+
+    test('counter resets to zero on a genuine successful decrypt', () {
+      var state = const ChatState();
+      state = state.withMessage(failureMsg('m1', 'conv-A'));
+      state = state.withMessage(failureMsg('m2', 'conv-A'));
+      state = state.withMessage(okMsg('m3', 'conv-A', 'hello world'));
+      expect(state.consecutiveDecryptFailures.containsKey('conv-A'), isFalse);
+      expect(state.isConversationOutOfSync('conv-A'), isFalse);
+    });
+
+    test('counters across conversations are isolated', () {
+      var state = const ChatState();
+      state = state.withMessage(failureMsg('m1', 'conv-A'));
+      state = state.withMessage(failureMsg('m2', 'conv-B'));
+      state = state.withMessage(failureMsg('m3', 'conv-A'));
+      expect(state.consecutiveDecryptFailures['conv-A'], 2);
+      expect(state.consecutiveDecryptFailures['conv-B'], 1);
+    });
+
+    test('withSyncRestored clears the counter for a single conversation', () {
+      var state = const ChatState();
+      state = state.withMessage(failureMsg('m1', 'conv-A'));
+      state = state.withMessage(failureMsg('m2', 'conv-A'));
+      state = state.withMessage(failureMsg('m3', 'conv-A'));
+      expect(state.isConversationOutOfSync('conv-A'), isTrue);
+
+      final cleared = state.withSyncRestored('conv-A');
+      expect(cleared.isConversationOutOfSync('conv-A'), isFalse);
+      expect(cleared.consecutiveDecryptFailures.containsKey('conv-A'), isFalse);
+    });
+  });
 }

@@ -17,7 +17,18 @@ void main() {
       expect(state.isUploading, isFalse);
       expect(state.keysUploadFailed, isFalse);
       expect(state.keysWereRegenerated, isFalse);
+      expect(state.secureStorageUnavailable, isFalse);
       expect(state.error, isNull);
+    });
+
+    test('audit P0-1: secureStorageUnavailable flag round-trips through '
+        'copyWith', () {
+      const state = CryptoState();
+      final flipped = state.copyWith(secureStorageUnavailable: true);
+      expect(flipped.secureStorageUnavailable, isTrue);
+      expect(flipped.isInitialized, isFalse, reason: 'unrelated fields stay');
+      final cleared = flipped.copyWith(secureStorageUnavailable: false);
+      expect(cleared.secureStorageUnavailable, isFalse);
     });
 
     test('copyWith preserves values', () {
@@ -332,6 +343,218 @@ void main() {
       await crypto2.init();
 
       expect(crypto2.keysAreFresh, isTrue);
+    });
+  });
+
+  // ── Signed-prekey rotation (audit P2-1) ─────────────────────────────────
+  //
+  // The rotation logic is private; we drive it through `init()` because
+  // that's the only public seam that calls `_rotateSignedPrekeyIfNeeded`.
+  // Each test seeds an existing identity + signing + signed-prekey set,
+  // then manipulates the `_signedPrekeyCreatedAtPref` timestamp to walk
+  // the rotation state machine.
+  group('Signed-prekey rotation (audit P2-1)', () {
+    late FakeSecureKeyStore store;
+
+    setUp(() {
+      store = FakeSecureKeyStore();
+      SecureKeyStore.instance = store;
+      SharedPreferences.setMockInitialValues({});
+    });
+
+    /// Run one init cycle so the FakeSecureKeyStore has a complete,
+    /// real key set (identity + signing + signed prekey + timestamp).
+    Future<CryptoService> seedFreshKeys() async {
+      final crypto = CryptoService(serverUrl: 'http://localhost:8080');
+      crypto.setToken('test-token');
+      await crypto.init();
+      return crypto;
+    }
+
+    test('rotation does not fire when the signed prekey is younger than '
+        '_signedPrekeyMaxAge', () async {
+      await seedFreshKeys();
+      final originalPub = await store.read('echo_signed_prekey_pub');
+
+      // Bump the createdAt to 6 days ago — still under the 7-day limit.
+      await store.write(
+        'echo_signed_prekey_created_at',
+        DateTime.now().subtract(const Duration(days: 6)).toIso8601String(),
+      );
+
+      // Second init should NOT rotate.
+      final crypto2 = CryptoService(serverUrl: 'http://localhost:8080');
+      crypto2.setToken('test-token');
+      await crypto2.init();
+
+      final newPub = await store.read('echo_signed_prekey_pub');
+      expect(newPub, originalPub, reason: 'no rotation under maxAge');
+      expect(
+        await store.read('echo_signed_prekey_previous'),
+        isNull,
+        reason: 'no previous key when no rotation',
+      );
+    });
+
+    test('rotation fires + records previous-created-at when the signed '
+        'prekey is older than _signedPrekeyMaxAge', () async {
+      await seedFreshKeys();
+      final oldPriv = await store.read('echo_signed_prekey');
+      final oldPub = await store.read('echo_signed_prekey_pub');
+
+      // Force the createdAt to 8 days ago — past the 7-day max.
+      final oldCreatedAt = DateTime.now().subtract(const Duration(days: 8));
+      await store.write(
+        'echo_signed_prekey_created_at',
+        oldCreatedAt.toIso8601String(),
+      );
+
+      final crypto2 = CryptoService(serverUrl: 'http://localhost:8080');
+      crypto2.setToken('test-token');
+      await crypto2.init();
+
+      // New current prekey was generated.
+      expect(await store.read('echo_signed_prekey'), isNot(oldPriv));
+      expect(await store.read('echo_signed_prekey_pub'), isNot(oldPub));
+      // Previous slot now holds the old key.
+      expect(await store.read('echo_signed_prekey_previous'), oldPriv);
+      expect(await store.read('echo_signed_prekey_previous_pub'), oldPub);
+      // Previous-created-at timestamp matches the rotated-out key's
+      // original birth — the audit P2-1 fix.
+      final prevCreatedAtStr = await store.read(
+        'echo_signed_prekey_previous_created_at',
+      );
+      expect(prevCreatedAtStr, isNotNull);
+      final prevCreatedAt = DateTime.parse(prevCreatedAtStr!);
+      expect(
+        prevCreatedAt.difference(oldCreatedAt).abs().inSeconds < 2,
+        isTrue,
+        reason: 'previous-created-at must equal the rotated key\'s birth',
+      );
+      // keysAreFresh signals the upload loop to push the new SPK.
+      expect(crypto2.keysAreFresh, isTrue);
+    });
+
+    test(
+      'previous prekey survives within the grace period after rotation',
+      () async {
+        await seedFreshKeys();
+        // Rotate (current = 8 days old → triggers rotation).
+        await store.write(
+          'echo_signed_prekey_created_at',
+          DateTime.now().subtract(const Duration(days: 8)).toIso8601String(),
+        );
+        final crypto2 = CryptoService(serverUrl: 'http://localhost:8080');
+        crypto2.setToken('test-token');
+        await crypto2.init();
+        expect(await store.read('echo_signed_prekey_previous'), isNotNull);
+
+        // 5 days later: still within the 14-day grace period, the prev
+        // key must still be there for in-flight initial messages.
+        await store.write(
+          'echo_signed_prekey_previous_created_at',
+          DateTime.now().subtract(const Duration(days: 5)).toIso8601String(),
+        );
+        // Re-init to trigger another rotation cycle's cleanup.
+        await store.write(
+          'echo_signed_prekey_created_at',
+          DateTime.now().toIso8601String(),
+        );
+        final crypto3 = CryptoService(serverUrl: 'http://localhost:8080');
+        crypto3.setToken('test-token');
+        await crypto3.init();
+
+        expect(
+          await store.read('echo_signed_prekey_previous'),
+          isNotNull,
+          reason: 'previous SPK must survive within grace period',
+        );
+      },
+    );
+
+    test('previous prekey is cleaned up after _signedPrekeyGracePeriod on a '
+        'non-rotation init (cleanup is independent of rotation)', () async {
+      await seedFreshKeys();
+      // Rotate once so the previous slot is populated.
+      await store.write(
+        'echo_signed_prekey_created_at',
+        DateTime.now().subtract(const Duration(days: 8)).toIso8601String(),
+      );
+      final crypto2 = CryptoService(serverUrl: 'http://localhost:8080');
+      crypto2.setToken('test-token');
+      await crypto2.init();
+      expect(await store.read('echo_signed_prekey_previous'), isNotNull);
+      // After the rotation, current SPK is fresh (today) and previous
+      // SPK is the old one we just rotated out.
+
+      // Backdate previous_created_at to 15 days ago — past the 14-day
+      // grace period. We do NOT touch the current SPK's createdAt, so
+      // the next init will NOT trigger a rotation, leaving cleanup as
+      // the only thing that runs.
+      await store.write(
+        'echo_signed_prekey_previous_created_at',
+        DateTime.now().subtract(const Duration(days: 15)).toIso8601String(),
+      );
+
+      // Snapshot the current SPK so we can verify it didn't rotate.
+      final currentBeforeInit = await store.read('echo_signed_prekey');
+
+      final crypto3 = CryptoService(serverUrl: 'http://localhost:8080');
+      crypto3.setToken('test-token');
+      await crypto3.init();
+
+      // No rotation happened — current SPK is unchanged. (keysAreFresh
+      // is also true here, but that flag is set on every restore, not
+      // just on rotation, so it doesn't distinguish the cases.)
+      expect(
+        await store.read('echo_signed_prekey'),
+        currentBeforeInit,
+        reason: 'current SPK must not have rotated',
+      );
+      // Cleanup ran independently — previous slot is empty.
+      expect(
+        await store.read('echo_signed_prekey_previous'),
+        isNull,
+        reason:
+            'previous SPK must be cleaned up past grace period '
+            'even without a fresh rotation',
+      );
+      expect(await store.read('echo_signed_prekey_previous_pub'), isNull);
+      expect(
+        await store.read('echo_signed_prekey_previous_created_at'),
+        isNull,
+      );
+    });
+
+    test('pre-fix data (previous SPK without created-at) is dropped on '
+        'next rotation — audit P2-1 migration safety', () async {
+      await seedFreshKeys();
+      // Simulate pre-fix state: a rotated-out previous SPK exists but
+      // we never recorded when it was minted.
+      await store.write('echo_signed_prekey_previous', 'stale-priv-blob');
+      await store.write('echo_signed_prekey_previous_pub', 'stale-pub-blob');
+      // No echo_signed_prekey_previous_created_at written.
+
+      // Trigger rotation so cleanup runs.
+      await store.write(
+        'echo_signed_prekey_created_at',
+        DateTime.now().subtract(const Duration(days: 8)).toIso8601String(),
+      );
+      final crypto2 = CryptoService(serverUrl: 'http://localhost:8080');
+      crypto2.setToken('test-token');
+      await crypto2.init();
+
+      // Pre-fix entry is dropped conservatively. The NEW rotation
+      // wrote a fresh previous SPK with a real timestamp, so the
+      // previous slot is repopulated — but the original `stale-...`
+      // blob is gone.
+      final prevPriv = await store.read('echo_signed_prekey_previous');
+      expect(prevPriv, isNot('stale-priv-blob'));
+      // The new previous-created-at exists.
+      expect(
+        await store.read('echo_signed_prekey_previous_created_at'),
+        isNotNull,
+      );
     });
   });
 

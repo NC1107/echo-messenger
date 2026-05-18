@@ -78,3 +78,19 @@ class InitialDecryptFailedException implements Exception {
       'InitialDecryptFailedException(peer=$peerUserId): initial X3DH wire '
       'failed AES-GCM auth; uploaded fresh keys to heal stale bundle';
 }
+
+/// Thrown by [CryptoService._decryptNormalMessage] when the underlying
+/// secure-storage backend is unavailable (libsecret locked, Keychain prompt
+/// denied, etc.) at the moment the session needs to be reloaded or saved.
+/// The in-memory session is left intact; the next attempt against the same
+/// session key will succeed if storage comes back. Audit P0-1.
+class SessionStorageUnavailableException implements Exception {
+  final String sessionKey;
+  final Object cause;
+  const SessionStorageUnavailableException(this.sessionKey, this.cause);
+
+  @override
+  String toString() =>
+      'SessionStorageUnavailableException(session=$sessionKey): keyring '
+      'unavailable; in-memory session preserved. Cause: $cause';
+}

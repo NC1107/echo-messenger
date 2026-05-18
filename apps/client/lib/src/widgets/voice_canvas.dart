@@ -11,7 +11,7 @@ import 'package:livekit_client/livekit_client.dart' as lk;
 import '../models/canvas_models.dart';
 import '../providers/auth_provider.dart';
 import '../providers/canvas_provider.dart';
-import '../providers/livekit_voice_provider.dart';
+import '../providers/livekit_voice/livekit_voice_provider.dart';
 import '../theme/echo_theme.dart';
 import '../theme/motion_tokens.dart';
 import '../utils/canvas_utils.dart';
