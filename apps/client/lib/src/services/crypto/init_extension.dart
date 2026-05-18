@@ -364,7 +364,18 @@ extension CryptoServiceInit on CryptoService {
   ///
   /// The old key pair is kept as a "previous" signed prekey for a grace period
   /// so that peers who fetched the old bundle can still complete X3DH.
+  ///
+  /// Ordering (audit P2-1 fix): grace-period cleanup runs FIRST, before the
+  /// rotation check. Otherwise it would only ever see the *just-rotated*
+  /// previous key (whose timestamp was reset moments ago) and the actually-
+  /// stale previous from two rotations back would linger indefinitely.
+  /// Running cleanup unconditionally also drops stale previous keys on
+  /// long-running clients that don't trigger rotation often.
   Future<void> _rotateSignedPrekeyIfNeeded(SecureKeyStore store) async {
+    // Audit P2-1: always give the previous-slot a chance to expire,
+    // even when no rotation is about to happen.
+    await _cleanupPreviousPrekey(store);
+
     final createdAtStr = await store.read(
       CryptoService._signedPrekeyCreatedAtPref,
     );
@@ -385,12 +396,20 @@ extension CryptoServiceInit on CryptoService {
 
     debugPrint('[Crypto] Signed prekey is ${age.inDays} days old -- rotating');
 
-    // Move current signed prekey to "previous" slot
+    // Move current signed prekey to "previous" slot. The previous-created-
+    // at timestamp is the *current* prekey's createdAt — i.e. when the
+    // key we're about to demote was minted. `_cleanupPreviousPrekey`
+    // compares against this on the next init so the previous key is
+    // dropped exactly `_signedPrekeyGracePeriod` after its real birth.
     final currentPriv = await store.read(CryptoService._signedPrekeyPref);
     final currentPub = await store.read(CryptoService._signedPrekeyPubPref);
     if (currentPriv != null && currentPub != null) {
       await store.write(CryptoService._signedPrekeyPreviousPref, currentPriv);
       await store.write(CryptoService._signedPrekeyPreviousPubPref, currentPub);
+      await store.write(
+        CryptoService._signedPrekeyPreviousCreatedAtPref,
+        createdAt.toIso8601String(),
+      );
     }
 
     // Generate new signed prekey
@@ -402,36 +421,48 @@ extension CryptoServiceInit on CryptoService {
     );
 
     _keysAreFresh = true;
-
-    // Clean up previous prekey if it has exceeded the grace period
-    await _cleanupPreviousPrekey(store);
   }
 
   /// Remove the previous signed prekey if it is older than the grace period.
+  /// Compares against the *previous* prekey's recorded createdAt — see
+  /// audit P2-1 for why comparing against the current prekey's age was
+  /// incorrect (it let the previous key linger up to gracePeriod + maxAge
+  /// instead of exactly gracePeriod).
   Future<void> _cleanupPreviousPrekey(SecureKeyStore store) async {
     final prevPriv = await store.read(CryptoService._signedPrekeyPreviousPref);
     if (prevPriv == null) return;
 
-    // The previous prekey was created when the current one replaced it.
-    // We use the current prekey creation time minus max age as an estimate
-    // for when the previous key was active. For simplicity, keep it for
-    // one full grace period from now -- it will be cleaned up on the next
-    // rotation cycle after that.
-    final createdAtStr = await store.read(
-      CryptoService._signedPrekeyCreatedAtPref,
+    final prevCreatedAtStr = await store.read(
+      CryptoService._signedPrekeyPreviousCreatedAtPref,
     );
-    if (createdAtStr == null) return;
-
-    final createdAt = DateTime.tryParse(createdAtStr);
-    if (createdAt == null) return;
-
-    // If the current prekey is already older than the grace period minus
-    // the max age, the previous one has definitely expired.
-    final currentAge = DateTime.now().difference(createdAt);
-    if (currentAge >= CryptoService._signedPrekeyGracePeriod) {
+    // Pre-fix data has no previous-created-at timestamp. Treat as "old
+    // enough to clean up" — the worst case is a one-rotation-cycle drop
+    // of a key that might still have been within grace period, but a
+    // peer that can't decrypt against it would simply re-fetch the
+    // bundle and get the current key. Conservative and predictable.
+    if (prevCreatedAtStr == null) {
       await store.delete(CryptoService._signedPrekeyPreviousPref);
       await store.delete(CryptoService._signedPrekeyPreviousPubPref);
-      debugPrint('[Crypto] Cleaned up expired previous signed prekey');
+      debugPrint(
+        '[Crypto] Dropping previous signed prekey with no recorded '
+        'birth timestamp (pre-P2-1 data)',
+      );
+      return;
+    }
+
+    final prevCreatedAt = DateTime.tryParse(prevCreatedAtStr);
+    if (prevCreatedAt == null) return;
+
+    final age = DateTime.now().difference(prevCreatedAt);
+    if (age >= CryptoService._signedPrekeyGracePeriod) {
+      await store.delete(CryptoService._signedPrekeyPreviousPref);
+      await store.delete(CryptoService._signedPrekeyPreviousPubPref);
+      await store.delete(CryptoService._signedPrekeyPreviousCreatedAtPref);
+      debugPrint(
+        '[Crypto] Cleaned up expired previous signed prekey '
+        '(was ${age.inDays} days old, grace period '
+        '${CryptoService._signedPrekeyGracePeriod.inDays} days)',
+      );
     }
   }
 }

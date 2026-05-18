@@ -46,9 +46,9 @@ Our framing is a slight deviation from the libsignal binary protobuf format. We 
 |------------------|---------------------|---------|
 | Identity key persisted with strong OS-backed storage | `secure_key_store.dart` → Keychain / Keystore / libsecret / DPAPI | ✅ |
 | One-time prekeys deleted after first use | `crypto_service.dart` removes the OPK private from secure storage on success | ✅ |
-| Signed prekey rotation | Manual / not yet implemented — same signed prekey lives forever | ⚠️ |
+| Signed prekey rotation | 7-day rotation with 14-day grace period for the previous key. Implemented in `crypto/init_extension.dart::_rotateSignedPrekeyIfNeeded`. | ✅ |
 
-**Signed prekey rotation**: The spec recommends periodic rotation. We don't rotate. Impact: an attacker who compromises the server's stored signed prekey and historical OPKs could decrypt past sessions (no forward secrecy *before* the first DH ratchet step). This is a P2 issue, not a message-loss issue. Filed under [`06-recommendations.md`](06-recommendations.md) "P2".
+**Signed prekey rotation**: The spec recommends periodic rotation; we rotate every 7 days with a 14-day grace period for the previous key. Implementation in `apps/client/lib/src/services/crypto/init_extension.dart`. The grace-period cleanup was originally buggy (compared against the *current* prekey's age, letting the previous key linger up to `gracePeriod + maxAge` instead of `gracePeriod`); audit P2-1 added a `_signedPrekeyPreviousCreatedAtPref` timestamp so the cleanup compares against the actual birth of the previous key.
 
 ## Summary
 

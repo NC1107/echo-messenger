@@ -86,12 +86,12 @@ Group rotation liveness was an earlier P1 item. It is now design work that lives
 
 ## P2 — Later (cleanup, hygiene, drift defence)
 
-### P2-1 — Signed-prekey rotation
+### P2-1 — Signed-prekey rotation ✅ closed
 
 - **Closes**: [`03-correctness-vs-signal.md`](03-correctness-vs-signal.md) → "Signed prekey rotation missing".
-- **What**: Rotate the server-side signed prekey on a 30-day schedule, falling back to the previous one for in-flight initial messages (we already have that fallback path at `crypto_service.dart:813`).
-- **Estimate**: 2–3 days client + server. Touches `routes/keys.rs` and a new background task.
-- **Risk**: Medium. Needs careful interop testing against in-flight clients.
+- **What landed**: Rotation logic already existed in `apps/client/lib/src/services/crypto/init_extension.dart::_rotateSignedPrekeyIfNeeded` — 7-day cycle, 14-day grace for the previous key, with a server-side re-upload triggered by `keysAreFresh` on the next `initAndUploadKeys` call. The audit's "not yet implemented" verdict was inaccurate — what was missing was test coverage and a correctness bug in the grace-period cleanup.
+- **Bug fixed**: `_cleanupPreviousPrekey` used to compare against the *current* prekey's age, which let the previous key linger up to `gracePeriod + maxAge` instead of exactly `gracePeriod`. Added `_signedPrekeyPreviousCreatedAtPref` so the cleanup compares against the actual birth of the previous key. Also reordered the cleanup to run BEFORE the rotation check so long-running clients without rotation pressure still expire stale previous keys.
+- **Tests**: 5 new under `test/providers/crypto_provider_test.dart` — happy-path no-rotation-under-maxAge, rotation-fires-with-correct-previous-timestamp, previous-kept-within-grace, previous-cleaned-on-non-rotation-init, pre-fix data migrated safely.
 
 ### P2-2 — Cross-implementation wire-compat test
 

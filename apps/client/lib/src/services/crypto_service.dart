@@ -54,6 +54,15 @@ class CryptoService {
   static const _signedPrekeyCreatedAtPref = 'echo_signed_prekey_created_at';
   static const _signedPrekeyPreviousPref = 'echo_signed_prekey_previous';
   static const _signedPrekeyPreviousPubPref = 'echo_signed_prekey_previous_pub';
+
+  /// Timestamp at which the *previous* signed prekey was generated.
+  /// Used by `_cleanupPreviousPrekey` to drop the previous prekey
+  /// exactly `_signedPrekeyGracePeriod` after it was minted, rather
+  /// than the audit P2-1 pre-fix behaviour where cleanup compared
+  /// against the *current* prekey's age (which let the previous key
+  /// linger up to `gracePeriod + maxAge` instead of `gracePeriod`).
+  static const _signedPrekeyPreviousCreatedAtPref =
+      'echo_signed_prekey_previous_created_at';
   static const _otpNextIdPref = 'echo_otp_next_id';
 
   /// Duration after which the signed prekey should be rotated.
@@ -74,6 +83,7 @@ class CryptoService {
     _signedPrekeyCreatedAtPref,
     _signedPrekeyPreviousPref,
     _signedPrekeyPreviousPubPref,
+    _signedPrekeyPreviousCreatedAtPref,
   ];
 
   final String serverUrl;
