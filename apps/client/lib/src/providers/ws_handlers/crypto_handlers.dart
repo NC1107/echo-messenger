@@ -98,6 +98,7 @@ extension CryptoHandlersOn on WsMessageHandler {
 
     final auth = ref.read(authProvider);
     final token = auth.token;
+    final myUserId = auth.userId ?? '';
     if (token == null) return;
 
     final serverUrl = ref.read(serverUrlProvider);
@@ -131,7 +132,17 @@ extension CryptoHandlersOn on WsMessageHandler {
             return [];
           }
         },
-        fetchIdentityKey: (userId) => crypto.fetchPeerIdentityKey(userId),
+        // Self-wrap uses the local pubkey so we can always unwrap our
+        // own envelope; peer wraps bypass the TOFU cache so we use the
+        // recipient's current server-known identity rather than a
+        // stale entry from a previous account session. See
+        // seedInitialGroupKey for the longer rationale.
+        fetchIdentityKey: (userId) {
+          if (userId == myUserId) {
+            return crypto.getIdentityPublicKey();
+          }
+          return crypto.fetchPeerIdentityKey(userId, forceRefresh: true);
+        },
       ),
     );
   }
