@@ -362,7 +362,10 @@ async fn at_here_suppresses_push_but_stores_message_for_offline_replay() {
     let (alice_token, _, _) = common::register_and_login(&client, &base, "supp_alice").await;
     let (bob_token, bob_id, _) = common::register_and_login(&client, &base, "supp_bob").await;
 
-    let group_id = common::create_group(&client, &base, &alice_token, "SuppressGroup").await;
+    // @here mention parsing only runs on plaintext groups (encrypted
+    // content is ciphertext; #451 doc-doctored). Downgrade explicitly.
+    let group_id =
+        common::create_plaintext_group(&client, &base, &alice_token, "SuppressGroup").await;
     common::add_member_to_group(&client, &base, &alice_token, &group_id, &bob_id).await;
 
     // Alice connects; Bob is intentionally offline so offline_user_ids is non-empty
@@ -420,7 +423,9 @@ async fn at_everyone_does_not_suppress_offline_replay() {
     let (alice_token, _, _) = common::register_and_login(&client, &base, "ev_sup_alice").await;
     let (bob_token, bob_id, _) = common::register_and_login(&client, &base, "ev_sup_bob").await;
 
-    let group_id = common::create_group(&client, &base, &alice_token, "EvSuppGroup").await;
+    // @everyone mention parsing only runs on plaintext groups.
+    let group_id =
+        common::create_plaintext_group(&client, &base, &alice_token, "EvSuppGroup").await;
     common::add_member_to_group(&client, &base, &alice_token, &group_id, &bob_id).await;
 
     // Bob is offline; Alice sends @everyone.

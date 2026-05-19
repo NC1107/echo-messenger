@@ -7,14 +7,21 @@ import '../providers/crypto_provider.dart';
 import '../theme/echo_theme.dart';
 
 /// Top-of-conversation banner that surfaces transient encryption failure
-/// states. Three flavours, in priority order (highest priority shown):
+/// states. Five flavours, in priority order (highest priority shown):
 ///
 /// 1. **Keyring locked** — `cryptoProvider.state.secureStorageUnavailable`.
 ///    Action: tap "Retry" → `retryStorageUnlock()`. Audit P0-1.
 /// 2. **Key upload failing** — `cryptoProvider.state.keysUploadFailed`.
 ///    Read-only signal here; the actionable fix lives in Settings →
 ///    Privacy. Audit P0-2.
-/// 3. **Session out of sync** — `chatProvider.state.isConversationOutOfSync`.
+/// 3. **Sender signature failed (group)** — at least one GRP2 message
+///    failed verification. Danger-colored; only action is "Dismiss"
+///    because there's no safe auto-recovery from a forgery attempt.
+///    Audit Phase 4, OQ-1/OQ-12.
+/// 4. **Group key out of sync** — group conversation crossed the
+///    decrypt-failure threshold. Action: "Refresh key" →
+///    `refreshGroupKey()`. Audit Phase 4.
+/// 5. **Session out of sync (1:1)** — `chatProvider.state.isConversationOutOfSync`.
 ///    Action: tap "Reset Session" → `resetWedgedSession()`. Audit P0-3.
 ///
 /// All banners are additive — they don't block input. The user keeps typing;
@@ -31,6 +38,9 @@ class EncryptionStatusBanner extends ConsumerWidget {
     );
     final keyUploadFailed = ref.watch(
       cryptoProvider.select((s) => s.keysUploadFailed),
+    );
+    final sigFailed = ref.watch(
+      chatProvider.select((s) => s.hasSignatureFailure(conversation.id)),
     );
     final outOfSync = ref.watch(
       chatProvider.select((s) => s.isConversationOutOfSync(conversation.id)),
@@ -58,9 +68,44 @@ class EncryptionStatusBanner extends ConsumerWidget {
       );
     }
 
+    if (sigFailed && conversation.isGroup) {
+      // GRP2 signature verification failed — a member of this group
+      // signed a message with a key that doesn't match their device's
+      // published verify key. Could be a benign device-rotation race,
+      // but it could also be forgery. We don't auto-recover; the user
+      // explicitly dismisses after they've contacted an admin / the
+      // sender out-of-band.
+      return _Banner(
+        icon: Icons.gpp_bad_outlined,
+        color: EchoTheme.danger,
+        message:
+            "Couldn't verify the sender of a message in this group. "
+            'Contact an admin before treating recent messages as authentic.',
+        actionLabel: 'Dismiss',
+        onAction: () => ref
+            .read(chatProvider.notifier)
+            .dismissSignatureFailure(conversation.id),
+      );
+    }
+
+    if (outOfSync && conversation.isGroup) {
+      // Group decrypt failures cluster when a member missed a
+      // rotation — the local cached key is stale and the new envelope
+      // is sitting on the server. "Refresh key" drops our cache + a
+      // GET /api/groups/:id/keys/latest pulls the current envelope.
+      return _Banner(
+        icon: Icons.refresh,
+        color: EchoTheme.warning,
+        message:
+            "Can't decrypt this group's recent messages. The encryption key "
+            'may have rotated — refresh to fetch the latest.',
+        actionLabel: 'Refresh key',
+        onAction: () =>
+            ref.read(chatProvider.notifier).refreshGroupKey(conversation.id),
+      );
+    }
+
     if (outOfSync && !conversation.isGroup) {
-      // Reset-session affordance only applies to 1:1 conversations today;
-      // group recovery uses key-rotation instead (tracked separately).
       final peerId = _peerUserIdFor(conversation, ref);
       return _Banner(
         icon: Icons.sync_problem,

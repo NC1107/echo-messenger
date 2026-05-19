@@ -198,8 +198,10 @@ async fn edit_message_on_unencrypted_group_succeeds() {
     let (alice_token, _alice_id, _alice_name) =
         common::register_and_login(&client, &base, "edit_pl_alice").await;
 
-    // Groups default to `is_encrypted = false` so edits remain allowed.
-    let group_id = common::create_group(&client, &base, &alice_token, "EditPlainGroup").await;
+    // Phase 5 flipped the default to `is_encrypted = true`; this test
+    // exercises the plaintext-edit path so we downgrade explicitly.
+    let group_id =
+        common::create_plaintext_group(&client, &base, &alice_token, "EditPlainGroup").await;
 
     // Send a plaintext message via WS.
     let ticket = common::get_ws_ticket(&client, &base, &alice_token).await;

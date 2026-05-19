@@ -871,6 +871,15 @@ class GroupCryptoService {
     await store.write('group_key_${conversationId}_$version', keyBase64);
   }
 
+  /// Public alias for [_purgeKey] used by the group recovery banner
+  /// (Phase 4). When the user taps "Refresh key" because messages are
+  /// rendering as "[Could not decrypt - waiting for group key]", the
+  /// chat panel calls this then [getGroupKey] to pull a fresh envelope
+  /// from the server. We do NOT auto-rotate; we just dump the local
+  /// cache and re-read whatever the server currently advertises.
+  Future<void> dropCachedKey(String conversationId) =>
+      _purgeKey(conversationId);
+
   /// Drop every cached/persisted key for [conversationId] across all
   /// versions. Used during rotation (#656) so a kicked member who still has
   /// the old key cannot inject ciphertext we would encrypt for them.

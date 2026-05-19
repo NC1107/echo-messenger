@@ -398,7 +398,7 @@ async fn plaintext_group_username_mention_persists() {
     let (bob_token, bob_id, bob_name) = common::register_and_login(&client, &base, "plm_bob").await;
 
     let group_id =
-        common::create_group(&client, &base, &alice_token, "PlaintextMentionGroup").await;
+        common::create_plaintext_group(&client, &base, &alice_token, "PlaintextMentionGroup").await;
     common::add_member_to_group(&client, &base, &alice_token, &group_id, &bob_id).await;
 
     let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;

@@ -80,6 +80,8 @@ Estimate: 4–5 days.
 
 **Goal**: when group decrypt fails, the user can act.
 
+**Status**: ✅ shipped. `EncryptionStatusBanner` now carries two group-specific variants in addition to the 1:1 reset path: a warning-coloured "Can't decrypt this group's recent messages — Refresh key" banner (action wired to `chatProvider.refreshGroupKey`, which drops the cached envelope and refetches) and a danger-coloured "Couldn't verify the sender" banner (no auto-recovery; user dismisses after contacting an admin). `ChatState` tracks both `consecutiveDecryptFailures` (transient, reset on any success) and `signatureFailures` (sticky security signal).
+
 - One PR. Frontend-only.
 - Adds two banners:
   - *"You can't decrypt this group's recent messages. Fetch the latest key?"* (action: re-fetch active key version).
@@ -91,6 +93,8 @@ Estimate: 3 days.
 ## Phase 5 — Toggle defaults
 
 **Goal**: new groups default to `is_encrypted=true`.
+
+**Status**: ✅ shipped. `db::groups::create_group_with_visibility` now sets `is_encrypted = true` in the INSERT. Tests that exercise the plaintext-group send-path use a new `common::create_plaintext_group` helper that downgrades immediately after creation.
 
 - Smallest PR. One flag flip in the create-group screen + the server-side default.
 - Rolled out behind a feature flag for two weeks. Monitor: rate of group-decrypt failures, rate of rotation-completion latency, rate of `[Could not decrypt…]` placeholders.

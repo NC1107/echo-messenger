@@ -153,7 +153,10 @@ async fn kick_on_plaintext_group_does_not_rotate() {
     let (owner_token, _owner_id, _) = common::register_and_login(&client, &base, "rotpown").await;
     let (member_token, member_id, _) = common::register_and_login(&client, &base, "rotpmem").await;
 
-    let group_id = common::create_group(&client, &base, &owner_token, "PlaintextRotate").await;
+    // Phase 5 flipped the default to is_encrypted = true; this test
+    // asserts plaintext-group behaviour, so downgrade explicitly.
+    let group_id =
+        common::create_plaintext_group(&client, &base, &owner_token, "PlaintextRotate").await;
     common::add_member_to_group(&client, &base, &owner_token, &group_id, &member_id).await;
 
     let v_before = key_version(&group_id).await;

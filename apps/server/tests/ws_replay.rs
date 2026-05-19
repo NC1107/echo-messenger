@@ -213,7 +213,7 @@ async fn classify_replay_content_canonical_plaintext() {
     let (alice_tok, _alice_id, _) = common::register_and_login(&client, &base, "cls_c_alice").await;
     let (bob_tok, bob_id, _) = common::register_and_login(&client, &base, "cls_c_bob").await;
 
-    let group = common::create_group(&client, &base, &alice_tok, "ClassifyGroupC").await;
+    let group = common::create_plaintext_group(&client, &base, &alice_tok, "ClassifyGroupC").await;
     common::add_member_to_group(&client, &base, &alice_tok, &group, &bob_id).await;
 
     // Alice sends a plaintext group message while Bob is offline.

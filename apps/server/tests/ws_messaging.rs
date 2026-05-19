@@ -253,7 +253,8 @@ async fn group_message_fanout() {
     let (charlie_token, charlie_id, _charlie_name) =
         common::register_and_login(&client, &base, "gfcharlie").await;
 
-    let group_id = common::create_group(&client, &base, &alice_token, "FanoutGroup").await;
+    let group_id =
+        common::create_plaintext_group(&client, &base, &alice_token, "FanoutGroup").await;
     common::add_member_to_group(&client, &base, &alice_token, &group_id, &bob_id).await;
     common::add_member_to_group(&client, &base, &alice_token, &group_id, &charlie_id).await;
 
@@ -323,7 +324,7 @@ async fn at_here_delivers_to_all_online_members() {
     let (charlie_token, charlie_id, _charlie_name) =
         common::register_and_login(&client, &base, "hrcharlie").await;
 
-    let group_id = common::create_group(&client, &base, &alice_token, "HereGroup").await;
+    let group_id = common::create_plaintext_group(&client, &base, &alice_token, "HereGroup").await;
     common::add_member_to_group(&client, &base, &alice_token, &group_id, &bob_id).await;
     common::add_member_to_group(&client, &base, &alice_token, &group_id, &charlie_id).await;
 
@@ -387,7 +388,8 @@ async fn at_here_with_offline_member_still_stores_and_replays() {
     let (bob_token, bob_id, _bob_name) =
         common::register_and_login(&client, &base, "hroflbob").await;
 
-    let group_id = common::create_group(&client, &base, &alice_token, "OfflineGroup").await;
+    let group_id =
+        common::create_plaintext_group(&client, &base, &alice_token, "OfflineGroup").await;
     common::add_member_to_group(&client, &base, &alice_token, &group_id, &bob_id).await;
 
     let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
@@ -434,7 +436,8 @@ async fn at_everyone_delivers_to_all_members() {
     let (charlie_token, charlie_id, _charlie_name) =
         common::register_and_login(&client, &base, "evcharlie").await;
 
-    let group_id = common::create_group(&client, &base, &alice_token, "EveryoneGroup").await;
+    let group_id =
+        common::create_plaintext_group(&client, &base, &alice_token, "EveryoneGroup").await;
     common::add_member_to_group(&client, &base, &alice_token, &group_id, &bob_id).await;
     common::add_member_to_group(&client, &base, &alice_token, &group_id, &charlie_id).await;
 
@@ -823,7 +826,8 @@ async fn test_group_fanout_delivers_to_all_devices_of_all_members() {
     let (charlie_token, charlie_id, _charlie_name) =
         common::register_and_login(&client, &base, "gfmd_charlie").await;
 
-    let group_id = common::create_group(&client, &base, &alice_token, "MultiDevFanoutGroup").await;
+    let group_id =
+        common::create_plaintext_group(&client, &base, &alice_token, "MultiDevFanoutGroup").await;
     common::add_member_to_group(&client, &base, &alice_token, &group_id, &bob_id).await;
     common::add_member_to_group(&client, &base, &alice_token, &group_id, &charlie_id).await;
 
@@ -965,7 +969,8 @@ async fn test_group_fanout_asymmetric_device_counts() {
     let (charlie_token, charlie_id, _charlie_name) =
         common::register_and_login(&client, &base, "gasym_charlie").await;
 
-    let group_id = common::create_group(&client, &base, &alice_token, "AsymDevFanoutGroup").await;
+    let group_id =
+        common::create_plaintext_group(&client, &base, &alice_token, "AsymDevFanoutGroup").await;
     common::add_member_to_group(&client, &base, &alice_token, &group_id, &bob_id).await;
     common::add_member_to_group(&client, &base, &alice_token, &group_id, &charlie_id).await;
 
@@ -1536,7 +1541,8 @@ async fn offline_replay_delivers_beyond_one_page() {
 
     // Use a plaintext group so no per-device ciphertext wiring is needed.
     let group_id =
-        common::create_group(&client, &base, &alice_token, "OfflineReplayPagination").await;
+        common::create_plaintext_group(&client, &base, &alice_token, "OfflineReplayPagination")
+            .await;
     common::add_member_to_group(&client, &base, &alice_token, &group_id, &bob_id).await;
 
     let alice_uuid = uuid::Uuid::parse_str(&alice_id).unwrap();

@@ -68,7 +68,7 @@ async fn resolve_conversation_by_id_member_succeeds() {
 
     let (alice_token, _alice_id, _alice_name) =
         common::register_and_login(&client, &base, "rc_memok_a").await;
-    let group_id = common::create_group(&client, &base, &alice_token, "RcMemberOk").await;
+    let group_id = common::create_plaintext_group(&client, &base, &alice_token, "RcMemberOk").await;
 
     let ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
     let mut ws = connect_ws(&base, &ticket).await;
@@ -261,7 +261,8 @@ async fn message_at_exact_max_length_accepted() {
     let client = Client::new();
 
     let (alice_token, _alice_id, _) = common::register_and_login(&client, &base, "maxlen_a").await;
-    let group_id = common::create_group(&client, &base, &alice_token, "MaxLenGroup").await;
+    let group_id =
+        common::create_plaintext_group(&client, &base, &alice_token, "MaxLenGroup").await;
 
     let ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
     let mut ws = connect_ws(&base, &ticket).await;

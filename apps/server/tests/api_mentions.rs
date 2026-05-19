@@ -92,7 +92,7 @@ async fn direct_username_mention_increments_only_mentioned_user() {
     let (charlie_token, charlie_id, _charlie_name) =
         common::register_and_login(&client, &base, "mn_charlie").await;
 
-    let group = common::create_group(&client, &base, &alice_token, "MentionGroup").await;
+    let group = common::create_plaintext_group(&client, &base, &alice_token, "MentionGroup").await;
     common::add_member_to_group(&client, &base, &alice_token, &group, &bob_id).await;
     common::add_member_to_group(&client, &base, &alice_token, &group, &charlie_id).await;
 
@@ -129,7 +129,7 @@ async fn at_everyone_mentions_all_non_sender_members() {
     let (bob_token, bob_id, _) = common::register_and_login(&client, &base, "mn_ev_b").await;
     let (carol_token, carol_id, _) = common::register_and_login(&client, &base, "mn_ev_c").await;
 
-    let group = common::create_group(&client, &base, &alice_token, "EveryoneGroup").await;
+    let group = common::create_plaintext_group(&client, &base, &alice_token, "EveryoneGroup").await;
     common::add_member_to_group(&client, &base, &alice_token, &group, &bob_id).await;
     common::add_member_to_group(&client, &base, &alice_token, &group, &carol_id).await;
 
@@ -160,7 +160,7 @@ async fn at_here_mentions_all_non_sender_members() {
     let (bob_token, bob_id, _) = common::register_and_login(&client, &base, "mn_hr_b").await;
     let (carol_token, carol_id, _) = common::register_and_login(&client, &base, "mn_hr_c").await;
 
-    let group = common::create_group(&client, &base, &alice_token, "HereGroup2").await;
+    let group = common::create_plaintext_group(&client, &base, &alice_token, "HereGroup2").await;
     common::add_member_to_group(&client, &base, &alice_token, &group, &bob_id).await;
     common::add_member_to_group(&client, &base, &alice_token, &group, &carol_id).await;
 
@@ -186,7 +186,7 @@ async fn nonexistent_username_mention_is_noop() {
     let (alice_token, _alice_id, _) = common::register_and_login(&client, &base, "mn_nx_a").await;
     let (bob_token, bob_id, _) = common::register_and_login(&client, &base, "mn_nx_b").await;
 
-    let group = common::create_group(&client, &base, &alice_token, "BogusGroup").await;
+    let group = common::create_plaintext_group(&client, &base, &alice_token, "BogusGroup").await;
     common::add_member_to_group(&client, &base, &alice_token, &group, &bob_id).await;
 
     let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
@@ -217,7 +217,7 @@ async fn mention_of_non_member_username_is_filtered() {
     let (outsider_token, _outsider_id, outsider_name) =
         common::register_and_login(&client, &base, "mn_nm_outsider").await;
 
-    let group = common::create_group(&client, &base, &alice_token, "ScopedGroup").await;
+    let group = common::create_plaintext_group(&client, &base, &alice_token, "ScopedGroup").await;
     common::add_member_to_group(&client, &base, &alice_token, &group, &bob_id).await;
     // outsider is intentionally NOT added.
 
