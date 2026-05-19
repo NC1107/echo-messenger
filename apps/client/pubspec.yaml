@@ -96,3 +96,29 @@ dependency_overrides:
   # on iPhone 16 / iOS 26.5). Override the pin so we get 1.4.1; revert if
   # this introduces new iOS-side regressions.
   flutter_webrtc: 1.4.1
+  # flutter_secure_storage_darwin 0.3.0 uses CryptoKit (SymmetricKey, AES)
+  # without an @available(iOS 13, *) guard at every call site, which
+  # breaks the iOS Release build. The plugin's SwiftPM Package.swift
+  # declares a min iOS lower than 13.0, and Podfile post-install hooks
+  # don't affect SPM-resolved packages. 0.3.1 fixed the missing
+  # availability check upstream. Override to 0.3.1 until
+  # flutter_secure_storage rolls forward to a version that pins this
+  # transitively.
+  flutter_secure_storage_darwin: 0.3.1
+  # device_info_plus 12.x and 13.x both call [NSProcessInfo isiOSAppOnVision]
+  # behind an @available(iOS 26.1, *) guard. iOS 26.1 is a *future* SDK
+  # version that the macOS-15 GitHub runner's Xcode 16.4 / iOS 18 SDK
+  # does not recognise, so the compiler can't see the selector and the
+  # build fails with:
+  #
+  #     ARC Semantic Issue (Xcode): No visible @interface for
+  #     'NSProcessInfo' declares the selector 'isiOSAppOnVision'
+  #     FPPDeviceInfoPlusPlugin.m:34
+  #
+  # 11.5.0 pre-dates the feature entirely and builds clean against the
+  # current Xcode. Pin to 11.5.0 until either:
+  #   - the GitHub macOS runners ship a newer Xcode that knows about
+  #     iOS 26.1 (likely 2026-Q3), at which point we can revisit; OR
+  #   - device_info_plus 14.x ships with a forward-compatible guard
+  #     (e.g. by feature-detecting the selector at runtime instead).
+  device_info_plus: 11.5.0
