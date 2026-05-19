@@ -1554,6 +1554,7 @@ async fn offline_replay_delivers_beyond_one_page() {
             &format!("offline-replay-msg-{i}"),
             None,
             None,
+            None,
         )
         .await
         .expect("store_message failed");

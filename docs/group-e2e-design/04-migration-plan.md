@@ -33,7 +33,7 @@ A separate, future Phase 1.5 (still unbuilt) would extend the validator to also 
 
 ## Phase 2 — GRP2 wire format (client + server)
 
-**Status**: Phase 2A ✅ (server schema + API for `min_wire_version`). Phase 2B ✅ (client-side static GRP2 packer/unpacker with Ed25519 sender signature). Phase 2C ⏳ (production wire-up: mint message_id client-side, plumb conv/msg context through WS frames, dispatch encrypt by cached `min_wire_version`).
+**Status**: Phase 2A ✅ (server schema + API for `min_wire_version`). Phase 2B ✅ (client-side static GRP2 packer/unpacker with Ed25519 sender signature). Phase 2C ✅ (cache shape + dispatch accessor). Phase 2D ✅ (production wire-up: GRP2 send-path mints `client_message_id`, server honours it via `INSERT ... COALESCE($8, gen_random_uuid())`, receive-path fetches per-device verify key + calls `verifyAndDecryptGroupMessageV2`, history-load path mirrors the dispatch, downgrade refusal pinned by cached `min_wire_version`).
 
 **Goal**: support GRP2 alongside GRP1. Senders default to GRP2; receivers accept both — *within the bounds of the downgrade-attack mitigation below*.
 

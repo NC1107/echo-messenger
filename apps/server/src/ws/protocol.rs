@@ -30,6 +30,14 @@ pub(super) enum ClientMessage {
         /// disappearing-messages setting for this specific message.
         #[serde(default)]
         ttl_seconds: Option<i64>,
+        /// Client-minted message id (UUID v4). GRP2 senders bind the
+        /// message_id into the Ed25519 signature, so the receiver has
+        /// to see the same UUID the sender signed — the server cannot
+        /// pick its own here. When `None`, the server falls back to
+        /// the column default (`gen_random_uuid()`). Collisions surface
+        /// as a unique-constraint error so the sender can retry.
+        #[serde(default)]
+        client_message_id: Option<Uuid>,
     },
     #[serde(rename = "typing")]
     Typing {

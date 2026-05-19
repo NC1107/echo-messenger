@@ -437,6 +437,128 @@ async fn plaintext_group_username_mention_persists() {
 }
 
 // ---------------------------------------------------------------------------
+// client_message_id — GRP2 sender mints UUID, server honours it
+// ---------------------------------------------------------------------------
+
+/// GRP2 senders bind `(conversation_id, message_id)` into the Ed25519
+/// signature payload (audit OQ-12). If the server picks its own id after
+/// the sender has signed, the receiver's signature check fails and the
+/// message renders as `[Could not verify sender]`. The server must
+/// honour the client-supplied UUID verbatim. This test sends a
+/// `client_message_id` field on the WS frame and confirms the
+/// `message_sent` ack + the persisted row both report the same UUID.
+#[tokio::test]
+async fn client_message_id_is_honoured_by_server() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let pool = test_pool().await;
+
+    let (alice_token, _alice_id, _) = common::register_and_login(&client, &base, "cmi_alice").await;
+    let (bob_token, bob_id, bob_name) = common::register_and_login(&client, &base, "cmi_bob").await;
+
+    common::make_contacts(&client, &base, &alice_token, &bob_token, &bob_id, &bob_name).await;
+
+    let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
+    let mut alice_ws = connect_ws(&base, &alice_ticket).await;
+    common::drain_pending(&mut alice_ws).await;
+
+    let minted = Uuid::new_v4();
+    let canonical = common::dummy_ciphertext("cmi_canonical");
+    let bob_ct = common::dummy_ciphertext("cmi_bob");
+    let send_msg = serde_json::json!({
+        "type": "send_message",
+        "to_user_id": bob_id,
+        "content": canonical,
+        "client_message_id": minted.to_string(),
+        "recipient_device_contents": {
+            bob_id.to_string(): { "0": bob_ct },
+        },
+    });
+    alice_ws
+        .send(Message::Text(send_msg.to_string().into()))
+        .await
+        .expect("Alice send failed");
+
+    let ack = common::recv_until_event(&mut alice_ws, &["message_sent"]).await;
+    let acked_id = Uuid::parse_str(ack["message_id"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        acked_id, minted,
+        "message_sent must echo the client-minted UUID"
+    );
+
+    let row: (Uuid,) = sqlx::query_as("SELECT id FROM messages WHERE id = $1")
+        .bind(minted)
+        .fetch_one(&pool)
+        .await
+        .expect("client-minted message not found in DB");
+    assert_eq!(row.0, minted, "DB row must use the client-minted UUID");
+
+    let _ = alice_ws.close(None).await;
+}
+
+/// Sending two messages with the same `client_message_id` must fail the
+/// second one (Postgres primary-key collision). The first message
+/// remains intact; the second triggers a server `error` frame so the
+/// sender knows to mint a fresh UUID and re-sign.
+#[tokio::test]
+async fn duplicate_client_message_id_is_rejected() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let pool = test_pool().await;
+
+    let (alice_token, _alice_id, _) =
+        common::register_and_login(&client, &base, "cmi_dup_alice").await;
+    let (bob_token, bob_id, bob_name) =
+        common::register_and_login(&client, &base, "cmi_dup_bob").await;
+
+    common::make_contacts(&client, &base, &alice_token, &bob_token, &bob_id, &bob_name).await;
+
+    let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
+    let mut alice_ws = connect_ws(&base, &alice_ticket).await;
+    common::drain_pending(&mut alice_ws).await;
+
+    let minted = Uuid::new_v4();
+    let bob_ct = common::dummy_ciphertext("cmi_dup_bob");
+    let frame = |label: &str| {
+        serde_json::json!({
+            "type": "send_message",
+            "to_user_id": bob_id,
+            "content": common::dummy_ciphertext(label),
+            "client_message_id": minted.to_string(),
+            "recipient_device_contents": {
+                bob_id.to_string(): { "0": bob_ct },
+            },
+        })
+    };
+
+    alice_ws
+        .send(Message::Text(frame("first").to_string().into()))
+        .await
+        .expect("first send failed");
+    let _ = common::recv_until_event(&mut alice_ws, &["message_sent"]).await;
+
+    alice_ws
+        .send(Message::Text(frame("dup").to_string().into()))
+        .await
+        .expect("second send failed");
+    let next = common::recv_until_event(&mut alice_ws, &["error", "message_sent"]).await;
+    assert_eq!(
+        next["type"], "error",
+        "duplicate client_message_id must yield an error, not silent overwrite"
+    );
+
+    // Only one row exists for the minted UUID.
+    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM messages WHERE id = $1")
+        .bind(minted)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count.0, 1, "no duplicate row may be persisted");
+
+    let _ = alice_ws.close(None).await;
+}
+
+// ---------------------------------------------------------------------------
 // deliver_self_messages — sender's other device receives self_message
 // ---------------------------------------------------------------------------
 

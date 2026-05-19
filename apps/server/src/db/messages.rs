@@ -191,6 +191,11 @@ pub async fn store_message(
     content: &str,
     reply_to_id: Option<Uuid>,
     ttl_seconds: Option<i64>,
+    // GRP2 senders mint a UUID client-side and bind it into their
+    // signature payload (audit OQ-12). When supplied the server uses
+    // it verbatim; otherwise the column default (`gen_random_uuid`)
+    // assigns one. v4 collisions surface as a unique-constraint error.
+    client_message_id: Option<Uuid>,
 ) -> Result<MessageRow, sqlx::Error> {
     let expires_at: Option<DateTime<Utc>> =
         ttl_seconds.map(|s| Utc::now() + chrono::Duration::seconds(s));
@@ -199,8 +204,9 @@ pub async fn store_message(
              SELECT id FROM messages \
              WHERE id = $5 AND conversation_id = $1 AND deleted_at IS NULL \
          ) \
-         INSERT INTO messages (conversation_id, channel_id, sender_id, content, reply_to_id, expires_at, sender_device_id) \
-         SELECT $1, $2, $3, $4, \
+         INSERT INTO messages (id, conversation_id, channel_id, sender_id, content, reply_to_id, expires_at, sender_device_id) \
+         SELECT COALESCE($8, gen_random_uuid()), \
+                $1, $2, $3, $4, \
                 CASE WHEN $5::uuid IS NULL THEN NULL \
                      ELSE (SELECT id FROM parent) END, \
                 $6, $7 \
@@ -215,6 +221,7 @@ pub async fn store_message(
     .bind(reply_to_id)
     .bind(expires_at)
     .bind(sender_device_id)
+    .bind(client_message_id)
     .fetch_one(pool)
     .await
 }

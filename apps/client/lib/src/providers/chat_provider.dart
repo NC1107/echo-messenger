@@ -13,6 +13,7 @@ import '../services/group_crypto_service.dart';
 import 'crypto_provider.dart' show cryptoServiceProvider;
 import '../services/message_cache.dart';
 import '../utils/crypto_utils.dart';
+import '../utils/uuid_bytes.dart';
 import 'auth_provider.dart';
 import 'conversations_provider.dart';
 import 'server_url_provider.dart';
@@ -709,10 +710,18 @@ class Chat extends _$Chat {
     return newMessages;
   }
 
+  /// History-path group decrypt. Dispatches by wire prefix:
+  ///   - `GRP2:` → fetch the sender's per-device Ed25519 verify key and
+  ///     run the signed AEAD path.
+  ///   - `GRP1:` → legacy unsigned path, refused when the cached
+  ///     envelope's `min_wire_version` has been bumped to 2 (audit
+  ///     OQ-11: downgrade-attack mitigation).
   Future<ChatMessage> _decryptGroupMessage(
     ChatMessage msg,
+    CryptoService? crypto,
     GroupCryptoService? groupCrypto,
     String? conversationId,
+    int? fromDeviceId,
   ) async {
     if (groupCrypto == null || conversationId == null) {
       return msg.copyWith(
@@ -729,6 +738,56 @@ class Chat extends _$Chat {
         );
       }
       final (_, keyBase64) = keyResult;
+      final minWireVersion =
+          groupCrypto.cachedMinWireVersion(conversationId) ?? 1;
+
+      if (msg.content.startsWith(groupEncryptedPrefixV2)) {
+        if (crypto == null) {
+          return msg.copyWith(
+            content: '[Could not verify sender]',
+            isEncrypted: true,
+          );
+        }
+        final senderVerifyKey = await crypto.getSenderVerifyKeyForDevice(
+          msg.fromUserId,
+          fromDeviceId,
+        );
+        if (senderVerifyKey == null) {
+          return msg.copyWith(
+            content: '[Could not verify sender]',
+            isEncrypted: true,
+          );
+        }
+        try {
+          final decrypted =
+              await GroupCryptoService.verifyAndDecryptGroupMessageV2(
+                ciphertextWithPrefix: msg.content,
+                keyBase64: keyBase64,
+                expectedConversationIdBytes: uuidStringToBytes(conversationId),
+                expectedMessageIdBytes: uuidStringToBytes(msg.id),
+                senderVerifyKey: senderVerifyKey,
+              );
+          return msg.copyWith(content: decrypted, isEncrypted: true);
+        } on GroupSenderSignatureException catch (e) {
+          DebugLogService.instance.log(
+            LogLevel.warning,
+            'Chat',
+            'GRP2 signature failed for ${msg.id}: $e',
+          );
+          return msg.copyWith(
+            content: '[Could not verify sender]',
+            isEncrypted: true,
+          );
+        }
+      }
+
+      // GRP1 path. Refuse when the envelope is pinned to GRP2.
+      if (minWireVersion >= 2) {
+        return msg.copyWith(
+          content: '[Could not verify sender]',
+          isEncrypted: true,
+        );
+      }
       final decrypted = await GroupCryptoService.decryptGroupMessage(
         msg.content,
         keyBase64,
@@ -757,9 +816,16 @@ class Chat extends _$Chat {
     String? conversationId,
     int? fromDeviceId,
   }) async {
-    // Group-encrypted messages (prefixed with GRP1:)
-    if (msg.content.startsWith(groupEncryptedPrefix)) {
-      return _decryptGroupMessage(msg, groupCrypto, conversationId);
+    // Group-encrypted messages (prefixed with GRP1: or GRP2:)
+    if (msg.content.startsWith(groupEncryptedPrefix) ||
+        msg.content.startsWith(groupEncryptedPrefixV2)) {
+      return _decryptGroupMessage(
+        msg,
+        crypto,
+        groupCrypto,
+        conversationId,
+        fromDeviceId,
+      );
     }
 
     // Skip decryption for non-encrypted group messages
