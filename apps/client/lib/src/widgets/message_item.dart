@@ -27,7 +27,6 @@ import 'message/link_preview_card.dart';
 import 'message/media_content.dart';
 import 'message/message_status_icon.dart';
 import 'message/message_indicators.dart';
-import 'message/quick_reaction_row.dart';
 import 'message/reaction_bar.dart';
 import 'message/reply_count_badge.dart';
 import 'message/reply_quote.dart';
@@ -37,6 +36,8 @@ import 'message/sender_name_label.dart';
 import 'message/poll_widget.dart';
 import 'message/system_event_pill.dart';
 import 'message/youtube_embed.dart';
+import 'context_menu/actions/message_actions_registry.dart';
+import 'context_menu/echo_context_menu.dart';
 
 /// Default 5-emoji quick-react set shared by mobile long-press and desktop
 /// hover-action button. The "+" affordance to open the full picker is rendered
@@ -420,257 +421,6 @@ class _MessageItemState extends State<MessageItem>
     return false;
   }
 
-  /// Shows a bottom action sheet for mobile users (replaces hover actions).
-  void _showMobileActionSheet(
-    BuildContext context,
-    ChatMessage msg,
-    bool isMine,
-    String? mediaUrl,
-  ) {
-    HapticFeedback.mediumImpact();
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Container(
-            margin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-            decoration: BoxDecoration(
-              color: context.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: context.border),
-              boxShadow: [
-                BoxShadow(
-                  color: context.shadowColor,
-                  blurRadius: 40,
-                  offset: const Offset(0, 16),
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Handle
-                Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(top: 10, bottom: 4),
-                  decoration: BoxDecoration(
-                    color: context.textMuted.withValues(alpha: 0.4),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                _buildQuickReactionRow(sheetContext, msg),
-                Divider(height: 1, color: context.border),
-                ..._buildActionTiles(
-                  sheetContext: sheetContext,
-                  msg: msg,
-                  isMine: isMine,
-                  mediaUrl: mediaUrl,
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  /// Quick reaction emoji row for the mobile action sheet.
-  ///
-  /// Wrapped in a horizontal-fade ShaderMask so the leading and trailing edges
-  /// hint at off-screen reactions (#508). On desktop / web a chevron overlay
-  /// is rendered when the row actually overflows (#577).
-  Widget _buildQuickReactionRow(BuildContext sheetContext, ChatMessage msg) {
-    return QuickReactionRow(
-      message: msg,
-      myUserId: widget.myUserId,
-      onSelect: (emoji) {
-        Navigator.pop(sheetContext);
-        widget.onReactionSelect?.call(msg, emoji);
-      },
-      onMore: () {
-        Navigator.pop(sheetContext);
-        widget.onMoreReactions?.call(msg);
-      },
-    );
-  }
-
-  /// Tiles specific to media messages (image action + download).
-  List<Widget> _buildMediaActionTiles({
-    required BuildContext sheetContext,
-    required ChatMessage msg,
-    required String? mediaUrl,
-    required bool isImage,
-  }) {
-    return [
-      if (isImage)
-        _actionTile(
-          sheetContext: sheetContext,
-          icon: _isMobilePlatform
-              ? Icons.save_alt_outlined
-              : Icons.image_outlined,
-          label: _isMobilePlatform ? 'Save image' : 'Copy image',
-          onTap: () => _handleImageAction(mediaUrl!),
-        ),
-      if (mediaUrl != null)
-        _actionTile(
-          sheetContext: sheetContext,
-          icon: Icons.download_outlined,
-          label: 'Download',
-          onTap: () => _downloadMedia(mediaUrl),
-        ),
-    ];
-  }
-
-  /// Pin / unpin tile based on the message's current pinned state.
-  Widget? _buildPinActionTile(BuildContext sheetContext, ChatMessage msg) {
-    if (msg.pinnedAt == null && widget.onPin != null) {
-      return _actionTile(
-        sheetContext: sheetContext,
-        icon: Icons.push_pin_outlined,
-        label: 'Pin',
-        onTap: () => widget.onPin?.call(msg),
-      );
-    }
-    if (msg.pinnedAt != null && widget.onUnpin != null) {
-      return _actionTile(
-        sheetContext: sheetContext,
-        icon: Icons.push_pin,
-        label: 'Unpin',
-        onTap: () => widget.onUnpin?.call(msg),
-      );
-    }
-    return null;
-  }
-
-  /// Contextual action tiles for the mobile action sheet.
-  List<Widget> _buildActionTiles({
-    required BuildContext sheetContext,
-    required ChatMessage msg,
-    required bool isMine,
-    required String? mediaUrl,
-  }) {
-    final isImage = mediaUrl != null && _isImageMedia(msg.content, mediaUrl);
-    final pinTile = _buildPinActionTile(sheetContext, msg);
-    return [
-      if (widget.onReply != null)
-        _actionTile(
-          sheetContext: sheetContext,
-          icon: Icons.reply_outlined,
-          label: 'Reply',
-          onTap: () => widget.onReply?.call(msg),
-        ),
-      if (msg.replyCount > 0 && widget.onViewThread != null)
-        _actionTile(
-          sheetContext: sheetContext,
-          icon: Icons.forum_outlined,
-          label:
-              'View ${msg.replyCount == 1 ? '1 reply' : '${msg.replyCount} replies'}',
-          onTap: () => widget.onViewThread?.call(msg),
-        ),
-      _actionTile(
-        sheetContext: sheetContext,
-        icon: Icons.forward_outlined,
-        label: 'Forward',
-        onTap: () => widget.onForward?.call(msg),
-      ),
-      ..._buildMediaActionTiles(
-        sheetContext: sheetContext,
-        msg: msg,
-        mediaUrl: mediaUrl,
-        isImage: isImage,
-      ),
-      _actionTile(
-        sheetContext: sheetContext,
-        icon: Icons.copy_outlined,
-        label: mediaUrl != null ? 'Copy link' : 'Copy text',
-        onTap: () {
-          final copyText = mediaUrl != null
-              ? _resolveUrl(mediaUrl)
-              : msg.content;
-          Clipboard.setData(ClipboardData(text: copyText));
-          ToastService.show(
-            context,
-            'Copied to clipboard',
-            type: ToastType.success,
-          );
-        },
-      ),
-      if (isMine && widget.onEdit != null)
-        _actionTile(
-          sheetContext: sheetContext,
-          icon: Icons.edit_outlined,
-          label: 'Edit',
-          onTap: () => widget.onEdit?.call(msg),
-        ),
-      if (!widget.isSaved && widget.onSave != null)
-        _actionTile(
-          sheetContext: sheetContext,
-          icon: Icons.bookmark_border_outlined,
-          label: 'Save',
-          onTap: () => widget.onSave?.call(msg),
-        ),
-      if (widget.isSaved && widget.onUnsave != null)
-        _actionTile(
-          sheetContext: sheetContext,
-          icon: Icons.bookmark_remove_outlined,
-          label: 'Unsave',
-          onTap: () => widget.onUnsave?.call(msg),
-        ),
-      ?pinTile,
-      if (widget.onDelete != null)
-        _actionTile(
-          sheetContext: sheetContext,
-          icon: Icons.delete_outlined,
-          label: 'Delete',
-          color: isMine ? EchoTheme.danger : null,
-          onTap: () => widget.onDelete?.call(msg),
-        ),
-    ];
-  }
-
-  Widget _actionTile({
-    required BuildContext sheetContext,
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-    Color? color,
-  }) {
-    return Semantics(
-      button: true,
-      label: label,
-      child: InkWell(
-        onTap: () {
-          Navigator.pop(sheetContext);
-          onTap();
-        },
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 44),
-          child: Container(
-            height: 48,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Icon(icon, size: 18, color: color ?? context.textPrimary),
-                const SizedBox(width: 14),
-                Text(
-                  label,
-                  style: GoogleFonts.inter(
-                    color: color ?? context.textPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   void _showImageViewer({required String imageUrl}) {
     final headers = _mediaHeaders();
     showDialog<void>(
@@ -819,230 +569,10 @@ class _MessageItemState extends State<MessageItem>
     );
   }
 
-  void _handleOverflowMenuSelection(
-    String value,
-    ChatMessage msg,
-    String? mediaUrl,
-  ) {
-    switch (value) {
-      case 'copy':
-        final copyText = mediaUrl != null ? _resolveUrl(mediaUrl) : msg.content;
-        Clipboard.setData(ClipboardData(text: copyText));
-        ToastService.show(
-          context,
-          mediaUrl != null ? 'Link copied' : 'Copied to clipboard',
-          type: ToastType.success,
-        );
-      case 'copy_image':
-        _handleImageAction(mediaUrl!);
-      case 'download':
-        _downloadMedia(mediaUrl!);
-      case 'pin':
-        widget.onPin?.call(msg);
-      case 'unpin':
-        widget.onUnpin?.call(msg);
-      case 'save':
-        widget.onSave?.call(msg);
-      case 'unsave':
-        widget.onUnsave?.call(msg);
-      case 'forward':
-        widget.onForward?.call(msg);
-      case 'edit':
-        widget.onEdit?.call(msg);
-      case 'delete':
-        widget.onDelete?.call(msg);
-    }
-  }
-
-  List<PopupMenuEntry<String>> _buildOverflowMenuItems(
-    ChatMessage msg,
-    bool isMine, {
-    String? mediaUrl,
-    bool isImage = false,
-  }) {
-    return [
-      _buildCopyMenuItem(mediaUrl),
-      ..._buildMediaMenuItems(isImage, mediaUrl),
-      ..._buildPinMenuItems(msg),
-      ..._buildSaveMenuItems(),
-      _buildForwardMenuItem(),
-      ..._buildEditDeleteMenuItems(isMine),
-    ];
-  }
-
-  PopupMenuItem<String> _buildCopyMenuItem(String? mediaUrl) {
-    return PopupMenuItem(
-      value: 'copy',
-      child: Row(
-        children: [
-          const Icon(Icons.copy_outlined, size: 16),
-          const SizedBox(width: 8),
-          Text(mediaUrl != null ? 'Copy link' : 'Copy'),
-        ],
-      ),
-    );
-  }
-
-  List<PopupMenuEntry<String>> _buildMediaMenuItems(
-    bool isImage,
-    String? mediaUrl,
-  ) {
-    final items = <PopupMenuEntry<String>>[];
-    if (isImage) {
-      items.add(
-        PopupMenuItem(
-          value: 'copy_image',
-          child: Row(
-            children: [
-              Icon(
-                _isMobilePlatform
-                    ? Icons.save_alt_outlined
-                    : Icons.image_outlined,
-                size: 16,
-              ),
-              const SizedBox(width: 8),
-              Text(_isMobilePlatform ? 'Save image' : 'Copy image'),
-            ],
-          ),
-        ),
-      );
-    }
-    if (mediaUrl != null) {
-      items.add(
-        const PopupMenuItem(
-          value: 'download',
-          child: Row(
-            children: [
-              Icon(Icons.download_outlined, size: 16),
-              SizedBox(width: 8),
-              Text('Download'),
-            ],
-          ),
-        ),
-      );
-    }
-    return items;
-  }
-
-  List<PopupMenuEntry<String>> _buildPinMenuItems(ChatMessage msg) {
-    final items = <PopupMenuEntry<String>>[];
-    if (msg.pinnedAt == null && widget.onPin != null) {
-      items.add(
-        const PopupMenuItem(
-          value: 'pin',
-          child: Row(
-            children: [
-              Icon(Icons.push_pin_outlined, size: 16),
-              SizedBox(width: 8),
-              Text('Pin'),
-            ],
-          ),
-        ),
-      );
-    }
-    if (msg.pinnedAt != null && widget.onUnpin != null) {
-      items.add(
-        const PopupMenuItem(
-          value: 'unpin',
-          child: Row(
-            children: [
-              Icon(Icons.push_pin, size: 16),
-              SizedBox(width: 8),
-              Text('Unpin'),
-            ],
-          ),
-        ),
-      );
-    }
-    return items;
-  }
-
-  List<PopupMenuEntry<String>> _buildSaveMenuItems() {
-    final items = <PopupMenuEntry<String>>[];
-    if (!widget.isSaved && widget.onSave != null) {
-      items.add(
-        const PopupMenuItem(
-          value: 'save',
-          child: Row(
-            children: [
-              Icon(Icons.bookmark_border_outlined, size: 16),
-              SizedBox(width: 8),
-              Text('Save'),
-            ],
-          ),
-        ),
-      );
-    }
-    if (widget.isSaved && widget.onUnsave != null) {
-      items.add(
-        const PopupMenuItem(
-          value: 'unsave',
-          child: Row(
-            children: [
-              Icon(Icons.bookmark_remove_outlined, size: 16),
-              SizedBox(width: 8),
-              Text('Unsave'),
-            ],
-          ),
-        ),
-      );
-    }
-    return items;
-  }
-
-  PopupMenuItem<String> _buildForwardMenuItem() {
-    return const PopupMenuItem(
-      value: 'forward',
-      child: Row(
-        children: [
-          Icon(Icons.forward_outlined, size: 16),
-          SizedBox(width: 8),
-          Text('Forward'),
-        ],
-      ),
-    );
-  }
-
-  List<PopupMenuEntry<String>> _buildEditDeleteMenuItems(bool isMine) {
-    final items = <PopupMenuEntry<String>>[];
-    if (isMine && widget.onEdit != null) {
-      items.add(
-        const PopupMenuItem(
-          value: 'edit',
-          child: Row(
-            children: [
-              Icon(Icons.edit_outlined, size: 16),
-              SizedBox(width: 8),
-              Text('Edit'),
-            ],
-          ),
-        ),
-      );
-    }
-    if (widget.onDelete != null) {
-      items.add(
-        PopupMenuItem(
-          value: 'delete',
-          child: Row(
-            children: [
-              Icon(
-                Icons.delete_outlined,
-                size: 16,
-                color: isMine ? EchoTheme.danger : null,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Delete',
-                style: isMine ? const TextStyle(color: EchoTheme.danger) : null,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-    return items;
-  }
-
+  /// Hover-bar "..." overflow affordance. Routes through the same
+  /// [_openContextMenu] entrypoint as right-click and long-press —
+  /// no parallel menu tree. Anchored to the button's bottom-left so
+  /// the menu flips out below the bar exactly where the user clicked.
   Widget _buildOverflowMenu(
     ChatMessage msg,
     bool isMine, {
@@ -1050,34 +580,39 @@ class _MessageItemState extends State<MessageItem>
     bool isImage = false,
     required _HoverStyleSpec hoverStyle,
   }) {
+    final size = hoverStyle.buttonSize < 44 ? 44.0 : hoverStyle.buttonSize;
     return Semantics(
       label: 'More actions',
       button: true,
       child: Tooltip(
         message: 'More',
-        child: PopupMenuButton<String>(
-          padding: EdgeInsets.zero,
-          // Keep WCAG hit-target floor across all layouts.
-          constraints: BoxConstraints(
-            minWidth: hoverStyle.buttonSize < 44 ? 44 : hoverStyle.buttonSize,
-            minHeight: hoverStyle.buttonSize < 44 ? 44 : hoverStyle.buttonSize,
-          ),
-          iconSize: hoverStyle.iconSize,
-          icon: Opacity(
-            opacity: hoverStyle.iconOpacity,
-            child: Icon(
-              Icons.more_horiz,
-              size: hoverStyle.iconSize,
-              color: hoverStyle.iconColor,
+        child: Builder(
+          builder: (btnContext) => InkWell(
+            onTap: () {
+              // Anchor at the button's bottom-left so the menu opens
+              // directly below it. globalPaintBounds resolves the
+              // RenderBox to viewport coords without us having to
+              // pass GlobalKeys around.
+              final box = btnContext.findRenderObject() as RenderBox?;
+              final origin =
+                  box?.localToGlobal(Offset(0, box.size.height)) ?? Offset.zero;
+              _openContextMenu(origin, msg, isMine, mediaUrl);
+            },
+            borderRadius: BorderRadius.circular(6),
+            child: SizedBox(
+              width: size,
+              height: size,
+              child: Center(
+                child: Opacity(
+                  opacity: hoverStyle.iconOpacity,
+                  child: Icon(
+                    Icons.more_horiz,
+                    size: hoverStyle.iconSize,
+                    color: hoverStyle.iconColor,
+                  ),
+                ),
+              ),
             ),
-          ),
-          onSelected: (value) =>
-              _handleOverflowMenuSelection(value, msg, mediaUrl),
-          itemBuilder: (_) => _buildOverflowMenuItems(
-            msg,
-            isMine,
-            mediaUrl: mediaUrl,
-            isImage: isImage,
           ),
         ),
       ),
@@ -1752,7 +1287,11 @@ class _MessageItemState extends State<MessageItem>
     );
   }
 
-  /// Handle long-press: show mobile action sheet or reaction picker.
+  /// Handle long-press: open the centralised context menu on mobile,
+  /// or fall through to the desktop reaction picker on non-mobile
+  /// when no reactions are present yet (matches pre-migration
+  /// behaviour where long-press without reactions seeded the
+  /// floating picker).
   void _handleLongPress(
     LongPressStartDetails details,
     ChatMessage msg,
@@ -1761,10 +1300,89 @@ class _MessageItemState extends State<MessageItem>
     bool hasReactions,
   ) {
     if (Responsive.isMobile(context)) {
-      _showMobileActionSheet(context, msg, isMine, mediaUrl);
+      HapticFeedback.mediumImpact();
+      _openContextMenu(details.globalPosition, msg, isMine, mediaUrl);
     } else if (!hasReactions) {
       widget.onReactionTap?.call(msg, details.globalPosition);
     }
+  }
+
+  /// Open the centralised Echo context menu for [msg]. Single
+  /// entry-point used by mobile long-press, desktop right-click on
+  /// the bubble, and the hover-bar "..." overflow button. Action
+  /// visibility lives in [buildMessageMenu]; this method just hands
+  /// it the live state + callbacks.
+  void _openContextMenu(
+    Offset anchor,
+    ChatMessage msg,
+    bool isMine,
+    String? mediaUrl,
+  ) {
+    final isImage = mediaUrl != null && _isImageMedia(msg.content, mediaUrl);
+    final unreadable = _isDecryptFailure(msg.content);
+
+    final target = MessageTarget(
+      message: msg,
+      isMine: isMine,
+      isSaved: widget.isSaved,
+      isEncryptedUnreadable: unreadable,
+      mediaUrl: mediaUrl,
+      isImageMedia: isImage,
+      onReply: widget.onReply == null ? null : () => widget.onReply!(msg),
+      onForward: widget.onForward == null ? null : () => widget.onForward!(msg),
+      onRetry: (msg.status == MessageStatus.failed && widget.onRetry != null)
+          ? () => widget.onRetry!(msg)
+          : null,
+      onCopyText: () {
+        final copyText = mediaUrl != null ? _resolveUrl(mediaUrl) : msg.content;
+        Clipboard.setData(ClipboardData(text: copyText));
+        if (!mounted) return;
+        ToastService.show(
+          context,
+          mediaUrl != null ? 'Link copied' : 'Copied to clipboard',
+          type: ToastType.success,
+        );
+      },
+      // `isImage` only true when `mediaUrl` is non-null (the predicate
+      // guards both), so the analyser promotes `mediaUrl` here.
+      onViewGallery: isImage ? () => _handleImageAction(mediaUrl) : null,
+      onPin: (msg.pinnedAt == null && widget.onPin != null)
+          ? () => widget.onPin!(msg)
+          : null,
+      onUnpin: (msg.pinnedAt != null && widget.onUnpin != null)
+          ? () => widget.onUnpin!(msg)
+          : null,
+      onSave: widget.onSave == null ? null : () => widget.onSave!(msg),
+      onUnsave: widget.onUnsave == null ? null : () => widget.onUnsave!(msg),
+      onEdit: widget.onEdit == null ? null : () => widget.onEdit!(msg),
+      onDelete: widget.onDelete == null ? null : () => widget.onDelete!(msg),
+      onCopyId: () {
+        Clipboard.setData(ClipboardData(text: msg.id));
+        if (!mounted) return;
+        ToastService.show(
+          context,
+          'Message ID copied',
+          type: ToastType.success,
+        );
+      },
+      // Inline reactions header is hidden by the registry when
+      // isEncryptedUnreadable; we still wire the callbacks so the
+      // registry can decide.
+      onPickReaction: widget.onReactionSelect == null
+          ? null
+          : (emoji) => widget.onReactionSelect!(msg, emoji),
+      onOpenFullPicker: widget.onMoreReactions == null
+          ? null
+          : () => widget.onMoreReactions!(msg),
+      recentReactions: reactionEmojis.take(4).toList(),
+    );
+
+    EchoContextMenu.open(
+      context: context,
+      target: target,
+      anchor: anchor,
+      model: buildMessageMenu(target),
+    );
   }
 
   /// Compose a single composite semantic label for the message bubble so
@@ -1914,6 +1532,11 @@ class _MessageItemState extends State<MessageItem>
     return GestureDetector(
       onLongPressStart: (details) =>
           _handleLongPress(details, msg, isMine, mediaUrl, hasReactions),
+      // Desktop right-click on the bubble opens the same centralised
+      // context menu. Hover-bar "..." remains as a discoverable
+      // mouse affordance but routes to the same _openContextMenu.
+      onSecondaryTapDown: (details) =>
+          _openContextMenu(details.globalPosition, msg, isMine, mediaUrl),
       onHorizontalDragUpdate: canSwipeToReply
           ? (details) {
               // Guard against iOS system back gesture zone (left 30px).

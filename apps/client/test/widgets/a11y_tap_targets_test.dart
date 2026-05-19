@@ -95,7 +95,7 @@ void main() {
   });
 
   group('A11y tap targets - overflow menu (#497)', () {
-    testWidgets('overflow PopupMenuButton has 44×44 minimum constraints', (
+    testWidgets('overflow "More actions" button renders ≥44×44', (
       tester,
     ) async {
       await mockNetworkImagesFor(() async {
@@ -113,7 +113,7 @@ void main() {
         );
         await tester.pump();
 
-        // Hover so the overflow menu (lives in hover bar) renders.
+        // Hover so the overflow affordance (lives in hover bar) renders.
         final gesture = await tester.createGesture(
           kind: PointerDeviceKind.mouse,
         );
@@ -122,20 +122,22 @@ void main() {
         await gesture.moveTo(tester.getCenter(find.byType(MessageItem)));
         await tester.pump();
 
-        final popups = tester.widgetList<PopupMenuButton<String>>(
-          find.byType(PopupMenuButton<String>),
-        );
-        expect(popups, isNotEmpty);
-
-        final has44 = popups.any(
-          (p) =>
-              (p.constraints?.minWidth ?? 0) >= 44 &&
-              (p.constraints?.minHeight ?? 0) >= 44,
+        // Post-PR 2: the overflow PopupMenuButton was replaced with a
+        // plain InkWell wrapped in a sized box that routes through
+        // EchoContextMenu. The semantics label is still "More actions";
+        // we assert the rendered hit area meets WCAG via the box size.
+        final finder = find.bySemanticsLabel('More actions');
+        expect(finder, findsOneWidget);
+        final size = tester.getSize(finder);
+        expect(
+          size.width,
+          greaterThanOrEqualTo(44),
+          reason: 'overflow affordance width must be ≥44 (WCAG)',
         );
         expect(
-          has44,
-          isTrue,
-          reason: 'expected overflow PopupMenuButton with ≥44×44 constraints',
+          size.height,
+          greaterThanOrEqualTo(44),
+          reason: 'overflow affordance height must be ≥44 (WCAG)',
         );
       });
     });

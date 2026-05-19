@@ -22,6 +22,8 @@ import '../providers/websocket_provider.dart';
 import '../utils/fuzzy_score.dart';
 import '../widgets/avatar_crop_dialog.dart';
 import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
+import '../widgets/context_menu/actions/member_actions_registry.dart';
+import '../widgets/context_menu/echo_context_menu.dart';
 import '../widgets/profile_sheets.dart';
 
 const _kJsonHeaders = {'Content-Type': 'application/json'};
@@ -1114,60 +1116,118 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     return [];
   }
 
+  /// Trailing "..." affordance on a member row. Routes through
+  /// [EchoContextMenu] so the menu items match right-click and
+  /// long-press paths exactly. Hidden when the menu would be empty
+  /// (target is self with no admin actions on offer).
   Widget? _buildMemberActions({
     required ConversationMember member,
     required bool isOwnerOrAdmin,
     required bool isMe,
     required String role,
   }) {
-    if (!isOwnerOrAdmin || isMe || role == 'owner') return null;
-    return PopupMenuButton<String>(
-      icon: Icon(
-        Icons.more_vert,
-        size: 18,
-        color: Theme.of(context).colorScheme.onSurfaceVariant,
+    if (isMe) return null;
+    return Builder(
+      builder: (btnContext) => IconButton(
+        icon: Icon(
+          Icons.more_vert,
+          size: 18,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+        tooltip: 'Member actions',
+        onPressed: () {
+          final box = btnContext.findRenderObject() as RenderBox?;
+          final origin =
+              box?.localToGlobal(Offset(0, box.size.height)) ?? Offset.zero;
+          _openMemberContextMenu(
+            anchor: origin,
+            member: member,
+            role: role,
+            viewerIsAdminOrOwner: isOwnerOrAdmin,
+            isMe: isMe,
+          );
+        },
       ),
-      tooltip: 'Member actions',
-      onSelected: (value) {
-        if (value == 'remove') _kickMember(member);
-        if (value == 'ban') _banMember(member);
+    );
+  }
+
+  /// Build a [MemberTarget] for [member] and open the centralised
+  /// context menu at [anchor]. Used by all three triggers
+  /// (right-click on row, long-press on row, "..." button).
+  ///
+  /// PR-4 scope is migration only: Add/Remove Contact + Block stay
+  /// off until contacts_provider grows the matching methods. Unblock
+  /// already exists, so it's wired conditionally on the live
+  /// blocked-users list.
+  void _openMemberContextMenu({
+    required Offset anchor,
+    required ConversationMember member,
+    required String role,
+    required bool viewerIsAdminOrOwner,
+    required bool isMe,
+  }) {
+    final blockedIds = ref
+        .read(contactsProvider)
+        .blockedUsers
+        .map((u) => u.blockedId)
+        .toSet();
+    final isBlocked = blockedIds.contains(member.userId);
+
+    final target = MemberTarget(
+      userId: member.userId,
+      username: member.username,
+      isSelf: isMe,
+      targetIsOwner: role == 'owner',
+      viewerIsAdminOrOwner: viewerIsAdminOrOwner,
+      onViewProfile: () => showUserProfileSheet(context, ref, member.userId),
+      onSendMessage: isMe
+          ? null
+          : () async {
+              try {
+                final conv = await ref
+                    .read(conversationsProvider.notifier)
+                    .getOrCreateDm(member.userId, member.username);
+                if (!mounted) return;
+                context.go('/home?conversation=${conv.id}');
+              } catch (_) {
+                if (!mounted) return;
+                ToastService.show(
+                  context,
+                  'Failed to open conversation',
+                  type: ToastType.error,
+                );
+              }
+            },
+      onUnblock: (isMe || !isBlocked)
+          ? null
+          : () async {
+              await ref
+                  .read(contactsProvider.notifier)
+                  .unblockUser(member.userId);
+            },
+      onCopyUsername: () {
+        Clipboard.setData(ClipboardData(text: member.username));
+        if (!mounted) return;
+        ToastService.show(context, 'Username copied', type: ToastType.success);
       },
-      itemBuilder: (_) => [
-        PopupMenuItem(
-          value: 'remove',
-          child: Row(
-            children: [
-              Icon(
-                Icons.person_remove_outlined,
-                size: 18,
-                color: Theme.of(context).colorScheme.error,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Remove',
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ],
-          ),
-        ),
-        PopupMenuItem(
-          value: 'ban',
-          child: Row(
-            children: [
-              Icon(
-                Icons.block_outlined,
-                size: 18,
-                color: Theme.of(context).colorScheme.error,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Ban',
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ],
-          ),
-        ),
-      ],
+      onCopyUserId: () {
+        Clipboard.setData(ClipboardData(text: member.userId));
+        if (!mounted) return;
+        ToastService.show(context, 'User ID copied', type: ToastType.success);
+      },
+      onKick: (viewerIsAdminOrOwner && !isMe && role != 'owner')
+          ? () => _kickMember(member)
+          : null,
+      onBan: (viewerIsAdminOrOwner && !isMe && role != 'owner')
+          ? () => _banMember(member)
+          : null,
+    );
+
+    EchoContextMenu.open(
+      context: context,
+      target: target,
+      anchor: anchor,
+      model: buildMemberMenu(target),
     );
   }
 
@@ -1195,6 +1255,20 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
           showUserProfileSheet(context, ref, member.userId);
         }
       },
+      onSecondaryTapDown: (details) => _openMemberContextMenu(
+        anchor: details.globalPosition,
+        member: member,
+        role: role,
+        viewerIsAdminOrOwner: isOwnerOrAdmin,
+        isMe: isMe,
+      ),
+      onLongPress: () => _openMemberContextMenu(
+        anchor: Offset.zero,
+        member: member,
+        role: role,
+        viewerIsAdminOrOwner: isOwnerOrAdmin,
+        isMe: isMe,
+      ),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Row(
