@@ -23,6 +23,7 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
   final Set<String> _selectedUserIds = {};
   bool _isCreating = false;
   bool _isPublic = false;
+  bool _isEncrypted = false;
 
   @override
   void initState() {
@@ -60,6 +61,7 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
           _selectedUserIds.toList(),
           description: description.isNotEmpty ? description : null,
           isPublic: _isPublic,
+          isEncrypted: _isEncrypted,
         );
 
     if (!mounted) return;
@@ -103,6 +105,8 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
               _buildDescriptionField(),
               const SizedBox(height: 16),
               _buildVisibilityToggle(),
+              const SizedBox(height: 16),
+              _buildEncryptionToggle(),
               const SizedBox(height: 16),
               _buildMembersHeader(),
               const SizedBox(height: 8),
@@ -185,6 +189,56 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
             style: TextStyle(color: context.textMuted, fontSize: 12),
           ),
         ],
+      ),
+    );
+  }
+
+  /// "End-to-end encryption (Experimental)" toggle. Defaults to off
+  /// because the group-key envelope path has known stability issues
+  /// under identity-key drift — a plaintext group is the safe default
+  /// until the wedged-envelope recovery story stabilises.
+  Widget _buildEncryptionToggle() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Semantics(
+        label: 'encryption toggle',
+        child: SwitchListTile(
+          value: _isEncrypted,
+          onChanged: (v) => setState(() => _isEncrypted = v),
+          contentPadding: EdgeInsets.zero,
+          title: Row(
+            children: [
+              const Text('End-to-end encryption'),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: EchoTheme.warning.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text(
+                  'Experimental',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: EchoTheme.warning,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          subtitle: Text(
+            _isEncrypted
+                ? 'Messages are encrypted per-member with the Signal-style '
+                      'group key. May fail to decrypt under certain identity-'
+                      'key changes.'
+                : 'Messages are stored on the server in plaintext. Standard '
+                      'auth still protects access.',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+          activeThumbColor: context.accent,
+        ),
       ),
     );
   }

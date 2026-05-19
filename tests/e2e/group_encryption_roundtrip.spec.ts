@@ -171,6 +171,15 @@ async function createGroupViaUI(
   await page.keyboard.type(groupName, { delay: 10 });
   await page.waitForTimeout(300);
 
+  // Flip the experimental "End-to-end encryption" toggle on — the
+  // create screen defaults it to off (plaintext) now, but this test
+  // is specifically guarding the encrypted-group seed/decrypt path.
+  const encryptionToggle = page.getByLabel('encryption toggle');
+  if (await encryptionToggle.isVisible({ timeout: 3000 }).catch(() => false)) {
+    await encryptionToggle.click();
+    await page.waitForTimeout(300);
+  }
+
   const memberTile = page.getByLabel(
     new RegExp(`select contact ${memberUsername}`, 'i'),
   );
