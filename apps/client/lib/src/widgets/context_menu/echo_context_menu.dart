@@ -263,6 +263,65 @@ class ConversationTarget extends ContextMenuTarget {
   String get analyticsName => isGroup ? 'group' : 'dm';
 }
 
+/// Member context menu (PR 4). Used inside a group's member roster
+/// — typically by right-click or long-press on a member row, plus
+/// the discoverable "..." button next to each row. Carries enough
+/// state to gate admin actions (kick / ban) without re-fetching the
+/// group's role table.
+///
+/// "Change Role" and "Voice Call" are intentionally absent — the
+/// server endpoint for the former doesn't exist yet, and the 1:1
+/// ring/start flow for the latter has only the active-call surface.
+/// Both are tracked as v1.5.
+class MemberTarget extends ContextMenuTarget {
+  const MemberTarget({
+    required this.userId,
+    required this.username,
+    required this.isSelf,
+    required this.targetIsOwner,
+    required this.viewerIsAdminOrOwner,
+    this.onViewProfile,
+    this.onSendMessage,
+    this.onAddContact,
+    this.onRemoveContact,
+    this.onBlock,
+    this.onUnblock,
+    this.onCopyUserId,
+    this.onCopyUsername,
+    this.onKick,
+    this.onBan,
+  });
+
+  final String userId;
+  final String username;
+
+  /// True when the target is the current user. Hides destructive
+  /// rows so the menu can't be used to kick / ban / block oneself.
+  final bool isSelf;
+
+  /// True when the target's role is `owner`. Even an admin viewer
+  /// can't kick or ban the owner; the rows hide.
+  final bool targetIsOwner;
+
+  /// True when the *viewer* is admin or owner. Gates the admin-only
+  /// section (kick / ban).
+  final bool viewerIsAdminOrOwner;
+
+  final VoidCallback? onViewProfile;
+  final VoidCallback? onSendMessage;
+  final VoidCallback? onAddContact;
+  final VoidCallback? onRemoveContact;
+  final VoidCallback? onBlock;
+  final VoidCallback? onUnblock;
+  final VoidCallback? onCopyUserId;
+  final VoidCallback? onCopyUsername;
+  final VoidCallback? onKick;
+  final VoidCallback? onBan;
+
+  @override
+  String get analyticsName => 'member';
+}
+
 /// Single public entry point. Picks desktop overlay vs mobile bottom
 /// sheet based on viewport short side; the breakpoint matches the
 /// rest of the app (see chat_panel responsive logic).
