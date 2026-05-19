@@ -11,7 +11,7 @@ import '../services/crypto_service.dart';
 import '../services/debug_log_service.dart';
 import '../services/group_crypto_service.dart';
 import 'crypto_provider.dart'
-    show cryptoServiceProvider, groupCryptoServiceProvider;
+    show cryptoProvider, cryptoServiceProvider, groupCryptoServiceProvider;
 import '../services/message_cache.dart';
 import '../utils/crypto_utils.dart';
 import '../utils/uuid_bytes.dart';
@@ -394,13 +394,30 @@ class Chat extends _$Chat {
   /// group key]" placeholders has crossed the [outOfSyncThreshold]
   /// banner threshold. No-op when the conversation isn't a group or
   /// no GroupCryptoService is wired.
+  ///
+  /// Self-heal path (Phase 5 follow-up): when the refetch yields
+  /// nothing — typically a group that was created `is_encrypted=true`
+  /// but never had a first-key upload — and the caller is an admin,
+  /// the rotation endpoint accepts a first-key upload to unwedge the
+  /// group. Non-admins get a 401 from the upload and the banner
+  /// stays visible.
   Future<void> refreshGroupKey(String conversationId) async {
     final groupCrypto = ref.read(groupCryptoServiceProvider);
     await groupCrypto.dropCachedKey(conversationId);
-    // Eagerly repull so the next inbound message decrypts; if the
-    // server has no key yet, this is a no-op and we'll repull again
-    // on the next attempt.
-    await groupCrypto.getGroupKey(conversationId);
+    final fetched = await groupCrypto.getGroupKey(conversationId);
+    if (fetched == null) {
+      try {
+        await ref
+            .read(cryptoProvider.notifier)
+            .seedInitialGroupKey(conversationId);
+        // Pull the freshly-uploaded envelope into the cache so the
+        // next outbound / inbound message succeeds without another
+        // round trip.
+        await groupCrypto.getGroupKey(conversationId);
+      } catch (e) {
+        debugPrint('[Chat] refreshGroupKey self-heal failed: $e');
+      }
+    }
     state = state.withSyncRestored(conversationId);
   }
 
