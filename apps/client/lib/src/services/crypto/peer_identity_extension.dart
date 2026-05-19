@@ -11,13 +11,23 @@ extension CryptoServicePeerIdentity on CryptoService {
   /// Uses Trust-On-First-Use (TOFU): the first-seen key is trusted and
   /// persisted. If a later fetch returns a different key, a warning is logged
   /// and a `_peerIdentityChangedPrefix` flag is persisted for the peer.
-  Future<Uint8List?> fetchPeerIdentityKey(String peerUserId) async {
-    // Check cache first
+  ///
+  /// [forceRefresh] bypasses the TOFU cache and always hits the server.
+  /// Used by paths that need the *current* server-known key — most notably
+  /// group-key rotation, where wrapping the new key against a stale cached
+  /// identity would leave the recipient unable to unwrap (MAC failure on
+  /// the resulting envelope).
+  Future<Uint8List?> fetchPeerIdentityKey(
+    String peerUserId, {
+    bool forceRefresh = false,
+  }) async {
     final store = SecureKeyStore.instance;
-    final cached = await store.read(
-      '${CryptoService._peerIdentityPrefix}$peerUserId',
-    );
-    if (cached != null) return Uint8List.fromList(base64Decode(cached));
+    if (!forceRefresh) {
+      final cached = await store.read(
+        '${CryptoService._peerIdentityPrefix}$peerUserId',
+      );
+      if (cached != null) return Uint8List.fromList(base64Decode(cached));
+    }
 
     // Fetch from server
     try {

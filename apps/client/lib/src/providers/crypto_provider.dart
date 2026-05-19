@@ -413,14 +413,38 @@ class CryptoNotifier extends _$CryptoNotifier {
     final groupCrypto = ref.read(groupCryptoServiceProvider);
     final crypto = ref.read(cryptoServiceProvider);
     final token = ref.read(authProvider).token ?? '';
+    final myUserId = ref.read(authProvider).userId ?? '';
     if (token.isEmpty) return null;
     groupCrypto.setToken(token);
 
     final serverUrl = ref.read(serverUrlProvider);
+
+    // Recovery path for groups whose v=1 envelopes were uploaded with
+    // stale identity keys (and are therefore unwrappable). Probe
+    // /keys/latest — if a key already exists we rotate to version+1
+    // instead of hardcoding v=1, which would 409-conflict and leave the
+    // group wedged forever. We don't try to decrypt; we just read the
+    // version number off the response.
+    var nextVersion = 1;
+    try {
+      final probe = await http.get(
+        Uri.parse('$serverUrl/api/groups/$conversationId/keys/latest'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (probe.statusCode == 200) {
+        final body = jsonDecode(probe.body) as Map<String, dynamic>;
+        final existing = body['key_version'] as int?;
+        if (existing != null) nextVersion = existing + 1;
+      }
+    } catch (_) {
+      // Probe failure is fine — we fall through to v=1, which is the
+      // correct value for a brand-new group.
+    }
+
     return groupCrypto.performRotation(
       conversationId,
-      1,
-      triggeredByEvent: 'first_key',
+      nextVersion,
+      triggeredByEvent: nextVersion == 1 ? 'first_key' : 'recover_wedged',
       fetchMembers: () async {
         try {
           final resp = await http.get(
@@ -444,7 +468,24 @@ class CryptoNotifier extends _$CryptoNotifier {
           return [];
         }
       },
-      fetchIdentityKey: (userId) => crypto.fetchPeerIdentityKey(userId),
+      // For self, use the local public key derived from the in-memory
+      // identity keypair — that's the only key guaranteed to round-trip
+      // through our local private key on the unwrap side. A stale TOFU
+      // cache entry for self would otherwise wrap with an old public key
+      // and leave us unable to decrypt our own envelope.
+      //
+      // For other members, force a server refresh so we use whatever
+      // identity key the recipient currently has uploaded, not whatever
+      // we cached weeks ago. If the recipient's local private key has
+      // since drifted from the server-known public key, that's a
+      // recipient-side problem the server can't help with; the TOFU
+      // change-detection will flag it on the recipient's next fetch.
+      fetchIdentityKey: (userId) {
+        if (userId == myUserId) {
+          return crypto.getIdentityPublicKey();
+        }
+        return crypto.fetchPeerIdentityKey(userId, forceRefresh: true);
+      },
     );
   }
 
