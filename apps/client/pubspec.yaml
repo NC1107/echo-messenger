@@ -105,3 +105,23 @@ dependency_overrides:
   # flutter_secure_storage rolls forward to a version that pins this
   # transitively.
   flutter_secure_storage_darwin: 0.3.1
+  # device_info_plus 12.4.0 (pulled in transitively by livekit_client 2.7.0)
+  # calls [NSProcessInfo isiOSAppOnVision] without an @available(iOS 17, *)
+  # guard. The selector is iOS 17+ / visionOS 1+ only, so building against
+  # an SDK that doesn't expose it (or with -Werror promoting the ARC
+  # semantic warning) fails with:
+  #
+  #     ARC Semantic Issue (Xcode): No visible @interface for
+  #     'NSProcessInfo' declares the selector 'isiOSAppOnVision'
+  #     FPPDeviceInfoPlusPlugin.m:34:56
+  #
+  # 13.1.0 added the missing availability check. Override until
+  # livekit_client bumps its constraint.
+  device_info_plus: ^13.1.0
+  # device_info_plus 13.1.0 requires win32 ^6.0.1; file_picker 11.0.2
+  # pins win32 ^5.9.0. The first file_picker that accepts win32 ^6 is
+  # the 12.0.0-beta line. We pull in 12.0.0-beta.3 (the latest at the
+  # time of this override) purely to unblock device_info_plus 13.1.0's
+  # iOS 17 availability fix. Re-evaluate once file_picker 12.0.0
+  # ships stable.
+  file_picker: 12.0.0-beta.3
