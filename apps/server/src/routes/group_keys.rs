@@ -40,10 +40,27 @@ pub struct UploadGroupKeyRequest {
     /// `docs/group-e2e-design/04-migration-plan.md`.
     #[serde(default = "default_min_wire_version")]
     pub min_wire_version: i16,
+    /// Free-form reason the rotator fired. Persisted into the
+    /// `group_key_rotations` audit log so admins can see whether a
+    /// rotation came from a membership change, an explicit
+    /// "encryption activity → rotate" press, or the first-key flow.
+    /// Values are stored verbatim; callers should pick from the
+    /// documented vocabulary (`first_key`, `explicit_rotate`,
+    /// `membership_change`, `kick`, `leave`, `rekey_after_compromise`)
+    /// but the server doesn't enforce the enum so future event types
+    /// don't need a schema migration. Defaults to `unspecified` when
+    /// the caller doesn't send a value — that lets pre-Phase-3
+    /// clients keep working without lying about the reason.
+    #[serde(default = "default_triggered_by_event")]
+    pub triggered_by_event: String,
 }
 
 fn default_min_wire_version() -> i16 {
     1
+}
+
+fn default_triggered_by_event() -> String {
+    "unspecified".to_string()
 }
 
 #[derive(Debug, Serialize)]
@@ -212,6 +229,23 @@ pub async fn upload_group_key(
         .db_ctx("upload_group_key/store_envelope")?;
     }
 
+    // OQ-13: append the rotation to the audit log inside the same tx
+    // as the envelope writes so the audit trail and the envelope
+    // table commit together. `completed_by_user_id` mirrors
+    // `triggered_by_user_id` for now — server-led leader election
+    // (where the leader != the trigger source) is a follow-up that
+    // can populate it differently without a schema change.
+    db::group_key_rotations::insert_completed_rotation(
+        &mut *tx,
+        group_id,
+        auth.user_id,
+        &body.triggered_by_event,
+        body.key_version,
+        auth.user_id,
+    )
+    .await
+    .db_ctx("upload_group_key/audit")?;
+
     tx.commit().await.db_ctx("upload_group_key/commit")?;
 
     // Broadcast key_rotated event to all group members
@@ -308,4 +342,68 @@ pub async fn get_group_key_version(
         .ok_or_else(|| AppError::bad_request("Group key version not found"))?;
 
     Ok(Json(GroupKeyResponse::from_row(row)).into_response())
+}
+
+// -------------------------------------------------------------------------
+// GET /api/groups/:id/encryption-activity -- list completed rotations
+// -------------------------------------------------------------------------
+//
+// Audit OQ-13: server-side audit log of group key rotations. Returns
+// the audit rows newest-first for the admin "Encryption activity"
+// view. Restricted to admins+ because the rotation cadence and
+// trigger-source labels are a meaningful operational signal — a
+// regular member doesn't need a malicious-admin radar; an admin does.
+
+#[derive(Debug, Serialize)]
+pub struct GroupKeyRotationResponse {
+    pub id: Uuid,
+    pub conversation_id: Uuid,
+    pub triggered_by_user_id: Uuid,
+    pub triggered_by_event: String,
+    pub key_version: i32,
+    pub completed_at: String,
+    pub completed_by_user_id: Uuid,
+}
+
+impl GroupKeyRotationResponse {
+    fn from_row(row: db::group_key_rotations::GroupKeyRotationRow) -> Self {
+        Self {
+            id: row.id,
+            conversation_id: row.conversation_id,
+            triggered_by_user_id: row.triggered_by_user_id,
+            triggered_by_event: row.triggered_by_event,
+            key_version: row.key_version,
+            completed_at: row.completed_at.to_rfc3339(),
+            completed_by_user_id: row.completed_by_user_id,
+        }
+    }
+}
+
+pub async fn list_encryption_activity(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(group_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let role_str = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
+        .await
+        .db_ctx("list_encryption_activity/get_role")?
+        .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
+    let role = Role::from_str_opt(&role_str).unwrap_or(Role::Member);
+    if !role.is_admin_or_above() {
+        return Err(AppError::unauthorized(
+            "Only admins and owners can view encryption activity",
+        ));
+    }
+
+    // 100 is plenty for a UI scroll — the table is O(versions), so
+    // even chatty groups land well under a page after years of life.
+    let rows = db::group_key_rotations::list_for_conversation(&state.pool, group_id, 100)
+        .await
+        .db_ctx("list_encryption_activity/list")?;
+
+    let body: Vec<GroupKeyRotationResponse> = rows
+        .into_iter()
+        .map(GroupKeyRotationResponse::from_row)
+        .collect();
+    Ok(Json(body))
 }

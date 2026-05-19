@@ -68,6 +68,8 @@ Estimate: 4–5 days code (was 3-4 — the `min_wire_version` column + receiver 
 
 **Goal**: rotation completes reliably with one online member.
 
+**Status**: Phase 3a ✅ — `group_key_rotations` audit log (OQ-13) shipped: append-only ledger written inside the same tx as the envelope upload, exposed via `GET /api/groups/:id/encryption-activity` (admin-only). Senders pass `triggered_by_event` so the audit row records the reason. Phase 3b ⏳ — client-side deterministic leader election + staggered backoff (the `leader = members[hash(...) mod N]` ordering described below).
+
 - One PR. Adds the `leader = members[hash(...) mod N]` ordering + staggered backoff.
 - Requires server to emit `trigger_event_id` on every membership-change / rotate-request event. Small server change.
 - Tests: an integration test that simulates all-online, leader-only-online, follower-only-online, and split-brain (two leaders elected by inconsistent member views). The last one is the interesting case — we want to confirm the UNIQUE-constraint tie-breaker behaves as the spec says.

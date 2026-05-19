@@ -478,3 +478,167 @@ async fn upload_group_key_with_invalid_min_wire_version_returns_400() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// OQ-13 — group_key_rotations audit log
+// ---------------------------------------------------------------------------
+
+/// A successful key upload appends one row to `group_key_rotations`.
+/// `triggered_by_event` is stored verbatim; `key_version` and
+/// `completed_by_user_id` match the upload.
+#[tokio::test]
+async fn rotation_audit_row_is_written_on_upload() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (owner_token, owner_id, _) = common::register_and_login(&client, &base, "rotaudit").await;
+
+    let group_id = common::create_group(&client, &base, &owner_token, "RotAuditGroup").await;
+
+    let body = serde_json::json!({
+        "key_version": 1,
+        "triggered_by_event": "first_key",
+        "envelopes": [
+            { "user_id": owner_id, "encrypted_key": "owner-envelope-aes-key" }
+        ]
+    });
+    let resp = client
+        .post(format!("{base}/api/groups/{group_id}/keys"))
+        .header("Authorization", format!("Bearer {owner_token}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 201);
+
+    // Owner is an admin, so they can read the activity feed.
+    let resp = client
+        .get(format!("{base}/api/groups/{group_id}/encryption-activity"))
+        .header("Authorization", format!("Bearer {owner_token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+    let rows: Vec<Value> = resp.json().await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["key_version"], 1);
+    assert_eq!(rows[0]["triggered_by_event"], "first_key");
+    assert_eq!(rows[0]["triggered_by_user_id"], owner_id.to_string());
+    assert_eq!(rows[0]["completed_by_user_id"], owner_id.to_string());
+}
+
+/// Two rotations produce two audit rows, ordered newest-first.
+#[tokio::test]
+async fn rotation_audit_list_is_newest_first() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (owner_token, owner_id, _) = common::register_and_login(&client, &base, "rotord").await;
+
+    let group_id = common::create_group(&client, &base, &owner_token, "RotOrdGroup").await;
+
+    for v in [1, 2] {
+        let body = serde_json::json!({
+            "key_version": v,
+            "triggered_by_event": if v == 1 { "first_key" } else { "explicit_rotate" },
+            "envelopes": [
+                { "user_id": owner_id, "encrypted_key": format!("env-v{v}") }
+            ]
+        });
+        let resp = client
+            .post(format!("{base}/api/groups/{group_id}/keys"))
+            .header("Authorization", format!("Bearer {owner_token}"))
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status().as_u16(), 201);
+    }
+
+    let resp = client
+        .get(format!("{base}/api/groups/{group_id}/encryption-activity"))
+        .header("Authorization", format!("Bearer {owner_token}"))
+        .send()
+        .await
+        .unwrap();
+    let rows: Vec<Value> = resp.json().await.unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0]["key_version"], 2, "newest first");
+    assert_eq!(rows[1]["key_version"], 1);
+    assert_eq!(rows[0]["triggered_by_event"], "explicit_rotate");
+}
+
+/// Non-admin members cannot view the activity feed even though they
+/// can see the group itself. The rotation cadence is admin-grade
+/// operational data.
+#[tokio::test]
+async fn rotation_audit_is_admin_only() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (owner_token, owner_id, _) = common::register_and_login(&client, &base, "rotown").await;
+    let (member_token, member_id, _) = common::register_and_login(&client, &base, "rotmem").await;
+
+    let group_id = common::create_group(&client, &base, &owner_token, "RotPermGroup").await;
+    common::add_member_to_group(&client, &base, &owner_token, &group_id, &member_id).await;
+
+    let body = serde_json::json!({
+        "key_version": 1,
+        "envelopes": [
+            { "user_id": owner_id, "encrypted_key": "x" },
+            { "user_id": member_id, "encrypted_key": "y" }
+        ]
+    });
+    let resp = client
+        .post(format!("{base}/api/groups/{group_id}/keys"))
+        .header("Authorization", format!("Bearer {owner_token}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 201);
+
+    let resp = client
+        .get(format!("{base}/api/groups/{group_id}/encryption-activity"))
+        .header("Authorization", format!("Bearer {member_token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status().as_u16(),
+        401,
+        "regular members must not see encryption activity"
+    );
+}
+
+/// Defaulted `triggered_by_event` is `unspecified` so pre-Phase-3
+/// clients keep working without lying about the reason.
+#[tokio::test]
+async fn rotation_audit_default_event_is_unspecified() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (owner_token, owner_id, _) = common::register_and_login(&client, &base, "rotdef").await;
+
+    let group_id = common::create_group(&client, &base, &owner_token, "RotDefGroup").await;
+
+    let body = serde_json::json!({
+        "key_version": 1,
+        "envelopes": [
+            { "user_id": owner_id, "encrypted_key": "x" }
+        ]
+    });
+    let resp = client
+        .post(format!("{base}/api/groups/{group_id}/keys"))
+        .header("Authorization", format!("Bearer {owner_token}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 201);
+
+    let resp = client
+        .get(format!("{base}/api/groups/{group_id}/encryption-activity"))
+        .header("Authorization", format!("Bearer {owner_token}"))
+        .send()
+        .await
+        .unwrap();
+    let rows: Vec<Value> = resp.json().await.unwrap();
+    assert_eq!(rows[0]["triggered_by_event"], "unspecified");
+}
