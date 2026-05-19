@@ -593,7 +593,35 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
         final groupCrypto = ref.read(groupCryptoServiceProvider);
         final token = ref.read(authProvider).token ?? '';
         groupCrypto.setToken(token);
-        final keyResult = await groupCrypto.getGroupKey(conversationId);
+        var keyResult = await groupCrypto.getGroupKey(conversationId);
+
+        // Self-heal: if there's no usable key and the sender is the
+        // group's admin/owner, the wedged envelope is theirs to rotate.
+        // Run seedInitialGroupKey (which probes /keys/latest and bumps
+        // past the existing version) and retry the fetch. This rescues
+        // the most common stuck case — an owner whose group was wedged
+        // by an earlier client and who would otherwise see "Message
+        // may not have been delivered" forever, with no banner to tap
+        // because send-failures don't bump the receive-failure counter.
+        if (keyResult == null) {
+          final myUserId = ref.read(authProvider).userId ?? '';
+          final myMember = conversation?.members
+              .where((m) => m.userId == myUserId)
+              .firstOrNull;
+          final isAdminOrOwner =
+              myMember?.role == 'owner' || myMember?.role == 'admin';
+          if (isAdminOrOwner) {
+            debugLog(
+              'No usable group key for $conversationId — owner self-heal',
+              'WebSocket',
+            );
+            await ref
+                .read(cryptoProvider.notifier)
+                .seedInitialGroupKey(conversationId);
+            keyResult = await groupCrypto.getGroupKey(conversationId);
+          }
+        }
+
         if (keyResult == null) {
           // No group session yet -- hard fail rather than leak plaintext.
           _addFailedMessage(
