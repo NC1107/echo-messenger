@@ -209,6 +209,60 @@ class MessageTarget extends ContextMenuTarget {
   String get analyticsName => 'message';
 }
 
+/// Conversation context menu (PR 3). The registry switches action
+/// visibility on the conversation kind (`isGroup`), the user's role
+/// inside it (admin / owner / member), and current pin / mute /
+/// unread state. The caller wires whichever callbacks it can support
+/// — nulls are pruned from the rendered tree.
+///
+/// Owner-of-a-group-with-other-members is *not* allowed to leave
+/// (server enforces this). The decision in PR-1 prep was to hide
+/// the row entirely rather than render it disabled.
+class ConversationTarget extends ContextMenuTarget {
+  const ConversationTarget({
+    required this.conversationId,
+    required this.isGroup,
+    required this.isPinned,
+    required this.isMuted,
+    required this.hasUnread,
+    required this.isAdminOrOwner,
+    this.onMarkAsRead,
+    this.onMarkAsUnread,
+    this.onToggleMute,
+    this.onTogglePin,
+    this.onOpenInfo,
+    this.onInvitePeople,
+    this.onOpenEncryptionActivity,
+    this.onViewSafetyNumber,
+    this.onCopyId,
+    this.onLeave,
+    this.onDelete,
+  });
+
+  final String conversationId;
+  final bool isGroup;
+  final bool isPinned;
+  final bool isMuted;
+  final bool hasUnread;
+  final bool isAdminOrOwner;
+
+  // Action handlers — null = row hidden.
+  final VoidCallback? onMarkAsRead;
+  final VoidCallback? onMarkAsUnread;
+  final VoidCallback? onToggleMute;
+  final VoidCallback? onTogglePin;
+  final VoidCallback? onOpenInfo;
+  final VoidCallback? onInvitePeople;
+  final VoidCallback? onOpenEncryptionActivity;
+  final VoidCallback? onViewSafetyNumber;
+  final VoidCallback? onCopyId;
+  final VoidCallback? onLeave; // group member
+  final VoidCallback? onDelete; // DM delete OR group owner delete
+
+  @override
+  String get analyticsName => isGroup ? 'group' : 'dm';
+}
+
 /// Single public entry point. Picks desktop overlay vs mobile bottom
 /// sheet based on viewport short side; the breakpoint matches the
 /// rest of the app (see chat_panel responsive logic).

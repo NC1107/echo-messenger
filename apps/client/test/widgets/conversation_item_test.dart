@@ -521,76 +521,18 @@ void main() {
     });
   });
 
-  group('ConversationItem long-press action sheet', () {
-    testWidgets(
-      'long-press on DM shows Mute, Pin to top, and Delete Conversation items',
-      (tester) async {
-        bool pinToggled = false;
-
-        final conv = _makeConversation(
-          members: const [
-            ConversationMember(userId: 'peer-id', username: 'alice'),
-            ConversationMember(userId: 'my-id', username: 'me'),
-          ],
-        );
-
-        // Wrap in a Navigator so showModalBottomSheet can push a route.
-        // Simulate Android so _enableLongPressMenu returns true.
-        debugDefaultTargetPlatformOverride = TargetPlatform.android;
-        await tester.pumpWidget(
-          ProviderScope(
-            overrides: [
-              conversationsProvider.overrideWith(
-                () => _StubConversationsNotifier([conv]),
-              ),
-            ],
-            child: MaterialApp(
-              theme: EchoTheme.darkTheme,
-              darkTheme: EchoTheme.darkTheme,
-              themeMode: ThemeMode.dark,
-              home: Scaffold(
-                body: ConversationItem(
-                  conversation: conv,
-                  myUserId: 'my-id',
-                  isSelected: false,
-                  isPinned: false,
-                  isPeerOnline: false,
-                  timestamp: '10:30',
-                  onTap: () {},
-                  onTogglePin: () => pinToggled = true,
-                  onLeave: () {},
-                ),
-              ),
-            ),
-          ),
-        );
-        await tester.longPress(find.byType(ConversationItem));
-        // Reset override before pumpAndSettle so invariant check passes.
-        debugDefaultTargetPlatformOverride = null;
-        await tester.pumpAndSettle();
-
-        // Mute item is always present.
-        expect(find.text('Mute'), findsOneWidget);
-        // Pin item is present when onTogglePin is provided.
-        expect(find.text('Pin to top'), findsOneWidget);
-        // Delete item is present when onLeave is provided (DM).
-        expect(find.text('Delete Conversation'), findsOneWidget);
-
-        // Tapping Pin invokes the callback.
-        await tester.tap(find.text('Pin to top'));
-        await tester.pumpAndSettle();
-        expect(pinToggled, isTrue);
-      },
-    );
-
-    testWidgets('long-press on group shows Leave Group instead of Delete', (
-      tester,
-    ) async {
+  group('ConversationItem long-press dispatch', () {
+    // Post-PR-3: ConversationItem no longer renders its own action
+    // sheet on mobile long-press. It delegates to the
+    // `onContextMenu` callback, and `conversation_panel` opens the
+    // centralised EchoContextMenu. Menu *contents* are covered by
+    // conversation_actions_registry_test.dart; the only behaviour
+    // worth asserting here is the dispatch itself.
+    testWidgets('long-press on mobile fires onContextMenu', (tester) async {
+      bool fired = false;
       final conv = _makeConversation(
-        name: 'Dev Team',
-        isGroup: true,
         members: const [
-          ConversationMember(userId: 'u1', username: 'alice'),
+          ConversationMember(userId: 'peer-id', username: 'alice'),
           ConversationMember(userId: 'my-id', username: 'me'),
         ],
       );
@@ -616,8 +558,7 @@ void main() {
                 isPeerOnline: false,
                 timestamp: '10:30',
                 onTap: () {},
-                onTogglePin: () {},
-                onLeave: () {},
+                onContextMenu: (_) => fired = true,
               ),
             ),
           ),
@@ -627,56 +568,55 @@ void main() {
       debugDefaultTargetPlatformOverride = null;
       await tester.pumpAndSettle();
 
-      expect(find.text('Leave Group'), findsOneWidget);
-      expect(find.text('Delete Conversation'), findsNothing);
+      expect(fired, isTrue);
     });
 
-    testWidgets(
-      'long-press on pinned conversation shows Unpin instead of Pin to top',
-      (tester) async {
-        final conv = _makeConversation(
-          members: const [
-            ConversationMember(userId: 'peer-id', username: 'alice'),
-            ConversationMember(userId: 'my-id', username: 'me'),
-          ],
-        );
+    testWidgets('long-press on web (kIsWeb-like) is a no-op', (tester) async {
+      // Desktop platforms get right-click via onSecondaryTapUp; the
+      // long-press path is gated by _enableLongPressMenu which only
+      // returns true on Android/iOS. We can't override kIsWeb at
+      // runtime, but we can verify the mobile-only contract by
+      // overriding the platform to desktop and confirming no
+      // callback fires.
+      bool fired = false;
+      final conv = _makeConversation(
+        members: const [
+          ConversationMember(userId: 'peer-id', username: 'alice'),
+          ConversationMember(userId: 'my-id', username: 'me'),
+        ],
+      );
 
-        debugDefaultTargetPlatformOverride = TargetPlatform.android;
-        await tester.pumpWidget(
-          ProviderScope(
-            overrides: [
-              conversationsProvider.overrideWith(
-                () => _StubConversationsNotifier([conv]),
-              ),
-            ],
-            child: MaterialApp(
-              theme: EchoTheme.darkTheme,
-              darkTheme: EchoTheme.darkTheme,
-              themeMode: ThemeMode.dark,
-              home: Scaffold(
-                body: ConversationItem(
-                  conversation: conv,
-                  myUserId: 'my-id',
-                  isSelected: false,
-                  isPinned: true, // already pinned
-                  isPeerOnline: false,
-                  timestamp: '10:30',
-                  onTap: () {},
-                  onTogglePin: () {},
-                  onLeave: () {},
-                ),
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            conversationsProvider.overrideWith(
+              () => _StubConversationsNotifier([conv]),
+            ),
+          ],
+          child: MaterialApp(
+            theme: EchoTheme.darkTheme,
+            home: Scaffold(
+              body: ConversationItem(
+                conversation: conv,
+                myUserId: 'my-id',
+                isSelected: false,
+                isPinned: false,
+                isPeerOnline: false,
+                timestamp: '10:30',
+                onTap: () {},
+                onContextMenu: (_) => fired = true,
               ),
             ),
           ),
-        );
-        await tester.longPress(find.byType(ConversationItem));
-        debugDefaultTargetPlatformOverride = null;
-        await tester.pumpAndSettle();
+        ),
+      );
+      await tester.longPress(find.byType(ConversationItem));
+      debugDefaultTargetPlatformOverride = null;
+      await tester.pumpAndSettle();
 
-        expect(find.text('Unpin'), findsOneWidget);
-        expect(find.text('Pin to top'), findsNothing);
-      },
-    );
+      expect(fired, isFalse);
+    });
   });
 
   group('ConversationItem semantics label (#631)', () {

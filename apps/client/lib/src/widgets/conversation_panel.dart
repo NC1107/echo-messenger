@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/conversation.dart';
@@ -23,6 +25,8 @@ import '../providers/theme_provider.dart' show uiDensityProvider;
 import '../utils/time_utils.dart';
 import 'avatar_utils.dart';
 import 'connection_status_badge.dart';
+import 'context_menu/actions/conversation_actions_registry.dart';
+import 'context_menu/echo_context_menu.dart';
 import 'conversation_item.dart';
 import 'echo_logo_icon.dart';
 import 'empty_state.dart';
@@ -175,101 +179,95 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         .setPinned(conversationId, !isPinned);
   }
 
-  Future<void> _handleContextMenuSelection(
-    String? value,
-    Conversation conv,
-  ) async {
-    if (value == 'pin') {
-      _togglePin(conv.id);
-    } else if (value == 'mute') {
-      final ok = await ref
-          .read(conversationsProvider.notifier)
-          .toggleMute(conv.id);
-      if (!ok && mounted) {
+  /// Build a [ConversationTarget] for [conv] using the current
+  /// pinned-ids set, mute state, and the my-role lookup from the
+  /// conversation member list. The handlers wired here are the
+  /// existing in-panel methods (no new business logic introduced by
+  /// this migration); the centralised menu is purely a *surface*
+  /// swap.
+  ConversationTarget _buildConversationTarget(Conversation conv) {
+    final myUserId = ref.read(authProvider).userId ?? '';
+    final myMember = conv.members
+        .where((m) => m.userId == myUserId)
+        .firstOrNull;
+    final myRole = myMember?.role ?? 'member';
+    final isAdminOrOwner = myRole == 'owner' || myRole == 'admin';
+    final pinnedIds = ref.read(pinnedConversationIdsProvider);
+    final isPinned = pinnedIds.contains(conv.id) || conv.isPinned;
+    final hasUnread = conv.unreadCount > 0 || conv.mentionCount > 0;
+
+    // The owner of a group with other members can't leave (the
+    // server enforces this); per the cross-cutting decision we hide
+    // the row entirely rather than render it disabled.
+    final canLeave =
+        conv.isGroup &&
+        !(myRole == 'owner' &&
+            conv.members.where((m) => m.userId != myUserId).isNotEmpty);
+    final canDeleteGroup = conv.isGroup && myRole == 'owner';
+
+    return ConversationTarget(
+      conversationId: conv.id,
+      isGroup: conv.isGroup,
+      isPinned: isPinned,
+      isMuted: conv.isMuted,
+      hasUnread: hasUnread,
+      isAdminOrOwner: isAdminOrOwner,
+      onMarkAsRead: hasUnread
+          ? () => unawaited(
+              ref.read(conversationsProvider.notifier).sendReadReceipt(conv.id),
+            )
+          : null,
+      // Mark-as-unread isn't wired to a real provider yet; defer to a
+      // follow-up so we don't introduce dead UI here.
+      onMarkAsUnread: null,
+      onToggleMute: () async {
+        final ok = await ref
+            .read(conversationsProvider.notifier)
+            .toggleMute(conv.id);
+        if (!ok && mounted) {
+          ToastService.show(
+            context,
+            'Failed to update mute settings',
+            type: ToastType.error,
+          );
+        }
+      },
+      onTogglePin: () => _togglePin(conv.id),
+      onOpenInfo: conv.isGroup
+          ? () => context.go('/group-info/${conv.id}')
+          : null,
+      // Invite-people / encryption-activity link out to existing
+      // routes today; centralising the entry points is enough for v1.
+      onInvitePeople: (conv.isGroup && isAdminOrOwner)
+          ? () => context.go('/group-info/${conv.id}')
+          : null,
+      onOpenEncryptionActivity: (conv.isGroup && isAdminOrOwner)
+          ? () => context.go('/group-info/${conv.id}')
+          : null,
+      onViewSafetyNumber: (!conv.isGroup && myMember != null)
+          ? () {
+              final peer = conv.members
+                  .where((m) => m.userId != myUserId)
+                  .firstOrNull;
+              if (peer != null) {
+                context.go('/safety-number/${peer.userId}');
+              }
+            }
+          : null,
+      onCopyId: () {
+        Clipboard.setData(ClipboardData(text: conv.id));
+        if (!mounted) return;
         ToastService.show(
           context,
-          'Failed to update mute settings',
-          type: ToastType.error,
+          'Conversation ID copied',
+          type: ToastType.success,
         );
-      }
-    } else if (value == 'leave_group') {
-      _leaveGroup(conv);
-    } else if (value == 'delete_dm') {
-      _deleteDm(conv);
-    }
-  }
-
-  List<PopupMenuEntry<String>> _buildContextMenuItems(
-    BuildContext context,
-    Conversation conv,
-    bool isPinned,
-  ) {
-    return [
-      PopupMenuItem<String>(
-        value: 'pin',
-        child: Row(
-          children: [
-            Icon(
-              isPinned ? Icons.push_pin : Icons.push_pin_outlined,
-              size: 16,
-              color: context.textSecondary,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              isPinned ? 'Unpin' : 'Pin to top',
-              style: TextStyle(color: context.textPrimary, fontSize: 13),
-            ),
-          ],
-        ),
-      ),
-      PopupMenuItem<String>(
-        value: 'mute',
-        child: Row(
-          children: [
-            Icon(
-              conv.isMuted
-                  ? Icons.notifications_outlined
-                  : Icons.notifications_off_outlined,
-              size: 16,
-              color: context.textSecondary,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              conv.isMuted ? 'Unmute' : 'Mute',
-              style: TextStyle(color: context.textPrimary, fontSize: 13),
-            ),
-          ],
-        ),
-      ),
-      if (conv.isGroup)
-        const PopupMenuItem<String>(
-          value: 'leave_group',
-          child: Row(
-            children: [
-              Icon(Icons.exit_to_app, size: 16, color: EchoTheme.danger),
-              SizedBox(width: 8),
-              Text(
-                'Leave Group',
-                style: TextStyle(color: EchoTheme.danger, fontSize: 13),
-              ),
-            ],
-          ),
-        ),
-      if (!conv.isGroup)
-        const PopupMenuItem<String>(
-          value: 'delete_dm',
-          child: Row(
-            children: [
-              Icon(Icons.delete_outline, size: 16, color: EchoTheme.danger),
-              SizedBox(width: 8),
-              Text(
-                'Delete Conversation',
-                style: TextStyle(color: EchoTheme.danger, fontSize: 13),
-              ),
-            ],
-          ),
-        ),
-    ];
+      },
+      onLeave: canLeave ? () => _leaveGroup(conv) : null,
+      onDelete: conv.isGroup
+          ? (canDeleteGroup ? () => _leaveGroup(conv) : null)
+          : () => _deleteDm(conv),
+    );
   }
 
   void _showConversationContextMenu(
@@ -277,23 +275,13 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     Conversation conv,
     Offset position,
   ) {
-    final pinnedIds = ref.read(pinnedConversationIdsProvider);
-    final isPinned = pinnedIds.contains(conv.id) || conv.isPinned;
-    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-
-    showMenu<String>(
+    final target = _buildConversationTarget(conv);
+    EchoContextMenu.open(
       context: context,
-      position: RelativeRect.fromRect(
-        Rect.fromLTWH(position.dx, position.dy, 0, 0),
-        Offset.zero & overlay.size,
-      ),
-      color: context.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: context.border),
-      ),
-      items: _buildContextMenuItems(context, conv, isPinned),
-    ).then((value) => _handleContextMenuSelection(value, conv));
+      target: target,
+      anchor: position,
+      model: buildConversationMenu(target),
+    );
   }
 
   Future<void> _leaveGroup(Conversation conv) async {
