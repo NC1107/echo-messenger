@@ -96,3 +96,12 @@ dependency_overrides:
   # on iPhone 16 / iOS 26.5). Override the pin so we get 1.4.1; revert if
   # this introduces new iOS-side regressions.
   flutter_webrtc: 1.4.1
+  # flutter_secure_storage_darwin 0.3.0 uses CryptoKit (SymmetricKey, AES)
+  # without an @available(iOS 13, *) guard at every call site, which
+  # breaks the iOS Release build. The plugin's SwiftPM Package.swift
+  # declares a min iOS lower than 13.0, and Podfile post-install hooks
+  # don't affect SPM-resolved packages. 0.3.1 fixed the missing
+  # availability check upstream. Override to 0.3.1 until
+  # flutter_secure_storage rolls forward to a version that pins this
+  # transitively.
+  flutter_secure_storage_darwin: 0.3.1
