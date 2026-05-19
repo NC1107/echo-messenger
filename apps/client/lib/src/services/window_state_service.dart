@@ -143,6 +143,22 @@ class WindowStateService {
     }
   }
 
+  /// Resize the chromeless splash window to a size that comfortably fits
+  /// the update prompt (logo, version cycle, progress bar, full-width
+  /// action button, error text, Skip). The splash's 320×440 is too tight
+  /// for an actionable screen — buttons crowd the edges and longer error
+  /// strings wrap awkwardly. Keeps the splash chrome (transparent
+  /// background, hidden title bar) so the swap stays seamless.
+  static Future<void> enterUpdatePrompt() async {
+    if (!_isDesktop) return;
+    try {
+      await windowManager.setSize(const Size(400, 520));
+    } catch (_) {
+      // Resize failure is non-fatal — the user still sees the 320×440
+      // splash-sized prompt, just a bit cramped.
+    }
+  }
+
   /// Shrink the window to a 320×440 chromeless splash and anchor it near
   /// the top-left of the primary display so it lines up with where the
   /// post-splash window will appear (eliminating the small-to-large jump
