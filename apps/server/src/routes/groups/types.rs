@@ -11,6 +11,13 @@ pub struct CreateGroupRequest {
     #[serde(default)]
     pub is_public: bool,
     pub description: Option<String>,
+    /// Opt-in end-to-end encryption flag. Defaults to false so a client
+    /// that doesn't send the field gets a plaintext group — the group-
+    /// key envelope path is still experimental and groups created with
+    /// it have shown an envelope-MAC wedge under identity-key drift
+    /// (see fix in v0.0.379). Clients that want E2E pass `true`.
+    #[serde(default)]
+    pub is_encrypted: bool,
 }
 
 #[derive(Debug, Deserialize)]

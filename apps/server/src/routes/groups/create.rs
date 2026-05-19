@@ -46,6 +46,7 @@ pub async fn create_group(
         &body.member_ids,
         body.is_public,
         body.description.as_deref(),
+        body.is_encrypted,
     )
     .await
     .db_ctx("create_group/create")?;

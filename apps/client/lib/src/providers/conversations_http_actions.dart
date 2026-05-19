@@ -331,17 +331,25 @@ mixin _ConversationsHttpActionsMixin on Notifier<ConversationsState> {
   }
 
   /// Create a new group conversation.
+  ///
+  /// [isEncrypted] toggles the experimental E2E group-key envelope path.
+  /// When false (the default), the group is created as plaintext — the
+  /// server's `is_encrypted` column stays false and no first-key seed
+  /// runs. When true, the creator's client uploads the initial per-
+  /// member envelope inline so the very first message can encrypt.
   Future<String?> createGroup(
     String name,
     List<String> memberIds, {
     String? description,
     bool isPublic = false,
+    bool isEncrypted = false,
   }) async {
     try {
       final body = <String, dynamic>{
         'name': name,
         'member_ids': memberIds,
         'is_public': isPublic,
+        'is_encrypted': isEncrypted,
       };
       if (description != null) {
         body['description'] = description;
@@ -359,13 +367,10 @@ mixin _ConversationsHttpActionsMixin on Notifier<ConversationsState> {
         final conversationId =
             data['conversation_id'] as String? ?? data['id'] as String? ?? '';
         await loadConversations();
-        // Phase 5 (audit OQ-3): server creates groups with
-        // `is_encrypted = true`, so the creator MUST upload an
-        // initial per-member key envelope or the group will 400 on
-        // every subsequent `/keys/latest` fetch. Run the seed inline
-        // (not unawaited) so the caller's "group created" navigation
-        // doesn't race a missing-key wedge on the first message.
-        if (conversationId.isNotEmpty) {
+        // Only seed the initial group-key envelope when the creator
+        // actually opted into encryption. A plaintext group skips this
+        // entirely; sends go through the unencrypted path.
+        if (isEncrypted && conversationId.isNotEmpty) {
           try {
             await ref
                 .read(cryptoProvider.notifier)
