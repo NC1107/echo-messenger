@@ -40,5 +40,20 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+    # Pin every pod's iOS deployment target to match the Runner (16.0).
+    # Without this, pods inherit whatever default they were authored
+    # with — typically iOS 11 or 12 — and any pod using CryptoKit APIs
+    # (`SymmetricKey`, `AES`, etc., gated behind `@available(iOS 13, *)`)
+    # fails to compile against the lower default.
+    #
+    # The specific regression that prompted this guard:
+    # flutter_secure_storage_darwin 0.3.0 added CryptoKit-based AES
+    # wrapping, breaking the iOS Release build with `'SymmetricKey' is
+    # only available in iOS 13.0 or newer`. Pinning every pod to the
+    # Runner's deployment target keeps a future plugin update from
+    # re-introducing the same class of failure silently.
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '16.0'
+    end
   end
 end
