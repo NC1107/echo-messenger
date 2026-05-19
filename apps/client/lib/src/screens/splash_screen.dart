@@ -123,6 +123,11 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     // instead of navigating immediately.
     final updateState = ref.read(updateProvider);
     if (!kIsWeb && update_svc.canAutoUpdate && updateState.updateAvailable) {
+      // Grow the chromeless splash window to a size that comfortably fits
+      // the actionable update prompt — the 320×440 splash dimensions
+      // crowded the Download/Restart/Skip stack.
+      await WindowStateService.enterUpdatePrompt();
+      if (!mounted) return;
       setState(() {
         _showUpdatePrompt = true;
         _loggedIn = loggedIn;
