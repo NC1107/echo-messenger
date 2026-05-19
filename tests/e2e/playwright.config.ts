@@ -27,6 +27,7 @@ export default defineConfig({
         'group_messaging_ui.spec.ts',
         'hover_then_type.spec.ts',
         'crypto_dm_test.spec.ts',
+        'group_encryption_roundtrip.spec.ts',
         'comprehensive.spec.ts',
         'echo_e2e.spec.ts',
         'qa_comprehensive.spec.ts',
