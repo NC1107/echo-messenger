@@ -61,7 +61,18 @@ async function apiGet(path: string, token: string) {
 }
 
 async function registerOrLogin(username: string) {
-  const reg = await apiPost('/api/auth/register', { username, password: PW });
+  // Maintained-suite specs share the same source IP, and the server's
+  // per-IP registration rate limiter (in-memory window) gets exhausted
+  // by the time later specs run. Back off on 429 and retry a few times
+  // before giving up. Five attempts at 1.5x growth covers ~30s of
+  // throttling, which is comfortably within the suite's per-test
+  // timeout budget.
+  let reg = await apiPost('/api/auth/register', { username, password: PW });
+  for (let attempt = 0; attempt < 5 && reg.status === 429; attempt++) {
+    const delayMs = 1500 * Math.pow(1.5, attempt);
+    await new Promise((r) => setTimeout(r, delayMs));
+    reg = await apiPost('/api/auth/register', { username, password: PW });
+  }
   if (reg.status === 201 && reg.data?.access_token) return reg.data;
   const login = await apiPost('/api/auth/login', { username, password: PW });
   if (login.data?.access_token) return login.data;
