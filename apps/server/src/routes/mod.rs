@@ -296,6 +296,10 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpNet>) -> Route
             get(group_keys::get_group_key_version),
         )
         .route(
+            "/{id}/encryption-activity",
+            get(group_keys::list_encryption_activity),
+        )
+        .route(
             "/{id}/channels",
             get(channels::list_channels).post(channels::create_channel),
         )

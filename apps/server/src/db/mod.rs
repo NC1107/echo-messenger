@@ -1,6 +1,7 @@
 pub mod canvas;
 pub mod channels;
 pub mod contacts;
+pub mod group_key_rotations;
 pub mod groups;
 pub mod keys;
 pub mod media;

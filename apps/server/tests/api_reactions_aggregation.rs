@@ -125,7 +125,7 @@ async fn two_users_same_emoji_aggregate_to_count_two() {
     let (alice_token, _alice_id, _) = common::register_and_login(&client, &base, "rxa_alice").await;
     let (bob_token, bob_id, _) = common::register_and_login(&client, &base, "rxa_bob").await;
 
-    let group = common::create_group(&client, &base, &alice_token, "TwoUsersGroup").await;
+    let group = common::create_plaintext_group(&client, &base, &alice_token, "TwoUsersGroup").await;
     common::add_member_to_group(&client, &base, &alice_token, &group, &bob_id).await;
 
     let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
@@ -161,7 +161,8 @@ async fn same_user_same_emoji_is_idempotent() {
 
     let (alice_token, _alice_id, _) = common::register_and_login(&client, &base, "rxa_idem").await;
 
-    let group = common::create_group(&client, &base, &alice_token, "IdempotentGroup").await;
+    let group =
+        common::create_plaintext_group(&client, &base, &alice_token, "IdempotentGroup").await;
     let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
     common::drain_pending(&mut alice_ws).await;
@@ -199,7 +200,8 @@ async fn different_emoji_per_user_tracked_separately() {
         common::register_and_login(&client, &base, "rxa_diff_a").await;
     let (bob_token, bob_id, _) = common::register_and_login(&client, &base, "rxa_diff_b").await;
 
-    let group = common::create_group(&client, &base, &alice_token, "DiffEmojiGroup").await;
+    let group =
+        common::create_plaintext_group(&client, &base, &alice_token, "DiffEmojiGroup").await;
     common::add_member_to_group(&client, &base, &alice_token, &group, &bob_id).await;
 
     let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
@@ -234,7 +236,7 @@ async fn remove_reaction_drops_it_from_history() {
     let (alice_token, _alice_id, _) = common::register_and_login(&client, &base, "rxa_rm_a").await;
     let (bob_token, bob_id, _) = common::register_and_login(&client, &base, "rxa_rm_b").await;
 
-    let group = common::create_group(&client, &base, &alice_token, "RemoveGroup").await;
+    let group = common::create_plaintext_group(&client, &base, &alice_token, "RemoveGroup").await;
     common::add_member_to_group(&client, &base, &alice_token, &group, &bob_id).await;
 
     let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
@@ -288,7 +290,7 @@ async fn soft_deleted_message_drops_its_reactions_from_history() {
     let (alice_token, _alice_id, _) = common::register_and_login(&client, &base, "rxa_sd_a").await;
     let (bob_token, bob_id, _) = common::register_and_login(&client, &base, "rxa_sd_b").await;
 
-    let group = common::create_group(&client, &base, &alice_token, "SoftDelGroup").await;
+    let group = common::create_plaintext_group(&client, &base, &alice_token, "SoftDelGroup").await;
     common::add_member_to_group(&client, &base, &alice_token, &group, &bob_id).await;
 
     let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;

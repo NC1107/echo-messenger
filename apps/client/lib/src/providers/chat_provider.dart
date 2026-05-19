@@ -10,9 +10,11 @@ import '../models/reaction.dart';
 import '../services/crypto_service.dart';
 import '../services/debug_log_service.dart';
 import '../services/group_crypto_service.dart';
-import 'crypto_provider.dart' show cryptoServiceProvider;
+import 'crypto_provider.dart'
+    show cryptoServiceProvider, groupCryptoServiceProvider;
 import '../services/message_cache.dart';
 import '../utils/crypto_utils.dart';
+import '../utils/uuid_bytes.dart';
 import 'auth_provider.dart';
 import 'conversations_provider.dart';
 import 'server_url_provider.dart';
@@ -57,6 +59,15 @@ class ChatState {
   /// banner once this crosses [outOfSyncThreshold]. Audit P0-3.
   final Map<String, int> consecutiveDecryptFailures;
 
+  /// Conversations where at least one GRP2 message has failed sender
+  /// signature verification ("[Could not verify sender]"). Distinct
+  /// from `consecutiveDecryptFailures` because a sig-fail is a
+  /// *security signal*, not a key-out-of-sync transient — no
+  /// automatic recovery action is offered and the banner stays
+  /// visible until the user resolves it (or the conversation is
+  /// closed and reopened). Audit Phase 4 (group recovery UX).
+  final Set<String> signatureFailures;
+
   /// Threshold at which the per-conversation banner becomes visible.
   /// Three is the audit's recommended default; tuning lives in
   /// `06-recommendations.md`.
@@ -69,6 +80,7 @@ class ChatState {
     this.hasMore = const {},
     this.replyToMessage,
     this.consecutiveDecryptFailures = const {},
+    this.signatureFailures = const {},
   }) : _messageIdIndex = messageIdIndex;
 
   /// True when the named conversation has crossed [outOfSyncThreshold]
@@ -76,6 +88,12 @@ class ChatState {
   bool isConversationOutOfSync(String conversationId) {
     return (consecutiveDecryptFailures[conversationId] ?? 0) >=
         outOfSyncThreshold;
+  }
+
+  /// True when the named conversation has at least one unresolved GRP2
+  /// signature failure. Renders a danger-banner with no auto-action.
+  bool hasSignatureFailure(String conversationId) {
+    return signatureFailures.contains(conversationId);
   }
 
   /// Get messages for a conversation ID.
@@ -124,12 +142,19 @@ class ChatState {
     var updatedConvMap = messagesByConversation;
     var updatedIndexMap = _messageIdIndex;
     var updatedFailures = consecutiveDecryptFailures;
+    var updatedSigFailures = signatureFailures;
 
-    // Audit P0-3: track consecutive decrypt-failure placeholders so the
-    // chat UI can surface a "reset session" banner after the threshold is
-    // crossed. Reset to 0 on any successful decrypt.
+    // Audit P0-3 + Phase 4: track decrypt-failure placeholders so the
+    // chat UI can surface a recovery banner. Two distinct buckets:
+    //   - `consecutiveDecryptFailures` — count "[Could not decrypt…]"
+    //     transients, reset on any genuine decrypt success.
+    //   - `signatureFailures` — sticky set of conversations where a
+    //     "[Could not verify sender]" landed. Cleared only when the
+    //     user closes / reopens the conversation OR an admin rotates
+    //     the key (which also drops the cached envelope).
     if (msg.conversationId.isNotEmpty) {
       final isDecryptFailure = msg.content.startsWith('[Could not decrypt');
+      final isSigFailure = msg.content.startsWith('[Could not verify sender');
       final prev = updatedFailures[msg.conversationId] ?? 0;
       if (isDecryptFailure) {
         updatedFailures = {...updatedFailures, msg.conversationId: prev + 1};
@@ -138,6 +163,9 @@ class ChatState {
           !msg.isSystemEvent) {
         // Genuine success after one or more failures — clear the counter.
         updatedFailures = {...updatedFailures}..remove(msg.conversationId);
+      }
+      if (isSigFailure && !updatedSigFailures.contains(msg.conversationId)) {
+        updatedSigFailures = {...updatedSigFailures, msg.conversationId};
       }
     }
 
@@ -181,6 +209,7 @@ class ChatState {
       hasMore: hasMore,
       replyToMessage: replyToMessage,
       consecutiveDecryptFailures: updatedFailures,
+      signatureFailures: updatedSigFailures,
     );
   }
 
@@ -199,6 +228,27 @@ class ChatState {
       hasMore: hasMore,
       replyToMessage: replyToMessage,
       consecutiveDecryptFailures: next,
+      signatureFailures: signatureFailures,
+    );
+  }
+
+  /// Clear the signature-failure flag for a conversation. Called when
+  /// the user explicitly dismisses the banner or when the group key
+  /// rotates (because a fresh envelope invalidates the prior wedge).
+  /// Audit Phase 4.
+  ChatState withSignatureFailureCleared(String conversationId) {
+    if (!signatureFailures.contains(conversationId)) {
+      return this;
+    }
+    final next = {...signatureFailures}..remove(conversationId);
+    return ChatState(
+      messagesByConversation: messagesByConversation,
+      messageIdIndex: _messageIdIndex,
+      loadingHistory: loadingHistory,
+      hasMore: hasMore,
+      replyToMessage: replyToMessage,
+      consecutiveDecryptFailures: consecutiveDecryptFailures,
+      signatureFailures: next,
     );
   }
 
@@ -210,6 +260,7 @@ class ChatState {
     ChatMessage? replyToMessage,
     bool clearReply = false,
     Map<String, int>? consecutiveDecryptFailures,
+    Set<String>? signatureFailures,
   }) {
     return ChatState(
       messagesByConversation:
@@ -222,6 +273,7 @@ class ChatState {
           : (replyToMessage ?? this.replyToMessage),
       consecutiveDecryptFailures:
           consecutiveDecryptFailures ?? this.consecutiveDecryptFailures,
+      signatureFailures: signatureFailures ?? this.signatureFailures,
     );
   }
 }
@@ -334,6 +386,29 @@ class Chat extends _$Chat {
     final crypto = ref.read(cryptoServiceProvider);
     await crypto.forceResetSession(peerUserId);
     state = state.withSyncRestored(conversationId);
+  }
+
+  /// Phase 4 recovery action for group conversations: drop the cached
+  /// group key + envelope and refetch whatever the server currently
+  /// advertises. Use when a wave of "[Could not decrypt - waiting for
+  /// group key]" placeholders has crossed the [outOfSyncThreshold]
+  /// banner threshold. No-op when the conversation isn't a group or
+  /// no GroupCryptoService is wired.
+  Future<void> refreshGroupKey(String conversationId) async {
+    final groupCrypto = ref.read(groupCryptoServiceProvider);
+    await groupCrypto.dropCachedKey(conversationId);
+    // Eagerly repull so the next inbound message decrypts; if the
+    // server has no key yet, this is a no-op and we'll repull again
+    // on the next attempt.
+    await groupCrypto.getGroupKey(conversationId);
+    state = state.withSyncRestored(conversationId);
+  }
+
+  /// Phase 4 dismissal for the GRP2 signature-failure banner. We do
+  /// NOT auto-resolve sig failures (they're a security signal, not a
+  /// transient) — the user explicitly acknowledges the warning.
+  void dismissSignatureFailure(String conversationId) {
+    state = state.withSignatureFailureCleared(conversationId);
   }
 
   void addSystemEvent(String conversationId, String event) {
@@ -709,10 +784,18 @@ class Chat extends _$Chat {
     return newMessages;
   }
 
+  /// History-path group decrypt. Dispatches by wire prefix:
+  ///   - `GRP2:` → fetch the sender's per-device Ed25519 verify key and
+  ///     run the signed AEAD path.
+  ///   - `GRP1:` → legacy unsigned path, refused when the cached
+  ///     envelope's `min_wire_version` has been bumped to 2 (audit
+  ///     OQ-11: downgrade-attack mitigation).
   Future<ChatMessage> _decryptGroupMessage(
     ChatMessage msg,
+    CryptoService? crypto,
     GroupCryptoService? groupCrypto,
     String? conversationId,
+    int? fromDeviceId,
   ) async {
     if (groupCrypto == null || conversationId == null) {
       return msg.copyWith(
@@ -729,6 +812,56 @@ class Chat extends _$Chat {
         );
       }
       final (_, keyBase64) = keyResult;
+      final minWireVersion =
+          groupCrypto.cachedMinWireVersion(conversationId) ?? 1;
+
+      if (msg.content.startsWith(groupEncryptedPrefixV2)) {
+        if (crypto == null) {
+          return msg.copyWith(
+            content: '[Could not verify sender]',
+            isEncrypted: true,
+          );
+        }
+        final senderVerifyKey = await crypto.getSenderVerifyKeyForDevice(
+          msg.fromUserId,
+          fromDeviceId,
+        );
+        if (senderVerifyKey == null) {
+          return msg.copyWith(
+            content: '[Could not verify sender]',
+            isEncrypted: true,
+          );
+        }
+        try {
+          final decrypted =
+              await GroupCryptoService.verifyAndDecryptGroupMessageV2(
+                ciphertextWithPrefix: msg.content,
+                keyBase64: keyBase64,
+                expectedConversationIdBytes: uuidStringToBytes(conversationId),
+                expectedMessageIdBytes: uuidStringToBytes(msg.id),
+                senderVerifyKey: senderVerifyKey,
+              );
+          return msg.copyWith(content: decrypted, isEncrypted: true);
+        } on GroupSenderSignatureException catch (e) {
+          DebugLogService.instance.log(
+            LogLevel.warning,
+            'Chat',
+            'GRP2 signature failed for ${msg.id}: $e',
+          );
+          return msg.copyWith(
+            content: '[Could not verify sender]',
+            isEncrypted: true,
+          );
+        }
+      }
+
+      // GRP1 path. Refuse when the envelope is pinned to GRP2.
+      if (minWireVersion >= 2) {
+        return msg.copyWith(
+          content: '[Could not verify sender]',
+          isEncrypted: true,
+        );
+      }
       final decrypted = await GroupCryptoService.decryptGroupMessage(
         msg.content,
         keyBase64,
@@ -757,9 +890,16 @@ class Chat extends _$Chat {
     String? conversationId,
     int? fromDeviceId,
   }) async {
-    // Group-encrypted messages (prefixed with GRP1:)
-    if (msg.content.startsWith(groupEncryptedPrefix)) {
-      return _decryptGroupMessage(msg, groupCrypto, conversationId);
+    // Group-encrypted messages (prefixed with GRP1: or GRP2:)
+    if (msg.content.startsWith(groupEncryptedPrefix) ||
+        msg.content.startsWith(groupEncryptedPrefixV2)) {
+      return _decryptGroupMessage(
+        msg,
+        crypto,
+        groupCrypto,
+        conversationId,
+        fromDeviceId,
+      );
     }
 
     // Skip decryption for non-encrypted group messages

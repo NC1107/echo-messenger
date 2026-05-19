@@ -171,6 +171,12 @@ class CryptoService {
   bool get isInitialized => _identityKeyPair != null;
   bool get keysAreFresh => _keysAreFresh;
 
+  /// Sender Ed25519 keypair used to sign GRP2 group messages
+  /// (audit OQ-12: per-device sender signature). Returns null when
+  /// the service hasn't been initialised yet; callers MUST handle
+  /// that case by falling back to GRP1 send.
+  SimpleKeyPair? get signingKeyPair => _signingKeyPair;
+
   /// True if identity keys were regenerated (not restored from storage).
   /// This means old encrypted messages cannot be decrypted.
   bool get keysWereRegenerated => _keysWereRegenerated;
@@ -1434,6 +1440,34 @@ class CryptoService {
     final bundles = (data['bundles'] as List).cast<Map<String, dynamic>>();
     _bundleCache[userId] = (bundles, DateTime.now());
     return bundles;
+  }
+
+  /// Fetch the Ed25519 signing public key for a specific (user, device).
+  /// Used by the GRP2 receive path to verify the sender signature
+  /// against the device that produced the message (audit OQ-12: per-
+  /// device sender signatures). Returns null when no matching device
+  /// is found in the bundles list — the caller should surface that
+  /// as a verification failure rather than silently accepting.
+  ///
+  /// The 5-minute bundle TTL applies, so a freshly-rotated device
+  /// signing key may take up to that long to propagate. In practice
+  /// GRP2 is gated on a successful key rotation, so the bundle
+  /// fetched right before the rotation is fresh enough.
+  Future<SimplePublicKey?> getSenderVerifyKeyForDevice(
+    String userId,
+    int? deviceId,
+  ) async {
+    final bundles = await _fetchAllBundles(userId);
+    final filtered = deviceId == null
+        ? bundles
+        : bundles.where((b) => b['device_id'] == deviceId).toList();
+    if (filtered.isEmpty) return null;
+    final signingKeyB64 = filtered.first['signing_key'] as String?;
+    if (signingKeyB64 == null) return null;
+    return SimplePublicKey(
+      base64Decode(signingKeyB64),
+      type: KeyPairType.ed25519,
+    );
   }
 
   /// Get or create a Signal session for a specific device of a peer.

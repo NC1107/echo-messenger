@@ -18,6 +18,7 @@ import '../services/sound_service.dart';
 import '../utils/crypto_utils.dart';
 import '../utils/debug_log.dart';
 import '../utils/mention_detection.dart';
+import '../utils/uuid_bytes.dart';
 import 'auth_provider.dart';
 import 'canvas_provider.dart';
 import 'channels_provider.dart';
@@ -349,12 +350,17 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
     // so that replayed offline messages don't spam the user on re-login.
     bool alreadySeen = false,
   }) async {
+    // Phase 2D: GRP2 receive needs message_id to verify the sender
+    // signature against the same UUID the sender bound. Pull from the
+    // raw frame (the server emits it on every relayed message).
+    final messageIdForVerify = json['message_id'] as String?;
     final (decryptedContent, wasEncrypted) = await _decryptContent(
       crypto,
       rawContent,
       fromUserId,
       conversationId,
       fromDeviceId,
+      messageId: messageIdForVerify,
     );
 
     final decryptedJson = Map<String, dynamic>.from(json);
@@ -400,9 +406,12 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
     String rawContent,
     String fromUserId,
     String conversationId,
-    int? fromDeviceId,
-  ) async {
-    final isGroupEncrypted = rawContent.startsWith(groupEncryptedPrefix);
+    int? fromDeviceId, {
+    String? messageId,
+  }) async {
+    final isGrp1 = rawContent.startsWith(groupEncryptedPrefix);
+    final isGrp2 = rawContent.startsWith(groupEncryptedPrefixV2);
+    final isGroupEncrypted = isGrp1 || isGrp2;
 
     // Check if this is a group conversation
     final conversation = ref
@@ -416,7 +425,17 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
         (!isGroupConversation && looksEncrypted(rawContent));
 
     if (isGroupEncrypted) {
-      return (await _decryptGroupMessage(rawContent, conversationId), true);
+      return (
+        await _decryptGroupMessage(
+          crypto,
+          rawContent,
+          conversationId,
+          fromUserId: fromUserId,
+          fromDeviceId: fromDeviceId,
+          messageId: messageId,
+        ),
+        true,
+      );
     } else if (!wasEncrypted) {
       return (rawContent, false);
     } else {
@@ -434,24 +453,91 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
   }
 
   /// Decrypt a group-encrypted message using the group key.
+  ///
+  /// Dispatches by wire prefix:
+  ///   - `GRP2:` → fetch sender's per-device Ed25519 signing pubkey,
+  ///     verify signature over (version, conv_id, msg_id, nonce, ct,
+  ///     tag), then decrypt. Audit OQ-12.
+  ///   - `GRP1:` → legacy path (no signature). Refused when the cached
+  ///     envelope's `min_wire_version` pins the conversation to GRP2,
+  ///     so a hostile sender / server can't downgrade by framing
+  ///     content as GRP1. Audit OQ-11.
   Future<String> _decryptGroupMessage(
+    CryptoService crypto,
     String rawContent,
-    String conversationId,
-  ) async {
+    String conversationId, {
+    required String fromUserId,
+    required int? fromDeviceId,
+    required String? messageId,
+  }) async {
     try {
       final groupCrypto = ref.read(groupCryptoServiceProvider);
       final token = ref.read(authProvider).token ?? '';
       groupCrypto.setToken(token);
       final keyResult = await groupCrypto.getGroupKey(conversationId);
-      if (keyResult != null) {
-        final (_, keyBase64) = keyResult;
-        return await GroupCryptoService.decryptGroupMessage(
-          rawContent,
-          keyBase64,
-        );
-      } else {
+      if (keyResult == null) {
         return '[Could not decrypt - waiting for group key]';
       }
+      final (_, keyBase64) = keyResult;
+      final minWireVersion =
+          groupCrypto.cachedMinWireVersion(conversationId) ?? 1;
+
+      final isGrp2 = rawContent.startsWith(groupEncryptedPrefixV2);
+      if (isGrp2) {
+        if (messageId == null || messageId.isEmpty) {
+          debugLog(
+            'GRP2 wire missing message_id (conv=$conversationId, '
+                'from=$fromUserId)',
+            'WebSocket',
+          );
+          return '[Could not verify sender]';
+        }
+        final senderVerifyKey = await crypto.getSenderVerifyKeyForDevice(
+          fromUserId,
+          fromDeviceId,
+        );
+        if (senderVerifyKey == null) {
+          debugLog(
+            'GRP2 sender verify key not found for '
+                '$fromUserId:$fromDeviceId',
+            'WebSocket',
+          );
+          return '[Could not verify sender]';
+        }
+        try {
+          return await GroupCryptoService.verifyAndDecryptGroupMessageV2(
+            ciphertextWithPrefix: rawContent,
+            keyBase64: keyBase64,
+            expectedConversationIdBytes: uuidStringToBytes(conversationId),
+            expectedMessageIdBytes: uuidStringToBytes(messageId),
+            senderVerifyKey: senderVerifyKey,
+          );
+        } on GroupSenderSignatureException catch (e) {
+          // Render with a distinct placeholder so the chat UI can stripe
+          // the bubble in a danger color (different from key-out-of-sync).
+          debugLog(
+            'GRP2 signature failed for $conversationId msg=$messageId: $e',
+            'WebSocket',
+          );
+          return '[Could not verify sender]';
+        }
+      }
+
+      // GRP1 path. Reject when the envelope has been pinned to GRP2 —
+      // a hostile sender or compromised server cannot downgrade past
+      // the signature requirement once the key version is locked.
+      if (minWireVersion >= 2) {
+        debugLog(
+          'GRP1 wire refused at min_wire_version=$minWireVersion '
+              '(conv=$conversationId)',
+          'WebSocket',
+        );
+        return '[Could not verify sender]';
+      }
+      return await GroupCryptoService.decryptGroupMessage(
+        rawContent,
+        keyBase64,
+      );
     } catch (e) {
       debugLog('Group decrypt failed for $conversationId: $e', 'WebSocket');
       return '[Could not decrypt group message]';

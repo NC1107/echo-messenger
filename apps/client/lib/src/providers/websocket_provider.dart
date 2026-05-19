@@ -12,6 +12,7 @@ import '../services/crypto_service.dart' show IdentityKeyChangedException;
 import '../services/debug_log_service.dart';
 import '../services/group_crypto_service.dart';
 import '../utils/debug_log.dart';
+import '../utils/uuid_bytes.dart';
 import 'auth_provider.dart';
 import 'chat_provider.dart';
 import 'conversations_provider.dart';
@@ -582,6 +583,11 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     final isEncrypted = conversation?.isEncrypted ?? false;
 
     final String payload;
+    // GRP2 wires bind (conversation_id, message_id) into the sender
+    // signature, so when we pick the GRP2 path we have to mint the
+    // message_id BEFORE encrypting and tell the server to respect it.
+    // GRP1 paths leave this null and the server keeps minting its own.
+    String? clientMessageId;
     if (isEncrypted) {
       try {
         final groupCrypto = ref.read(groupCryptoServiceProvider);
@@ -599,10 +605,45 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
           return;
         }
         final (_, keyBase64) = keyResult;
-        payload = await GroupCryptoService.encryptGroupMessage(
-          content,
-          keyBase64,
-        );
+
+        // Phase 2D dispatch: GRP2 if the cached envelope's
+        // min_wire_version pins us there, GRP1 otherwise. Old groups
+        // and groups whose rotator hasn't upgraded yet stay on GRP1
+        // until the next rotation bumps them.
+        final minWireVersion =
+            groupCrypto.cachedMinWireVersion(conversationId) ?? 1;
+        if (minWireVersion >= 2) {
+          final crypto = ref.read(cryptoServiceProvider);
+          final signingKey = crypto.signingKeyPair;
+          if (signingKey == null) {
+            // Identity signing key isn't loaded yet (mid-init). Refuse
+            // to fall back to GRP1 because the envelope is pinned to
+            // GRP2 — that would just bounce off the receiver's
+            // min_wire_version guard. Surface as a typed failure.
+            _addFailedMessage(
+              '',
+              _friendlyEncryptionError('Signing key unavailable for GRP2 send'),
+              conversationId: conversationId,
+              originalContent: content,
+            );
+            return;
+          }
+          final convIdBytes = uuidStringToBytes(conversationId);
+          final msgIdBytes = newUuidBytes();
+          clientMessageId = uuidBytesToString(msgIdBytes);
+          payload = await GroupCryptoService.encryptGroupMessageV2(
+            plaintext: content,
+            keyBase64: keyBase64,
+            conversationIdBytes: convIdBytes,
+            messageIdBytes: msgIdBytes,
+            senderSigningKey: signingKey,
+          );
+        } else {
+          payload = await GroupCryptoService.encryptGroupMessage(
+            content,
+            keyBase64,
+          );
+        }
       } catch (e) {
         debugLog('Group encryption failed: $e', 'WebSocket');
         _addFailedMessage(
@@ -622,6 +663,12 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
       'conversation_id': conversationId,
       'content': payload,
     };
+    if (clientMessageId != null) {
+      // Only set when we minted it for a GRP2 send. Server's
+      // SendMessage handler honours this id when storing the
+      // message; without it the server falls back to gen_random_uuid().
+      msg['client_message_id'] = clientMessageId;
+    }
     if (channelId != null && channelId.isNotEmpty) {
       msg['channel_id'] = channelId;
     }

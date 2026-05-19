@@ -59,6 +59,10 @@ pub(super) async fn handle_send_message(
     reply_to_id: Option<Uuid>,
     recipient_device_contents: Option<RecipientDeviceContents>,
     ttl_seconds: Option<i64>,
+    // GRP2 senders mint this client-side and bind it into the sender
+    // signature; the server has to honour it or signature verification
+    // breaks (audit OQ-12). Plaintext / GRP1 senders leave it `None`.
+    client_message_id: Option<Uuid>,
 ) {
     if !validate_message_length(state, sender_id, &content) {
         return;
@@ -117,6 +121,7 @@ pub(super) async fn handle_send_message(
         ttl_seconds,
         conv_security.disappearing_ttl_seconds,
         conv_security.is_encrypted,
+        client_message_id,
     )
     .await
     else {

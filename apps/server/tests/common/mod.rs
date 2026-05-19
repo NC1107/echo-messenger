@@ -376,6 +376,40 @@ pub async fn create_group(client: &Client, base: &str, token: &str, name: &str) 
     body["id"].as_str().unwrap().to_string()
 }
 
+/// Phase 5 flipped the default for new groups to `is_encrypted = true`,
+/// so tests that exercise plaintext-only contracts (mention persistence,
+/// server-side content inspection) need an explicit downgrade path.
+/// This helper writes the column directly; there is no REST endpoint
+/// because production has no "un-encrypt this group" affordance.
+#[allow(dead_code)]
+pub async fn flip_unencrypted(pool: &sqlx::PgPool, group_id: &str) {
+    sqlx::query("UPDATE conversations SET is_encrypted = false WHERE id = $1")
+        .bind(uuid::Uuid::parse_str(group_id).unwrap())
+        .execute(pool)
+        .await
+        .expect("flip_unencrypted failed");
+}
+
+/// Convenience wrapper: create a group via the public API and then
+/// downgrade it to `is_encrypted = false` for tests that need to
+/// exercise the plaintext send-path. Opens its own short-lived pool
+/// using `TEST_DATABASE_URL` / `DATABASE_URL`.
+#[allow(dead_code)]
+pub async fn create_plaintext_group(
+    client: &Client,
+    base: &str,
+    token: &str,
+    name: &str,
+) -> String {
+    let id = create_group(client, base, token, name).await;
+    let url = std::env::var("TEST_DATABASE_URL")
+        .or_else(|_| std::env::var("DATABASE_URL"))
+        .expect("TEST_DATABASE_URL or DATABASE_URL must be set");
+    let pool = echo_server::db::create_pool(&url).await;
+    flip_unencrypted(&pool, &id).await;
+    id
+}
+
 // ---------------------------------------------------------------------------
 // Ciphertext helpers
 // ---------------------------------------------------------------------------

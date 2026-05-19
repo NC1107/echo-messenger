@@ -33,7 +33,7 @@ A separate, future Phase 1.5 (still unbuilt) would extend the validator to also 
 
 ## Phase 2 — GRP2 wire format (client + server)
 
-**Status**: Phase 2A ✅ (server schema + API for `min_wire_version`). Phase 2B ✅ (client-side static GRP2 packer/unpacker with Ed25519 sender signature). Phase 2C ⏳ (production wire-up: mint message_id client-side, plumb conv/msg context through WS frames, dispatch encrypt by cached `min_wire_version`).
+**Status**: Phase 2A ✅ (server schema + API for `min_wire_version`). Phase 2B ✅ (client-side static GRP2 packer/unpacker with Ed25519 sender signature). Phase 2C ✅ (cache shape + dispatch accessor). Phase 2D ✅ (production wire-up: GRP2 send-path mints `client_message_id`, server honours it via `INSERT ... COALESCE($8, gen_random_uuid())`, receive-path fetches per-device verify key + calls `verifyAndDecryptGroupMessageV2`, history-load path mirrors the dispatch, downgrade refusal pinned by cached `min_wire_version`).
 
 **Goal**: support GRP2 alongside GRP1. Senders default to GRP2; receivers accept both — *within the bounds of the downgrade-attack mitigation below*.
 
@@ -68,6 +68,8 @@ Estimate: 4–5 days code (was 3-4 — the `min_wire_version` column + receiver 
 
 **Goal**: rotation completes reliably with one online member.
 
+**Status**: Phase 3a ✅ — `group_key_rotations` audit log (OQ-13) shipped: append-only ledger written inside the same tx as the envelope upload, exposed via `GET /api/groups/:id/encryption-activity` (admin-only). Senders pass `triggered_by_event` so the audit row records the reason. Phase 3b ⏳ — client-side deterministic leader election + staggered backoff (the `leader = members[hash(...) mod N]` ordering described below).
+
 - One PR. Adds the `leader = members[hash(...) mod N]` ordering + staggered backoff.
 - Requires server to emit `trigger_event_id` on every membership-change / rotate-request event. Small server change.
 - Tests: an integration test that simulates all-online, leader-only-online, follower-only-online, and split-brain (two leaders elected by inconsistent member views). The last one is the interesting case — we want to confirm the UNIQUE-constraint tie-breaker behaves as the spec says.
@@ -77,6 +79,8 @@ Estimate: 4–5 days.
 ## Phase 4 — Recovery UX
 
 **Goal**: when group decrypt fails, the user can act.
+
+**Status**: ✅ shipped. `EncryptionStatusBanner` now carries two group-specific variants in addition to the 1:1 reset path: a warning-coloured "Can't decrypt this group's recent messages — Refresh key" banner (action wired to `chatProvider.refreshGroupKey`, which drops the cached envelope and refetches) and a danger-coloured "Couldn't verify the sender" banner (no auto-recovery; user dismisses after contacting an admin). `ChatState` tracks both `consecutiveDecryptFailures` (transient, reset on any success) and `signatureFailures` (sticky security signal).
 
 - One PR. Frontend-only.
 - Adds two banners:
@@ -89,6 +93,8 @@ Estimate: 3 days.
 ## Phase 5 — Toggle defaults
 
 **Goal**: new groups default to `is_encrypted=true`.
+
+**Status**: ✅ shipped. `db::groups::create_group_with_visibility` now sets `is_encrypted = true` in the INSERT. Tests that exercise the plaintext-group send-path use a new `common::create_plaintext_group` helper that downgrades immediately after creation.
 
 - Smallest PR. One flag flip in the create-group screen + the server-side default.
 - Rolled out behind a feature flag for two weeks. Monitor: rate of group-decrypt failures, rate of rotation-completion latency, rate of `[Could not decrypt…]` placeholders.

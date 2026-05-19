@@ -53,9 +53,14 @@ pub async fn create_group_with_visibility(
 ) -> Result<GroupInfo, sqlx::Error> {
     let mut tx = pool.begin().await?;
 
+    // Phase 5 (audit OQ-3): new groups default to is_encrypted = true.
+    // The 1:1 DM path already sets this column explicitly; mirroring
+    // the default here means a freshly created group goes through the
+    // GRP1/GRP2 ciphertext path from the very first message. Existing
+    // unencrypted groups are unaffected — this only fires on INSERT.
     let group: GroupInfo = sqlx::query_as(
-        "INSERT INTO conversations (kind, title, is_public, description) \
-         VALUES ('group', $1, $2, $3) \
+        "INSERT INTO conversations (kind, title, is_public, description, is_encrypted) \
+         VALUES ('group', $1, $2, $3, true) \
          RETURNING id, title, kind, description, icon_url, created_at",
     )
     .bind(name)

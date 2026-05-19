@@ -650,6 +650,7 @@ class GroupCryptoService {
     int keyVersion, {
     required Future<List<Map<String, dynamic>>> Function() fetchMembers,
     required Future<Uint8List?> Function(String userId) fetchIdentityKey,
+    String triggeredByEvent = 'unspecified',
   }) {
     // Audit P1-4: timeline event captures the full rotation cost (member
     // fetch + N ECDH envelope wraps + server POST). Rotation is rare in
@@ -661,6 +662,7 @@ class GroupCryptoService {
         keyVersion,
         fetchMembers: fetchMembers,
         fetchIdentityKey: fetchIdentityKey,
+        triggeredByEvent: triggeredByEvent,
       ),
       args: {'conversation': conversationId, 'keyVersion': keyVersion},
     );
@@ -671,6 +673,7 @@ class GroupCryptoService {
     int keyVersion, {
     required Future<List<Map<String, dynamic>>> Function() fetchMembers,
     required Future<Uint8List?> Function(String userId) fetchIdentityKey,
+    required String triggeredByEvent,
   }) async {
     // Drop the stale key first so we never encrypt with the now-revoked
     // material on the next outgoing message — even if we cannot finish the
@@ -718,7 +721,11 @@ class GroupCryptoService {
           'Authorization': 'Bearer $_token',
           'Content-Type': 'application/json',
         },
-        body: jsonEncode({'key_version': keyVersion, 'envelopes': envelopes}),
+        body: jsonEncode({
+          'key_version': keyVersion,
+          'envelopes': envelopes,
+          'triggered_by_event': triggeredByEvent,
+        }),
       );
 
       if (response.statusCode == 409) {
@@ -756,8 +763,9 @@ class GroupCryptoService {
   /// Returns the new version number, or null on failure.
   Future<int?> rotateGroupKey(
     String conversationId,
-    List<Map<String, dynamic>> members,
-  ) async {
+    List<Map<String, dynamic>> members, {
+    String triggeredByEvent = 'unspecified',
+  }) async {
     if (_cryptoService == null) {
       debugPrint('[GroupCrypto] Cannot rotate key: no CryptoService set');
       return null;
@@ -802,7 +810,11 @@ class GroupCryptoService {
           'Authorization': 'Bearer $_token',
           'Content-Type': 'application/json',
         },
-        body: jsonEncode({'key_version': nextVersion, 'envelopes': envelopes}),
+        body: jsonEncode({
+          'key_version': nextVersion,
+          'envelopes': envelopes,
+          'triggered_by_event': triggeredByEvent,
+        }),
       );
 
       if (response.statusCode != 201) {
@@ -858,6 +870,15 @@ class GroupCryptoService {
     final store = SecureKeyStore.instance;
     await store.write('group_key_${conversationId}_$version', keyBase64);
   }
+
+  /// Public alias for [_purgeKey] used by the group recovery banner
+  /// (Phase 4). When the user taps "Refresh key" because messages are
+  /// rendering as "[Could not decrypt - waiting for group key]", the
+  /// chat panel calls this then [getGroupKey] to pull a fresh envelope
+  /// from the server. We do NOT auto-rotate; we just dump the local
+  /// cache and re-read whatever the server currently advertises.
+  Future<void> dropCachedKey(String conversationId) =>
+      _purgeKey(conversationId);
 
   /// Drop every cached/persisted key for [conversationId] across all
   /// versions. Used during rotation (#656) so a kicked member who still has

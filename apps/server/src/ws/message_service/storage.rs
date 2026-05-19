@@ -189,6 +189,7 @@ pub(in crate::ws::message_service) async fn store_and_confirm(
     ttl_seconds: Option<i64>,
     conv_ttl_seconds: Option<i32>,
     is_encrypted: bool,
+    client_message_id: Option<Uuid>,
 ) -> Option<db::messages::MessageRow> {
     let effective_ttl = resolve_effective_ttl(ttl_seconds, conv_ttl_seconds);
 
@@ -205,6 +206,7 @@ pub(in crate::ws::message_service) async fn store_and_confirm(
         content,
         reply_to_id,
         effective_ttl,
+        client_message_id,
     )
     .await
     {
@@ -221,6 +223,23 @@ pub(in crate::ws::message_service) async fn store_and_confirm(
                 sender_id,
                 "reply_to message not found in this conversation",
             );
+            return None;
+        }
+        Err(sqlx::Error::Database(db_err))
+            if db_err.is_unique_violation() && client_message_id.is_some() =>
+        {
+            // Client minted a UUID that collides with an existing row.
+            // Returning a typed error lets the sender retry with a
+            // fresh UUID (and re-sign for GRP2). Vanishingly rare for
+            // v4 UUIDs but still worth handling explicitly so the
+            // confirm/fanout path doesn't run on someone else's row.
+            tracing::warn!(
+                user_id = %sender_id,
+                conversation_id = %conv_id,
+                client_message_id = ?client_message_id,
+                "client-minted message id collision"
+            );
+            send_error(state, sender_id, "client_message_id collision");
             return None;
         }
         Err(_) => {
