@@ -265,7 +265,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       },
       onLeave: canLeave ? () => _leaveGroup(conv) : null,
       onDelete: conv.isGroup
-          ? (canDeleteGroup ? () => _leaveGroup(conv) : null)
+          ? (canDeleteGroup ? () => _deleteGroup(conv) : null)
           : () => _deleteDm(conv),
     );
   }
@@ -350,6 +350,75 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         ToastService.show(
           context,
           'Error leaving group: $e',
+          type: ToastType.error,
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteGroup(Conversation conv) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: context.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: context.border),
+        ),
+        title: const Text(
+          'Delete Group',
+          style: TextStyle(
+            color: EchoTheme.danger,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          'This will permanently delete "${conv.name ?? "this group"}" '
+          'and all its messages for everyone. This cannot be undone.',
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 14,
+            height: 1.5,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      final success = await ref
+          .read(conversationsProvider.notifier)
+          .deleteGroup(conv.id);
+
+      if (!mounted) return;
+
+      if (success) {
+        ToastService.show(context, 'Group deleted.', type: ToastType.success);
+      } else {
+        ToastService.show(
+          context,
+          'Failed to delete group',
+          type: ToastType.error,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Error deleting group: $e',
           type: ToastType.error,
         );
       }

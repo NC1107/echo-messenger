@@ -348,8 +348,9 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                 ),
               ),
             ),
-            // Active-conversation accent bar — 4px wide left edge marker.
-            // Stronger glance signal than the existing tint alone.
+            // Active-conversation accent pill — 4px wide left-edge marker
+            // with fully rounded ends so it reads as a Discord-style
+            // selection pill rather than a sharp-cornered bar.
             // IgnorePointer so taps pass through to the InkWell.
             if (widget.isSelected)
               Positioned(
@@ -361,9 +362,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                     width: 4,
                     decoration: BoxDecoration(
                       color: context.activeRowAccent,
-                      borderRadius: const BorderRadius.horizontal(
-                        right: Radius.circular(2),
-                      ),
+                      borderRadius: BorderRadius.circular(2),
                     ),
                   ),
                 ),
