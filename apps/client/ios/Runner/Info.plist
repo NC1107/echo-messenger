@@ -59,6 +59,8 @@
 	<string>Echo uses Bluetooth audio routes for voice calls</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Echo discovers self-hosted servers on your local network</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Echo never asks for your location. This entry exists because photo_manager (an image-attachment helper) links against Core Location for EXIF geotag handling; we never request or transmit location data.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

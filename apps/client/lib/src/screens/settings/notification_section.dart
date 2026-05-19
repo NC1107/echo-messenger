@@ -9,6 +9,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../providers/voice_settings_provider.dart';
+import '../../services/debug_log_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/sound_service.dart';
 import '../../services/toast_service.dart';
@@ -859,8 +860,27 @@ class _VoiceVideoSectionState extends ConsumerState<VoiceVideoSection> {
   Future<void> _loadAudioDevices() async {
     if (_devicesLoaded) return;
     _devicesLoaded = true;
+
+    // TestFlight build 500 crashed on iOS 26.5 with
+    // -[__NSDictionaryM isEqualToString:]: unrecognized selector
+    // when opening this screen. The exception is native (Objective-C
+    // runtime), but the trigger is this Dart -> flutter_webrtc call.
+    // Capture step-by-step breadcrumbs so the next reproduction leaves
+    // forensic data in the on-disk debug log instead of a stripped
+    // stack with no context.
+    DebugLogService.instance.log(
+      LogLevel.info,
+      'VoiceSettings',
+      '_loadAudioDevices: start (platform=$defaultTargetPlatform)',
+    );
     try {
       final devices = await webrtc.navigator.mediaDevices.enumerateDevices();
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'VoiceSettings',
+        '_loadAudioDevices: enumerateDevices returned ${devices.length} '
+            'device(s)',
+      );
       final inputs = <Map<String, String>>[
         {'id': 'default', 'name': 'Default Microphone'},
       ];
@@ -887,8 +907,22 @@ class _VoiceVideoSectionState extends ConsumerState<VoiceVideoSection> {
           _videoInputDevices = cameras;
         });
       }
-    } catch (_) {
-      // Enumeration not available on this platform
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'VoiceSettings',
+        '_loadAudioDevices: applied ${inputs.length} in / '
+            '${outputs.length} out / ${cameras.length} cam',
+      );
+    } catch (e, st) {
+      // Persist the error so we can see it on the next launch even if
+      // the app crashed afterward. The previous bare `catch (_) {}`
+      // swallowed everything including the type-confusion that may
+      // precede the native isEqualToString: crash.
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'VoiceSettings',
+        '_loadAudioDevices threw: $e\n$st',
+      );
     }
   }
 

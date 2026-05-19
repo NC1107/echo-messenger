@@ -185,23 +185,32 @@ void main() {
       expect(tappedConversation!.id, 'conv-1');
     });
 
-    testWidgets('shows search bar area on mobile', (tester) async {
-      // Sidebar search is hidden on desktop (≥600px) — global search is
-      // the only entrypoint. Force a mobile-sized viewport so the search
-      // bar still renders here.
-      tester.view.physicalSize = const Size(400, 800);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.reset);
+    testWidgets(
+      'shows global-search icon in header on mobile, no inline filter bar',
+      (tester) async {
+        // The "Search conversations" inline filter bar was removed on
+        // mobile so the search entrypoint matches desktop: a single
+        // global-search icon in the header that opens the messages-
+        // search overlay. This test guards the desktop-search memory
+        // rule (single search entrypoint) from accidental reintroduction
+        // of the inline filter UI.
+        tester.view.physicalSize = const Size(400, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
 
-      await tester.pumpApp(
-        ConversationPanel(onConversationTap: (_) {}),
-        overrides: standardOverrides(),
-      );
-      await tester.pump();
+        await tester.pumpApp(
+          ConversationPanel(onConversationTap: (_) {}, onGlobalSearch: () {}),
+          overrides: standardOverrides(),
+        );
+        await tester.pump();
 
-      // Search bar is a GestureDetector with a Container containing search icon
-      expect(find.byIcon(Icons.search_outlined), findsOneWidget);
-    });
+        // Exactly one search icon — the header's global-search button.
+        // No inline filter bar should render below the header.
+        expect(find.byIcon(Icons.search_outlined), findsOneWidget);
+        // And there's no "Search conversations" placeholder text anymore.
+        expect(find.text('Search conversations'), findsNothing);
+      },
+    );
 
     testWidgets('empty state shows message when no conversations', (
       tester,

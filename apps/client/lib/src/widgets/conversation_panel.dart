@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -89,36 +88,21 @@ class ConversationPanel extends ConsumerStatefulWidget {
 }
 
 class _ConversationPanelState extends ConsumerState<ConversationPanel> {
-  bool _isSearching = false;
-  final _searchController = TextEditingController();
-  final _searchFocusNode = FocusNode();
-  final _keyboardListenerFocusNode = FocusNode();
-  // Timer removed -- HomeScreen handles pending contacts polling
-
   /// True after the user manually dismisses the "session replaced" banner.
   /// Resets on next reconnect (the websocket clears `wasReplaced`, and we
   /// re-show the banner if a future replacement happens).
   bool _replacedBannerDismissed = false;
-
-  /// Debounce timer for the search field. Delays the fuzzy-score recompute
-  /// so we don't run it on every keystroke.
-  Timer? _searchDebounce;
 
   @override
   void initState() {
     super.initState();
     _loadPinnedIds();
     _startPendingRefreshLoop();
-    widget.externalSearchFocusNode?.addListener(_onExternalSearchFocus);
   }
 
   @override
   void didUpdateWidget(covariant ConversationPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.externalSearchFocusNode != oldWidget.externalSearchFocusNode) {
-      oldWidget.externalSearchFocusNode?.removeListener(_onExternalSearchFocus);
-      widget.externalSearchFocusNode?.addListener(_onExternalSearchFocus);
-    }
     // When a conversation is selected externally, reset the filter so the
     // selected conversation is visible and highlighted.
     if (widget.selectedConversationId != null &&
@@ -133,23 +117,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
 
   @override
   void dispose() {
-    widget.externalSearchFocusNode?.removeListener(_onExternalSearchFocus);
-    _searchController.dispose();
-    _searchFocusNode.dispose();
-    _keyboardListenerFocusNode.dispose();
-    _searchDebounce?.cancel();
     super.dispose();
-  }
-
-  /// Debounced search handler (150ms). Avoids running fuzzyScore over every
-  /// conversation on every keystroke.
-  void _onSearchChanged(String value) {
-    final trimmed = value.trim();
-    _searchDebounce?.cancel();
-    _searchDebounce = Timer(const Duration(milliseconds: 150), () {
-      if (!mounted) return;
-      ref.read(conversationSearchQueryProvider.notifier).set(trimmed);
-    });
   }
 
   // Pending contacts refresh is handled by HomeScreen's timer -- no duplicate here.
@@ -164,19 +132,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   void _onFilterChanged(ConversationFilterType filter) {
     if (ref.read(conversationFilterTypeProvider) == filter) return;
     ref.read(conversationFilterTypeProvider.notifier).set(filter);
-  }
-
-  void _onExternalSearchFocus() {
-    if (widget.externalSearchFocusNode?.hasFocus == true) {
-      _activateSearch();
-    }
-  }
-
-  void _activateSearch() {
-    setState(() => _isSearching = true);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _searchFocusNode.requestFocus();
-    });
   }
 
   Future<void> _loadPinnedIds() async {
@@ -218,15 +173,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     ref
         .read(conversationsProvider.notifier)
         .setPinned(conversationId, !isPinned);
-  }
-
-  void _clearSearch() {
-    _searchDebounce?.cancel();
-    ref.read(conversationSearchQueryProvider.notifier).set('');
-    setState(() {
-      _isSearching = false;
-      _searchController.clear();
-    });
   }
 
   Future<void> _handleContextMenuSelection(
@@ -526,7 +472,10 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           Column(
             children: [
               _buildLogoHeader(context, pendingCount),
-              _buildSearchBar(context),
+              // Mobile used to render a separate "Search conversations"
+              // filter bar here; removed in favour of the header's
+              // global-search icon (matches desktop, per the
+              // feedback_desktop_search memory rule).
               _buildFilterChips(),
               _buildReplacedBanner(context, wsReplaced),
               if (pendingCount > 0) _buildPendingBanner(pendingCount),
@@ -685,12 +634,19 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
             ),
           ],
-          if (!isMobile && widget.onGlobalSearch != null) ...[
+          // Global-search entrypoint on both mobile and desktop. The
+          // mobile build used to expose a separate "filter conversations"
+          // search bar below the header; we dropped that to match the
+          // single-search-entrypoint pattern the desktop already uses
+          // (see the feedback_desktop_search memory rule).
+          if (widget.onGlobalSearch != null) ...[
             const SizedBox(width: 2),
             IconButton(
               icon: const Icon(Icons.search_outlined, size: 18),
               color: context.textSecondary,
-              tooltip: 'Search messages (Ctrl+Shift+F)',
+              tooltip: isMobile
+                  ? 'Search messages'
+                  : 'Search messages (Ctrl+Shift+F)',
               onPressed: widget.onGlobalSearch,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
@@ -845,101 +801,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               ),
             ),
           ),
-      ],
-    );
-  }
-
-  Widget _buildSearchBar(BuildContext context) {
-    final isMobile = MediaQuery.sizeOf(context).width < 600;
-    if (!isMobile) return const SizedBox.shrink();
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-      child: GestureDetector(
-        onTap: () {
-          if (!_isSearching) {
-            setState(() => _isSearching = true);
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              _searchFocusNode.requestFocus();
-            });
-          }
-        },
-        child: Container(
-          height: 44,
-          decoration: BoxDecoration(
-            color: context.surface,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: _isSearching
-              ? _buildActiveSearchBar(context)
-              : _buildInactiveSearchBar(context),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActiveSearchBar(BuildContext context) {
-    final searchQuery = ref.watch(conversationSearchQueryProvider);
-    return KeyboardListener(
-      focusNode: _keyboardListenerFocusNode,
-      onKeyEvent: (event) {
-        if (event is KeyDownEvent &&
-            event.logicalKey == LogicalKeyboardKey.escape) {
-          _clearSearch();
-        }
-      },
-      child: Row(
-        children: [
-          const SizedBox(width: 12),
-          Icon(Icons.search_outlined, size: 18, color: context.textMuted),
-          const SizedBox(width: 8),
-          Expanded(
-            child: TextField(
-              controller: _searchController,
-              focusNode: _searchFocusNode,
-              autofocus: true,
-              style: TextStyle(color: context.textPrimary, fontSize: 13),
-              decoration: InputDecoration(
-                hintText: 'Search conversations',
-                hintStyle: TextStyle(color: context.textMuted, fontSize: 13),
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                filled: false,
-                contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                isDense: true,
-              ),
-              onChanged: _onSearchChanged,
-            ),
-          ),
-          if (searchQuery.isNotEmpty)
-            IconButton(
-              icon: const Icon(Icons.close, size: 16),
-              color: context.textMuted,
-              onPressed: _clearSearch,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-            )
-          else
-            const SizedBox(width: 8),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInactiveSearchBar(BuildContext context) {
-    return Row(
-      children: [
-        const SizedBox(width: 12),
-        Icon(Icons.search_outlined, size: 18, color: context.textMuted),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            'Search conversations',
-            style: TextStyle(color: context.textMuted, fontSize: 13),
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
       ],
     );
   }
