@@ -299,6 +299,37 @@ mixin _ConversationsHttpActionsMixin on Notifier<ConversationsState> {
     }
   }
 
+  /// Delete a group conversation (owner only) and remove it from local
+  /// state. The server enforces the owner check via DELETE /api/groups/:id;
+  /// non-owners get 403. Returns true on success, false on failure.
+  Future<bool> deleteGroup(String groupId) async {
+    try {
+      final response = await _authenticatedRequest(
+        (token) => http.delete(
+          Uri.parse('$_serverUrl/api/groups/$groupId'),
+          headers: _headersWithToken(token),
+        ),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        final updated = state.conversations
+            .where((c) => c.id != groupId)
+            .toList();
+        state = state.copyWith(conversations: updated);
+        return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('[Conversations] deleteGroup failed for $groupId: $e');
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'Conversations',
+        'deleteGroup error for $groupId: $e',
+      );
+      return false;
+    }
+  }
+
   /// Create a new group conversation.
   Future<String?> createGroup(
     String name,

@@ -777,52 +777,64 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         child: SizedBox(
                           width: 44,
                           height: 44,
-                          child: Center(
-                            child: Container(
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: isSelected
-                                    ? Border.all(
-                                        color: context.accent,
-                                        width: 2,
-                                      )
-                                    : null,
-                              ),
-                              child: Builder(
-                                builder: (_) {
-                                  final String? avatarUrl;
-                                  if (conv.isGroup) {
-                                    avatarUrl = resolveAvatarUrl(
-                                      conv.iconUrl,
-                                      serverUrl,
+                          // Stack so the left-edge selection pill can sit
+                          // alongside the centred avatar without affecting
+                          // its layout. Matches the pattern used in
+                          // conversation_item so both sidebars agree.
+                          child: Stack(
+                            children: [
+                              Center(
+                                child: Builder(
+                                  builder: (_) {
+                                    final String? avatarUrl;
+                                    if (conv.isGroup) {
+                                      avatarUrl = resolveAvatarUrl(
+                                        conv.iconUrl,
+                                        serverUrl,
+                                      );
+                                    } else {
+                                      final peer = conv.members
+                                          .where((m) => m.userId != myUserId)
+                                          .firstOrNull;
+                                      avatarUrl = resolveAvatarUrl(
+                                        peer?.avatarUrl,
+                                        serverUrl,
+                                      );
+                                    }
+                                    return buildAvatar(
+                                      name: displayName,
+                                      radius: 18,
+                                      imageUrl: avatarUrl,
+                                      bgColor: conv.isGroup
+                                          ? groupAvatarColor(displayName)
+                                          : null,
+                                      fallbackIcon: conv.isGroup
+                                          ? const Icon(
+                                              Icons.group,
+                                              size: 16,
+                                              color: Colors.white,
+                                            )
+                                          : null,
                                     );
-                                  } else {
-                                    final peer = conv.members
-                                        .where((m) => m.userId != myUserId)
-                                        .firstOrNull;
-                                    avatarUrl = resolveAvatarUrl(
-                                      peer?.avatarUrl,
-                                      serverUrl,
-                                    );
-                                  }
-                                  return buildAvatar(
-                                    name: displayName,
-                                    radius: 18,
-                                    imageUrl: avatarUrl,
-                                    bgColor: conv.isGroup
-                                        ? groupAvatarColor(displayName)
-                                        : null,
-                                    fallbackIcon: conv.isGroup
-                                        ? const Icon(
-                                            Icons.group,
-                                            size: 16,
-                                            color: Colors.white,
-                                          )
-                                        : null,
-                                  );
-                                },
+                                  },
+                                ),
                               ),
-                            ),
+                              if (isSelected)
+                                Positioned(
+                                  left: 0,
+                                  top: 8,
+                                  bottom: 8,
+                                  child: IgnorePointer(
+                                    child: Container(
+                                      width: 4,
+                                      decoration: BoxDecoration(
+                                        color: context.activeRowAccent,
+                                        borderRadius: BorderRadius.circular(2),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                       ),
