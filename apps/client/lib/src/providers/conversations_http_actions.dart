@@ -328,6 +328,28 @@ mixin _ConversationsHttpActionsMixin on Notifier<ConversationsState> {
         final conversationId =
             data['conversation_id'] as String? ?? data['id'] as String? ?? '';
         await loadConversations();
+        // Phase 5 (audit OQ-3): server creates groups with
+        // `is_encrypted = true`, so the creator MUST upload an
+        // initial per-member key envelope or the group will 400 on
+        // every subsequent `/keys/latest` fetch. Run the seed inline
+        // (not unawaited) so the caller's "group created" navigation
+        // doesn't race a missing-key wedge on the first message.
+        if (conversationId.isNotEmpty) {
+          try {
+            await ref
+                .read(cryptoProvider.notifier)
+                .seedInitialGroupKey(conversationId);
+          } catch (e) {
+            // Seeding failure is non-fatal at this point — the
+            // conversation row exists, the user is in the group, and
+            // self-heal in [GroupCryptoService.getGroupKey] will
+            // retry the rotation on the next message attempt.
+            debugPrint(
+              '[ConversationsHttp] seedInitialGroupKey failed for '
+              '$conversationId: $e',
+            );
+          }
+        }
         return conversationId;
       } else {
         final data = jsonDecode(response.body) as Map<String, dynamic>;

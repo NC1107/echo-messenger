@@ -245,125 +245,43 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   }
 
   Widget _buildUpdatePrompt(BuildContext context) {
-    final update = ref.watch(updateProvider);
-    final isDownloading = update.status == UpdateStatus.downloading;
-    final isInstalling = update.status == UpdateStatus.installing;
-    final isReady = update.status == UpdateStatus.readyToInstall;
-    final isError = update.status == UpdateStatus.error;
-    final isBusy = isDownloading || isInstalling;
+    // Desktop renders inside the 320×440 chromeless splash window, so the
+    // update prompt has to reuse the splash shell — same `mainBg`, same
+    // ambient halo, same brand block — and just swap the bottom action
+    // slot. Mobile/web fall through to full-screen with the same
+    // composition, mirroring [_SplashBody.compact].
+    final isCompact =
+        !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.linux ||
+            defaultTargetPlatform == TargetPlatform.windows ||
+            defaultTargetPlatform == TargetPlatform.macOS);
+
+    final body = _UpdatePromptBody(
+      compact: isCompact,
+      fade: _fadeAnimation,
+      onSkip: () => _navigateAfterInit(_loggedIn),
+    );
+
+    if (isCompact) {
+      return Scaffold(
+        backgroundColor: Colors.transparent,
+        body: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: context.mainBg,
+              border: Border.all(color: context.border),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: body,
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: context.mainBg,
-      body: Center(
-        child: FadeTransition(
-          opacity: _fadeAnimation,
-          child: Container(
-            width: 360,
-            padding: const EdgeInsets.all(32),
-            decoration: BoxDecoration(
-              color: context.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: context.border),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const EchoLogoIcon(size: 48),
-                const SizedBox(height: 16),
-                Text(
-                  'Update Available',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    color: context.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'v$appVersion  ->  v${update.latestVersion}',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: context.textMuted,
-                    fontFamily: 'monospace',
-                  ),
-                ),
-                const SizedBox(height: 24),
-                if (isDownloading) ...[
-                  LinearProgressIndicator(
-                    value: update.downloadProgress,
-                    color: context.accent,
-                    backgroundColor: context.border,
-                    minHeight: 4,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Downloading... ${(update.downloadProgress * 100).toInt()}%',
-                    style: TextStyle(fontSize: 12, color: context.textMuted),
-                  ),
-                ],
-                if (isInstalling)
-                  Text(
-                    'Installing...',
-                    style: TextStyle(fontSize: 12, color: context.textMuted),
-                  ),
-                if (isError) ...[
-                  Text(
-                    update.errorMessage ?? 'Download failed',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.redAccent,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                if (isReady) ...[
-                  FilledButton.icon(
-                    onPressed: () =>
-                        ref.read(updateProvider.notifier).applyUpdate(),
-                    icon: const Icon(Icons.restart_alt, size: 16),
-                    label: const Text('Restart to Update'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: context.accent,
-                      minimumSize: const Size(double.infinity, 40),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                ],
-                if (!isReady && !isInstalling) ...[
-                  if (!isDownloading)
-                    FilledButton(
-                      onPressed: () =>
-                          ref.read(updateProvider.notifier).downloadUpdate(),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: context.accent,
-                        minimumSize: const Size(double.infinity, 40),
-                      ),
-                      child: const Text('Download Update'),
-                    ),
-                  const SizedBox(height: 8),
-                  TextButton(
-                    onPressed: isBusy
-                        ? null
-                        : () => _navigateAfterInit(_loggedIn),
-                    style: TextButton.styleFrom(
-                      minimumSize: const Size(double.infinity, 40),
-                    ),
-                    child: Text(
-                      'Skip',
-                      style: TextStyle(
-                        color: isBusy
-                            ? context.textMuted.withValues(alpha: 0.4)
-                            : context.textMuted,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
+      body: SafeArea(child: body),
     );
   }
 
@@ -517,6 +435,235 @@ class _SplashBody extends StatelessWidget {
                     _StatusCaption(text: statusText),
                     const SizedBox(height: 14),
                     const _ProgressSweep(),
+                    if (!compact) ...[
+                      const SizedBox(height: 18),
+                      Text(
+                        'v$appVersion',
+                        style: EchoTheme.mono(
+                          fontSize: 10,
+                          color: context.textMuted,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                if (compact)
+                  Text(
+                    'v$appVersion',
+                    style: EchoTheme.mono(
+                      fontSize: 10,
+                      color: context.textMuted,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Update-available composition. Mirrors [_SplashBody]'s shell so the
+/// "we're about to boot you into the app" splash and the "we have an
+/// update first" prompt read as the same screen — same halo, same brand
+/// block, same outer padding — with only the bottom slot swapping from
+/// the boot-status caption to the version-cycle caption + action
+/// buttons.
+class _UpdatePromptBody extends ConsumerWidget {
+  const _UpdatePromptBody({
+    required this.compact,
+    required this.fade,
+    required this.onSkip,
+  });
+
+  final bool compact;
+  final Animation<double> fade;
+  final VoidCallback onSkip;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final update = ref.watch(updateProvider);
+    final isDownloading = update.status == UpdateStatus.downloading;
+    final isInstalling = update.status == UpdateStatus.installing;
+    final isReady = update.status == UpdateStatus.readyToInstall;
+    final isError = update.status == UpdateStatus.error;
+    final isBusy = isDownloading || isInstalling;
+
+    final accent = context.accent;
+    final logoSize = compact ? 64.0 : 84.0;
+    final wordmarkSize = compact ? 22.0 : 28.0;
+    final taglineSize = compact ? 12.0 : 13.0;
+    final outerPadding = compact
+        ? const EdgeInsets.fromLTRB(28, 44, 28, 22)
+        : const EdgeInsets.fromLTRB(36, 24, 36, 38);
+
+    return FadeTransition(
+      opacity: fade,
+      child: Stack(
+        children: [
+          Positioned(
+            top: compact ? -120 : -40,
+            left: 0,
+            right: 0,
+            child: IgnorePointer(
+              child: Center(
+                child: Container(
+                  width: compact ? 360 : 420,
+                  height: compact ? 360 : 420,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [
+                        accent.withValues(alpha: 0.13),
+                        accent.withValues(alpha: 0.0),
+                      ],
+                      stops: const [0.0, 0.6],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: outerPadding,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // Brand block (logo + wordmark + tagline). Identical
+                // geometry to _SplashBody so the prompt slides into the
+                // same window without a visual jolt.
+                Padding(
+                  padding: EdgeInsets.only(top: compact ? 12 : 60),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      EchoLogoIcon(size: logoSize),
+                      SizedBox(height: compact ? 18 : 24),
+                      Text(
+                        'Echo',
+                        style: TextStyle(
+                          fontSize: wordmarkSize,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.5,
+                          height: 1.0,
+                          color: context.textPrimary,
+                        ),
+                      ),
+                      SizedBox(height: compact ? 8 : 10),
+                      Text(
+                        'Update available',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: taglineSize,
+                          color: context.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Action block. Mirrors _SplashBody's status-caption +
+                // progress-sweep position so the eye lands in the same
+                // place across both screens.
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'v$appVersion  →  v${update.latestVersion}',
+                      style: EchoTheme.mono(
+                        fontSize: 12,
+                        color: context.textMuted,
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    if (isDownloading) ...[
+                      SizedBox(
+                        width: compact ? 220 : 280,
+                        child: LinearProgressIndicator(
+                          value: update.downloadProgress,
+                          color: accent,
+                          backgroundColor: context.border,
+                          minHeight: 4,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Downloading… ${(update.downloadProgress * 100).toInt()}%',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: context.textMuted,
+                        ),
+                      ),
+                    ] else if (isInstalling) ...[
+                      Text(
+                        'Installing…',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: context.textMuted,
+                        ),
+                      ),
+                    ] else if (isReady) ...[
+                      SizedBox(
+                        width: compact ? 220 : 280,
+                        child: FilledButton.icon(
+                          onPressed: () =>
+                              ref.read(updateProvider.notifier).applyUpdate(),
+                          icon: const Icon(Icons.restart_alt, size: 16),
+                          label: const Text('Restart to Update'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: accent,
+                            minimumSize: const Size(double.infinity, 40),
+                            shape: const StadiumBorder(),
+                          ),
+                        ),
+                      ),
+                    ] else ...[
+                      SizedBox(
+                        width: compact ? 220 : 280,
+                        child: FilledButton(
+                          onPressed: () => ref
+                              .read(updateProvider.notifier)
+                              .downloadUpdate(),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: accent,
+                            minimumSize: const Size(double.infinity, 40),
+                            shape: const StadiumBorder(),
+                          ),
+                          child: const Text('Download Update'),
+                        ),
+                      ),
+                    ],
+                    if (isError) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        update.errorMessage ?? 'Download failed',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.redAccent,
+                        ),
+                      ),
+                    ],
+                    if (!isReady && !isInstalling) ...[
+                      const SizedBox(height: 6),
+                      TextButton(
+                        onPressed: isBusy ? null : onSkip,
+                        child: Text(
+                          'Skip',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isBusy
+                                ? context.textMuted.withValues(alpha: 0.4)
+                                : context.textMuted,
+                          ),
+                        ),
+                      ),
+                    ],
                     if (!compact) ...[
                       const SizedBox(height: 18),
                       Text(

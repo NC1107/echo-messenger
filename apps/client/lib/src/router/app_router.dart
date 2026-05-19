@@ -1,8 +1,10 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../providers/auth_provider.dart';
+import '../widgets/context_menu/context_menu_testbed.dart';
 import '../screens/admin/admin_dashboard_screen.dart';
 import '../screens/contacts_screen.dart';
 import '../screens/create_group_screen.dart';
@@ -317,6 +319,14 @@ final routerProvider = Provider<GoRouter>((ref) {
         ),
       ),
       ..._profileRoutes(),
+      // Debug-only testbed for the centralised context menu. Stripped
+      // from release builds so it can't be linked-to by accident.
+      if (kDebugMode)
+        GoRoute(
+          path: '/dev/context-menu',
+          pageBuilder: (context, state) =>
+              _fadePage(key: state.pageKey, child: const ContextMenuTestbed()),
+        ),
     ],
   );
 });

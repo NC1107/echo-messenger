@@ -7,9 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/chat_message.dart' show ChatMessage, MessageStatus;
 import '../models/conversation.dart';
 import '../providers/chat_provider.dart';
-import '../providers/conversations_provider.dart';
 import '../providers/theme_provider.dart' show UIDensity, uiDensityProvider;
-import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../theme/motion_tokens.dart';
 import 'avatar_utils.dart';
@@ -177,129 +175,6 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
     };
   }
 
-  /// Long-press bottom sheet with per-conversation actions.
-  /// Mobile-only — desktop users get the right-click popup menu instead.
-  /// Mirrors the desktop [_showConversationContextMenu] items in sheet form.
-  void _showActionSheet() {
-    final conv = widget.conversation;
-    final displayName = conv.displayName(widget.myUserId);
-
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: context.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildSheetHeader(context, displayName),
-              Divider(color: context.border, height: 8),
-              if (widget.onTogglePin != null) _buildPinTile(sheetContext),
-              _buildMuteTile(conv, sheetContext),
-              if (widget.onLeave != null) _buildLeaveTile(conv, sheetContext),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSheetHeader(BuildContext context, String displayName) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
-      child: Text(
-        displayName,
-        style: GoogleFonts.inter(
-          fontSize: 15,
-          fontWeight: FontWeight.w600,
-          color: context.textPrimary,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPinTile(BuildContext sheetContext) {
-    return ListTile(
-      leading: Icon(
-        widget.isPinned ? Icons.push_pin : Icons.push_pin_outlined,
-        color: context.textSecondary,
-      ),
-      title: Text(
-        widget.isPinned ? 'Unpin' : 'Pin to top',
-        style: GoogleFonts.inter(color: context.textPrimary, fontSize: 14),
-      ),
-      onTap: () {
-        Navigator.of(sheetContext).pop();
-        widget.onTogglePin!();
-      },
-    );
-  }
-
-  Widget _buildMuteTile(Conversation conv, BuildContext sheetContext) {
-    return Consumer(
-      builder: (ctx, sheetRef, _) {
-        final live = sheetRef
-            .watch(conversationsProvider)
-            .conversations
-            .where((c) => c.id == conv.id)
-            .firstOrNull;
-        final currentMuted = live?.isMuted ?? conv.isMuted;
-        return ListTile(
-          leading: Icon(
-            currentMuted
-                ? Icons.notifications_outlined
-                : Icons.notifications_off_outlined,
-            color: context.textSecondary,
-          ),
-          title: Text(
-            currentMuted ? 'Unmute' : 'Mute',
-            style: GoogleFonts.inter(color: context.textPrimary, fontSize: 14),
-          ),
-          onTap: () => _onMuteTileTap(conv, sheetContext),
-        );
-      },
-    );
-  }
-
-  Future<void> _onMuteTileTap(
-    Conversation conv,
-    BuildContext sheetContext,
-  ) async {
-    Navigator.of(sheetContext).pop();
-    final success = await ref
-        .read(conversationsProvider.notifier)
-        .toggleMute(conv.id);
-    if (!success && mounted) {
-      ToastService.show(
-        context,
-        'Failed to update mute settings',
-        type: ToastType.error,
-      );
-    }
-  }
-
-  Widget _buildLeaveTile(Conversation conv, BuildContext sheetContext) {
-    return ListTile(
-      leading: Icon(
-        conv.isGroup ? Icons.exit_to_app : Icons.delete_outline,
-        color: EchoTheme.danger,
-      ),
-      title: Text(
-        conv.isGroup ? 'Leave Group' : 'Delete Conversation',
-        style: GoogleFonts.inter(color: EchoTheme.danger, fontSize: 14),
-      ),
-      onTap: () {
-        Navigator.of(sheetContext).pop();
-        widget.onLeave!();
-      },
-    );
-  }
-
   /// Resolve the display snippet from the last message, applying
   /// encryption placeholders and media labels.
   String? _resolveSnippet() {
@@ -425,7 +300,16 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
               onSecondaryTapUp: (details) {
                 widget.onContextMenu?.call(details.globalPosition);
               },
-              onLongPress: _enableLongPressMenu ? _showActionSheet : null,
+              // Mobile long-press now routes through the same
+              // onContextMenu callback as desktop right-click — the
+              // parent (conversation_panel) opens the centralised
+              // EchoContextMenu so the item itself no longer carries
+              // its own bottom-sheet implementation. The anchor
+              // coordinate is irrelevant on mobile (renders as a
+              // bottom sheet), so Offset.zero is a fine sentinel.
+              onLongPress: _enableLongPressMenu
+                  ? () => widget.onContextMenu?.call(Offset.zero)
+                  : null,
               child: AnimatedContainer(
                 duration: MotionDurations.quick,
                 curve: MotionCurves.emphasis,

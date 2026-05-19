@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../services/crypto_service.dart';
@@ -390,6 +393,59 @@ class CryptoNotifier extends _$CryptoNotifier {
     final token = ref.read(authProvider).token ?? '';
     groupCrypto.setToken(token);
     return groupCrypto.fetchGroupKey(conversationId);
+  }
+
+  /// Seed the first group key for a freshly-created encrypted group.
+  ///
+  /// Phase 5 (audit OQ-3) made `is_encrypted = true` the server-side
+  /// default for new groups. Without an explicit "first key" upload
+  /// the group lands in a wedged state — the server reports 400 on
+  /// `GET /api/groups/:id/keys/latest` because no envelope exists,
+  /// and clients can't encrypt outbound messages. This helper closes
+  /// the gap: pull the live member roster + identity keys and POST a
+  /// version-1 envelope set tagged `first_key` so the audit log
+  /// records the reason.
+  ///
+  /// Idempotent against the server's UNIQUE constraint on
+  /// `(conversation_id, key_version)` — a parallel client racing on
+  /// the same group will get 409 and short-circuit.
+  Future<int?> seedInitialGroupKey(String conversationId) async {
+    final groupCrypto = ref.read(groupCryptoServiceProvider);
+    final crypto = ref.read(cryptoServiceProvider);
+    final token = ref.read(authProvider).token ?? '';
+    if (token.isEmpty) return null;
+    groupCrypto.setToken(token);
+
+    final serverUrl = ref.read(serverUrlProvider);
+    return groupCrypto.performRotation(
+      conversationId,
+      1,
+      triggeredByEvent: 'first_key',
+      fetchMembers: () async {
+        try {
+          final resp = await http.get(
+            Uri.parse('$serverUrl/api/groups/$conversationId'),
+            headers: {'Authorization': 'Bearer $token'},
+          );
+          if (resp.statusCode != 200) return [];
+          final body = jsonDecode(resp.body) as Map<String, dynamic>;
+          final members = body['members'] as List<dynamic>? ?? [];
+          return members
+              .whereType<Map<String, dynamic>>()
+              .map((m) => {'user_id': m['user_id'] as String? ?? ''})
+              .toList();
+        } catch (e) {
+          DebugLogService.instance.log(
+            LogLevel.warning,
+            'GroupRotation',
+            'seedInitialGroupKey: member fetch failed for '
+                '$conversationId: $e',
+          );
+          return [];
+        }
+      },
+      fetchIdentityKey: (userId) => crypto.fetchPeerIdentityKey(userId),
+    );
   }
 
   /// Invalidate cached group key so the next access re-fetches from server.

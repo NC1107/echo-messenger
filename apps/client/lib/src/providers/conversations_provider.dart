@@ -11,6 +11,7 @@ import '../services/notification_service.dart';
 import '../utils/crypto_utils.dart';
 import 'auth_provider.dart';
 import 'chat_provider.dart';
+import 'crypto_provider.dart';
 import 'privacy_provider.dart';
 import 'server_url_provider.dart';
 
