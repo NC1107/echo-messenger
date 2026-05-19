@@ -30,7 +30,6 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'context_menu_overlay.dart';
 import 'context_menu_sheet.dart';
@@ -141,6 +140,75 @@ class DebugTarget extends ContextMenuTarget {
   String get analyticsName => 'debug:$label';
 }
 
+/// Message context menu (PR 2). Carries the message itself plus the
+/// per-callsite callbacks `MessageItem` already wires up — by holding
+/// references to the existing handlers we keep state-management in
+/// `chat_provider` and only swap the *surface*, not the action
+/// logic. Callbacks left null cause their corresponding row to be
+/// hidden by the registry.
+///
+/// `isEncryptedUnreadable` short-circuits the inline reactions row
+/// in encrypted groups where the local client can't decrypt the
+/// message — there's no point picking a reaction on a bubble that
+/// reads "[Could not decrypt…]".
+class MessageTarget extends ContextMenuTarget {
+  const MessageTarget({
+    required this.message,
+    required this.isMine,
+    required this.isSaved,
+    required this.isEncryptedUnreadable,
+    required this.mediaUrl,
+    required this.isImageMedia,
+    this.onReply,
+    this.onForward,
+    this.onRetry,
+    this.onCopyText,
+    this.onPin,
+    this.onUnpin,
+    this.onSave,
+    this.onUnsave,
+    this.onEdit,
+    this.onViewGallery,
+    this.onDelete,
+    this.onCopyId,
+    this.onPickReaction,
+    this.onOpenFullPicker,
+    this.recentReactions = const ['👍', '❤️', '😂', '🎉'],
+  });
+
+  final dynamic message; // ChatMessage — kept dynamic here to avoid
+  // a cyclic import with chat_provider's model file.
+  final bool isMine;
+  final bool isSaved;
+  final bool isEncryptedUnreadable;
+  final String? mediaUrl;
+  final bool isImageMedia;
+
+  // Action handlers — null = row hidden.
+  final VoidCallback? onReply;
+  final VoidCallback? onForward;
+  final VoidCallback? onRetry;
+  final VoidCallback? onCopyText;
+  final VoidCallback? onPin;
+  final VoidCallback? onUnpin;
+  final VoidCallback? onSave;
+  final VoidCallback? onUnsave;
+  final VoidCallback? onEdit;
+  final VoidCallback? onViewGallery;
+  final VoidCallback? onDelete;
+  final VoidCallback? onCopyId;
+
+  // Inline reactions header — null disables the header even when
+  // !isEncryptedUnreadable, useful for forwarded-message bubbles that
+  // shouldn't accept reactions at all.
+  final void Function(String emoji)? onPickReaction;
+  final VoidCallback? onOpenFullPicker;
+  final List<String> recentReactions;
+
+  @override
+  String get analyticsName => 'message';
+}
+
 /// Single public entry point. Picks desktop overlay vs mobile bottom
 /// sheet based on viewport short side; the breakpoint matches the
 /// rest of the app (see chat_panel responsive logic).
@@ -154,7 +222,6 @@ class EchoContextMenu {
 
   static Future<void> open({
     required BuildContext context,
-    required WidgetRef ref,
     required ContextMenuTarget target,
     required Offset anchor,
     required ContextMenuModel model,

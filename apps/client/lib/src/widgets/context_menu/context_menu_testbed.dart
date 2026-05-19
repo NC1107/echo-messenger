@@ -78,10 +78,9 @@ class _DemoCard extends ConsumerWidget {
   final String preview;
   final ContextMenuModel Function() buildModel;
 
-  void _open(BuildContext context, WidgetRef ref, Offset anchor) {
+  void _open(BuildContext context, Offset anchor) {
     EchoContextMenu.open(
       context: context,
-      ref: ref,
       target: DebugTarget(label),
       anchor: anchor,
       model: buildModel(),
@@ -91,8 +90,8 @@ class _DemoCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return GestureDetector(
-      onSecondaryTapDown: (d) => _open(context, ref, d.globalPosition),
-      onLongPressStart: (d) => _open(context, ref, d.globalPosition),
+      onSecondaryTapDown: (d) => _open(context, d.globalPosition),
+      onLongPressStart: (d) => _open(context, d.globalPosition),
       behavior: HitTestBehavior.opaque,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
