@@ -233,6 +233,16 @@ class SettingsRootView extends ConsumerWidget {
                 section: SettingsSection.about,
                 trailing: 'v$appVersion',
               ),
+            ],
+          ),
+          // Log out lives in its own card so the destructive action sits
+          // alone, visually divorced from neutral chrome like "About".
+          // Pattern matches the standard "destructive action at the bottom"
+          // shape from iOS Settings / Discord / etc. F-039 in the
+          // 2026-05-19 UI audit.
+          const SizedBox(height: EchoSectionTokens.groupGap),
+          _CardGroup(
+            children: [
               CardRow(
                 icon: Icons.logout,
                 iconColor: EchoTheme.danger,
