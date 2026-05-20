@@ -48,9 +48,8 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   final _statusController = TextEditingController();
   String _selectedTimezone = '';
 
-  /// Selected presence status. Mirrors the values used by the in-app status
-  /// picker (see `conversation_panel.dart`). Defaults to "online".
-  final String _presenceStatus = 'online';
+  // Presence/status field was removed from the onboarding wizard in #999
+  // — defaults to 'online' on the server, editable later from Settings.
 
   // Notifications wizard page state. Mirrors prefs used by Settings >
   // Notifications so the user's choices here are picked up the same way.
@@ -163,18 +162,6 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           );
     } catch (e) {
       debugPrint('[Onboarding] profile save failed: $e');
-    }
-
-    // Presence status is a separate endpoint -- push only if the user
-    // changed it from the default to avoid spurious WS broadcasts.
-    if (_presenceStatus != 'online') {
-      try {
-        await ref
-            .read(authProvider.notifier)
-            .setPresenceStatus(_presenceStatus);
-      } catch (e) {
-        debugPrint('[Onboarding] presence save failed: $e');
-      }
     }
   }
 

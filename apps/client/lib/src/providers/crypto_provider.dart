@@ -85,6 +85,14 @@ class CryptoState {
 /// not change.
 @Riverpod(keepAlive: true)
 class CryptoNotifier extends _$CryptoNotifier {
+  /// Per-conversation single-flight tracker for [seedInitialGroupKey].
+  /// Without this, multiple admins joining a group simultaneously (or one
+  /// admin firing the self-heal repeatedly) issue concurrent rotations:
+  /// each does probe + member fetch + N identity-key fetches + envelope
+  /// POST, and N-1 of those POSTs lose a 409 race. Audit P2 critical
+  /// finding (rotation storm).
+  final Set<String> _rotatingGroups = <String>{};
+
   @override
   CryptoState build() {
     return const CryptoState();
@@ -410,6 +418,30 @@ class CryptoNotifier extends _$CryptoNotifier {
   /// `(conversation_id, key_version)` — a parallel client racing on
   /// the same group will get 409 and short-circuit.
   Future<int?> seedInitialGroupKey(String conversationId) async {
+    // Single-flight per conversation. Drops concurrent attempts so a
+    // multi-admin group, an invite-link burst, or rapid Send retries
+    // can't fan out to A×(N+2) parallel HTTP requests per join (audit
+    // critical finding — rotation storm). The first caller does the
+    // work; subsequent callers get `null` and rely on the next
+    // group_key_rotated WS event to populate the local cache.
+    if (_rotatingGroups.contains(conversationId)) {
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'GroupRotation',
+        'seedInitialGroupKey: rotation already in flight for '
+            '$conversationId — skipping',
+      );
+      return null;
+    }
+    _rotatingGroups.add(conversationId);
+    try {
+      return await _seedInitialGroupKeyInner(conversationId);
+    } finally {
+      _rotatingGroups.remove(conversationId);
+    }
+  }
+
+  Future<int?> _seedInitialGroupKeyInner(String conversationId) async {
     final groupCrypto = ref.read(groupCryptoServiceProvider);
     final crypto = ref.read(cryptoServiceProvider);
     final token = ref.read(authProvider).token ?? '';
@@ -436,9 +468,17 @@ class CryptoNotifier extends _$CryptoNotifier {
         final existing = body['key_version'] as int?;
         if (existing != null) nextVersion = existing + 1;
       }
-    } catch (_) {
-      // Probe failure is fine — we fall through to v=1, which is the
-      // correct value for a brand-new group.
+    } catch (e) {
+      // Probe failure usually means brand-new group (no key yet) — fall
+      // through to v=1. But auth / network errors fall through silently
+      // too, which can leave a wedged group still wedged. Log so a
+      // post-mortem can tell the two cases apart from the debug log.
+      DebugLogService.instance.log(
+        LogLevel.warning,
+        'GroupRotation',
+        'seedInitialGroupKey: /keys/latest probe failed for '
+            '$conversationId — falling through to v=1: $e',
+      );
     }
 
     return groupCrypto.performRotation(

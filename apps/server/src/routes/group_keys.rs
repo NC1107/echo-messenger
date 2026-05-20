@@ -162,11 +162,31 @@ pub async fn upload_group_key(
         )));
     }
 
+    // Each envelope is a wrapped 32-byte AES-256 key (~124 base64 chars in
+    // practice). 512 bytes is generous headroom while blocking abuse —
+    // without this cap, a single 10K-envelope request could write up to
+    // ~10 GB of attacker-controlled TEXT.
+    const MAX_ENCRYPTED_KEY_LEN: usize = 512;
+    // Audit reason string — bounded so a malicious admin can't write
+    // arbitrarily large blobs into the audit log that other admins
+    // re-download on every /encryption-activity GET.
+    const MAX_TRIGGERED_BY_EVENT_LEN: usize = 128;
+    if body.triggered_by_event.len() > MAX_TRIGGERED_BY_EVENT_LEN {
+        return Err(AppError::bad_request(format!(
+            "triggered_by_event must be ≤{MAX_TRIGGERED_BY_EVENT_LEN} characters"
+        )));
+    }
+
     for envelope in &body.envelopes {
         if envelope.encrypted_key.is_empty() {
             return Err(AppError::bad_request(
                 "encrypted_key cannot be empty in envelope",
             ));
+        }
+        if envelope.encrypted_key.len() > MAX_ENCRYPTED_KEY_LEN {
+            return Err(AppError::bad_request(format!(
+                "encrypted_key must be ≤{MAX_ENCRYPTED_KEY_LEN} bytes"
+            )));
         }
     }
 
