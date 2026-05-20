@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../providers/channel_layout_provider.dart';
 import '../../providers/gif_playback_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../theme/echo_theme.dart';
@@ -285,6 +286,39 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
               onTap: () => ref
                   .read(uiDensityProvider.notifier)
                   .setDensity(UIDensity.compact),
+            ),
+            const SizedBox(height: 32),
+            // Channel layout — top chip bar vs Slack/Discord vertical column.
+            // The toggle only affects desktop wide layouts; narrow viewports
+            // always render the bar because a column doesn't fit on phones.
+            Text(
+              'Channels',
+              style: TextStyle(
+                color: context.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _LayoutOption(
+              label: 'Bar',
+              subtitle: 'Chip row above the chat (current default)',
+              icon: Icons.view_stream_outlined,
+              isSelected: ref.watch(channelLayoutProvider) == ChannelLayout.bar,
+              onTap: () => ref
+                  .read(channelLayoutProvider.notifier)
+                  .setLayout(ChannelLayout.bar),
+            ),
+            const SizedBox(height: 8),
+            _LayoutOption(
+              label: 'Column',
+              subtitle: 'Slack/Discord-style vertical channel list',
+              icon: Icons.view_sidebar_outlined,
+              isSelected:
+                  ref.watch(channelLayoutProvider) == ChannelLayout.column,
+              onTap: () => ref
+                  .read(channelLayoutProvider.notifier)
+                  .setLayout(ChannelLayout.column),
             ),
             const SizedBox(height: 24),
             // GIF autoplay
