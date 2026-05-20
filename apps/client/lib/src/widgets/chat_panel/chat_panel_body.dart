@@ -16,6 +16,7 @@ import '../chat_header_bar.dart';
 import '../chat_input_bar.dart';
 import '../encryption_status_banner.dart';
 import '../message_search_overlay.dart';
+import '../mobile_channel_drawer.dart';
 import 'chat_message_list.dart';
 import 'drop_overlay.dart';
 import 'floating_date_pill.dart';
@@ -81,6 +82,7 @@ class ChatPanelBodyParams {
     required this.onScrollToBottom,
     required this.onMessageSent,
     required this.onMediaPickerChanged,
+    this.onConversationSelected,
   });
 
   final Conversation conv;
@@ -137,6 +139,11 @@ class ChatPanelBodyParams {
   final VoidCallback onScrollToBottom;
   final VoidCallback onMessageSent;
   final VoidCallback onMediaPickerChanged;
+
+  /// Optional: tapping a group in the mobile drawer's left rail bubbles
+  /// up here so the host screen can swap `_selectedConversation`. Not
+  /// set on desktop (the drawer never renders there).
+  final ValueChanged<String>? onConversationSelected;
 }
 
 Widget buildChatContentBox(
@@ -145,16 +152,20 @@ Widget buildChatContentBox(
   ChatPanelBodyParams p,
 ) {
   final chatGradient = context.chatBgGradient;
-  // Column-mode rail: render a Slack/Discord-style left rail listing
-  // text + voice channels instead of the top chip bar. Only kicks in
-  // for group chats on viewports wide enough to fit
-  // (sidebar + column + chat + members). Falls back to the bar layout
-  // on phones / narrow desktop windows so the rail doesn't crowd out
-  // the message list (#prod-column-layout-2026-05-20).
+  // Column-mode visibility branches on viewport width:
+  //
+  //   • >= 900 px → desktop side-rail beside the chat (`useColumn`).
+  //   • <  900 px → Discord-style edge-swipe drawer
+  //                 (`useColumnDrawer`).
+  //
+  // Both surfaces feed off the same channel state and the same join /
+  // text-channel callbacks, so behaviour is consistent between layouts
+  // (#prod-column-layout-2026-05-20).
   final layout = ref.watch(channelLayoutProvider);
   final width = MediaQuery.of(context).size.width;
-  final useColumn =
-      layout == ChannelLayout.column && p.conv.isGroup && width >= 900;
+  final columnRequested = layout == ChannelLayout.column && p.conv.isGroup;
+  final useColumn = columnRequested && width >= 900;
+  final useColumnDrawer = columnRequested && width < 900;
   final chatArea = DecoratedBox(
     decoration: chatGradient != null
         ? BoxDecoration(gradient: chatGradient)
@@ -183,7 +194,7 @@ Widget buildChatContentBox(
               onMembersToggle: p.onMembersToggle,
               onGroupInfo: p.onGroupInfo,
             ),
-            if (p.conv.isGroup && !useColumn)
+            if (p.conv.isGroup && !useColumn && !useColumnDrawer)
               ChannelBar(
                 conversationId: p.conv.id,
                 selectedTextChannelId: p.selectedTextChannelId,
@@ -322,16 +333,36 @@ Widget buildChatContentBox(
     ),
   );
 
-  if (!useColumn) return chatArea;
-  return Row(
-    children: [
-      ChannelColumn(
+  if (useColumn) {
+    return Row(
+      children: [
+        ChannelColumn(
+          conversation: p.conv,
+          selectedTextChannelId: p.selectedTextChannelId,
+          onTextChannelChanged: p.onTextChannelChanged,
+          onShowLounge: p.onShowLounge,
+        ),
+        Expanded(child: chatArea),
+      ],
+    );
+  }
+  if (useColumnDrawer && p.onConversationSelected != null) {
+    // Inner Scaffold so the Drawer's built-in edge-swipe gesture works
+    // without colliding with the outer narrow-layout Scaffold. The
+    // outer one already handles the back-to-conversations swipe; in
+    // column mode that gesture is suppressed by the home screen so
+    // this one wins.
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      drawer: MobileChannelDrawer(
         conversation: p.conv,
         selectedTextChannelId: p.selectedTextChannelId,
         onTextChannelChanged: p.onTextChannelChanged,
+        onConversationSelected: p.onConversationSelected!,
         onShowLounge: p.onShowLounge,
       ),
-      Expanded(child: chatArea),
-    ],
-  );
+      body: chatArea,
+    );
+  }
+  return chatArea;
 }
