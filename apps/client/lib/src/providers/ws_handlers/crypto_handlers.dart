@@ -110,6 +110,7 @@ extension CryptoHandlersOn on WsMessageHandler {
       groupCrypto.performRotation(
         conversationId,
         keyVersion,
+        selfUserId: myUserId,
         fetchMembers: () async {
           try {
             final resp = await http.get(

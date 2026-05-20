@@ -417,7 +417,10 @@ class CryptoNotifier extends _$CryptoNotifier {
   /// Idempotent against the server's UNIQUE constraint on
   /// `(conversation_id, key_version)` — a parallel client racing on
   /// the same group will get 409 and short-circuit.
-  Future<int?> seedInitialGroupKey(String conversationId) async {
+  Future<int?> seedInitialGroupKey(
+    String conversationId, {
+    int? currentVersion,
+  }) async {
     // Single-flight per conversation. Drops concurrent attempts so a
     // multi-admin group, an invite-link burst, or rapid Send retries
     // can't fan out to A×(N+2) parallel HTTP requests per join (audit
@@ -435,13 +438,19 @@ class CryptoNotifier extends _$CryptoNotifier {
     }
     _rotatingGroups.add(conversationId);
     try {
-      return await _seedInitialGroupKeyInner(conversationId);
+      return await _seedInitialGroupKeyInner(
+        conversationId,
+        currentVersion: currentVersion,
+      );
     } finally {
       _rotatingGroups.remove(conversationId);
     }
   }
 
-  Future<int?> _seedInitialGroupKeyInner(String conversationId) async {
+  Future<int?> _seedInitialGroupKeyInner(
+    String conversationId, {
+    int? currentVersion,
+  }) async {
     final groupCrypto = ref.read(groupCryptoServiceProvider);
     final crypto = ref.read(cryptoServiceProvider);
     final token = ref.read(authProvider).token ?? '';
@@ -455,35 +464,53 @@ class CryptoNotifier extends _$CryptoNotifier {
     // stale identity keys (and are therefore unwrappable). Probe
     // /keys/latest — if a key already exists we rotate to version+1
     // instead of hardcoding v=1, which would 409-conflict and leave the
-    // group wedged forever. We don't try to decrypt; we just read the
-    // version number off the response.
+    // group wedged forever. Callers with a fresh version hint (e.g. the
+    // group_key_rotation_requested WS payload) can pass currentVersion
+    // and skip the probe entirely (TD-6).
     var nextVersion = 1;
-    try {
-      final probe = await http.get(
-        Uri.parse('$serverUrl/api/groups/$conversationId/keys/latest'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
-      if (probe.statusCode == 200) {
-        final body = jsonDecode(probe.body) as Map<String, dynamic>;
-        final existing = body['key_version'] as int?;
-        if (existing != null) nextVersion = existing + 1;
+    if (currentVersion != null) {
+      nextVersion = currentVersion + 1;
+    } else {
+      try {
+        final probe = await http.get(
+          Uri.parse('$serverUrl/api/groups/$conversationId/keys/latest'),
+          headers: {'Authorization': 'Bearer $token'},
+        );
+        if (probe.statusCode == 200) {
+          final body = jsonDecode(probe.body) as Map<String, dynamic>;
+          final existing = body['key_version'] as int?;
+          if (existing != null) nextVersion = existing + 1;
+        } else if (probe.statusCode == 401 || probe.statusCode == 403) {
+          // TD-18: 401/403 means the rotation will also be rejected;
+          // bail rather than uploading v=1 envelopes the server can't
+          // accept. The caller's WS event will retry once auth refreshes.
+          DebugLogService.instance.log(
+            LogLevel.warning,
+            'GroupRotation',
+            'seedInitialGroupKey: /keys/latest probe returned '
+                '${probe.statusCode} for $conversationId — aborting '
+                'rotation (auth path will retry).',
+          );
+          return null;
+        }
+        // 404 (no key yet) falls through with nextVersion == 1.
+      } catch (e) {
+        // TD-18: network/decoder failures fall through to v=1 (the
+        // brand-new-group case). Log so a post-mortem can distinguish
+        // legitimate first-key rotations from blocked recovery attempts.
+        DebugLogService.instance.log(
+          LogLevel.warning,
+          'GroupRotation',
+          'seedInitialGroupKey: /keys/latest probe failed for '
+              '$conversationId — falling through to v=1: $e',
+        );
       }
-    } catch (e) {
-      // Probe failure usually means brand-new group (no key yet) — fall
-      // through to v=1. But auth / network errors fall through silently
-      // too, which can leave a wedged group still wedged. Log so a
-      // post-mortem can tell the two cases apart from the debug log.
-      DebugLogService.instance.log(
-        LogLevel.warning,
-        'GroupRotation',
-        'seedInitialGroupKey: /keys/latest probe failed for '
-            '$conversationId — falling through to v=1: $e',
-      );
     }
 
     return groupCrypto.performRotation(
       conversationId,
       nextVersion,
+      selfUserId: myUserId,
       triggeredByEvent: nextVersion == 1 ? 'first_key' : 'recover_wedged',
       fetchMembers: () async {
         try {
