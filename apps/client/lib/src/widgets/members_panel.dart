@@ -83,9 +83,9 @@ class MembersPanel extends ConsumerWidget {
       }
     }
 
-    addGroup('OWNER — ${owners.length}', owners);
-    addGroup('ADMIN — ${admins.length}', admins);
-    addGroup('MEMBERS — ${regulars.length}', regulars);
+    addGroup('Owner · ${owners.length}', owners);
+    addGroup('Admins · ${admins.length}', admins);
+    addGroup('Members · ${regulars.length}', regulars);
 
     return Container(
       width: 280,
@@ -127,9 +127,9 @@ class MembersPanel extends ConsumerWidget {
                       item.headerLabel!,
                       style: TextStyle(
                         color: context.textMuted,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.6,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.2,
                       ),
                     ),
                   );
