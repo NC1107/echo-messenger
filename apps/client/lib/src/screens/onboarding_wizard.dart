@@ -267,7 +267,9 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           const AppTitleBar(),
           Expanded(
             child: SafeArea(
-              top: false,
+              // top: true so the page content (and the narrow-layout
+              // EchoLogoIcon) doesn't collide with the iOS status bar /
+              // dynamic island. Bottom safe area continues to apply.
               child: Center(
                 child: LayoutBuilder(
                   builder: (context, outerConstraints) {
@@ -295,9 +297,11 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         child: Column(
           children: [
-            const SizedBox(height: 12),
-            const EchoLogoIcon(size: 36),
-            const SizedBox(height: 20),
+            // Standalone EchoLogoIcon removed from narrow layout — the
+            // Welcome page header already brands the screen and on iOS
+            // the logo collided with the dynamic island. The wide-layout
+            // brand panel still renders its own logo because it has the
+            // horizontal space to do so cleanly.
             Expanded(child: _buildPageView()),
             const SizedBox(height: 16),
             _buildBottomControls(context),
