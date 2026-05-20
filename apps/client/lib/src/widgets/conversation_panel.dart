@@ -196,15 +196,9 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     final pinnedIds = ref.read(pinnedConversationIdsProvider);
     final isPinned = pinnedIds.contains(conv.id) || conv.isPinned;
     final hasUnread = conv.unreadCount > 0 || conv.mentionCount > 0;
-
-    // The owner of a group with other members can't leave (the
-    // server enforces this); per the cross-cutting decision we hide
-    // the row entirely rather than render it disabled.
-    final canLeave =
-        conv.isGroup &&
-        !(myRole == 'owner' &&
-            conv.members.where((m) => m.userId != myUserId).isNotEmpty);
+    final canLeave = _resolveCanLeave(conv, myRole, myUserId);
     final canDeleteGroup = conv.isGroup && myRole == 'owner';
+    final canInviteOrManage = conv.isGroup && isAdminOrOwner;
 
     return ConversationTarget(
       conversationId: conv.id,
@@ -213,59 +207,81 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       isMuted: conv.isMuted,
       hasUnread: hasUnread,
       isAdminOrOwner: isAdminOrOwner,
-      onMarkAsRead: hasUnread
-          ? () => unawaited(
-              ref.read(conversationsProvider.notifier).sendReadReceipt(conv.id),
-            )
-          : null,
+      onMarkAsRead: hasUnread ? () => _markRead(conv.id) : null,
       // Mark-as-unread isn't wired to a real provider yet; defer to a
       // follow-up so we don't introduce dead UI here.
       onMarkAsUnread: null,
-      onToggleMute: () async {
-        final ok = await ref
-            .read(conversationsProvider.notifier)
-            .toggleMute(conv.id);
-        if (!ok && mounted) {
-          ToastService.show(
-            context,
-            'Failed to update mute settings',
-            type: ToastType.error,
-          );
-        }
-      },
+      onToggleMute: () => _toggleMute(conv.id),
       onTogglePin: () => _togglePin(conv.id),
-      onOpenInfo: conv.isGroup
-          ? () => context.go('/group-info/${conv.id}')
-          : null,
+      onOpenInfo:
+          conv.isGroup ? () => context.go('/group-info/${conv.id}') : null,
       // Invite-people / encryption-activity link out to existing
       // routes today; centralising the entry points is enough for v1.
-      onInvitePeople: (conv.isGroup && isAdminOrOwner)
+      onInvitePeople: canInviteOrManage
           ? () => context.go('/group-info/${conv.id}')
           : null,
-      onOpenEncryptionActivity: (conv.isGroup && isAdminOrOwner)
+      onOpenEncryptionActivity: canInviteOrManage
           ? () => context.go('/group-info/${conv.id}')
           : null,
-      onViewSafetyNumber: (!conv.isGroup && myMember != null)
-          ? () {
-              final peer = conv.members
-                  .where((m) => m.userId != myUserId)
-                  .firstOrNull;
-              if (peer != null) {
-                context.go('/safety-number/${peer.userId}');
-              }
-            }
-          : null,
-      onCopyId: () {
-        Clipboard.setData(ClipboardData(text: conv.id));
-        if (!mounted) return;
-        ToastService.show(
-          context,
-          'Conversation ID copied',
-          type: ToastType.success,
-        );
-      },
+      onViewSafetyNumber: _resolveSafetyNumberCallback(conv, myMember, myUserId),
+      onCopyId: () => _copyConversationId(conv.id),
       onLeave: canLeave ? () => _leaveGroup(conv) : null,
       onDelete: _resolveDeleteCallback(conv, canDeleteGroup),
+    );
+  }
+
+  // The owner of a group with other members can't leave (the server
+  // enforces this); per the cross-cutting decision we hide the row
+  // entirely rather than render it disabled.
+  bool _resolveCanLeave(Conversation conv, String myRole, String myUserId) {
+    if (!conv.isGroup) return false;
+    final ownerWithMembers = myRole == 'owner' &&
+        conv.members.where((m) => m.userId != myUserId).isNotEmpty;
+    return !ownerWithMembers;
+  }
+
+  void _markRead(String conversationId) {
+    unawaited(
+      ref.read(conversationsProvider.notifier).sendReadReceipt(conversationId),
+    );
+  }
+
+  Future<void> _toggleMute(String conversationId) async {
+    final ok = await ref
+        .read(conversationsProvider.notifier)
+        .toggleMute(conversationId);
+    if (!ok && mounted) {
+      ToastService.show(
+        context,
+        'Failed to update mute settings',
+        type: ToastType.error,
+      );
+    }
+  }
+
+  VoidCallback? _resolveSafetyNumberCallback(
+    Conversation conv,
+    dynamic myMember,
+    String myUserId,
+  ) {
+    if (conv.isGroup || myMember == null) return null;
+    return () {
+      final peer = conv.members
+          .where((m) => m.userId != myUserId)
+          .firstOrNull;
+      if (peer != null) {
+        context.go('/safety-number/${peer.userId}');
+      }
+    };
+  }
+
+  void _copyConversationId(String conversationId) {
+    Clipboard.setData(ClipboardData(text: conversationId));
+    if (!mounted) return;
+    ToastService.show(
+      context,
+      'Conversation ID copied',
+      type: ToastType.success,
     );
   }
 

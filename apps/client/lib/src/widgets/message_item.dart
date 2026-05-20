@@ -759,78 +759,98 @@ class _MessageItemState extends State<MessageItem>
     required bool isFailed,
     required bool hasMedia,
   }) {
-    // Poll messages render as an interactive vote widget.
-    if (isPollContent(msg.content)) {
-      final parsed = parsePollTag(msg.content);
-      if (parsed != null &&
-          widget.serverUrl != null &&
-          widget.authToken != null) {
-        return PollWidget(
-          messageId: msg.id,
-          serverUrl: widget.serverUrl!,
-          authToken: widget.authToken!,
-          question: parsed.question,
-          options: parsed.options,
-        );
-      }
-    }
+    final poll = _tryBuildPoll(msg);
+    if (poll != null) return poll;
 
     if (hasMedia) {
-      // Forwarded messages: strip the `[Forwarded] ` prefix so the
-      // marker regex inside MediaContent can match. The "Forwarded"
-      // badge above the bubble still signals provenance.
-      final mediaContent = msg.content.startsWith(_forwardedPrefix)
-          ? msg.content.substring(_forwardedPrefix.length)
-          : msg.content;
-      final mediaWidget = MediaContent(
-        content: mediaContent,
-        isMine: isMine,
-        serverUrl: widget.serverUrl,
-        authToken: widget.authToken,
-        mediaTicket: widget.mediaTicket,
-        onImageTap: widget.onImageTap,
-      );
-      final caption = extractMediaCaption(mediaContent);
-      if (caption == null) return mediaWidget;
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          mediaWidget,
-          const SizedBox(height: 4),
-          RichTextContent(
-            text: caption,
-            textColor: _contentTextColor(isMine: isMine, isFailed: isFailed),
-            accentHoverColor: context.accentHover,
-            textSecondaryColor: context.textSecondary,
-            density: widget.density,
-          ),
-        ],
-      );
+      return _buildMediaBubble(msg: msg, isMine: isMine, isFailed: isFailed);
     }
     if (_isDecryptFailure(msg.content)) {
-      // Sender side: if WE drafted this message and the system preserved
-      // the original text in failedContent, show the user what they wrote
-      // (dimmed) with a Resend/Delete footer rather than the generic
-      // "couldn't decrypt" pill — the pill makes it look like the message
-      // was sent by someone else. F-006 / expert recommendation in the
-      // 2026-05-19 UI audit.
-      if (isMine && (msg.failedContent ?? '').isNotEmpty) {
-        return OwnDecryptFailedBubble(
-          originalText: msg.failedContent!,
-          onResend: widget.onRetry == null ? null : () => widget.onRetry!(msg),
-          onDelete: widget.onDelete == null
-              ? null
-              : () => widget.onDelete!(msg),
-        );
-      }
-      return const DecryptFailurePill();
+      return _buildDecryptFailureBubble(msg: msg, isMine: isMine);
     }
+    return _buildTextBubble(msg: msg, isMine: isMine, isFailed: isFailed);
+  }
 
-    final displayContent = msg.content.startsWith(_forwardedPrefix)
-        ? msg.content.substring(_forwardedPrefix.length)
-        : msg.content;
+  /// Poll messages render as an interactive vote widget.
+  Widget? _tryBuildPoll(ChatMessage msg) {
+    if (!isPollContent(msg.content)) return null;
+    final parsed = parsePollTag(msg.content);
+    if (parsed == null ||
+        widget.serverUrl == null ||
+        widget.authToken == null) {
+      return null;
+    }
+    return PollWidget(
+      messageId: msg.id,
+      serverUrl: widget.serverUrl!,
+      authToken: widget.authToken!,
+      question: parsed.question,
+      options: parsed.options,
+    );
+  }
 
+  // Forwarded messages: strip the `[Forwarded] ` prefix so the marker
+  // regex inside MediaContent can match. The "Forwarded" badge above the
+  // bubble still signals provenance.
+  Widget _buildMediaBubble({
+    required ChatMessage msg,
+    required bool isMine,
+    required bool isFailed,
+  }) {
+    final mediaContent = _stripForwardedPrefix(msg.content);
+    final mediaWidget = MediaContent(
+      content: mediaContent,
+      isMine: isMine,
+      serverUrl: widget.serverUrl,
+      authToken: widget.authToken,
+      mediaTicket: widget.mediaTicket,
+      onImageTap: widget.onImageTap,
+    );
+    final caption = extractMediaCaption(mediaContent);
+    if (caption == null) return mediaWidget;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        mediaWidget,
+        const SizedBox(height: 4),
+        RichTextContent(
+          text: caption,
+          textColor: _contentTextColor(isMine: isMine, isFailed: isFailed),
+          accentHoverColor: context.accentHover,
+          textSecondaryColor: context.textSecondary,
+          density: widget.density,
+        ),
+      ],
+    );
+  }
+
+  // Sender side: if WE drafted this message and the system preserved the
+  // original text in failedContent, show the user what they wrote (dimmed)
+  // with a Resend/Delete footer rather than the generic "couldn't decrypt"
+  // pill — the pill makes it look like the message was sent by someone
+  // else. F-006 / expert recommendation in the 2026-05-19 UI audit.
+  Widget _buildDecryptFailureBubble({
+    required ChatMessage msg,
+    required bool isMine,
+  }) {
+    if (isMine && (msg.failedContent ?? '').isNotEmpty) {
+      return OwnDecryptFailedBubble(
+        originalText: msg.failedContent!,
+        onResend: widget.onRetry == null ? null : () => widget.onRetry!(msg),
+        onDelete:
+            widget.onDelete == null ? null : () => widget.onDelete!(msg),
+      );
+    }
+    return const DecryptFailurePill();
+  }
+
+  Widget _buildTextBubble({
+    required ChatMessage msg,
+    required bool isMine,
+    required bool isFailed,
+  }) {
+    final displayContent = _stripForwardedPrefix(msg.content);
     final textColor = _contentTextColor(isMine: isMine, isFailed: isFailed);
     final textWidget = RichTextContent(
       text: displayContent,
@@ -867,6 +887,12 @@ class _MessageItemState extends State<MessageItem>
         ],
       ],
     );
+  }
+
+  String _stripForwardedPrefix(String content) {
+    return content.startsWith(_forwardedPrefix)
+        ? content.substring(_forwardedPrefix.length)
+        : content;
   }
 
   /// Assemble the children of the bubble Column.
@@ -1354,52 +1380,27 @@ class _MessageItemState extends State<MessageItem>
       isEncryptedUnreadable: unreadable,
       mediaUrl: mediaUrl,
       isImageMedia: isImage,
-      onReply: widget.onReply == null ? null : () => widget.onReply!(msg),
-      onForward: widget.onForward == null ? null : () => widget.onForward!(msg),
-      onRetry: (msg.status == MessageStatus.failed && widget.onRetry != null)
-          ? () => widget.onRetry!(msg)
-          : null,
-      onCopyText: () {
-        final copyText = mediaUrl != null ? _resolveUrl(mediaUrl) : msg.content;
-        Clipboard.setData(ClipboardData(text: copyText));
-        if (!mounted) return;
-        ToastService.show(
-          context,
-          mediaUrl != null ? 'Link copied' : 'Copied to clipboard',
-          type: ToastType.success,
-        );
-      },
+      onReply: _wrapMsgCallback(widget.onReply, msg),
+      onForward: _wrapMsgCallback(widget.onForward, msg),
+      onRetry: _resolveRetryCallback(msg),
+      onCopyText: () => _copyMessageText(msg, mediaUrl),
       // `isImage` only true when `mediaUrl` is non-null (the predicate
       // guards both), so the analyser promotes `mediaUrl` here.
       onViewGallery: isImage ? () => _handleImageAction(mediaUrl) : null,
-      onPin: (msg.pinnedAt == null && widget.onPin != null)
-          ? () => widget.onPin!(msg)
-          : null,
-      onUnpin: (msg.pinnedAt != null && widget.onUnpin != null)
-          ? () => widget.onUnpin!(msg)
-          : null,
-      onSave: widget.onSave == null ? null : () => widget.onSave!(msg),
-      onUnsave: widget.onUnsave == null ? null : () => widget.onUnsave!(msg),
-      onEdit: widget.onEdit == null ? null : () => widget.onEdit!(msg),
-      onDelete: widget.onDelete == null ? null : () => widget.onDelete!(msg),
-      onCopyId: () {
-        Clipboard.setData(ClipboardData(text: msg.id));
-        if (!mounted) return;
-        ToastService.show(
-          context,
-          'Message ID copied',
-          type: ToastType.success,
-        );
-      },
+      onPin: _resolvePinCallback(msg),
+      onUnpin: _resolveUnpinCallback(msg),
+      onSave: _wrapMsgCallback(widget.onSave, msg),
+      onUnsave: _wrapMsgCallback(widget.onUnsave, msg),
+      onEdit: _wrapMsgCallback(widget.onEdit, msg),
+      onDelete: _wrapMsgCallback(widget.onDelete, msg),
+      onCopyId: () => _copyMessageId(msg),
       // Inline reactions header is hidden by the registry when
       // isEncryptedUnreadable; we still wire the callbacks so the
       // registry can decide.
       onPickReaction: widget.onReactionSelect == null
           ? null
           : (emoji) => widget.onReactionSelect!(msg, emoji),
-      onOpenFullPicker: widget.onMoreReactions == null
-          ? null
-          : () => widget.onMoreReactions!(msg),
+      onOpenFullPicker: _wrapMsgCallback(widget.onMoreReactions, msg),
       recentReactions: reactionEmojis.take(4).toList(),
     );
 
@@ -1408,6 +1409,52 @@ class _MessageItemState extends State<MessageItem>
       target: target,
       anchor: anchor,
       model: buildMessageMenu(target),
+    );
+  }
+
+  VoidCallback? _wrapMsgCallback(
+    void Function(ChatMessage)? callback,
+    ChatMessage msg,
+  ) {
+    if (callback == null) return null;
+    return () => callback(msg);
+  }
+
+  VoidCallback? _resolveRetryCallback(ChatMessage msg) {
+    if (msg.status != MessageStatus.failed || widget.onRetry == null) {
+      return null;
+    }
+    return () => widget.onRetry!(msg);
+  }
+
+  VoidCallback? _resolvePinCallback(ChatMessage msg) {
+    if (msg.pinnedAt != null || widget.onPin == null) return null;
+    return () => widget.onPin!(msg);
+  }
+
+  VoidCallback? _resolveUnpinCallback(ChatMessage msg) {
+    if (msg.pinnedAt == null || widget.onUnpin == null) return null;
+    return () => widget.onUnpin!(msg);
+  }
+
+  void _copyMessageText(ChatMessage msg, String? mediaUrl) {
+    final copyText = mediaUrl != null ? _resolveUrl(mediaUrl) : msg.content;
+    Clipboard.setData(ClipboardData(text: copyText));
+    if (!mounted) return;
+    ToastService.show(
+      context,
+      mediaUrl != null ? 'Link copied' : 'Copied to clipboard',
+      type: ToastType.success,
+    );
+  }
+
+  void _copyMessageId(ChatMessage msg) {
+    Clipboard.setData(ClipboardData(text: msg.id));
+    if (!mounted) return;
+    ToastService.show(
+      context,
+      'Message ID copied',
+      type: ToastType.success,
     );
   }
 

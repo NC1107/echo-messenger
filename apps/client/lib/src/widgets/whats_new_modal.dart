@@ -72,116 +72,132 @@ class WhatsNewModal extends ConsumerWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (!isDialog) ...[
-          // Drag-handle indicator for bottom sheet.
-          const SizedBox(height: 8),
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: context.textMuted.withValues(alpha: 0.4),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-        ],
+        if (!isDialog) _buildDragHandle(context),
         const SizedBox(height: 16),
-
-        // Title row.
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Row(
-            children: [
-              Icon(Icons.celebration_outlined, color: context.accent, size: 28),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "What's New",
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      'Echo v${notes.version}',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: context.textMuted,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (isDialog)
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  color: context.textMuted,
-                  onPressed: () => _dismiss(context, ref),
-                ),
-            ],
-          ),
-        ),
+        _buildTitleRow(context, theme, ref),
         const SizedBox(height: 16),
-
-        // Scrollable markdown body.
-        Flexible(
-          child: Markdown(
-            data: notes.body,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            shrinkWrap: true,
-            selectable: true,
-            styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
-              p: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
-              h1: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-              h2: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-              h3: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-              listBullet: theme.textTheme.bodyMedium,
-              code: theme.textTheme.bodySmall?.copyWith(
-                fontFamily: 'monospace',
-                backgroundColor: context.surfaceHover,
-              ),
-              codeblockDecoration: BoxDecoration(
-                color: context.surfaceHover,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              a: theme.textTheme.bodyMedium?.copyWith(
-                color: context.accent,
-                decoration: TextDecoration.underline,
-              ),
-            ),
-            onTapLink: (text, href, title) {
-              if (href != null) {
-                launchUrl(
-                  Uri.parse(href),
-                  mode: LaunchMode.externalApplication,
-                );
-              }
-            },
-          ),
-        ),
+        Flexible(child: _buildMarkdownBody(context, theme)),
         const SizedBox(height: 16),
+        _buildDismissButton(context, ref),
+      ],
+    );
+  }
 
-        // Dismiss button.
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
-          child: FilledButton(
-            onPressed: () => _dismiss(context, ref),
-            style: FilledButton.styleFrom(
-              backgroundColor: context.accent,
-              minimumSize: const Size.fromHeight(48),
+  // Drag-handle indicator for bottom sheet.
+  Widget _buildDragHandle(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(height: 8),
+        Center(
+          child: Container(
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: context.textMuted.withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(2),
             ),
-            child: const Text('Got it'),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildTitleRow(
+    BuildContext context,
+    ThemeData theme,
+    WidgetRef ref,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Row(
+        children: [
+          Icon(Icons.celebration_outlined, color: context.accent, size: 28),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "What's New",
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  'Echo v${notes.version}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: context.textMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (isDialog)
+            IconButton(
+              icon: const Icon(Icons.close),
+              color: context.textMuted,
+              onPressed: () => _dismiss(context, ref),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMarkdownBody(BuildContext context, ThemeData theme) {
+    return Markdown(
+      data: notes.body,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      shrinkWrap: true,
+      selectable: true,
+      styleSheet: _buildMarkdownStyleSheet(context, theme),
+      onTapLink: (text, href, title) {
+        if (href != null) {
+          launchUrl(
+            Uri.parse(href),
+            mode: LaunchMode.externalApplication,
+          );
+        }
+      },
+    );
+  }
+
+  MarkdownStyleSheet _buildMarkdownStyleSheet(
+    BuildContext context,
+    ThemeData theme,
+  ) {
+    return MarkdownStyleSheet.fromTheme(theme).copyWith(
+      p: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
+      h1: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+      h2: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+      h3: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+      listBullet: theme.textTheme.bodyMedium,
+      code: theme.textTheme.bodySmall?.copyWith(
+        fontFamily: 'monospace',
+        backgroundColor: context.surfaceHover,
+      ),
+      codeblockDecoration: BoxDecoration(
+        color: context.surfaceHover,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      a: theme.textTheme.bodyMedium?.copyWith(
+        color: context.accent,
+        decoration: TextDecoration.underline,
+      ),
+    );
+  }
+
+  Widget _buildDismissButton(BuildContext context, WidgetRef ref) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+      child: FilledButton(
+        onPressed: () => _dismiss(context, ref),
+        style: FilledButton.styleFrom(
+          backgroundColor: context.accent,
+          minimumSize: const Size.fromHeight(48),
+        ),
+        child: const Text('Got it'),
+      ),
     );
   }
 

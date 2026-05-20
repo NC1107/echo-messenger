@@ -100,6 +100,10 @@ class UploadClient {
   /// [method] defaults to `POST`; pass `PUT` for avatar endpoints.
   /// [extraFields] are added as plain form fields before the file part.
   /// [onProgress] receives `(sent, total)` byte counts during streaming.
+  // @S107: 7 required + 2 optional named params model the HTTP upload contract
+  // directly. Grouping them into a param object would force every caller
+  // (avatar pickers, chat attachments, drawing exports) to construct a record
+  // for what is fundamentally a flat multipart-form request signature.
   Future<UploadResult> uploadFile({
     required String serverUrl,
     required String path,
