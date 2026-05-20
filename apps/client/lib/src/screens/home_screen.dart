@@ -34,7 +34,6 @@ import '../widgets/keyboard_shortcuts_overlay.dart';
 import '../widgets/global_search_overlay.dart';
 import '../widgets/whats_new_modal.dart';
 import '../widgets/quick_switcher_overlay.dart';
-import '../widgets/voice_dock.dart';
 import '../widgets/voice_footer.dart';
 import '../widgets/window_chrome.dart';
 import 'contacts_screen.dart';
@@ -1109,8 +1108,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     ..._buildMembersPanel(),
                   ],
                 ),
-                if (voiceActive && !_showSettings)
-                  _buildDesktopVoiceDock(animatedSidebarWidth),
+                // Voice dock used to float here as an AnimatedPositioned
+                // overlay at bottom: 60, which made it occlude the sidebar
+                // chrome (bug-report row, update banner). It now renders
+                // inline inside ConversationPanel just above the bottom
+                // chrome so everything flows naturally and nothing is
+                // covered. F-029 in the 2026-05-19 UI audit.
                 if (_whatsNewNotes != null)
                   WhatsNewInlineOverlay(
                     notes: _whatsNewNotes!,
@@ -1276,26 +1279,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     ];
   }
 
-  /// Voice dock positioned above the user status bar.
-  Widget _buildDesktopVoiceDock(double animatedSidebarWidth) {
-    return AnimatedPositioned(
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeInOut,
-      bottom: 60,
-      left: 0,
-      width: animatedSidebarWidth,
-      child: VoiceDock(
-        width: animatedSidebarWidth,
-        collapsed: _sidebarCollapsed,
-        onNavigateToLounge: () {
-          setState(() {
-            _showingLounge = true;
-            _userDismissedLounge = false;
-          });
-        },
-      ),
-    );
-  }
+  // _buildDesktopVoiceDock removed — VoiceDock now renders inline inside
+  // ConversationPanel above the bottom chrome (status bar, update banner,
+  // bug-report row) so the dock no longer occludes those rows.
+  // F-029 in the 2026-05-19 UI audit.
 
   /// Tablet layout (600-899px): sidebar + flex chat
   Widget _buildWideLayout() {
