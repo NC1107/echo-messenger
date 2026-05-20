@@ -70,10 +70,7 @@ void main() {
         // Original content preserved in failedContent for retry.
         expect(afterMsgs.first.failedContent, 'hello world');
         // User-facing content is the timeout message.
-        expect(
-          afterMsgs.first.content,
-          contains('may not have been delivered'),
-        );
+        expect(afterMsgs.first.content, contains("Couldn't send"));
       });
     });
 

@@ -831,7 +831,7 @@ void main() {
           await tester.pump();
 
           expect(find.byIcon(Icons.lock_outline), findsOneWidget);
-          expect(find.text('Message could not be decrypted'), findsOneWidget);
+          expect(find.text("Couldn't decrypt this message"), findsOneWidget);
         });
       },
     );
@@ -854,7 +854,7 @@ void main() {
         await tester.pump();
 
         expect(find.byIcon(Icons.lock_outline), findsOneWidget);
-        expect(find.text('Message could not be decrypted'), findsOneWidget);
+        expect(find.text("Couldn't decrypt this message"), findsOneWidget);
       });
     });
 
@@ -877,7 +877,7 @@ void main() {
         await tester.pump();
 
         expect(find.byIcon(Icons.lock_outline), findsNothing);
-        expect(find.text('Message could not be decrypted'), findsNothing);
+        expect(find.text("Couldn't decrypt this message"), findsNothing);
         expect(find.byType(SizedBox), findsWidgets);
       });
     });

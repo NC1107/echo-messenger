@@ -554,7 +554,7 @@ class Chat extends _$Chat {
 
     final updated = msg.copyWith(
       status: MessageStatus.failed,
-      content: 'Message may not have been delivered. Tap to retry.',
+      content: "Couldn't send · Tap to retry",
       failedContent: originalContent,
     );
     final updatedList = List<ChatMessage>.from(messages);
