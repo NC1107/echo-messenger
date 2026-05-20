@@ -4,12 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/chat_message.dart';
 import '../../models/conversation.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/channel_layout_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../screens/safety_number_screen.dart';
 import '../../screens/user_profile_screen.dart';
 import '../../services/saved_messages_service.dart';
 import '../../theme/echo_theme.dart';
 import '../channel_bar.dart';
+import '../channel_column.dart';
 import '../chat_header_bar.dart';
 import '../chat_input_bar.dart';
 import '../encryption_status_banner.dart';
@@ -143,7 +145,17 @@ Widget buildChatContentBox(
   ChatPanelBodyParams p,
 ) {
   final chatGradient = context.chatBgGradient;
-  return DecoratedBox(
+  // Column-mode rail: render a Slack/Discord-style left rail listing
+  // text + voice channels instead of the top chip bar. Only kicks in
+  // for group chats on viewports wide enough to fit
+  // (sidebar + column + chat + members). Falls back to the bar layout
+  // on phones / narrow desktop windows so the rail doesn't crowd out
+  // the message list (#prod-column-layout-2026-05-20).
+  final layout = ref.watch(channelLayoutProvider);
+  final width = MediaQuery.of(context).size.width;
+  final useColumn =
+      layout == ChannelLayout.column && p.conv.isGroup && width >= 900;
+  final chatArea = DecoratedBox(
     decoration: chatGradient != null
         ? BoxDecoration(gradient: chatGradient)
         : BoxDecoration(color: context.chatBg),
@@ -171,7 +183,7 @@ Widget buildChatContentBox(
               onMembersToggle: p.onMembersToggle,
               onGroupInfo: p.onGroupInfo,
             ),
-            if (p.conv.isGroup)
+            if (p.conv.isGroup && !useColumn)
               ChannelBar(
                 conversationId: p.conv.id,
                 selectedTextChannelId: p.selectedTextChannelId,
@@ -308,5 +320,18 @@ Widget buildChatContentBox(
         if (p.isDragOver) DropOverlay(isDragOver: p.isDragOver),
       ],
     ),
+  );
+
+  if (!useColumn) return chatArea;
+  return Row(
+    children: [
+      ChannelColumn(
+        conversation: p.conv,
+        selectedTextChannelId: p.selectedTextChannelId,
+        onTextChannelChanged: p.onTextChannelChanged,
+        onShowLounge: p.onShowLounge,
+      ),
+      Expanded(child: chatArea),
+    ],
   );
 }
