@@ -32,6 +32,7 @@ import 'echo_logo_icon.dart';
 import 'empty_state.dart';
 import 'feedback_dialog.dart';
 import 'skeleton_loader.dart';
+import 'voice_dock.dart';
 import 'voice_footer.dart';
 
 // Re-export avatar utilities so existing `show` imports keep working.
@@ -549,14 +550,25 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               // Hide the status bar on mobile narrow — redundant with the
               // bottom tab bar that already exposes Settings + identity.
               //
-              // The update banner / bug-report row sits ABOVE the VoiceFooter
-              // so the desktop voice-dock overlay (`_buildDesktopVoiceDock`,
-              // anchored at `bottom: 60`) can't cover the bug-report button
-              // when a call is active (#913).
+              // Stack from top → bottom of the sidebar bottom chrome:
+              //   1. VoiceDock — full call controls when voice is active
+              //      (renders SizedBox.shrink() otherwise)
+              //   2. Update banner / bug-report row
+              //   3. VoiceFooter — slim "tap to return to lounge" handle
+              //      while voice is active (collapses when inactive)
+              //   4. User status bar
+              // VoiceDock used to be a floating AnimatedPositioned overlay
+              // at `bottom: 60` which occluded everything beneath it
+              // (F-029 in the 2026-05-19 UI audit) — flowing it inline
+              // means the bug-report and update affordances stay reachable
+              // during a call.
+              if (MediaQuery.sizeOf(context).width >= 600)
+                VoiceDock(
+                  width: 320,
+                  onNavigateToLounge: widget.onNavigateToLounge,
+                ),
               if (MediaQuery.sizeOf(context).width >= 600)
                 _buildSidebarUpdateBanner(context),
-              // Explicit gap between bug-report row and voice dock to prevent
-              // visual occlusion when corners round.
               if (MediaQuery.sizeOf(context).width >= 600)
                 const SizedBox(height: 4),
               // On narrow (mobile), VoiceFooter is rendered at the Scaffold
