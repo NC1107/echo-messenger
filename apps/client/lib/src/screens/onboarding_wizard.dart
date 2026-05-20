@@ -5,13 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
-import 'package:flutter/services.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../providers/accessibility_provider.dart';
 import '../providers/auth_provider.dart';
-import '../providers/contacts_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/notification_service.dart';
@@ -53,7 +50,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
 
   /// Selected presence status. Mirrors the values used by the in-app status
   /// picker (see `conversation_panel.dart`). Defaults to "online".
-  String _presenceStatus = 'online';
+  final String _presenceStatus = 'online';
 
   // Notifications wizard page state. Mirrors prefs used by Settings >
   // Notifications so the user's choices here are picked up the same way.
@@ -64,10 +61,8 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
 
   static const String _kMentionOnlyPref = 'notifications_mention_only';
 
-  // Page 3 -- Add contact
-  final _contactUsernameController = TextEditingController();
-  bool _sendingRequest = false;
-  String? _contactResult;
+  // Add-contact onboarding step removed; user can add contacts after
+  // landing on the home screen.
 
   bool _saving = false;
 
@@ -94,7 +89,6 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
     _customPronounsController.dispose();
     _bioController.dispose();
     _statusController.dispose();
-    _contactUsernameController.dispose();
     super.dispose();
   }
 
@@ -112,7 +106,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
 
   /// Total number of wizard pages. Kept in sync with the `PageView` children
   /// built below. Update both when adding/removing a step.
-  static const int _pageCount = 6;
+  static const int _pageCount = 5;
 
   void _next() {
     if (_currentPage < _pageCount - 1) {
@@ -261,38 +255,6 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   }
 
   // ---------------------------------------------------------------------------
-  // Contact request
-  // ---------------------------------------------------------------------------
-
-  Future<void> _sendContactRequest() async {
-    final username = _contactUsernameController.text.trim();
-    if (username.isEmpty) return;
-
-    setState(() {
-      _sendingRequest = true;
-      _contactResult = null;
-    });
-
-    try {
-      await ref.read(contactsProvider.notifier).sendRequest(username);
-      if (mounted) {
-        setState(() {
-          _contactResult = 'Request sent to @$username';
-          _sendingRequest = false;
-        });
-        _contactUsernameController.clear();
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _contactResult = 'Failed to send request';
-          _sendingRequest = false;
-        });
-      }
-    }
-  }
-
-  // ---------------------------------------------------------------------------
   // Build
   // ---------------------------------------------------------------------------
 
@@ -357,7 +319,6 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
       'Comfort settings',
       'Notifications',
       'Encryption',
-      'Add a contact',
     ];
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 960, maxHeight: 640),
@@ -477,7 +438,6 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         _buildAccessibilityPage(context),
         _buildNotificationsPage(context),
         _buildEncryptionPage(context),
-        _buildContactPage(context),
       ],
     );
   }
@@ -535,25 +495,11 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           ),
           const SizedBox(height: 6),
           Text(
-            'Set up your profile so others can recognize you.',
+            'Set up your profile.',
             style: TextStyle(color: context.textSecondary, fontSize: 14),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.lock_outline, size: 14, color: context.textMuted),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  'Your messages are end-to-end encrypted.',
-                  style: TextStyle(color: context.textMuted, fontSize: 12),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 20),
 
           // Avatar circle
           Semantics(
@@ -610,32 +556,20 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
               ),
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            'Tap to upload a photo',
-            style: TextStyle(color: context.textMuted, fontSize: 12),
-          ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
 
-          // Helper line so users know what's required vs optional at a
-          // glance. Mirrors the "(optional)" suffix already used on Pronouns.
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              'Only Display Name is required. Everything else is optional and editable from Settings later.',
-              style: TextStyle(color: context.textMuted, fontSize: 12),
-            ),
-          ),
+          // Required fields are marked with a trailing asterisk; the rest
+          // can be edited later in Settings.
           _buildField(
             controller: _displayNameController,
-            label: 'Display Name',
+            label: 'Display Name *',
             hint: 'How others will see you',
             maxLength: 50,
           ),
           const SizedBox(height: 12),
           _buildField(
             controller: _bioController,
-            label: 'Bio (optional)',
+            label: 'Bio',
             hint: 'Tell people a little about yourself',
             maxLength: 200,
             maxLines: 3,
@@ -653,47 +587,17 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           ],
           const SizedBox(height: 12),
           _buildTimezoneDropdown(context),
-          const SizedBox(height: 12),
-          _buildPresenceDropdown(context),
+          // Presence/Status dropdown removed from onboarding per direct
+          // user feedback — defaults to 'online' and remains editable in
+          // Settings → Status. Keeping the controller wired so the
+          // server still receives the default value on save.
         ],
       ),
     );
   }
 
-  Widget _buildPresenceDropdown(BuildContext context) {
-    return InputDecorator(
-      decoration: InputDecoration(
-        labelText: 'Status',
-        labelStyle: TextStyle(color: context.textSecondary),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: context.border),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: context.accent),
-        ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          isDense: true,
-          isExpanded: true,
-          value: _presenceStatus,
-          style: TextStyle(color: context.textPrimary, fontSize: 14),
-          onChanged: (v) {
-            if (v != null) setState(() => _presenceStatus = v);
-          },
-          items: const [
-            DropdownMenuItem(value: 'online', child: Text('Online')),
-            DropdownMenuItem(value: 'away', child: Text('Away')),
-            DropdownMenuItem(value: 'dnd', child: Text('Do Not Disturb')),
-            DropdownMenuItem(value: 'invisible', child: Text('Invisible')),
-          ],
-        ),
-      ),
-    );
-  }
+  // _buildPresenceDropdown removed — presence/status was dropped from
+  // onboarding (defaults to 'online', editable later in Settings).
 
   // ---------------------------------------------------------------------------
   // Pronouns dropdown
@@ -1216,124 +1120,6 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
                 height: 1.5,
               ),
               textAlign: TextAlign.center,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Page 4 -- Add contact
-  // ---------------------------------------------------------------------------
-
-  Widget _buildContactPage(BuildContext context) {
-    return SingleChildScrollView(
-      child: Column(
-        children: [
-          Text(
-            'Add your first contact',
-            style: TextStyle(
-              color: context.textPrimary,
-              fontSize: 24,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Send a contact request to start chatting.',
-            style: TextStyle(color: context.textSecondary, fontSize: 14),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 32),
-
-          Card(
-            color: context.surface,
-            margin: EdgeInsets.zero,
-            child: Column(
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.share),
-                  title: const Text('Share invite link'),
-                  onTap: () {
-                    final username = ref.read(authProvider).username ?? '';
-                    final url = 'https://echo-messenger.us/invite/$username';
-                    Clipboard.setData(ClipboardData(text: url));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Invite link copied')),
-                    );
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.qr_code),
-                  title: const Text('Show QR code'),
-                  onTap: () {
-                    final username = ref.read(authProvider).username ?? '';
-                    final url = 'https://echo-messenger.us/invite/$username';
-                    showDialog(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('Your invite QR'),
-                        content: QrImageView(data: url, size: 200),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx),
-                            child: const Text('Close'),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          _buildField(
-            controller: _contactUsernameController,
-            label: 'Username',
-            hint: 'Enter a username',
-            maxLength: 32,
-            onSubmitted: (_) => _sendContactRequest(),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _sendingRequest ? null : _sendContactRequest,
-              icon: _sendingRequest
-                  ? SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: context.textSecondary,
-                      ),
-                    )
-                  : const Icon(Icons.person_add, size: 18),
-              label: const Text('Send Request'),
-            ),
-          ),
-          if (_contactResult != null) ...[
-            const SizedBox(height: 12),
-            Text(
-              _contactResult!,
-              style: TextStyle(
-                color: _contactResult!.startsWith('Failed')
-                    ? EchoTheme.danger
-                    : EchoTheme.online,
-                fontSize: 13,
-              ),
-            ),
-          ],
-          const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton(
-              onPressed: _saving ? null : _skip,
-              child: const Text('Skip for now'),
             ),
           ),
         ],
