@@ -17,7 +17,19 @@ class WhatsNewModal extends ConsumerWidget {
   final ReleaseNotesView notes;
   final bool isDialog;
 
-  const WhatsNewModal({super.key, required this.notes, this.isDialog = false});
+  /// When provided, the "Got it" and close buttons call this instead of
+  /// `Navigator.pop` — required when the modal is rendered inline by
+  /// [WhatsNewInlineOverlay] (not pushed as a route), because pop would
+  /// otherwise try to unwind the home screen route itself and leave the
+  /// overlay stuck on screen with all input locked behind the dim layer.
+  final VoidCallback? onClose;
+
+  const WhatsNewModal({
+    super.key,
+    required this.notes,
+    this.isDialog = false,
+    this.onClose,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -108,7 +120,12 @@ class WhatsNewModal extends ConsumerWidget {
                   color: context.textMuted,
                   onPressed: () async {
                     await ref.read(releaseNotesProvider.notifier).markShown();
-                    if (context.mounted) Navigator.of(context).pop();
+                    if (!context.mounted) return;
+                    if (onClose != null) {
+                      onClose!();
+                    } else {
+                      Navigator.of(context).pop();
+                    }
                   },
                 ),
             ],
@@ -166,7 +183,12 @@ class WhatsNewModal extends ConsumerWidget {
           child: FilledButton(
             onPressed: () async {
               await ref.read(releaseNotesProvider.notifier).markShown();
-              if (context.mounted) Navigator.of(context).pop();
+              if (!context.mounted) return;
+              if (onClose != null) {
+                onClose!();
+              } else {
+                Navigator.of(context).pop();
+              }
             },
             style: FilledButton.styleFrom(
               backgroundColor: context.accent,
@@ -219,7 +241,14 @@ class WhatsNewInlineOverlay extends ConsumerWidget {
             // the dim layer above.
             behavior: HitTestBehavior.opaque,
             onTap: () {},
-            child: WhatsNewModal(notes: notes, isDialog: true),
+            child: WhatsNewModal(
+              notes: notes,
+              isDialog: true,
+              onClose: () async {
+                await ref.read(releaseNotesProvider.notifier).markShown();
+                onDismiss();
+              },
+            ),
           ),
         ),
       ],
