@@ -176,28 +176,30 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   int _mentionPickerIndex = 0;
   String _lastMentionQuery = '';
   bool _lastMentionShowing = false;
+  // Cached candidate list — recomputed only when picker state changes.
+  // Reading _mentionCandidates per keystroke was allocating a new filtered
+  // list each time (audit perf + frontend findings).
+  List<String> _cachedMentionCandidates = const [];
 
   void _onMentionChanged() {
     if (!mounted) return;
     final showing = _mentionController.showPicker;
     final query = _mentionController.query;
-    // Reset selection on open or on query change so the first row is
-    // always the accept target as the user types.
-    if (showing != _lastMentionShowing || query != _lastMentionQuery) {
-      _mentionPickerIndex = 0;
-    }
+    final changed =
+        showing != _lastMentionShowing || query != _lastMentionQuery;
+    if (!changed) return; // skip rebuild when nothing visible changed
+    _mentionPickerIndex = 0;
+    _cachedMentionCandidates = showing
+        ? MentionAutocomplete.candidateValues(_filteredMentionMembers, query)
+        : const [];
     _lastMentionShowing = showing;
     _lastMentionQuery = query;
     setState(() {});
   }
 
-  /// Candidate values currently rendered by the mention picker. Stays in
-  /// sync with [MentionAutocomplete.candidateValues] so the keyboard
-  /// accept-path lands on the same row the user sees highlighted.
-  List<String> get _mentionCandidates => MentionAutocomplete.candidateValues(
-    _filteredMentionMembers,
-    _mentionController.query,
-  );
+  /// Candidate values currently rendered by the mention picker. Cached
+  /// in [_cachedMentionCandidates] and updated only in [_onMentionChanged].
+  List<String> get _mentionCandidates => _cachedMentionCandidates;
 
   /// Accept the currently-selected mention candidate (Tab/Enter pressed
   /// while the picker is open). No-op when there are no candidates.

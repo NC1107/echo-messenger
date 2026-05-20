@@ -3,22 +3,6 @@ import 'package:flutter/material.dart';
 import '../../models/conversation.dart';
 import '../../theme/echo_theme.dart';
 
-/// Mention candidates the picker renders. Members come before broadcasts
-/// — Discord pattern, mirrors the listView reverse order so members sit
-/// closest to the composer.
-class MentionCandidate {
-  /// `username` for a member row, broadcast keyword (`everyone`/`here`)
-  /// for a broadcast row. This is what gets passed back to
-  /// [MentionAutocomplete.onMentionSelected].
-  final String value;
-  final bool isBroadcast;
-  final ConversationMember? member;
-  const MentionCandidate.member(this.member) : value = '', isBroadcast = false;
-  const MentionCandidate.broadcast(this.value)
-    : isBroadcast = true,
-      member = null;
-}
-
 /// Displays an autocomplete popup for @-mentioning conversation members.
 ///
 /// Sits above the input bar and filters members based on [mentionQuery].
