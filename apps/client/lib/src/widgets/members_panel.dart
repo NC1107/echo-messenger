@@ -360,7 +360,7 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
         widget.canRemove && !widget.isMe && _isHovered && !_isRemoving;
 
     return Semantics(
-      label: 'member: ${member.username}',
+      label: 'member ${member.username} — open profile',
       button: true,
       child: GestureDetector(
         onTap: () {
