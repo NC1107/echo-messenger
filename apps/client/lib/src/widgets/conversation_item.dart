@@ -218,10 +218,13 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
 
   String? _maskEncryptedSnippet(String? snippet) {
     if (snippet != null &&
-        (snippet.startsWith('[Could not decrypt]') ||
+        (snippet.startsWith('[Could not decrypt') ||
             snippet.startsWith('[Encrypted'))) {
       // The DM context already implies encryption; saying "encrypted" here
-      // looks like an error state. Use a neutral placeholder instead.
+      // looks like an error state. Match any "[Could not decrypt..." variant
+      // (the WS handler emits at least four: bare, "waiting for group key",
+      // "group message", "encryption keys may be out of sync") so the
+      // protocol-state string never leaks into the sidebar snippet.
       return '[E2E] Message';
     }
     return snippet;
