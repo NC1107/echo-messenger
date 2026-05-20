@@ -660,11 +660,14 @@ class _MessageItemState extends State<MessageItem>
   /// Resolve text color for message content.
   Color _contentTextColor({required bool isMine, required bool isFailed}) {
     if (isFailed) return EchoTheme.danger;
-    // Plain (Slack) layout drops the bubble fill (#564) so the message sits
-    // directly on the chat background. The primary's onColor would be picked
-    // for an accent-coloured bubble that no longer exists, so use textPrimary
-    // for readable contrast on every theme (#790).
-    if (widget._isPlain) return context.textPrimary;
+    // Plain (Slack) AND Compact (Discord) layouts both drop the bubble
+    // fill (#564, see _bubbleColor → Colors.transparent), so the message
+    // sits directly on the chat background. onPrimary is calibrated for
+    // an accent-coloured bubble that no longer exists — using it against
+    // chatBg produces near-black-on-near-black on dark themes such as
+    // Graphite (#13AF9D bubble's onPrimary is #0A1114). Fall back to
+    // textPrimary so own messages stay readable in bubble-less layouts.
+    if (widget._isPlain || widget._isCompact) return context.textPrimary;
     if (isMine) return Theme.of(context).colorScheme.onPrimary;
     return context.textPrimary;
   }
