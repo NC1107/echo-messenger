@@ -526,6 +526,16 @@ class CryptoNotifier extends _$CryptoNotifier {
         }
         return crypto.fetchPeerIdentityKey(userId, forceRefresh: true);
       },
+      // TD-4: refuse to wrap the group secret under a changed peer
+      // identity key. The force-refresh above silently updates the
+      // TOFU cache to whatever the server returned; the rotation
+      // checks the per-user "changed" flag and aborts if anyone's
+      // key is unconfirmed. Self is never flagged (we generate our
+      // own key) so the check is a no-op for myUserId.
+      hasIdentityKeyChanged: (userId) async {
+        if (userId == myUserId) return false;
+        return crypto.hasPeerIdentityKeyChanged(userId);
+      },
     );
   }
 

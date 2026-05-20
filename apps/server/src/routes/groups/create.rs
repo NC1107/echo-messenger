@@ -26,6 +26,24 @@ pub async fn create_group(
         ));
     }
 
+    // Refuse encrypted-group creation when the caller hasn't published
+    // identity + one-time prekeys yet. Without keys the group lands in
+    // a wedged state on day one — the creator can't decrypt its own
+    // messages and no admin can rotate (no key material exists to wrap
+    // envelopes against). TD-2 in TECHNICAL_DEBT.md.
+    if body.is_encrypted {
+        let has_keys = db::keys::has_publishable_keys(&state.pool, auth.user_id)
+            .await
+            .db_ctx("create_group/has_keys")?;
+        if !has_keys {
+            return Err(AppError::bad_request(
+                "Cannot create an end-to-end-encrypted group before \
+                 publishing your identity and one-time prekeys. Open the \
+                 app, finish key setup, and try again.",
+            ));
+        }
+    }
+
     // Prevent duplicate public group names per creator
     if body.is_public {
         let already_exists =
@@ -51,29 +69,10 @@ pub async fn create_group(
     .await
     .db_ctx("create_group/create")?;
 
-    // Seed default channels for new groups.
-    db::channels::create_channel(
-        &state.pool,
-        group.id,
-        "general",
-        "text",
-        None,
-        0,
-        Some("Text Channels"),
-    )
-    .await
-    .db_ctx("create_group/create_text_channel")?;
-    db::channels::create_channel(
-        &state.pool,
-        group.id,
-        "lounge",
-        "voice",
-        None,
-        0,
-        Some("Voice Channels"),
-    )
-    .await
-    .db_ctx("create_group/create_voice_channel")?;
+    // Default channels (`general` text + `lounge` voice) are now seeded
+    // inside `create_group_with_visibility` so they share the same
+    // transaction. TD-3 closes the partial-state window where a channel
+    // insert failure used to leave an orphan group committed.
 
     let members = db::groups::get_group_members(&state.pool, group.id)
         .await

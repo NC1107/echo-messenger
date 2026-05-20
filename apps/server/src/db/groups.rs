@@ -106,6 +106,27 @@ pub async fn create_group_with_visibility(
         .execute(&mut *tx)
         .await?;
 
+    // Seed the default text + voice channels in the same transaction.
+    // Before TD-3, channel inserts ran AFTER tx.commit(); a partial
+    // failure (e.g. voice channel insert errors) left the group rows
+    // committed but with a missing channel, surfacing to the client as
+    // a 500 with no way to recover. Folding them in means the entire
+    // group either exists with both channels or doesn't exist at all.
+    sqlx::query(
+        "INSERT INTO channels (conversation_id, name, kind, topic, position, category) \
+         VALUES ($1, 'general', 'text', NULL, 0, 'Text Channels')",
+    )
+    .bind(group.id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "INSERT INTO channels (conversation_id, name, kind, topic, position, category) \
+         VALUES ($1, 'lounge', 'voice', NULL, 0, 'Voice Channels')",
+    )
+    .bind(group.id)
+    .execute(&mut *tx)
+    .await?;
+
     tx.commit().await?;
     Ok(group)
 }
