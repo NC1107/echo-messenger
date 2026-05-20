@@ -170,8 +170,53 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     _loadDraft(widget.conversation.id);
   }
 
+  /// Index of the selected row in the mention picker. Reset to 0 each time
+  /// the picker opens or the query changes so the first match is always
+  /// the keyboard-accept target.
+  int _mentionPickerIndex = 0;
+  String _lastMentionQuery = '';
+  bool _lastMentionShowing = false;
+
   void _onMentionChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    final showing = _mentionController.showPicker;
+    final query = _mentionController.query;
+    // Reset selection on open or on query change so the first row is
+    // always the accept target as the user types.
+    if (showing != _lastMentionShowing || query != _lastMentionQuery) {
+      _mentionPickerIndex = 0;
+    }
+    _lastMentionShowing = showing;
+    _lastMentionQuery = query;
+    setState(() {});
+  }
+
+  /// Candidate values currently rendered by the mention picker. Stays in
+  /// sync with [MentionAutocomplete.candidateValues] so the keyboard
+  /// accept-path lands on the same row the user sees highlighted.
+  List<String> get _mentionCandidates => MentionAutocomplete.candidateValues(
+    _filteredMentionMembers,
+    _mentionController.query,
+  );
+
+  /// Accept the currently-selected mention candidate (Tab/Enter pressed
+  /// while the picker is open). No-op when there are no candidates.
+  void _acceptMentionSelection() {
+    final candidates = _mentionCandidates;
+    if (candidates.isEmpty) return;
+    final idx = _mentionPickerIndex.clamp(0, candidates.length - 1);
+    _handleMentionSelected(candidates[idx]);
+  }
+
+  /// Move the picker selection. Wraps at both ends so quick navigation
+  /// keeps the eye on the picker without tracking edge cases.
+  void _moveMentionSelection(int delta) {
+    final candidates = _mentionCandidates;
+    if (candidates.isEmpty) return;
+    final next = (_mentionPickerIndex + delta) % candidates.length;
+    setState(() {
+      _mentionPickerIndex = next < 0 ? next + candidates.length : next;
+    });
   }
 
   @override
@@ -1438,6 +1483,32 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
 
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
 
+    // Mention picker keyboard nav takes precedence — Tab/Enter accept the
+    // selected row, arrows move it, Escape closes the picker (without
+    // also bubbling Escape through to message edit-cancel).
+    if (_mentionController.showPicker) {
+      if (event.logicalKey == LogicalKeyboardKey.tab ||
+          (event.logicalKey == LogicalKeyboardKey.enter &&
+              !HardwareKeyboard.instance.isShiftPressed)) {
+        _acceptMentionSelection();
+        return KeyEventResult.handled;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+        _moveMentionSelection(-1); // reverse: true list — down moves toward
+        return KeyEventResult.handled; // smaller indices visually
+      }
+      if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+        _moveMentionSelection(1);
+        return KeyEventResult.handled;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.escape) {
+        _mentionController.dismiss();
+        return KeyEventResult.handled;
+      }
+      // Space falls through — extractMentionQuery sees the space and
+      // closes the picker, leaving the literal "@" in the text.
+    }
+
     if (event.logicalKey == LogicalKeyboardKey.escape) {
       _handleEscapeKey();
     }
@@ -1825,6 +1896,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       return MentionAutocomplete(
         members: _filteredMentionMembers,
         mentionQuery: _mentionController.query,
+        selectedIndex: _mentionPickerIndex,
         onMentionSelected: _handleMentionSelected,
       );
     }

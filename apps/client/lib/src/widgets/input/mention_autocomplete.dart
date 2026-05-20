@@ -3,6 +3,22 @@ import 'package:flutter/material.dart';
 import '../../models/conversation.dart';
 import '../../theme/echo_theme.dart';
 
+/// Mention candidates the picker renders. Members come before broadcasts
+/// — Discord pattern, mirrors the listView reverse order so members sit
+/// closest to the composer.
+class MentionCandidate {
+  /// `username` for a member row, broadcast keyword (`everyone`/`here`)
+  /// for a broadcast row. This is what gets passed back to
+  /// [MentionAutocomplete.onMentionSelected].
+  final String value;
+  final bool isBroadcast;
+  final ConversationMember? member;
+  const MentionCandidate.member(this.member) : value = '', isBroadcast = false;
+  const MentionCandidate.broadcast(this.value)
+    : isBroadcast = true,
+      member = null;
+}
+
 /// Displays an autocomplete popup for @-mentioning conversation members.
 ///
 /// Sits above the input bar and filters members based on [mentionQuery].
@@ -13,12 +29,41 @@ class MentionAutocomplete extends StatelessWidget {
   final String mentionQuery;
   final ValueChanged<String> onMentionSelected;
 
+  /// Index into the visible candidate list (members + broadcasts) that
+  /// should render with the selected-row highlight. Driven by the parent
+  /// composer's arrow-key navigation. Clamped internally so out-of-range
+  /// values render as "no row selected".
+  final int selectedIndex;
+
   const MentionAutocomplete({
     super.key,
     required this.members,
     required this.mentionQuery,
     required this.onMentionSelected,
+    this.selectedIndex = 0,
   });
+
+  /// Computes the candidate list the picker would render for [members]
+  /// and [mentionQuery]. Same ordering as the rendered ListView:
+  /// member rows first (closer to composer), broadcasts last.
+  /// Returns the *display* order (members 0..N, broadcasts N..M).
+  static List<String> candidateValues(
+    List<ConversationMember> members,
+    String mentionQuery,
+  ) {
+    final memberRows = mentionQuery.isEmpty
+        ? members
+        : members
+              .where((m) => m.username.toLowerCase().startsWith(mentionQuery))
+              .toList();
+    final broadcastRows = mentionQuery.isEmpty
+        ? const ['everyone', 'here']
+        : const [
+            'everyone',
+            'here',
+          ].where((b) => b.startsWith(mentionQuery.toLowerCase())).toList();
+    return [...memberRows.map((m) => m.username), ...broadcastRows];
+  }
 
   /// Broadcast keywords (`@everyone`, `@here`) surfaced alongside member rows.
   static const List<_BroadcastMention> _broadcasts = [
@@ -78,16 +123,19 @@ class MentionAutocomplete extends StatelessWidget {
         padding: EdgeInsets.zero,
         itemCount: total,
         itemBuilder: (context, i) {
+          final isSelected = i == selectedIndex;
           if (i < memberRows.length) {
             final member = memberRows[i];
             return _MentionItem(
               member: member,
+              selected: isSelected,
               onTap: () => onMentionSelected(member.username),
             );
           }
           final broadcast = broadcastRows[i - memberRows.length];
           return _BroadcastMentionItem(
             broadcast: broadcast,
+            selected: isSelected,
             onTap: () => onMentionSelected(broadcast.keyword),
           );
         },
@@ -111,8 +159,13 @@ class _BroadcastMention {
 class _BroadcastMentionItem extends StatelessWidget {
   final _BroadcastMention broadcast;
   final VoidCallback onTap;
+  final bool selected;
 
-  const _BroadcastMentionItem({required this.broadcast, required this.onTap});
+  const _BroadcastMentionItem({
+    required this.broadcast,
+    required this.onTap,
+    this.selected = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -120,31 +173,35 @@ class _BroadcastMentionItem extends StatelessWidget {
       label: 'mention @${broadcast.keyword}',
       hint: broadcast.subtitle,
       button: true,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            children: [
-              Icon(broadcast.icon, size: 14, color: context.accent),
-              const SizedBox(width: 8),
-              Text(
-                '@${broadcast.keyword}',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: context.textPrimary,
-                  fontWeight: FontWeight.w600,
+      selected: selected,
+      child: Container(
+        color: selected ? context.accentLight : null,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              children: [
+                Icon(broadcast.icon, size: 14, color: context.accent),
+                const SizedBox(width: 8),
+                Text(
+                  '@${broadcast.keyword}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: context.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  broadcast.subtitle,
-                  style: TextStyle(fontSize: 11, color: context.textMuted),
-                  overflow: TextOverflow.ellipsis,
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    broadcast.subtitle,
+                    style: TextStyle(fontSize: 11, color: context.textMuted),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -155,38 +212,47 @@ class _BroadcastMentionItem extends StatelessWidget {
 class _MentionItem extends StatelessWidget {
   final ConversationMember member;
   final VoidCallback onTap;
+  final bool selected;
 
-  const _MentionItem({required this.member, required this.onTap});
+  const _MentionItem({
+    required this.member,
+    required this.onTap,
+    this.selected = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
       label: 'mention ${member.username}',
       button: true,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            children: [
-              Icon(Icons.alternate_email, size: 14, color: context.accent),
-              const SizedBox(width: 8),
-              Text(
-                member.username,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: context.textPrimary,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              if (member.role != null) ...[
-                const SizedBox(width: 6),
+      selected: selected,
+      child: Container(
+        color: selected ? context.accentLight : null,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              children: [
+                Icon(Icons.alternate_email, size: 14, color: context.accent),
+                const SizedBox(width: 8),
                 Text(
-                  member.role!,
-                  style: TextStyle(fontSize: 11, color: context.textMuted),
+                  member.username,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: context.textPrimary,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
+                if (member.role != null) ...[
+                  const SizedBox(width: 6),
+                  Text(
+                    member.role!,
+                    style: TextStyle(fontSize: 11, color: context.textMuted),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
