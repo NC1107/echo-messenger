@@ -175,12 +175,15 @@ class _MediaGrid extends StatelessWidget {
         : resolvedThumbUrls;
     final headers = mediaHeaders(authToken: authToken);
 
+    // Use a max-extent delegate so the grid scales: 3 columns on a phone,
+    // 5-6 on a wide desktop dialog. A fixed `crossAxisCount: 3` looked
+    // sparse when the gallery opened on desktop.
     return GridView.builder(
       padding: const EdgeInsets.all(4),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 3,
-        mainAxisSpacing: 3,
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 180,
+        crossAxisSpacing: 4,
+        mainAxisSpacing: 4,
       ),
       itemCount: items.length,
       itemBuilder: (context, index) => _buildGridTile(

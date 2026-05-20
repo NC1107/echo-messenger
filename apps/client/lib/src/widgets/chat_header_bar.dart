@@ -36,6 +36,13 @@ class ChatHeaderBar extends ConsumerWidget {
   final VoidCallback? onMembersToggle;
   final VoidCallback? onGroupInfo;
 
+  /// When true, the group's avatar + name + status are NOT rendered.
+  /// Used by Column mode where the channel rail's own header already
+  /// shows the group identity (avatar + name + member count), so this
+  /// row would duplicate it. The action buttons on the right
+  /// (pin / search / shared media / members) still render.
+  final bool hideGroupIdentity;
+
   const ChatHeaderBar({
     super.key,
     required this.conversation,
@@ -46,6 +53,7 @@ class ChatHeaderBar extends ConsumerWidget {
     required this.onToggleSearch,
     this.onMembersToggle,
     this.onGroupInfo,
+    this.hideGroupIdentity = false,
   });
 
   @override
@@ -90,9 +98,14 @@ class ChatHeaderBar extends ConsumerWidget {
             ),
             const SizedBox(width: 4),
           ],
-          _buildHeaderAvatar(conv, displayName),
-          const SizedBox(width: 12),
-          Expanded(child: _buildNameAndStatus(context, ref, conv, displayName)),
+          if (!hideGroupIdentity) ...[
+            _buildHeaderAvatar(conv, displayName),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildNameAndStatus(context, ref, conv, displayName),
+            ),
+          ] else
+            const Spacer(),
           ..._buildActionButtons(context, ref, conv),
         ],
       ),
@@ -518,6 +531,37 @@ class ChatHeaderBar extends ConsumerWidget {
   }
 
   void _openSharedMedia(BuildContext context, Conversation conv) {
+    // Two surfaces share this gallery:
+    //   • Wide viewports (>= 900 px) → a centred dialog sized so the
+    //     grid has enough breathing room to render 4-5 thumbnails per
+    //     row instead of the cramped 2-per-row a phone-shaped sheet
+    //     forced on desktop.
+    //   • Narrow viewports → the existing bottom-sheet treatment,
+    //     which feels native on phones.
+    final screen = MediaQuery.of(context).size;
+    if (screen.width >= 900) {
+      showDialog<void>(
+        context: context,
+        builder: (dialogCtx) {
+          final size = MediaQuery.of(dialogCtx).size;
+          final width = size.width.clamp(720.0, 1200.0).toDouble();
+          final height = (size.height * 0.85).clamp(520.0, 900.0).toDouble();
+          return Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding: const EdgeInsets.all(24),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                width: width,
+                height: height,
+                child: SharedMediaGallery(conversationId: conv.id),
+              ),
+            ),
+          );
+        },
+      );
+      return;
+    }
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
