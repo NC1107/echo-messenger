@@ -224,18 +224,44 @@ Future<bool> _paginateOnceForReply(_PaginationParams params) async {
   );
 }
 
-Future<void> jumpToReplyQuote({
-  required BuildContext context,
-  required WidgetRef ref,
-  required Conversation conv,
-  required String? selectedTextChannelId,
-  required ChatPanelController controller,
-  required String replyToId,
-  required List<ChatMessage> Function(Conversation, ChatState, String?, bool)
-  resolveMessages,
-  required bool Function() mounted,
-  required VoidCallback onHighlight,
-}) async {
+/// Parameter bundle for [jumpToReplyQuote]. Grouped to keep the call signature
+/// flat and stay under the 7-param S107 limit.
+class JumpToReplyQuoteParams {
+  const JumpToReplyQuoteParams({
+    required this.context,
+    required this.ref,
+    required this.conv,
+    required this.selectedTextChannelId,
+    required this.controller,
+    required this.replyToId,
+    required this.resolveMessages,
+    required this.mounted,
+    required this.onHighlight,
+  });
+
+  final BuildContext context;
+  final WidgetRef ref;
+  final Conversation conv;
+  final String? selectedTextChannelId;
+  final ChatPanelController controller;
+  final String replyToId;
+  final List<ChatMessage> Function(Conversation, ChatState, String?, bool)
+  resolveMessages;
+  final bool Function() mounted;
+  final VoidCallback onHighlight;
+}
+
+Future<void> jumpToReplyQuote(JumpToReplyQuoteParams params) async {
+  final context = params.context;
+  final ref = params.ref;
+  final conv = params.conv;
+  final selectedTextChannelId = params.selectedTextChannelId;
+  final controller = params.controller;
+  final replyToId = params.replyToId;
+  final resolveMessages = params.resolveMessages;
+  final mounted = params.mounted;
+  final onHighlight = params.onHighlight;
+
   final selectedChannelId = conv.isGroup ? selectedTextChannelId : null;
   final includeUnchanneled = conv.isGroup && selectedTextChannelId == null;
 
