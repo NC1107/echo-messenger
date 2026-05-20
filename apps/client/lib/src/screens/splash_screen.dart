@@ -669,8 +669,7 @@ class _UpdatePromptBody extends ConsumerWidget {
     return SizedBox(
       width: compact ? 220 : 280,
       child: FilledButton(
-        onPressed: () =>
-            ref.read(updateProvider.notifier).downloadUpdate(),
+        onPressed: () => ref.read(updateProvider.notifier).downloadUpdate(),
         style: FilledButton.styleFrom(
           backgroundColor: accent,
           minimumSize: const Size(double.infinity, 40),

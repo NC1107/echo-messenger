@@ -1167,8 +1167,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     required bool isMe,
   }) {
     final isBlocked = _isMemberBlocked(member.userId);
-    final canModerate =
-        viewerIsAdminOrOwner && !isMe && role != 'owner';
+    final canModerate = viewerIsAdminOrOwner && !isMe && role != 'owner';
 
     final target = MemberTarget(
       userId: member.userId,
@@ -1181,14 +1180,10 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       onUnblock: (isMe || !isBlocked)
           ? null
           : () => _unblockMember(member.userId),
-      onCopyUsername: () => _copyToClipboardWithToast(
-        member.username,
-        'Username copied',
-      ),
-      onCopyUserId: () => _copyToClipboardWithToast(
-        member.userId,
-        'User ID copied',
-      ),
+      onCopyUsername: () =>
+          _copyToClipboardWithToast(member.username, 'Username copied'),
+      onCopyUserId: () =>
+          _copyToClipboardWithToast(member.userId, 'User ID copied'),
       onKick: canModerate ? () => _kickMember(member) : null,
       onBan: canModerate ? () => _banMember(member) : null,
     );

@@ -838,8 +838,7 @@ class _MessageItemState extends State<MessageItem>
       return OwnDecryptFailedBubble(
         originalText: msg.failedContent!,
         onResend: widget.onRetry == null ? null : () => widget.onRetry!(msg),
-        onDelete:
-            widget.onDelete == null ? null : () => widget.onDelete!(msg),
+        onDelete: widget.onDelete == null ? null : () => widget.onDelete!(msg),
       );
     }
     return const DecryptFailurePill();
@@ -1451,11 +1450,7 @@ class _MessageItemState extends State<MessageItem>
   void _copyMessageId(ChatMessage msg) {
     Clipboard.setData(ClipboardData(text: msg.id));
     if (!mounted) return;
-    ToastService.show(
-      context,
-      'Message ID copied',
-      type: ToastType.success,
-    );
+    ToastService.show(context, 'Message ID copied', type: ToastType.success);
   }
 
   /// Compose a single composite semantic label for the message bubble so

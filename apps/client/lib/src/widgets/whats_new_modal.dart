@@ -103,11 +103,7 @@ class WhatsNewModal extends ConsumerWidget {
     );
   }
 
-  Widget _buildTitleRow(
-    BuildContext context,
-    ThemeData theme,
-    WidgetRef ref,
-  ) {
+  Widget _buildTitleRow(BuildContext context, ThemeData theme, WidgetRef ref) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
@@ -153,10 +149,7 @@ class WhatsNewModal extends ConsumerWidget {
       styleSheet: _buildMarkdownStyleSheet(context, theme),
       onTapLink: (text, href, title) {
         if (href != null) {
-          launchUrl(
-            Uri.parse(href),
-            mode: LaunchMode.externalApplication,
-          );
+          launchUrl(Uri.parse(href), mode: LaunchMode.externalApplication);
         }
       },
     );

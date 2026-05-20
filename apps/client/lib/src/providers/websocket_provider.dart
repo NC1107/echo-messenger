@@ -734,9 +734,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
       'No usable group key for $conversationId — owner self-heal',
       'WebSocket',
     );
-    await ref
-        .read(cryptoProvider.notifier)
-        .seedInitialGroupKey(conversationId);
+    await ref.read(cryptoProvider.notifier).seedInitialGroupKey(conversationId);
     keyResult = await groupCrypto.getGroupKey(conversationId);
     // TD-5: if seedInitialGroupKey lost a 409 race the local
     // cache may still be empty even though the server now has
