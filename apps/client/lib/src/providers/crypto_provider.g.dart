@@ -6,7 +6,7 @@ part of 'crypto_provider.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$cryptoNotifierHash() => r'44d8eb500679de4b3a4f4f293a348dcef1a3b549';
+String _$cryptoNotifierHash() => r'c34b9c381c7b5ac44bad85e8ded029c98e634678';
 
 /// Migrated from `StateNotifier` to `@riverpod`-annotated `Notifier`
 /// (audit 2026-05-14, Riverpod modernization slice — #770). The exported
