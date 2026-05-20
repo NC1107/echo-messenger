@@ -572,8 +572,10 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               if (MediaQuery.sizeOf(context).width >= 600)
                 const SizedBox(height: 4),
               // On narrow (mobile), VoiceFooter is rendered at the Scaffold
-              // level in home_screen.dart above the bottom tab bar.
-              if (MediaQuery.sizeOf(context).width >= 600)
+              // level in home_screen.dart above the bottom tab bar — desktop
+              // exposes the same tap-to-return-to-lounge through VoiceDock
+              // above, so we don't double up on a second voice ribbon.
+              if (MediaQuery.sizeOf(context).width < 600)
                 VoiceFooter(onNavigateToLounge: widget.onNavigateToLounge),
               if (MediaQuery.sizeOf(context).width >= 600)
                 _buildUserStatusBar(
