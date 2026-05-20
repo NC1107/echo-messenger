@@ -20,7 +20,13 @@ pub async fn create_group(
     State(state): State<Arc<AppState>>,
     Json(body): Json<CreateGroupRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    if body.name.is_empty() || body.name.len() > 100 {
+    // Trim before the empty check so " " can't slip past as a valid name,
+    // and use chars().count() so multi-byte CJK / emoji characters don't
+    // burn the budget faster than ASCII names of the same visual length
+    // (TD-15 in TECHNICAL_DEBT.md).
+    let trimmed = body.name.trim();
+    let char_count = trimmed.chars().count();
+    if trimmed.is_empty() || char_count > 100 {
         return Err(AppError::bad_request(
             "Group name must be between 1 and 100 characters",
         ));
@@ -44,10 +50,16 @@ pub async fn create_group(
         }
     }
 
-    // Prevent duplicate public group names per creator
+    // Best-effort duplicate-name check for public groups by the same creator.
+    // This is a read-then-write race: a concurrent create can slip through
+    // between the SELECT and the INSERT. TD-20 tracks the hardened solution
+    // (unique partial index on (creator_id, lower(title)) WHERE is_public)
+    // which needs a schema migration adding creator_id to conversations.
+    // For now the race is harmless — two duplicate groups are visually
+    // identical but each is independently usable.
     if body.is_public {
         let already_exists =
-            db::groups::user_has_public_group_named(&state.pool, auth.user_id, &body.name)
+            db::groups::user_has_public_group_named(&state.pool, auth.user_id, trimmed)
                 .await
                 .db_ctx("create_group/check_dup_name")?;
         if already_exists {
@@ -60,7 +72,7 @@ pub async fn create_group(
     let group = db::groups::create_group_with_visibility(
         &state.pool,
         auth.user_id,
-        &body.name,
+        trimmed,
         &body.member_ids,
         body.is_public,
         body.description.as_deref(),
@@ -84,6 +96,7 @@ pub async fn create_group(
         kind: group.kind,
         description: group.description,
         icon_url: group.icon_url,
+        is_encrypted: group.is_encrypted,
         members: members
             .into_iter()
             .map(|m| GroupMemberResponse {
@@ -131,6 +144,7 @@ pub async fn get_group(
         kind: group.kind,
         description: group.description,
         icon_url: group.icon_url,
+        is_encrypted: group.is_encrypted,
         members: members
             .into_iter()
             .map(|m| GroupMemberResponse {
