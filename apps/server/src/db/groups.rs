@@ -19,6 +19,10 @@ pub struct GroupInfo {
     pub description: Option<String>,
     pub icon_url: Option<String>,
     pub created_at: DateTime<Utc>,
+    /// Whether the group is end-to-end encrypted. Surfaced through the
+    /// create / fetch responses so clients can render the lock indicator
+    /// without an extra round-trip after creation (TD-8).
+    pub is_encrypted: bool,
 }
 
 #[derive(Debug, sqlx::FromRow, Serialize)]
@@ -62,7 +66,7 @@ pub async fn create_group_with_visibility(
     let group: GroupInfo = sqlx::query_as(
         "INSERT INTO conversations (kind, title, is_public, description, is_encrypted) \
          VALUES ('group', $1, $2, $3, $4) \
-         RETURNING id, title, kind, description, icon_url, created_at",
+         RETURNING id, title, kind, description, icon_url, created_at, is_encrypted",
     )
     .bind(name)
     .bind(is_public)
@@ -285,7 +289,7 @@ pub async fn join_public_group(
 /// Get group info by conversation ID.
 pub async fn get_group(pool: &PgPool, group_id: Uuid) -> Result<Option<GroupInfo>, sqlx::Error> {
     sqlx::query_as::<_, GroupInfo>(
-        "SELECT id, title, kind, description, icon_url, created_at \
+        "SELECT id, title, kind, description, icon_url, created_at, is_encrypted \
          FROM conversations WHERE id = $1 AND kind = 'group'",
     )
     .bind(group_id)

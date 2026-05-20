@@ -619,6 +619,12 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
                 .read(cryptoProvider.notifier)
                 .seedInitialGroupKey(conversationId);
             keyResult = await groupCrypto.getGroupKey(conversationId);
+            // TD-5: if seedInitialGroupKey lost a 409 race the local
+            // cache may still be empty even though the server now has
+            // a fresh key version. Force a network refetch before we
+            // give up, so a rotation won-elsewhere doesn't bounce the
+            // sender into the failed-message retry loop.
+            keyResult ??= await groupCrypto.fetchGroupKey(conversationId);
           }
         }
 

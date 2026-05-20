@@ -651,6 +651,7 @@ class GroupCryptoService {
     required Future<List<Map<String, dynamic>>> Function() fetchMembers,
     required Future<Uint8List?> Function(String userId) fetchIdentityKey,
     Future<bool> Function(String userId)? hasIdentityKeyChanged,
+    String? selfUserId,
     String triggeredByEvent = 'unspecified',
   }) {
     // Audit P1-4: timeline event captures the full rotation cost (member
@@ -664,6 +665,7 @@ class GroupCryptoService {
         fetchMembers: fetchMembers,
         fetchIdentityKey: fetchIdentityKey,
         hasIdentityKeyChanged: hasIdentityKeyChanged,
+        selfUserId: selfUserId,
         triggeredByEvent: triggeredByEvent,
       ),
       args: {'conversation': conversationId, 'keyVersion': keyVersion},
@@ -676,6 +678,7 @@ class GroupCryptoService {
     required Future<List<Map<String, dynamic>>> Function() fetchMembers,
     required Future<Uint8List?> Function(String userId) fetchIdentityKey,
     Future<bool> Function(String userId)? hasIdentityKeyChanged,
+    String? selfUserId,
     required String triggeredByEvent,
   }) async {
     // Drop the stale key first so we never encrypt with the now-revoked
@@ -706,6 +709,27 @@ class GroupCryptoService {
         .cast<String>()
         .toList();
     final identityKeys = await Future.wait(userIds.map(fetchIdentityKey));
+
+    // TD-21: if the rotator's own identity key is unavailable (e.g.
+    // keyring locked, secure storage migration in flight), uploading
+    // envelopes that exclude self would leave us unable to decrypt
+    // anything we send in this group until the next rotation re-
+    // includes us. Hard-abort so the caller can retry once the
+    // keyring is unlocked. Other members with null keys still get
+    // skipped further down — they'll be included in the next rotation
+    // once they publish.
+    if (selfUserId != null) {
+      for (var i = 0; i < userIds.length; i++) {
+        if (userIds[i] == selfUserId && identityKeys[i] == null) {
+          debugPrint(
+            '[GroupCrypto] performRotation aborted: local identity '
+            'key unavailable (keyring locked?). Retry when crypto '
+            'is ready.',
+          );
+          return null;
+        }
+      }
+    }
 
     // TD-4: TOFU bypass guard. fetchPeerIdentityKey(forceRefresh: true)
     // silently trusts whatever the server returned, so wrapping the

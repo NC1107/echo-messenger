@@ -563,9 +563,14 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               // means the bug-report and update affordances stay reachable
               // during a call.
               if (MediaQuery.sizeOf(context).width >= 600)
-                VoiceDock(
-                  width: 320,
-                  onNavigateToLounge: widget.onNavigateToLounge,
+                // LayoutBuilder hands the dock the actual column width so
+                // it doesn't under-fill (sidebar default is 350, dock
+                // used to hardcode 320) or overflow on resize. TD-11.
+                LayoutBuilder(
+                  builder: (context, constraints) => VoiceDock(
+                    width: constraints.maxWidth,
+                    onNavigateToLounge: widget.onNavigateToLounge,
+                  ),
                 ),
               if (MediaQuery.sizeOf(context).width >= 600)
                 _buildSidebarUpdateBanner(context),

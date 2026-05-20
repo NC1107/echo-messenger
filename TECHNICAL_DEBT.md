@@ -8,8 +8,10 @@ Last updated: 2026-05-20.
 
 ## Summary
 - Critical / High remaining: 0  (TD-1..TD-4 shipped in PR #1007)
-- Medium remaining: 11
-- Low remaining: 8
+- Medium remaining: 1  (TD-14 — conversation Map index; deferred)
+- Low remaining: 2  (TD-20 partial schema migration, TD-23 harder test surfaces)
+
+The medium/low cleanup batch landed across server + client + tests (TD-5..TD-13, TD-15..TD-19, TD-21, TD-22, partial TD-23).
 
 ---
 
@@ -172,21 +174,21 @@ Each test sketched in the test-coverage reviewer's findings. **Effort:** medium 
 - [x] TD-2 server gate on `is_encrypted=true` — PR #1007
 - [x] TD-3 / TD-9 channel-create in tx — PR #1007
 - [x] TD-4 TOFU bypass detection — PR #1007
-- [ ] TD-5 explicit refetch on 409
-- [ ] TD-6 TOCTOU version probe
-- [ ] TD-7 `is_encrypted` immutability guard
-- [ ] TD-8 return `is_encrypted` in `GroupInfo`
-- [ ] TD-10 ListView keys on conversation tiles
-- [ ] TD-11 VoiceDock hardcoded width
-- [ ] TD-12 setState in didChangeDependencies
-- [ ] TD-13 Slider min cache
-- [ ] TD-14 Map index for conversations + denormalized role
-- [ ] TD-15 char-count name length
-- [ ] TD-16 barrierLabel on dialogs
-- [ ] TD-17 deselect after delete
-- [ ] TD-18 distinguish 401/403/404 in probe
-- [ ] TD-19 prod-skip guard on E2E spec
-- [ ] TD-20 unique index for public-group names
-- [ ] TD-21 abort rotation when self key null
-- [ ] TD-22 semantic direction enum
-- [ ] TD-23 test coverage for new code (5 surfaces)
+- [x] TD-5 explicit refetch on 409 — cleanup batch
+- [x] TD-6 TOCTOU version probe (optional currentVersion param) — cleanup batch
+- [x] TD-7 `is_encrypted` immutability guard (doc + compile-test) — cleanup batch
+- [x] TD-8 return `is_encrypted` in `GroupInfo` — cleanup batch
+- [x] TD-10 ListView keys on conversation tiles — cleanup batch
+- [x] TD-11 VoiceDock width via LayoutBuilder — cleanup batch
+- [x] TD-12 setState in didChangeDependencies — cleanup batch
+- [x] TD-13 Slider min cache — cleanup batch
+- [ ] TD-14 Map index for conversations + denormalized role — deferred (needs conv-provider refactor)
+- [x] TD-15 char-count name length — cleanup batch
+- [x] TD-16 barrierLabel on dialogs — cleanup batch
+- [x] TD-17 deselect after delete (isLoading gate) — cleanup batch
+- [x] TD-18 distinguish 401/403/404 in probe — cleanup batch
+- [x] TD-19 prod-skip guard on E2E spec — cleanup batch
+- [ ] TD-20 unique index for public-group names — deferred (needs schema migration)
+- [x] TD-21 abort rotation when self key null — cleanup batch
+- [x] TD-22 semantic direction enum (`_MentionMove`) — cleanup batch
+- [~] TD-23 test coverage — 2 of 5 surfaces covered (MentionAutocomplete.candidateValues, OwnDecryptFailedBubble); remaining (_maybeRotateOnJoin, _moveMentionSelection wrap, conversation_item mask) need Riverpod test harness scaffolding

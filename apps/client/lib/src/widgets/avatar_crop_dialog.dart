@@ -116,11 +116,18 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
   img.Image? _decoded;
 
   // Viewport dimensions for the preview area. Picked at runtime in
-  // [_resolvePreviewSize] so the desktop window gets a roomier cropper
+  // [didChangeDependencies] so the desktop window gets a roomier cropper
   // (mouse users can't pinch-zoom; they pan + use the zoom slider).
   static const _previewSizeMobile = 280.0;
   static const _previewSizeDesktop = 460.0;
   double _previewSize = _previewSizeMobile;
+
+  /// Cached minimum scale at which the image still covers the preview
+  /// square. Recomputed only when the image decodes or the preview
+  /// viewport flips between mobile/desktop. Avoids the per-frame
+  /// `_previewSize / min(imgW, imgH)` arithmetic in build() that the
+  /// performance reviewer flagged in TD-13.
+  double _minScale = 1.0;
 
   // Scale and offset of the image inside the preview square.
   // The image is scaled so its shorter side fills the preview initially.
@@ -149,22 +156,33 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
     final w = MediaQuery.sizeOf(context).width;
     final isDesktop = w >= 800;
     final desired = isDesktop ? _previewSizeDesktop : _previewSizeMobile;
-    if (_previewSize != desired) {
+    if (_previewSize == desired) return;
+    // TD-12: wrap the size flip in setState so the next build sees the
+    // new viewport. The Custompaint mask, slider min, and crop preview
+    // all key off _previewSize.
+    setState(() {
       _previewSize = desired;
-      // Re-fit the image to the new viewport if it was already decoded.
       if (_decoded != null) {
-        final imgW = _decoded!.width.toDouble();
-        final imgH = _decoded!.height.toDouble();
-        final initScale = _previewSize / (imgW < imgH ? imgW : imgH);
-        _scale = initScale;
-        final scaledW = imgW * _scale;
-        final scaledH = imgH * _scale;
-        _offset = Offset(
-          (_previewSize - scaledW) / 2,
-          (_previewSize - scaledH) / 2,
-        );
+        _refitToViewport();
       }
-    }
+    });
+  }
+
+  /// Recompute scale + offset to center the decoded image inside the
+  /// current `_previewSize`. Also refreshes `_minScale` so the zoom
+  /// slider doesn't have to derive it per build (TD-13).
+  void _refitToViewport() {
+    if (_decoded == null) return;
+    final imgW = _decoded!.width.toDouble();
+    final imgH = _decoded!.height.toDouble();
+    _minScale = _previewSize / (imgW < imgH ? imgW : imgH);
+    _scale = _minScale;
+    final scaledW = imgW * _scale;
+    final scaledH = imgH * _scale;
+    _offset = Offset(
+      (_previewSize - scaledW) / 2,
+      (_previewSize - scaledH) / 2,
+    );
   }
 
   Future<void> _decodeImage() async {
@@ -177,18 +195,20 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
       }
       final imgW = decoded.width.toDouble();
       final imgH = decoded.height.toDouble();
-      // Scale so the shorter side covers the preview square.
-      final initScale = _previewSize / (imgW < imgH ? imgW : imgH);
-      // Centre the image.
-      final scaledW = imgW * initScale;
-      final scaledH = imgH * initScale;
+      // Scale so the shorter side covers the preview square. Cache the
+      // min so the build-time Slider doesn't recompute it every frame
+      // (TD-13).
+      final minScale = _previewSize / (imgW < imgH ? imgW : imgH);
+      final scaledW = imgW * minScale;
+      final scaledH = imgH * minScale;
       final initOffset = Offset(
         (_previewSize - scaledW) / 2,
         (_previewSize - scaledH) / 2,
       );
       setState(() {
         _decoded = decoded;
-        _scale = initScale;
+        _minScale = minScale;
+        _scale = minScale;
         _offset = initOffset;
       });
     } catch (e) {
@@ -381,19 +401,9 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
                   ),
                   Expanded(
                     child: Slider(
-                      min:
-                          _previewSize /
-                          (_decoded!.width < _decoded!.height
-                              ? _decoded!.width.toDouble()
-                              : _decoded!.height.toDouble()),
+                      min: _minScale,
                       max: 6.0,
-                      value: _scale.clamp(
-                        _previewSize /
-                            (_decoded!.width < _decoded!.height
-                                ? _decoded!.width.toDouble()
-                                : _decoded!.height.toDouble()),
-                        6.0,
-                      ),
+                      value: _scale.clamp(_minScale, 6.0),
                       onChanged: _onZoomSliderChanged,
                     ),
                   ),

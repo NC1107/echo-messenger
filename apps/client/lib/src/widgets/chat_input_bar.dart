@@ -86,6 +86,12 @@ class ChatInputBar extends ConsumerStatefulWidget {
   ConsumerState<ChatInputBar> createState() => ChatInputBarState();
 }
 
+/// Direction of a mention-picker selection move, expressed as visual
+/// intent rather than a raw +1 / -1 delta. The picker ListView uses
+/// `reverse: true`, so encoding the inversion here keeps the key
+/// handler reading as `up` / `down`.
+enum _MentionMove { up, down }
+
 class ChatInputBarState extends ConsumerState<ChatInputBar> {
   // The text composer, focus node, edit-message state, and (in a later
   // slice) mention controller live on [_controller]. Forwarders below
@@ -210,11 +216,19 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     _handleMentionSelected(candidates[idx]);
   }
 
-  /// Move the picker selection. Wraps at both ends so quick navigation
-  /// keeps the eye on the picker without tracking edge cases.
-  void _moveMentionSelection(int delta) {
+  /// Semantic direction for picker navigation. The candidate list is
+  /// rendered with `reverse: true`, so the *visual* "down arrow"
+  /// actually moves to a smaller index. Encapsulating that here means
+  /// the key handler reads as `_MentionMove.down` rather than
+  /// `_moveMentionSelection(-1)` and a future maintainer can't
+  /// accidentally flip the sign (TD-22).
+  void _moveMentionSelection(_MentionMove direction) {
     final candidates = _mentionCandidates;
     if (candidates.isEmpty) return;
+    final delta = switch (direction) {
+      _MentionMove.up => 1, // up arrow → higher index in the reverse list
+      _MentionMove.down => -1, // down arrow → lower index
+    };
     final next = (_mentionPickerIndex + delta) % candidates.length;
     setState(() {
       _mentionPickerIndex = next < 0 ? next + candidates.length : next;
@@ -1496,11 +1510,11 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         return KeyEventResult.handled;
       }
       if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-        _moveMentionSelection(-1); // reverse: true list — down moves toward
-        return KeyEventResult.handled; // smaller indices visually
+        _moveMentionSelection(_MentionMove.down);
+        return KeyEventResult.handled;
       }
       if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-        _moveMentionSelection(1);
+        _moveMentionSelection(_MentionMove.up);
         return KeyEventResult.handled;
       }
       if (event.logicalKey == LogicalKeyboardKey.escape) {

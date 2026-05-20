@@ -31,6 +31,16 @@ const WEB_URL = process.env.ECHO_URL || 'http://localhost:8081';
 const APP = `${WEB_URL}/?server=${encodeURIComponent(SERVER)}`;
 const SS = 'tests/e2e/test-results/group-encryption-roundtrip';
 
+// TD-19: prevent accidental execution against production. A developer
+// with `ECHO_SERVER=https://echo-messenger.us` exported in their
+// shell would otherwise run the full register / create-group /
+// rotate / delete cycle against the live deployment when invoking
+// `--project=maintained`. Opt-in via ALLOW_PROD_ROUNDTRIP=1 keeps the
+// documented manual-prod run path open while making accidents loud.
+const PROD_HOST = 'echo-messenger.us';
+const targetsProd = SERVER.includes(PROD_HOST) || WEB_URL.includes(PROD_HOST);
+const allowProd = process.env.ALLOW_PROD_ROUNDTRIP === '1';
+
 const ts = Date.now().toString().slice(-6);
 const ALICE = `enca${ts}`;
 const BOB = `encb${ts}`;
@@ -248,6 +258,15 @@ async function bodyText(page: Page): Promise<string> {
 test.describe('Group encryption — two-party roundtrip on a fresh group', () => {
   let alice: any;
   let bob: any;
+
+  // TD-19: refuse to run against prod unless the operator explicitly
+  // opted in. Prevents accidental account-create / group-create churn
+  // on the live server when ECHO_SERVER happens to be exported.
+  test.skip(
+    targetsProd && !allowProd,
+    `Refusing to run roundtrip against ${PROD_HOST}. Set ` +
+      `ALLOW_PROD_ROUNDTRIP=1 to opt in.`,
+  );
 
   test.beforeAll(async () => {
     console.log(`\nEncryption-roundtrip test (server=${SERVER})`);
