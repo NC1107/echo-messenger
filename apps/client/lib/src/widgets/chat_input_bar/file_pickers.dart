@@ -162,28 +162,32 @@ typedef _PickAndDispatchParams = ({
 });
 
 Future<void> _pickAndDispatch(_PickAndDispatchParams params) async {
-  final context = params.context;
   if (params.isPicking()) return;
   params.setIsPicking(true);
   try {
-    final result = await FilePicker.pickFiles(
-      type: params.type,
-      allowMultiple: true,
-      withData: true,
-    );
-    if (result == null || result.files.isEmpty) return;
-    if (!params.mounted() || !context.mounted) return;
-    await _dispatchPickedFiles(context, params, result.files);
+    await _runPickAndDispatch(params);
   } catch (e) {
-    if (!context.mounted) return;
-    ToastService.show(
-      context,
-      '${params.errorPrefix} error: $e',
-      type: ToastType.error,
-    );
+    _showPickError(params.context, '${params.errorPrefix} error: $e');
   } finally {
     params.setIsPicking(false);
   }
+}
+
+Future<void> _runPickAndDispatch(_PickAndDispatchParams params) async {
+  final context = params.context;
+  final result = await FilePicker.pickFiles(
+    type: params.type,
+    allowMultiple: true,
+    withData: true,
+  );
+  if (result == null || result.files.isEmpty) return;
+  if (!params.mounted() || !context.mounted) return;
+  await _dispatchPickedFiles(context, params, result.files);
+}
+
+void _showPickError(BuildContext context, String message) {
+  if (!context.mounted) return;
+  ToastService.show(context, message, type: ToastType.error);
 }
 
 /// Dispatches a previously-picked list of files, surfacing toast feedback

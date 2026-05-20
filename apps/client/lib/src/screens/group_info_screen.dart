@@ -1166,12 +1166,9 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     required bool viewerIsAdminOrOwner,
     required bool isMe,
   }) {
-    final blockedIds = ref
-        .read(contactsProvider)
-        .blockedUsers
-        .map((u) => u.blockedId)
-        .toSet();
-    final isBlocked = blockedIds.contains(member.userId);
+    final isBlocked = _isMemberBlocked(member.userId);
+    final canModerate =
+        viewerIsAdminOrOwner && !isMe && role != 'owner';
 
     final target = MemberTarget(
       userId: member.userId,
@@ -1180,47 +1177,20 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       targetIsOwner: role == 'owner',
       viewerIsAdminOrOwner: viewerIsAdminOrOwner,
       onViewProfile: () => showUserProfileSheet(context, ref, member.userId),
-      onSendMessage: isMe
-          ? null
-          : () async {
-              try {
-                final conv = await ref
-                    .read(conversationsProvider.notifier)
-                    .getOrCreateDm(member.userId, member.username);
-                if (!mounted) return;
-                context.go('/home?conversation=${conv.id}');
-              } catch (_) {
-                if (!mounted) return;
-                ToastService.show(
-                  context,
-                  'Failed to open conversation',
-                  type: ToastType.error,
-                );
-              }
-            },
+      onSendMessage: isMe ? null : () => _openDmWithMember(member),
       onUnblock: (isMe || !isBlocked)
           ? null
-          : () async {
-              await ref
-                  .read(contactsProvider.notifier)
-                  .unblockUser(member.userId);
-            },
-      onCopyUsername: () {
-        Clipboard.setData(ClipboardData(text: member.username));
-        if (!mounted) return;
-        ToastService.show(context, 'Username copied', type: ToastType.success);
-      },
-      onCopyUserId: () {
-        Clipboard.setData(ClipboardData(text: member.userId));
-        if (!mounted) return;
-        ToastService.show(context, 'User ID copied', type: ToastType.success);
-      },
-      onKick: (viewerIsAdminOrOwner && !isMe && role != 'owner')
-          ? () => _kickMember(member)
-          : null,
-      onBan: (viewerIsAdminOrOwner && !isMe && role != 'owner')
-          ? () => _banMember(member)
-          : null,
+          : () => _unblockMember(member.userId),
+      onCopyUsername: () => _copyToClipboardWithToast(
+        member.username,
+        'Username copied',
+      ),
+      onCopyUserId: () => _copyToClipboardWithToast(
+        member.userId,
+        'User ID copied',
+      ),
+      onKick: canModerate ? () => _kickMember(member) : null,
+      onBan: canModerate ? () => _banMember(member) : null,
     );
 
     EchoContextMenu.open(
@@ -1229,6 +1199,40 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       anchor: anchor,
       model: buildMemberMenu(target),
     );
+  }
+
+  bool _isMemberBlocked(String userId) {
+    return ref
+        .read(contactsProvider)
+        .blockedUsers
+        .any((u) => u.blockedId == userId);
+  }
+
+  Future<void> _openDmWithMember(ConversationMember member) async {
+    try {
+      final conv = await ref
+          .read(conversationsProvider.notifier)
+          .getOrCreateDm(member.userId, member.username);
+      if (!mounted) return;
+      context.go('/home?conversation=${conv.id}');
+    } catch (_) {
+      if (!mounted) return;
+      ToastService.show(
+        context,
+        'Failed to open conversation',
+        type: ToastType.error,
+      );
+    }
+  }
+
+  Future<void> _unblockMember(String userId) async {
+    await ref.read(contactsProvider.notifier).unblockUser(userId);
+  }
+
+  void _copyToClipboardWithToast(String text, String successMessage) {
+    Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ToastService.show(context, successMessage, type: ToastType.success);
   }
 
   /// Single roster row. Matches the desktop members panel styling (#769):
