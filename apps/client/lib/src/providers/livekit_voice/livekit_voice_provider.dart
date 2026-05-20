@@ -114,6 +114,11 @@ class LiveKitVoiceState {
     this.rttMs = 0,
   });
 
+  // @S107: copyWith mirrors LiveKitVoiceState's 21 immutable fields one-to-one.
+  // Refactoring into grouped param objects would break the idiomatic
+  // `state = state.copyWith(field: value)` calls scattered across the LiveKit
+  // event handlers and would not reduce overall complexity — the fields are
+  // genuinely independent (capture, video, peers, quality, timing).
   LiveKitVoiceState copyWith({
     bool? isActive,
     bool? isJoining,

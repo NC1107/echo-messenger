@@ -56,6 +56,10 @@ class AuthState {
     this.statusText,
   });
 
+  // @S107: copyWith mirrors the AuthState constructor; refactoring to a param
+  // object would break the idiomatic `state = state.copyWith(field: value)`
+  // pattern used throughout the codebase. Each named param maps 1:1 to an
+  // immutable field on AuthState.
   AuthState copyWith({
     bool? isLoggedIn,
     String? userId,
