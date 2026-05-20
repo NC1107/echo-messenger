@@ -59,7 +59,7 @@ void main() {
   testWidgets('wizard shows a Skip control on the first page', (tester) async {
     await pumpWizard(tester);
 
-    expect(find.widgetWithText(TextButton, 'Skip'), findsOneWidget);
+    expect(find.widgetWithText(TextButton, 'Skip step'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Next'), findsOneWidget);
   });
 }
