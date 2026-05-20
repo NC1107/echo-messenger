@@ -321,7 +321,7 @@ class _ConnectionStatusPopoverState
     required TargetPlatform platform,
   }) {
     final now = DateTime.now().toUtc().toIso8601String();
-    final version = appVersion;
+    const version = appVersion;
     return [
       'Echo connection diagnostics',
       '---------------------------',

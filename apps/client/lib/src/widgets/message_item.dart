@@ -1040,10 +1040,8 @@ class _MessageItemState extends State<MessageItem>
         : null;
     final showAvatar = widget.showHeader || forceShow;
 
-    final avatarWidth =
-        (widget._isCompact ? 32 : (widget.compactLayout ? 24 : 28)).toDouble();
-    final avatarRadius =
-        (widget._isCompact ? 16 : (widget.compactLayout ? 12 : 14)).toDouble();
+    final avatarWidth = _resolveAvatarWidth();
+    final avatarRadius = _resolveAvatarRadius();
 
     return Semantics(
       label: 'View profile of ${msg.fromUsername}',
@@ -1067,6 +1065,16 @@ class _MessageItemState extends State<MessageItem>
         ),
       ),
     );
+  }
+
+  double _resolveAvatarWidth() {
+    if (widget._isCompact) return 32;
+    return widget.compactLayout ? 24 : 28;
+  }
+
+  double _resolveAvatarRadius() {
+    if (widget._isCompact) return 16;
+    return widget.compactLayout ? 12 : 14;
   }
 
   /// Build the tiny green lock icon shown next to the timestamp on encrypted
