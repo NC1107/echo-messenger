@@ -552,11 +552,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           Container(width: 1, color: context.border),
-          // Content area -- fills remaining width
+          // Content area — caps at 960px so the form columns don't sprawl
+          // across an ultrawide display with a desert of empty pixels
+          // between the sidebar and the actual fields. Wider screens get
+          // the form left-aligned against the sidebar; the surplus space
+          // sits on the trailing edge.
           Expanded(
-            child: SettingsContent(
-              key: ValueKey(_selectedSection),
-              section: _selectedSection,
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 960),
+                child: SettingsContent(
+                  key: ValueKey(_selectedSection),
+                  section: _selectedSection,
+                ),
+              ),
             ),
           ),
         ],
