@@ -392,7 +392,8 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'A few quick questions to set up your profile.',
+                      'About 90 seconds. Skip any step you don\'t need now '
+                      '— you can always come back from Settings.',
                       style: TextStyle(
                         fontSize: 14,
                         color: context.textSecondary,
@@ -1389,7 +1390,12 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         if (!isLast)
           TextButton(
             onPressed: _saving ? null : _skip,
-            child: Text('Skip', style: TextStyle(color: context.textMuted)),
+            // Skip is a first-class option — drop the muted color so it
+            // doesn't read as a dead link. Same textSecondary as Back.
+            child: Text(
+              'Skip step',
+              style: TextStyle(color: context.textSecondary),
+            ),
           ),
         const Spacer(),
         FilledButton(
