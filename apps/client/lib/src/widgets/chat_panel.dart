@@ -75,6 +75,11 @@ class ChatPanel extends ConsumerStatefulWidget {
   /// after the conversation finishes loading.
   final String? initialMessageId;
 
+  /// Mobile-only: tapping a group in the channel drawer's left rail
+  /// bubbles up here so the host screen can swap the active
+  /// conversation. Desktop never renders that rail.
+  final ValueChanged<String>? onConversationSelected;
+
   const ChatPanel({
     super.key,
     this.conversation,
@@ -84,6 +89,7 @@ class ChatPanel extends ConsumerStatefulWidget {
     this.onShowLounge,
     this.hideVoiceDock = false,
     this.initialMessageId,
+    this.onConversationSelected,
   });
 
   @override
@@ -974,6 +980,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         onMembersToggle: widget.onMembersToggle,
         onGroupInfo: widget.onGroupInfo,
         onShowLounge: widget.onShowLounge,
+        onConversationSelected: widget.onConversationSelected,
         onTextChannelChanged: _onTextChannelChanged,
         onVoiceChannelChanged: (channelId) {
           if (mounted) setState(() => _activeVoiceChannelId = channelId);
