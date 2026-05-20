@@ -314,8 +314,13 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
 
     switch (role) {
       case 'owner':
-        bgColor = EchoTheme.warning.withValues(alpha: 0.15);
-        textColor = EchoTheme.warning;
+        // Reserve amber (EchoTheme.warning) for actual warnings —
+        // "Experimental" feature pill, away presence, etc. Owner is a
+        // positive role attribute, so use a brighter accent variant so
+        // it still distinguishes from Admin (same accent at lower alpha)
+        // without leaning on the warning palette.
+        bgColor = EchoTheme.accentHover.withValues(alpha: 0.22);
+        textColor = EchoTheme.accentHover;
         label = 'Owner';
       case 'admin':
         bgColor = context.accent.withValues(alpha: 0.15);
