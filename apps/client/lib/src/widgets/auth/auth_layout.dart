@@ -147,8 +147,8 @@ class _BrandPanel extends StatelessWidget {
         const SizedBox(height: 32),
         const _FeatureRow(
           icon: Icons.lock_outline,
-          title: 'End-to-end encrypted',
-          body: 'Signal Protocol with X3DH + Double Ratchet',
+          title: 'Encrypted direct messages',
+          body: 'Signal Protocol (X3DH + Double Ratchet)',
         ),
         const SizedBox(height: 16),
         const _FeatureRow(

@@ -417,7 +417,7 @@ class _DiscoverGroupsScreenState extends ConsumerState<DiscoverGroupsScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               child: Text(
-                'Public groups. Join with one tap — your messages stay encrypted.',
+                'Public groups. Server-stored — open a DM for end-to-end encryption.',
                 style: TextStyle(color: context.textMuted, fontSize: 13),
               ),
             ),
