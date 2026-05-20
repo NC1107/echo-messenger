@@ -243,12 +243,16 @@ class SettingsRootView extends ConsumerWidget {
           const SizedBox(height: EchoSectionTokens.groupGap),
           _CardGroup(
             children: [
-              CardRow(
-                icon: Icons.logout,
-                iconColor: EchoTheme.danger,
-                label: 'Log out',
-                destructive: true,
-                onTap: onLogout,
+              Semantics(
+                label: 'settings log-out',
+                button: true,
+                child: CardRow(
+                  icon: Icons.logout,
+                  iconColor: EchoTheme.danger,
+                  label: 'Log out',
+                  destructive: true,
+                  onTap: onLogout,
+                ),
               ),
             ],
           ),
@@ -266,14 +270,20 @@ class SettingsRootView extends ConsumerWidget {
     String? trailing,
   }) {
     final isSelected = selected == section;
-    return Container(
-      color: isSelected ? context.accentLight : null,
-      child: CardRow(
-        icon: icon,
-        iconColor: iconColor,
-        label: settingsSectionLabel(section),
-        trailingValue: trailing,
-        onTap: () => onTap(section),
+    final slug = section.name.toLowerCase();
+    return Semantics(
+      label: 'settings tab $slug',
+      button: true,
+      selected: isSelected,
+      child: Container(
+        color: isSelected ? context.accentLight : null,
+        child: CardRow(
+          icon: icon,
+          iconColor: iconColor,
+          label: settingsSectionLabel(section),
+          trailingValue: trailing,
+          onTap: () => onTap(section),
+        ),
       ),
     );
   }
