@@ -163,63 +163,70 @@ typedef _PickAndDispatchParams = ({
 
 Future<void> _pickAndDispatch(_PickAndDispatchParams params) async {
   final context = params.context;
-  final mounted = params.mounted;
-  final isPicking = params.isPicking;
-  final setIsPicking = params.setIsPicking;
-  final stage = params.stage;
-  final sendImmediately = params.sendImmediately;
-  final type = params.type;
-  final errorPrefix = params.errorPrefix;
-  if (isPicking()) return;
-  setIsPicking(true);
+  if (params.isPicking()) return;
+  params.setIsPicking(true);
   try {
     final result = await FilePicker.pickFiles(
-      type: type,
+      type: params.type,
       allowMultiple: true,
       withData: true,
     );
     if (result == null || result.files.isEmpty) return;
-    if (!mounted()) return;
-
-    // Single pick → preview flow (caption + send). Multi pick → send all
-    // immediately as separate messages; mixing the two creates races where
-    // the user may interact with the pending preview while the rest are
-    // still uploading in the background.
-    final isMulti = result.files.length > 1;
-    if (isMulti && context.mounted) {
-      ToastService.show(
-        context,
-        'Sending ${result.files.length} files...',
-        type: ToastType.info,
-      );
-    }
-
-    var sentCount = 0;
-    for (final file in result.files) {
-      if (!context.mounted) break;
-      final ok = await _dispatchFile(
-        context: context,
-        file: file,
-        isMulti: isMulti,
-        stage: stage,
-        sendImmediately: sendImmediately,
-      );
-      if (ok) sentCount++;
-    }
-
-    if (isMulti && context.mounted && sentCount < result.files.length) {
-      final failed = result.files.length - sentCount;
-      ToastService.show(
-        context,
-        '$failed of ${result.files.length} failed to send',
-        type: ToastType.error,
-      );
-    }
+    if (!params.mounted() || !context.mounted) return;
+    await _dispatchPickedFiles(context, params, result.files);
   } catch (e) {
     if (!context.mounted) return;
-    ToastService.show(context, '$errorPrefix error: $e', type: ToastType.error);
+    ToastService.show(
+      context,
+      '${params.errorPrefix} error: $e',
+      type: ToastType.error,
+    );
   } finally {
-    setIsPicking(false);
+    params.setIsPicking(false);
+  }
+}
+
+/// Dispatches a previously-picked list of files, surfacing toast feedback
+/// for multi-file sends. Extracted from [_pickAndDispatch] to keep its
+/// cognitive complexity below SonarCloud's threshold.
+Future<void> _dispatchPickedFiles(
+  BuildContext context,
+  _PickAndDispatchParams params,
+  List<PlatformFile> files,
+) async {
+  // Single pick → preview flow (caption + send). Multi pick → send all
+  // immediately as separate messages; mixing the two creates races where
+  // the user may interact with the pending preview while the rest are
+  // still uploading in the background.
+  final isMulti = files.length > 1;
+  if (isMulti && context.mounted) {
+    ToastService.show(
+      context,
+      'Sending ${files.length} files...',
+      type: ToastType.info,
+    );
+  }
+
+  var sentCount = 0;
+  for (final file in files) {
+    if (!context.mounted) break;
+    final ok = await _dispatchFile(
+      context: context,
+      file: file,
+      isMulti: isMulti,
+      stage: params.stage,
+      sendImmediately: params.sendImmediately,
+    );
+    if (ok) sentCount++;
+  }
+
+  if (isMulti && context.mounted && sentCount < files.length) {
+    final failed = files.length - sentCount;
+    ToastService.show(
+      context,
+      '$failed of ${files.length} failed to send',
+      type: ToastType.error,
+    );
   }
 }
 

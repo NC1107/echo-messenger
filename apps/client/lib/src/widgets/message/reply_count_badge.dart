@@ -55,38 +55,45 @@ class ReplyCountBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final count = message.replyCount;
     final label = count == 1 ? '1 reply' : '$count replies';
-    if (inlineStyle) {
-      return Padding(
-        padding: EdgeInsets.only(top: 2, left: isMine ? 0 : 36),
-        child: Align(
-          alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
-          child: Semantics(
-            label: hasUnread ? 'View $label (new replies)' : 'View $label',
-            button: true,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(2),
-              onTap: onTap == null ? null : () => onTap!(message),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    label,
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      color: context.accent,
-                      fontWeight: FontWeight.w500,
-                      decoration: TextDecoration.underline,
-                      decorationColor: context.accent.withValues(alpha: 0.4),
-                    ),
+    return inlineStyle
+        ? _buildInline(context, label)
+        : _buildPill(context, label);
+  }
+
+  Widget _buildInline(BuildContext context, String label) {
+    return Padding(
+      padding: EdgeInsets.only(top: 2, left: isMine ? 0 : 36),
+      child: Align(
+        alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+        child: Semantics(
+          label: hasUnread ? 'View $label (new replies)' : 'View $label',
+          button: true,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(2),
+            onTap: onTap == null ? null : () => onTap!(message),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: context.accent,
+                    fontWeight: FontWeight.w500,
+                    decoration: TextDecoration.underline,
+                    decorationColor: context.accent.withValues(alpha: 0.4),
                   ),
-                  if (hasUnread) _unreadDot(context),
-                ],
-              ),
+                ),
+                if (hasUnread) _unreadDot(context),
+              ],
             ),
           ),
         ),
-      );
-    }
+      ),
+    );
+  }
+
+  Widget _buildPill(BuildContext context, String label) {
     return Padding(
       padding: EdgeInsets.only(top: 4, left: isMine ? 0 : 36),
       child: Align(

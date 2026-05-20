@@ -33,6 +33,12 @@ part 'ws_handlers/presence_handlers.dart';
 part 'ws_handlers/voice_handlers.dart';
 part 'ws_handlers/crypto_handlers.dart';
 
+/// Placeholder content rendered when an inbound GRP2 group message fails
+/// sender signature verification (or the sender's verify key cannot be
+/// fetched). Distinct from "[Could not decrypt…]" because this is a
+/// security signal, not a key-out-of-sync transient.
+const _kCouldNotVerifySender = '[Could not verify sender]';
+
 /// State that tracks both connection status and typing indicators.
 class WebSocketState {
   final bool isConnected;
@@ -490,7 +496,7 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
                 'from=$fromUserId)',
             'WebSocket',
           );
-          return '[Could not verify sender]';
+          return _kCouldNotVerifySender;
         }
         final senderVerifyKey = await crypto.getSenderVerifyKeyForDevice(
           fromUserId,
@@ -502,7 +508,7 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
                 '$fromUserId:$fromDeviceId',
             'WebSocket',
           );
-          return '[Could not verify sender]';
+          return _kCouldNotVerifySender;
         }
         try {
           return await GroupCryptoService.verifyAndDecryptGroupMessageV2(
@@ -519,7 +525,7 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
             'GRP2 signature failed for $conversationId msg=$messageId: $e',
             'WebSocket',
           );
-          return '[Could not verify sender]';
+          return _kCouldNotVerifySender;
         }
       }
 
@@ -532,7 +538,7 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
               '(conv=$conversationId)',
           'WebSocket',
         );
-        return '[Could not verify sender]';
+        return _kCouldNotVerifySender;
       }
       return await GroupCryptoService.decryptGroupMessage(
         rawContent,

@@ -13,6 +13,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme/echo_theme.dart';
 import 'echo_context_menu.dart';
 
+/// Toast label used by every "Copy *ID" demo action in the testbed.
+const String _kCopyIdToast = 'Copy ID';
+
 class ContextMenuTestbed extends ConsumerWidget {
   const ContextMenuTestbed({super.key});
 
@@ -210,7 +213,7 @@ ContextMenuModel _demoMessageModel(BuildContext context) {
           ContextMenuAction(
             label: 'Copy Message ID',
             icon: Icons.tag,
-            onTap: () => _toast(context, 'Copy ID'),
+            onTap: () => _toast(context, _kCopyIdToast),
           ),
         ],
       ),
@@ -250,7 +253,7 @@ ContextMenuModel _demoConversationModel(BuildContext context) {
           ContextMenuAction(
             label: 'Copy Channel ID',
             icon: Icons.tag,
-            onTap: () => _toast(context, 'Copy ID'),
+            onTap: () => _toast(context, _kCopyIdToast),
           ),
         ],
       ),
@@ -320,7 +323,7 @@ ContextMenuModel _demoMemberModel(BuildContext context) {
           ContextMenuAction(
             label: 'Copy User ID',
             icon: Icons.tag,
-            onTap: () => _toast(context, 'Copy ID'),
+            onTap: () => _toast(context, _kCopyIdToast),
           ),
         ],
       ),
