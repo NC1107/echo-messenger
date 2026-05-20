@@ -7,41 +7,41 @@ Audit baseline commit range: `628e623ebd6108b230f313ccebdcb922e6f09e3d^..HEAD` (
 Last updated: 2026-05-20.
 
 ## Summary
-- Critical / High remaining: 4
+- Critical / High remaining: 0  (TD-1..TD-4 shipped in PR #1007)
 - Medium remaining: 11
 - Low remaining: 8
 
 ---
 
-## Critical / High — outstanding
+## Critical / High — RESOLVED in PR #1007
 
-### TD-1 — Parallel identity-key fetch in `performRotation`
+### TD-1 — Parallel identity-key fetch in `performRotation` ✅ shipped
 **File:** `apps/client/lib/src/services/group_crypto_service.dart:695`
 **Severity:** high
 **Source:** performance, frontend, security reviewers
-**What:** `performRotation` fetches each member's identity key serially in a for-loop, one HTTP round-trip per member. With `forceRefresh=true` the TOFU cache is bypassed unconditionally. A 100-member group triggers 100 sequential awaits before the POST.
-**Fix:** Batch via `Future.wait([...members.map(fetchIdentityKey)])`. Eventually add a server-side batch endpoint `GET /api/keys/bundles?ids=...`. **Effort:** medium.
+**What:** `performRotation` fetched each member's identity key serially in a for-loop.
+**Shipped:** `Future.wait` parallelises the N fetches; wall time collapses from O(N) RTTs to roughly one. A future server-side batch endpoint would further cut it to a single request.
 
-### TD-2 — Server gate: validate creator has keys before `is_encrypted=true`
+### TD-2 — Server gate: validate creator has keys before `is_encrypted=true` ✅ shipped
 **File:** `apps/server/src/routes/groups/create.rs:42-50`
 **Severity:** medium (rated up because of cascading wedge risk)
 **Source:** backend reviewer
-**What:** A malicious or buggy client can `POST /api/groups` with `is_encrypted=true` even without published prekeys/identity keys, permanently bricking the conversation (no UPDATE endpoint exists to flip it back).
-**Fix:** Before calling `create_group_with_visibility`, when `body.is_encrypted == true`, validate creator has ≥1 prekey + current identity via `db::keys`. Reject 400. **Effort:** small.
+**What:** A malicious or buggy client could `POST /api/groups` with `is_encrypted=true` even without published prekeys, permanently bricking the conversation.
+**Shipped:** `db::keys::has_publishable_keys` runs an EXISTS check; the route returns 400 with a friendly message when the caller hasn't completed key setup.
 
-### TD-3 — Transactional consistency of group creation
+### TD-3 — Transactional consistency of group creation ✅ shipped
 **File:** `apps/server/src/routes/groups/create.rs:54-76`
 **Severity:** high
 **Source:** backend reviewer
-**What:** `create_group_with_visibility` commits its own tx; then two `create_channel` calls run outside any tx. Partial failure leaves an orphan group with one channel.
-**Fix:** Move channel seeds inside `create_group_with_visibility` or wrap the trio in a single `create_group_full` helper that commits atomically. **Effort:** medium.
+**What:** `create_group_with_visibility` committed its own tx; two `create_channel` calls then ran outside any tx, leaving orphan groups on partial failure.
+**Shipped:** Channel inserts moved inside `create_group_with_visibility`; the group + member + channel inserts all share one tx.
 
-### TD-4 — TOFU bypass in group key rotation silently trusts changed identity keys
+### TD-4 — TOFU bypass in group key rotation silently trusts changed identity keys ✅ shipped
 **File:** `apps/client/lib/src/services/crypto/peer_identity_extension.dart:22-44` (consumed at `apps/client/lib/src/providers/crypto_provider.dart:486-489`, `ws_handlers/crypto_handlers.dart:144`)
 **Severity:** high
 **Source:** security reviewer
-**What:** When `forceRefresh=true`, the cache is bypassed and the server-fetched key is wrapped into the new group key envelope — even when the server-supplied key differs from the previously-trusted TOFU key. A compromised server could substitute a key it controls and silently receive a valid group-key envelope.
-**Fix:** After `fetchPeerIdentityKey(..., forceRefresh: true)` returns, call `crypto.hasPeerIdentityKeyChanged(userId)` and either abort the rotation or surface an explicit admin confirmation flow when the flag is set. **Effort:** medium.
+**What:** `forceRefresh=true` bypassed the TOFU cache; the new server-fetched key was wrapped into the rotation envelope without checking whether the key had changed since first contact. A compromised server could substitute a key the user has never confirmed.
+**Shipped:** `performRotation` now accepts a `hasIdentityKeyChanged` callback. After the parallel identity-key fetch, the rotation calls the checker per user and aborts when any TOFU flag is set. Both rotation call sites pass the checker. Follow-up (deferred): explicit admin confirm UI to acknowledge the change and resume rotation.
 
 ---
 
@@ -149,8 +149,9 @@ Each test sketched in the test-coverage reviewer's findings. **Effort:** medium 
 
 ---
 
-## Already addressed in audit follow-up PR
+## Already addressed
 
+### PR #1006 (initial audit follow-up)
 - ✅ Rotation-storm single-flight per conversation in `seedInitialGroupKey` (critical)
 - ✅ Cached `_mentionCandidates` (no allocation per keystroke)
 - ✅ Logged probe failure in `seedInitialGroupKey`
@@ -160,11 +161,17 @@ Each test sketched in the test-coverage reviewer's findings. **Effort:** medium 
 - ✅ Deleted `MentionCandidate` dead class
 - ✅ Server-side length caps: `encrypted_key` ≤ 512 bytes, `triggered_by_event` ≤ 128 chars
 
+### PR #1007 (high-tier batch)
+- ✅ **TD-1** Parallel identity-key fetch in `performRotation` (`Future.wait`)
+- ✅ **TD-2** Server gate refuses `is_encrypted=true` without published keys
+- ✅ **TD-3** Channels seeded inside the group-create transaction
+- ✅ **TD-4** Rotation aborts when any participant's TOFU flag is set
+
 ## Progress tracking
-- [ ] TD-1 parallel identity-key fetch
-- [ ] TD-2 server gate on `is_encrypted=true`
-- [ ] TD-3 / TD-9 channel-create in tx
-- [ ] TD-4 TOFU bypass detection
+- [x] TD-1 parallel identity-key fetch — PR #1007
+- [x] TD-2 server gate on `is_encrypted=true` — PR #1007
+- [x] TD-3 / TD-9 channel-create in tx — PR #1007
+- [x] TD-4 TOFU bypass detection — PR #1007
 - [ ] TD-5 explicit refetch on 409
 - [ ] TD-6 TOCTOU version probe
 - [ ] TD-7 `is_encrypted` immutability guard
