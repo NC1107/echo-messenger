@@ -8,6 +8,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/chat_message.dart';
+import '../models/conversation.dart';
 import '../services/crypto_service.dart' show IdentityKeyChangedException;
 import '../services/debug_log_service.dart';
 import '../services/group_crypto_service.dart';
@@ -589,109 +590,42 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     // GRP1 paths leave this null and the server keeps minting its own.
     String? clientMessageId;
     if (isEncrypted) {
-      try {
-        final groupCrypto = ref.read(groupCryptoServiceProvider);
-        final token = ref.read(authProvider).token ?? '';
-        groupCrypto.setToken(token);
-        var keyResult = await groupCrypto.getGroupKey(conversationId);
-
-        // Self-heal: if there's no usable key and the sender is the
-        // group's admin/owner, the wedged envelope is theirs to rotate.
-        // Run seedInitialGroupKey (which probes /keys/latest and bumps
-        // past the existing version) and retry the fetch. This rescues
-        // the most common stuck case — an owner whose group was wedged
-        // by an earlier client and who would otherwise see "Message
-        // may not have been delivered" forever, with no banner to tap
-        // because send-failures don't bump the receive-failure counter.
-        if (keyResult == null) {
-          final myUserId = ref.read(authProvider).userId ?? '';
-          final myMember = conversation?.members
-              .where((m) => m.userId == myUserId)
-              .firstOrNull;
-          final isAdminOrOwner =
-              myMember?.role == 'owner' || myMember?.role == 'admin';
-          if (isAdminOrOwner) {
-            debugLog(
-              'No usable group key for $conversationId — owner self-heal',
-              'WebSocket',
-            );
-            await ref
-                .read(cryptoProvider.notifier)
-                .seedInitialGroupKey(conversationId);
-            keyResult = await groupCrypto.getGroupKey(conversationId);
-            // TD-5: if seedInitialGroupKey lost a 409 race the local
-            // cache may still be empty even though the server now has
-            // a fresh key version. Force a network refetch before we
-            // give up, so a rotation won-elsewhere doesn't bounce the
-            // sender into the failed-message retry loop.
-            keyResult ??= await groupCrypto.fetchGroupKey(conversationId);
-          }
-        }
-
-        if (keyResult == null) {
-          // No group session yet -- hard fail rather than leak plaintext.
-          _addFailedMessage(
-            '',
-            _friendlyEncryptionError('No group session'),
-            conversationId: conversationId,
-            originalContent: content,
-          );
-          return;
-        }
-        final (_, keyBase64) = keyResult;
-
-        // Phase 2D dispatch: GRP2 if the cached envelope's
-        // min_wire_version pins us there, GRP1 otherwise. Old groups
-        // and groups whose rotator hasn't upgraded yet stay on GRP1
-        // until the next rotation bumps them.
-        final minWireVersion =
-            groupCrypto.cachedMinWireVersion(conversationId) ?? 1;
-        if (minWireVersion >= 2) {
-          final crypto = ref.read(cryptoServiceProvider);
-          final signingKey = crypto.signingKeyPair;
-          if (signingKey == null) {
-            // Identity signing key isn't loaded yet (mid-init). Refuse
-            // to fall back to GRP1 because the envelope is pinned to
-            // GRP2 — that would just bounce off the receiver's
-            // min_wire_version guard. Surface as a typed failure.
-            _addFailedMessage(
-              '',
-              _friendlyEncryptionError('Signing key unavailable for GRP2 send'),
-              conversationId: conversationId,
-              originalContent: content,
-            );
-            return;
-          }
-          final convIdBytes = uuidStringToBytes(conversationId);
-          final msgIdBytes = newUuidBytes();
-          clientMessageId = uuidBytesToString(msgIdBytes);
-          payload = await GroupCryptoService.encryptGroupMessageV2(
-            plaintext: content,
-            keyBase64: keyBase64,
-            conversationIdBytes: convIdBytes,
-            messageIdBytes: msgIdBytes,
-            senderSigningKey: signingKey,
-          );
-        } else {
-          payload = await GroupCryptoService.encryptGroupMessage(
-            content,
-            keyBase64,
-          );
-        }
-      } catch (e) {
-        debugLog('Group encryption failed: $e', 'WebSocket');
-        _addFailedMessage(
-          '',
-          _friendlyEncryptionError(e),
-          conversationId: conversationId,
-          originalContent: content,
-        );
+      final encrypted = await _encryptForGroupSend(
+        conversationId: conversationId,
+        content: content,
+        conversation: conversation,
+      );
+      if (encrypted == null) {
+        // Failure already enqueued via _addFailedMessage; do not send.
         return;
       }
+      payload = encrypted.payload;
+      clientMessageId = encrypted.clientMessageId;
     } else {
       payload = content;
     }
 
+    _channel?.sink.add(
+      jsonEncode(
+        _buildGroupSendFrame(
+          conversationId: conversationId,
+          payload: payload,
+          clientMessageId: clientMessageId,
+          channelId: channelId,
+          replyToId: replyToId,
+        ),
+      ),
+    );
+  }
+
+  /// Builds the JSON map sent over the wire for a group `send_message`.
+  Map<String, dynamic> _buildGroupSendFrame({
+    required String conversationId,
+    required String payload,
+    required String? clientMessageId,
+    required String? channelId,
+    required String? replyToId,
+  }) {
     final msg = <String, dynamic>{
       'type': 'send_message',
       'conversation_id': conversationId,
@@ -709,7 +643,155 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     if (replyToId != null && replyToId.isNotEmpty) {
       msg['reply_to_id'] = replyToId;
     }
-    _channel?.sink.add(jsonEncode(msg));
+    return msg;
+  }
+
+  /// Encrypts [content] for a group send. Returns `null` when encryption
+  /// fails (and enqueues a failed-message placeholder for retry); callers
+  /// must short-circuit in that case so plaintext never reaches the wire.
+  Future<({String payload, String? clientMessageId})?> _encryptForGroupSend({
+    required String conversationId,
+    required String content,
+    required Conversation? conversation,
+  }) async {
+    try {
+      final groupCrypto = ref.read(groupCryptoServiceProvider);
+      final token = ref.read(authProvider).token ?? '';
+      groupCrypto.setToken(token);
+
+      final keyResult = await _resolveGroupKeyWithSelfHeal(
+        conversationId: conversationId,
+        conversation: conversation,
+        groupCrypto: groupCrypto,
+      );
+      if (keyResult == null) {
+        // No group session yet -- hard fail rather than leak plaintext.
+        _addFailedMessage(
+          '',
+          _friendlyEncryptionError('No group session'),
+          conversationId: conversationId,
+          originalContent: content,
+        );
+        return null;
+      }
+      final (_, keyBase64) = keyResult;
+
+      // Phase 2D dispatch: GRP2 if the cached envelope's
+      // min_wire_version pins us there, GRP1 otherwise. Old groups
+      // and groups whose rotator hasn't upgraded yet stay on GRP1
+      // until the next rotation bumps them.
+      final minWireVersion =
+          groupCrypto.cachedMinWireVersion(conversationId) ?? 1;
+      if (minWireVersion >= 2) {
+        return await _encryptGroupGrp2(
+          conversationId: conversationId,
+          content: content,
+          keyBase64: keyBase64,
+        );
+      }
+      final payload = await GroupCryptoService.encryptGroupMessage(
+        content,
+        keyBase64,
+      );
+      return (payload: payload, clientMessageId: null);
+    } catch (e) {
+      debugLog('Group encryption failed: $e', 'WebSocket');
+      _addFailedMessage(
+        '',
+        _friendlyEncryptionError(e),
+        conversationId: conversationId,
+        originalContent: content,
+      );
+      return null;
+    }
+  }
+
+  /// Looks up the cached group key, and if missing tries an owner/admin
+  /// self-heal seed + refetch so a wedged envelope can recover without
+  /// the user needing to tap a banner.
+  Future<(int, String)?> _resolveGroupKeyWithSelfHeal({
+    required String conversationId,
+    required Conversation? conversation,
+    required GroupCryptoService groupCrypto,
+  }) async {
+    var keyResult = await groupCrypto.getGroupKey(conversationId);
+    if (keyResult != null) {
+      return keyResult;
+    }
+
+    // Self-heal: if there's no usable key and the sender is the
+    // group's admin/owner, the wedged envelope is theirs to rotate.
+    // Run seedInitialGroupKey (which probes /keys/latest and bumps
+    // past the existing version) and retry the fetch. This rescues
+    // the most common stuck case — an owner whose group was wedged
+    // by an earlier client and who would otherwise see "Message
+    // may not have been delivered" forever, with no banner to tap
+    // because send-failures don't bump the receive-failure counter.
+    if (!_isAdminOrOwnerOf(conversation)) {
+      return null;
+    }
+    debugLog(
+      'No usable group key for $conversationId — owner self-heal',
+      'WebSocket',
+    );
+    await ref
+        .read(cryptoProvider.notifier)
+        .seedInitialGroupKey(conversationId);
+    keyResult = await groupCrypto.getGroupKey(conversationId);
+    // TD-5: if seedInitialGroupKey lost a 409 race the local
+    // cache may still be empty even though the server now has
+    // a fresh key version. Force a network refetch before we
+    // give up, so a rotation won-elsewhere doesn't bounce the
+    // sender into the failed-message retry loop.
+    keyResult ??= await groupCrypto.fetchGroupKey(conversationId);
+    return keyResult;
+  }
+
+  /// True when the current user is an owner/admin of [conversation].
+  bool _isAdminOrOwnerOf(Conversation? conversation) {
+    final myUserId = ref.read(authProvider).userId ?? '';
+    final myMember = conversation?.members
+        .where((m) => m.userId == myUserId)
+        .firstOrNull;
+    final role = myMember?.role;
+    return role == 'owner' || role == 'admin';
+  }
+
+  /// Encrypts a GRP2 group send. Returns `null` (after enqueueing a
+  /// failed-message placeholder) when the identity signing key isn't
+  /// available — we refuse to silently downgrade to GRP1 because the
+  /// envelope's min_wire_version is pinned to 2.
+  Future<({String payload, String? clientMessageId})?> _encryptGroupGrp2({
+    required String conversationId,
+    required String content,
+    required String keyBase64,
+  }) async {
+    final crypto = ref.read(cryptoServiceProvider);
+    final signingKey = crypto.signingKeyPair;
+    if (signingKey == null) {
+      // Identity signing key isn't loaded yet (mid-init). Refuse
+      // to fall back to GRP1 because the envelope is pinned to
+      // GRP2 — that would just bounce off the receiver's
+      // min_wire_version guard. Surface as a typed failure.
+      _addFailedMessage(
+        '',
+        _friendlyEncryptionError('Signing key unavailable for GRP2 send'),
+        conversationId: conversationId,
+        originalContent: content,
+      );
+      return null;
+    }
+    final convIdBytes = uuidStringToBytes(conversationId);
+    final msgIdBytes = newUuidBytes();
+    final clientMessageId = uuidBytesToString(msgIdBytes);
+    final payload = await GroupCryptoService.encryptGroupMessageV2(
+      plaintext: content,
+      keyBase64: keyBase64,
+      conversationIdBytes: convIdBytes,
+      messageIdBytes: msgIdBytes,
+      senderSigningKey: signingKey,
+    );
+    return (payload: payload, clientMessageId: clientMessageId);
   }
 
   /// Send a typing indicator (throttled to max 1 per 3 seconds per conversation).
