@@ -122,7 +122,7 @@ class DecryptFailurePill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: 'Message could not be decrypted',
+      label: "Couldn't decrypt this message",
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
@@ -135,7 +135,7 @@ class DecryptFailurePill extends StatelessWidget {
             Icon(Icons.lock_outline, size: 16, color: context.textSecondary),
             const SizedBox(width: 6),
             Text(
-              'Message could not be decrypted',
+              "Couldn't decrypt this message",
               style: GoogleFonts.inter(
                 fontStyle: FontStyle.italic,
                 color: context.textSecondary,
