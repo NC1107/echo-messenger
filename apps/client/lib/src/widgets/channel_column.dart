@@ -17,10 +17,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/channel.dart';
 import '../models/conversation.dart';
+import '../providers/channel_categories_provider.dart';
 import '../providers/channels_provider.dart';
 import '../providers/livekit_voice/livekit_voice_provider.dart';
 import '../theme/echo_theme.dart';
 import 'avatar_utils.dart' show buildAvatar, groupAvatarColor;
+
+const String _kTextCategoryKey = 'text';
+const String _kVoiceCategoryKey = 'voice';
 
 class ChannelColumn extends ConsumerWidget {
   final Conversation conversation;
@@ -49,6 +53,9 @@ class ChannelColumn extends ConsumerWidget {
     final textChannels = channels.where((c) => c.isText).toList();
     final voiceChannels = channels.where((c) => c.isVoice).toList();
     final voiceState = ref.watch(livekitVoiceProvider);
+    final collapsed = ref.watch(channelCategoryCollapsedProvider);
+    final textCollapsed = collapsed.contains(_kTextCategoryKey);
+    final voiceCollapsed = collapsed.contains(_kVoiceCategoryKey);
 
     return Container(
       width: width,
@@ -66,27 +73,41 @@ class ChannelColumn extends ConsumerWidget {
               padding: const EdgeInsets.symmetric(vertical: 8),
               children: [
                 if (textChannels.isNotEmpty) ...[
-                  const _CategoryHeader(label: 'Text Channels'),
-                  for (final c in textChannels)
-                    _TextChannelRow(
-                      channel: c,
-                      isSelected: c.id == selectedTextChannelId,
-                      onTap: () => onTextChannelChanged(c.id),
-                    ),
+                  _CategoryHeader(
+                    label: 'Text Channels',
+                    collapsed: textCollapsed,
+                    onToggle: () => ref
+                        .read(channelCategoryCollapsedProvider.notifier)
+                        .toggle(_kTextCategoryKey),
+                  ),
+                  if (!textCollapsed)
+                    for (final c in textChannels)
+                      _TextChannelRow(
+                        channel: c,
+                        isSelected: c.id == selectedTextChannelId,
+                        onTap: () => onTextChannelChanged(c.id),
+                      ),
                   const SizedBox(height: 12),
                 ],
                 if (voiceChannels.isNotEmpty) ...[
-                  const _CategoryHeader(label: 'Voice Channels'),
-                  for (final c in voiceChannels)
-                    _VoiceChannelGroup(
-                      channel: c,
-                      members: channelsState.voiceSessionsFor(c.id),
-                      isActive:
-                          voiceState.channelId == c.id &&
-                          voiceState.conversationId == conversation.id,
-                      onJoin: () => _join(ref, c),
-                      onOpenLounge: onShowLounge,
-                    ),
+                  _CategoryHeader(
+                    label: 'Voice Channels',
+                    collapsed: voiceCollapsed,
+                    onToggle: () => ref
+                        .read(channelCategoryCollapsedProvider.notifier)
+                        .toggle(_kVoiceCategoryKey),
+                  ),
+                  if (!voiceCollapsed)
+                    for (final c in voiceChannels)
+                      _VoiceChannelGroup(
+                        channel: c,
+                        members: channelsState.voiceSessionsFor(c.id),
+                        isActive:
+                            voiceState.channelId == c.id &&
+                            voiceState.conversationId == conversation.id,
+                        onJoin: () => _join(ref, c),
+                        onOpenLounge: onShowLounge,
+                      ),
                 ],
               ],
             ),
@@ -167,19 +188,44 @@ class _ColumnHeader extends StatelessWidget {
 
 class _CategoryHeader extends StatelessWidget {
   final String label;
-  const _CategoryHeader({required this.label});
+  final bool collapsed;
+  final VoidCallback onToggle;
+  const _CategoryHeader({
+    required this.label,
+    required this.collapsed,
+    required this.onToggle,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 4, 8, 6),
-      child: Text(
-        label.toUpperCase(),
-        style: TextStyle(
-          color: context.textMuted,
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.6,
+    return Semantics(
+      label: '$label category, ${collapsed ? "collapsed" : "expanded"}',
+      button: true,
+      child: InkWell(
+        onTap: onToggle,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
+          child: Row(
+            children: [
+              Icon(
+                collapsed ? Icons.chevron_right : Icons.expand_more,
+                size: 14,
+                color: context.textMuted,
+              ),
+              const SizedBox(width: 2),
+              Expanded(
+                child: Text(
+                  label.toUpperCase(),
+                  style: TextStyle(
+                    color: context.textMuted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
