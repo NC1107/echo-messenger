@@ -213,8 +213,9 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       onMarkAsUnread: null,
       onToggleMute: () => _toggleMute(conv.id),
       onTogglePin: () => _togglePin(conv.id),
-      onOpenInfo:
-          conv.isGroup ? () => context.go('/group-info/${conv.id}') : null,
+      onOpenInfo: conv.isGroup
+          ? () => context.go('/group-info/${conv.id}')
+          : null,
       // Invite-people / encryption-activity link out to existing
       // routes today; centralising the entry points is enough for v1.
       onInvitePeople: canInviteOrManage
@@ -223,7 +224,11 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       onOpenEncryptionActivity: canInviteOrManage
           ? () => context.go('/group-info/${conv.id}')
           : null,
-      onViewSafetyNumber: _resolveSafetyNumberCallback(conv, myMember, myUserId),
+      onViewSafetyNumber: _resolveSafetyNumberCallback(
+        conv,
+        myMember,
+        myUserId,
+      ),
       onCopyId: () => _copyConversationId(conv.id),
       onLeave: canLeave ? () => _leaveGroup(conv) : null,
       onDelete: _resolveDeleteCallback(conv, canDeleteGroup),
@@ -235,7 +240,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   // entirely rather than render it disabled.
   bool _resolveCanLeave(Conversation conv, String myRole, String myUserId) {
     if (!conv.isGroup) return false;
-    final ownerWithMembers = myRole == 'owner' &&
+    final ownerWithMembers =
+        myRole == 'owner' &&
         conv.members.where((m) => m.userId != myUserId).isNotEmpty;
     return !ownerWithMembers;
   }
@@ -266,9 +272,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   ) {
     if (conv.isGroup || myMember == null) return null;
     return () {
-      final peer = conv.members
-          .where((m) => m.userId != myUserId)
-          .firstOrNull;
+      final peer = conv.members.where((m) => m.userId != myUserId).firstOrNull;
       if (peer != null) {
         context.go('/safety-number/${peer.userId}');
       }

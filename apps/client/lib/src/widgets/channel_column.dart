@@ -86,8 +86,7 @@ class _ChannelColumnState extends ConsumerState<ChannelColumn> {
       ),
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
-        onSecondaryTapUp: (details) =>
-            _showCreateMenu(details.globalPosition),
+        onSecondaryTapUp: (details) => _showCreateMenu(details.globalPosition),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -172,8 +171,7 @@ class _ChannelColumnState extends ConsumerState<ChannelColumn> {
                       .setWidth(committed);
                 }
               },
-              onHorizontalDragCancel: () =>
-                  setState(() => _dragWidth = null),
+              onHorizontalDragCancel: () => setState(() => _dragWidth = null),
               child: const SizedBox.expand(),
             ),
           ),
@@ -280,9 +278,7 @@ class _ChannelColumnState extends ConsumerState<ChannelColumn> {
 
   Future<String?> _promptChannelName(String kind) {
     final controller = TextEditingController();
-    final title = kind == 'voice'
-        ? 'New voice channel'
-        : 'New text channel';
+    final title = kind == 'voice' ? 'New voice channel' : 'New text channel';
     final hint = kind == 'voice' ? 'lounge' : 'general';
     return showDialog<String>(
       context: context,
@@ -428,11 +424,7 @@ class _CategoryHeader extends StatelessWidget {
                   onTap: onCreate,
                   child: Padding(
                     padding: const EdgeInsets.all(2),
-                    child: Icon(
-                      Icons.add,
-                      size: 14,
-                      color: context.textMuted,
-                    ),
+                    child: Icon(Icons.add, size: 14, color: context.textMuted),
                   ),
                 ),
             ],
