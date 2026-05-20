@@ -4,6 +4,7 @@ import 'package:echo_app/src/providers/channels_provider.dart';
 import 'package:echo_app/src/widgets/channel_column.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/pump_app.dart';
 
@@ -11,6 +12,10 @@ import '../helpers/pump_app.dart';
 /// Verifies rendering of categories, text + voice rows, voice-member
 /// nesting, and the selected-state highlight on the active text channel.
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   Conversation conv(String displayName) => Conversation(
     id: 'c1',
     isGroup: true,
@@ -142,6 +147,31 @@ void main() {
       expect(find.text('jane'), findsOneWidget);
       // Member count badge on the voice row.
       expect(find.text('1'), findsOneWidget);
+    });
+
+    testWidgets('tapping a category header collapses its rows', (tester) async {
+      await tester.pumpApp(
+        ChannelColumn(
+          conversation: conv('Echo Devs'),
+          selectedTextChannelId: 't1',
+          onTextChannelChanged: (_) {},
+        ),
+        overrides: [
+          channelsOverride(
+            channelsByConversation: {
+              'c1': [text('t1', 'general'), text('t2', 'releases', pos: 1)],
+            },
+          ),
+        ],
+      );
+      expect(find.text('general'), findsOneWidget);
+      expect(find.text('releases'), findsOneWidget);
+      await tester.tap(find.text('TEXT CHANNELS'));
+      await tester.pumpAndSettle();
+      expect(find.text('general'), findsNothing);
+      expect(find.text('releases'), findsNothing);
+      // Header still visible so the user can re-expand.
+      expect(find.text('TEXT CHANNELS'), findsOneWidget);
     });
 
     testWidgets('voice row with no members hides the count', (tester) async {
