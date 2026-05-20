@@ -70,6 +70,15 @@ extension PresenceHandlersOn on WsMessageHandler {
 
   /// #660 — Insert the newly-joined member into the local conversations state
   /// so the members panel refreshes in real time without a manual reload.
+  ///
+  /// For encrypted groups, also auto-rotate the group key so the new member
+  /// gets an envelope wrapped for their identity key. Without this, a public
+  /// encrypted group is unusable for any joiner — they have no key to
+  /// decrypt incoming messages or encrypt outgoing ones, and the existing
+  /// banner-based recovery only fires after 3 decrypt failures on the
+  /// joiner's side (which they can't trigger because they can't even send).
+  /// Only admins/owners run the rotation; everyone else just updates their
+  /// local member list and waits for the rotated key to arrive over WS.
   void _handleMemberAdded(Map<String, dynamic> json) {
     final conversationId = json['conversation_id'] as String? ?? '';
     final userId = json['user_id'] as String? ?? '';
@@ -85,6 +94,37 @@ extension PresenceHandlersOn on WsMessageHandler {
     ref
         .read(conversationsProvider.notifier)
         .addGroupMember(conversationId, member);
+
+    _maybeRotateOnJoin(conversationId, userId);
+  }
+
+  /// Rotate the group key when a new member joins an encrypted group, if
+  /// the current user is admin/owner. The rotation includes the new member
+  /// in the recipient list so their first decrypt works.
+  void _maybeRotateOnJoin(String conversationId, String newMemberId) {
+    final myUserId = ref.read(authProvider).userId ?? '';
+    if (myUserId.isEmpty || myUserId == newMemberId) return;
+
+    final conv = ref
+        .read(conversationsProvider)
+        .conversations
+        .where((c) => c.id == conversationId)
+        .firstOrNull;
+    if (conv == null || !conv.isEncrypted) return;
+
+    final myMember = conv.members
+        .where((m) => m.userId == myUserId)
+        .firstOrNull;
+    final isAdminOrOwner =
+        myMember?.role == 'owner' || myMember?.role == 'admin';
+    if (!isAdminOrOwner) return;
+
+    debugLog(
+      'Encrypted group $conversationId got new member — rotating key',
+      'WebSocket',
+    );
+    // Fire-and-forget; failures surface via the existing group-crypto logs.
+    ref.read(cryptoProvider.notifier).seedInitialGroupKey(conversationId);
   }
 
   void _handleMention(Map<String, dynamic> json, String myUserId) {
