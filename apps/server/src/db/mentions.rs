@@ -64,43 +64,50 @@ fn extract_at_usernames(content: &str) -> Vec<String> {
     let bytes = content.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] != b'@' {
+        if bytes[i] != b'@' || !is_left_boundary(content, i) {
             i += 1;
             continue;
         }
-        // Boundary on the left: start-of-string or non-word.
-        let left_ok = i == 0
-            || !content[..i]
-                .chars()
-                .next_back()
-                .is_some_and(|c| c.is_alphanumeric() || c == '_');
-        if !left_ok {
-            i += 1;
-            continue;
-        }
-        // Read [A-Za-z0-9_]+ token after `@`.
-        let token_start = i + 1;
-        let mut token_end = token_start;
-        while token_end < bytes.len() {
-            let c = bytes[token_end];
-            let word = c.is_ascii_alphanumeric() || c == b'_';
-            if !word {
-                break;
-            }
-            token_end += 1;
-        }
-        if token_end > token_start {
-            let token = content[token_start..token_end].to_lowercase();
-            // Skip the broadcast keywords -- those are scanned separately
-            // and resolved against the full membership roster, not by
-            // username match.
-            if token != "everyone" && token != "here" && !out.contains(&token) {
-                out.push(token);
-            }
+        let token_end = scan_word_end(bytes, i + 1);
+        if token_end > i + 1 {
+            push_unique_non_broadcast(&content[i + 1..token_end], &mut out);
         }
         i = token_end.max(i + 1);
     }
     out
+}
+
+/// True when position `i` in `content` is at the start-of-string or
+/// preceded by a non-word character. Boundary check for `@mention`
+/// detection: prevents matching e.g. `email@host` as a mention.
+fn is_left_boundary(content: &str, i: usize) -> bool {
+    i == 0
+        || !content[..i]
+            .chars()
+            .next_back()
+            .is_some_and(|c| c.is_alphanumeric() || c == '_')
+}
+
+/// Returns the byte index of the first non-word byte at or after `start`.
+fn scan_word_end(bytes: &[u8], start: usize) -> usize {
+    let mut end = start;
+    while end < bytes.len() {
+        let c = bytes[end];
+        if !(c.is_ascii_alphanumeric() || c == b'_') {
+            break;
+        }
+        end += 1;
+    }
+    end
+}
+
+/// Lowercase `token` and push onto `out` unless it is a broadcast keyword
+/// (`everyone` / `here`, resolved separately) or already present.
+fn push_unique_non_broadcast(token: &str, out: &mut Vec<String>) {
+    let lower = token.to_lowercase();
+    if lower != "everyone" && lower != "here" && !out.contains(&lower) {
+        out.push(lower);
+    }
 }
 
 /// Resolve broadcast keywords to all non-removed members of the conversation.

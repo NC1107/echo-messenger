@@ -32,6 +32,12 @@ const _placeholderContents = <String>{
   '[Encrypted for another device of this account]',
 };
 
+/// Placeholder shown when an inbound GRP2 group message fails sender-
+/// signature verification (or we cannot fetch the sender's verify key).
+/// Distinct from "[Could not decrypt…]" because this is a *security*
+/// signal rather than a key-out-of-sync transient.
+const _kCouldNotVerifySender = '[Could not verify sender]';
+
 bool _isPlaceholderContent(String c) =>
     _placeholderContents.contains(c) || c.startsWith('[Could not decrypt');
 
@@ -144,62 +150,22 @@ class ChatState {
     var updatedFailures = consecutiveDecryptFailures;
     var updatedSigFailures = signatureFailures;
 
-    // Audit P0-3 + Phase 4: track decrypt-failure placeholders so the
-    // chat UI can surface a recovery banner. Two distinct buckets:
-    //   - `consecutiveDecryptFailures` — count "[Could not decrypt…]"
-    //     transients, reset on any genuine decrypt success.
-    //   - `signatureFailures` — sticky set of conversations where a
-    //     "[Could not verify sender]" landed. Cleared only when the
-    //     user closes / reopens the conversation OR an admin rotates
-    //     the key (which also drops the cached envelope).
     if (msg.conversationId.isNotEmpty) {
-      final isDecryptFailure = msg.content.startsWith('[Could not decrypt');
-      final isSigFailure = msg.content.startsWith('[Could not verify sender');
-      final prev = updatedFailures[msg.conversationId] ?? 0;
-      if (isDecryptFailure) {
-        updatedFailures = {...updatedFailures, msg.conversationId: prev + 1};
-      } else if (prev > 0 &&
-          !_isPlaceholderContent(msg.content) &&
-          !msg.isSystemEvent) {
-        // Genuine success after one or more failures — clear the counter.
-        updatedFailures = {...updatedFailures}..remove(msg.conversationId);
-      }
-      if (isSigFailure && !updatedSigFailures.contains(msg.conversationId)) {
-        updatedSigFailures = {...updatedSigFailures, msg.conversationId};
-      }
-    }
-
-    if (msg.conversationId.isNotEmpty) {
-      final ids = Set<String>.from(
-        updatedIndexMap[msg.conversationId] ?? <String>{},
+      final (nextFailures, nextSigFailures) = _trackDecryptFailures(
+        msg,
+        updatedFailures,
+        updatedSigFailures,
       );
-      // O(1) deduplicate by ID
-      if (!ids.contains(msg.id)) {
-        final existing = updatedConvMap[msg.conversationId] ?? [];
-        var updated = [...existing, msg];
-        // Trim to cap, keeping newest messages.
-        if (updated.length > _maxMessagesPerConv) {
-          updated = updated.sublist(updated.length - _maxMessagesPerConv);
-        }
-        ids.add(msg.id);
-        // Rebuild index from trimmed list to stay consistent.
-        final newIds = updated.map((m) => m.id).toSet();
-        updatedConvMap = {...updatedConvMap, msg.conversationId: updated};
-        updatedIndexMap = {...updatedIndexMap, msg.conversationId: newIds};
-      } else {
-        // Id collision: existing entry might be a decrypt-pending
-        // placeholder (#430).  Replace it in place when isEncrypted
-        // and the content matches a known placeholder string.  The
-        // index already contains msg.id so no map mutation is needed.
-        final existing = updatedConvMap[msg.conversationId] ?? const [];
-        final idx = existing.indexWhere((m) => m.id == msg.id);
-        if (idx >= 0 &&
-            existing[idx].isEncrypted &&
-            _isPlaceholderContent(existing[idx].content)) {
-          final replaced = [...existing]..[idx] = msg;
-          updatedConvMap = {...updatedConvMap, msg.conversationId: replaced};
-        }
-      }
+      updatedFailures = nextFailures;
+      updatedSigFailures = nextSigFailures;
+
+      final (nextConvMap, nextIndexMap) = _appendOrReplaceMessage(
+        msg,
+        updatedConvMap,
+        updatedIndexMap,
+      );
+      updatedConvMap = nextConvMap;
+      updatedIndexMap = nextIndexMap;
     }
 
     return ChatState(
@@ -211,6 +177,79 @@ class ChatState {
       consecutiveDecryptFailures: updatedFailures,
       signatureFailures: updatedSigFailures,
     );
+  }
+
+  /// Audit P0-3 + Phase 4: track decrypt-failure placeholders so the
+  /// chat UI can surface a recovery banner. Two distinct buckets:
+  ///   - `consecutiveDecryptFailures` — count "[Could not decrypt…]"
+  ///     transients, reset on any genuine decrypt success.
+  ///   - `signatureFailures` — sticky set of conversations where a
+  ///     "[Could not verify sender]" landed. Cleared only when the
+  ///     user closes / reopens the conversation OR an admin rotates
+  ///     the key (which also drops the cached envelope).
+  (Map<String, int>, Set<String>) _trackDecryptFailures(
+    ChatMessage msg,
+    Map<String, int> failures,
+    Set<String> sigFailures,
+  ) {
+    final isDecryptFailure = msg.content.startsWith('[Could not decrypt');
+    final isSigFailure = msg.content.startsWith('[Could not verify sender');
+    final prev = failures[msg.conversationId] ?? 0;
+
+    var nextFailures = failures;
+    if (isDecryptFailure) {
+      nextFailures = {...failures, msg.conversationId: prev + 1};
+    } else if (prev > 0 &&
+        !_isPlaceholderContent(msg.content) &&
+        !msg.isSystemEvent) {
+      // Genuine success after one or more failures — clear the counter.
+      nextFailures = {...failures}..remove(msg.conversationId);
+    }
+
+    var nextSigFailures = sigFailures;
+    if (isSigFailure && !sigFailures.contains(msg.conversationId)) {
+      nextSigFailures = {...sigFailures, msg.conversationId};
+    }
+    return (nextFailures, nextSigFailures);
+  }
+
+  /// Append `msg` to its conversation list (deduped + capped) or, when an
+  /// existing decrypt-pending placeholder shares the same id (#430),
+  /// replace it in place. Returns the updated conv-map and id-index map.
+  (Map<String, List<ChatMessage>>, Map<String, Set<String>>)
+  _appendOrReplaceMessage(
+    ChatMessage msg,
+    Map<String, List<ChatMessage>> convMap,
+    Map<String, Set<String>> indexMap,
+  ) {
+    final ids = Set<String>.from(indexMap[msg.conversationId] ?? <String>{});
+    if (!ids.contains(msg.id)) {
+      final existing = convMap[msg.conversationId] ?? [];
+      var updated = [...existing, msg];
+      // Trim to cap, keeping newest messages.
+      if (updated.length > _maxMessagesPerConv) {
+        updated = updated.sublist(updated.length - _maxMessagesPerConv);
+      }
+      // Rebuild index from trimmed list to stay consistent.
+      final newIds = updated.map((m) => m.id).toSet();
+      return (
+        {...convMap, msg.conversationId: updated},
+        {...indexMap, msg.conversationId: newIds},
+      );
+    }
+    // Id collision: existing entry might be a decrypt-pending placeholder
+    // (#430). Replace it in place when isEncrypted and the content
+    // matches a known placeholder string. The index already contains
+    // msg.id so no map mutation is needed.
+    final existing = convMap[msg.conversationId] ?? const <ChatMessage>[];
+    final idx = existing.indexWhere((m) => m.id == msg.id);
+    if (idx >= 0 &&
+        existing[idx].isEncrypted &&
+        _isPlaceholderContent(existing[idx].content)) {
+      final replaced = [...existing]..[idx] = msg;
+      return ({...convMap, msg.conversationId: replaced}, indexMap);
+    }
+    return (convMap, indexMap);
   }
 
   /// Reset the consecutive-decrypt-failures counter for a conversation.
@@ -835,7 +874,7 @@ class Chat extends _$Chat {
       if (msg.content.startsWith(groupEncryptedPrefixV2)) {
         if (crypto == null) {
           return msg.copyWith(
-            content: '[Could not verify sender]',
+            content: _kCouldNotVerifySender,
             isEncrypted: true,
           );
         }
@@ -845,7 +884,7 @@ class Chat extends _$Chat {
         );
         if (senderVerifyKey == null) {
           return msg.copyWith(
-            content: '[Could not verify sender]',
+            content: _kCouldNotVerifySender,
             isEncrypted: true,
           );
         }
@@ -866,7 +905,7 @@ class Chat extends _$Chat {
             'GRP2 signature failed for ${msg.id}: $e',
           );
           return msg.copyWith(
-            content: '[Could not verify sender]',
+            content: _kCouldNotVerifySender,
             isEncrypted: true,
           );
         }
@@ -874,10 +913,7 @@ class Chat extends _$Chat {
 
       // GRP1 path. Refuse when the envelope is pinned to GRP2.
       if (minWireVersion >= 2) {
-        return msg.copyWith(
-          content: '[Could not verify sender]',
-          isEncrypted: true,
-        );
+        return msg.copyWith(content: _kCouldNotVerifySender, isEncrypted: true);
       }
       final decrypted = await GroupCryptoService.decryptGroupMessage(
         msg.content,

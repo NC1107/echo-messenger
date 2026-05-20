@@ -117,6 +117,63 @@ impl GroupKeyEnvelopeResponse {
 // POST /api/groups/:id/keys -- Upload group key envelopes (owner/admin only)
 // -------------------------------------------------------------------------
 
+/// Cap envelope count so a hostile admin can't pollute the table.
+const MAX_ENVELOPES_PER_REQUEST: usize = 10_000;
+/// Each envelope is a wrapped 32-byte AES-256 key (~124 base64 chars in
+/// practice). 512 bytes is generous headroom while blocking abuse —
+/// without this cap, a single 10K-envelope request could write up to
+/// ~10 GB of attacker-controlled TEXT.
+const MAX_ENCRYPTED_KEY_LEN: usize = 512;
+/// Audit reason string — bounded so a malicious admin can't write
+/// arbitrarily large blobs into the audit log that other admins
+/// re-download on every /encryption-activity GET.
+const MAX_TRIGGERED_BY_EVENT_LEN: usize = 128;
+
+/// Validates the body of an [`upload_group_key`] request. Extracted so the
+/// route handler stays under SonarCloud's cognitive-complexity threshold.
+fn validate_upload_request(body: &UploadGroupKeyRequest) -> Result<(), AppError> {
+    if body.envelopes.is_empty() {
+        return Err(AppError::bad_request("envelopes array cannot be empty"));
+    }
+    if body.key_version < 1 {
+        return Err(AppError::bad_request(
+            "key_version must be a positive integer",
+        ));
+    }
+    // The CHECK constraint on the column enforces 1..=255, but a clear
+    // 400 with a typed message beats the bare 23514 db error on the
+    // happy mistake (a client passing 0 to "disable" or a future GRPN
+    // value the server hasn't shipped support for yet).
+    if !(1..=255).contains(&body.min_wire_version) {
+        return Err(AppError::bad_request(
+            "min_wire_version must be between 1 and 255",
+        ));
+    }
+    if body.envelopes.len() > MAX_ENVELOPES_PER_REQUEST {
+        return Err(AppError::bad_request(format!(
+            "Too many envelopes (max {MAX_ENVELOPES_PER_REQUEST})"
+        )));
+    }
+    if body.triggered_by_event.len() > MAX_TRIGGERED_BY_EVENT_LEN {
+        return Err(AppError::bad_request(format!(
+            "triggered_by_event must be ≤{MAX_TRIGGERED_BY_EVENT_LEN} characters"
+        )));
+    }
+    for envelope in &body.envelopes {
+        if envelope.encrypted_key.is_empty() {
+            return Err(AppError::bad_request(
+                "encrypted_key cannot be empty in envelope",
+            ));
+        }
+        if envelope.encrypted_key.len() > MAX_ENCRYPTED_KEY_LEN {
+            return Err(AppError::bad_request(format!(
+                "encrypted_key must be ≤{MAX_ENCRYPTED_KEY_LEN} bytes"
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub async fn upload_group_key(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
@@ -136,59 +193,7 @@ pub async fn upload_group_key(
         ));
     }
 
-    if body.envelopes.is_empty() {
-        return Err(AppError::bad_request("envelopes array cannot be empty"));
-    }
-    if body.key_version < 1 {
-        return Err(AppError::bad_request(
-            "key_version must be a positive integer",
-        ));
-    }
-    // The CHECK constraint on the column enforces 1..=255, but a clear
-    // 400 with a typed message beats the bare 23514 db error on the
-    // happy mistake (a client passing 0 to "disable" or a future GRPN
-    // value the server hasn't shipped support for yet).
-    if !(1..=255).contains(&body.min_wire_version) {
-        return Err(AppError::bad_request(
-            "min_wire_version must be between 1 and 255",
-        ));
-    }
-
-    // Cap envelope count so a hostile admin can't pollute the table.
-    const MAX_ENVELOPES_PER_REQUEST: usize = 10_000;
-    if body.envelopes.len() > MAX_ENVELOPES_PER_REQUEST {
-        return Err(AppError::bad_request(format!(
-            "Too many envelopes (max {MAX_ENVELOPES_PER_REQUEST})"
-        )));
-    }
-
-    // Each envelope is a wrapped 32-byte AES-256 key (~124 base64 chars in
-    // practice). 512 bytes is generous headroom while blocking abuse —
-    // without this cap, a single 10K-envelope request could write up to
-    // ~10 GB of attacker-controlled TEXT.
-    const MAX_ENCRYPTED_KEY_LEN: usize = 512;
-    // Audit reason string — bounded so a malicious admin can't write
-    // arbitrarily large blobs into the audit log that other admins
-    // re-download on every /encryption-activity GET.
-    const MAX_TRIGGERED_BY_EVENT_LEN: usize = 128;
-    if body.triggered_by_event.len() > MAX_TRIGGERED_BY_EVENT_LEN {
-        return Err(AppError::bad_request(format!(
-            "triggered_by_event must be ≤{MAX_TRIGGERED_BY_EVENT_LEN} characters"
-        )));
-    }
-
-    for envelope in &body.envelopes {
-        if envelope.encrypted_key.is_empty() {
-            return Err(AppError::bad_request(
-                "encrypted_key cannot be empty in envelope",
-            ));
-        }
-        if envelope.encrypted_key.len() > MAX_ENCRYPTED_KEY_LEN {
-            return Err(AppError::bad_request(format!(
-                "encrypted_key must be ≤{MAX_ENCRYPTED_KEY_LEN} bytes"
-            )));
-        }
-    }
+    validate_upload_request(&body)?;
 
     // Sentinel row + envelopes commit atomically; member-set read inside
     // the same tx so we see the committed view that matches the writes.

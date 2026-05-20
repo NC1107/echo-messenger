@@ -1503,24 +1503,8 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     // selected row, arrows move it, Escape closes the picker (without
     // also bubbling Escape through to message edit-cancel).
     if (_mentionController.showPicker) {
-      if (event.logicalKey == LogicalKeyboardKey.tab ||
-          (event.logicalKey == LogicalKeyboardKey.enter &&
-              !HardwareKeyboard.instance.isShiftPressed)) {
-        _acceptMentionSelection();
-        return KeyEventResult.handled;
-      }
-      if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-        _moveMentionSelection(_MentionMove.down);
-        return KeyEventResult.handled;
-      }
-      if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-        _moveMentionSelection(_MentionMove.up);
-        return KeyEventResult.handled;
-      }
-      if (event.logicalKey == LogicalKeyboardKey.escape) {
-        _mentionController.dismiss();
-        return KeyEventResult.handled;
-      }
+      final mentionResult = _handleMentionPickerKey(event);
+      if (mentionResult != KeyEventResult.ignored) return mentionResult;
       // Space falls through — extractMentionQuery sees the space and
       // closes the picker, leaving the literal "@" in the text.
     }
@@ -1542,6 +1526,32 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       return _handleArrowUpEditLast();
     }
 
+    return KeyEventResult.ignored;
+  }
+
+  /// Keyboard handler for the mention picker overlay. Returns
+  /// [KeyEventResult.ignored] when the picker should *not* consume the
+  /// event (e.g. Space, so the picker auto-dismisses via the query
+  /// extractor).
+  KeyEventResult _handleMentionPickerKey(KeyDownEvent event) {
+    if (event.logicalKey == LogicalKeyboardKey.tab ||
+        (event.logicalKey == LogicalKeyboardKey.enter &&
+            !HardwareKeyboard.instance.isShiftPressed)) {
+      _acceptMentionSelection();
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+      _moveMentionSelection(_MentionMove.down);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      _moveMentionSelection(_MentionMove.up);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      _mentionController.dismiss();
+      return KeyEventResult.handled;
+    }
     return KeyEventResult.ignored;
   }
 
