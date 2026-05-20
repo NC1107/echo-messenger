@@ -103,8 +103,12 @@ class MembersPanel extends ConsumerWidget {
             ),
             child: Align(
               alignment: Alignment.centerLeft,
+              // The conversation header already shows "<N> members" as a
+              // subtitle (chat_header_bar.dart). Repeating the count on the
+              // right-rail header was redundant; keep the count off this
+              // surface and just label what the panel is.
               child: Text(
-                '${members.length} ${members.length == 1 ? 'member' : 'members'}',
+                'Members',
                 style: TextStyle(
                   color: context.textPrimary,
                   fontSize: 14,

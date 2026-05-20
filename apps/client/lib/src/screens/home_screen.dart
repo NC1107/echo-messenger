@@ -376,7 +376,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void _showQuickSwitcher() {
     showDialog(
       context: context,
-      barrierColor: Colors.black12,
+      barrierColor: Colors.black54,
       builder: (ctx) =>
           QuickSwitcherOverlay(onSelect: (conv) => _selectConversation(conv)),
     );
@@ -385,7 +385,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void _showGlobalSearch() {
     showDialog(
       context: context,
-      barrierColor: Colors.black12,
+      barrierColor: Colors.black54,
       builder: (ctx) => GlobalSearchOverlay(
         onResultTap: (conversationId, messageId) {
           final conversations = ref.read(conversationsProvider).conversations;
@@ -402,7 +402,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void _showKeyboardShortcuts() {
     showDialog<void>(
       context: context,
-      barrierColor: Colors.black12,
+      barrierColor: Colors.black54,
       builder: (_) => const KeyboardShortcutsOverlay(),
     );
   }

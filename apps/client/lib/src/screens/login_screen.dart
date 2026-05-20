@@ -118,8 +118,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
               children: [
                 const AuthBackground(),
                 AuthLayout(
+                  // Brand-panel tagline stays as the welcoming line; form
+                  // card title is the action verb so the wide layout doesn't
+                  // print "Welcome back." twice side-by-side.
                   tagline: 'Welcome back.',
-                  formTitle: 'Welcome back.',
+                  formTitle: 'Log in to Echo',
                   compactHeader: _buildHeader(serverUrl),
                   narrowPadding: const EdgeInsets.fromLTRB(
                     24,
