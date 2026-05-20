@@ -480,15 +480,17 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     final conv = widget.conversation;
     if (conv == null) return;
     await history.jumpToReplyQuote(
-      context: context,
-      ref: ref,
-      conv: conv,
-      selectedTextChannelId: _selectedTextChannelId,
-      controller: _controller,
-      replyToId: replyToId,
-      resolveMessages: _resolveMessages,
-      mounted: () => mounted,
-      onHighlight: () => _highlightMessage(replyToId),
+      history.JumpToReplyQuoteParams(
+        context: context,
+        ref: ref,
+        conv: conv,
+        selectedTextChannelId: _selectedTextChannelId,
+        controller: _controller,
+        replyToId: replyToId,
+        resolveMessages: _resolveMessages,
+        mounted: () => mounted,
+        onHighlight: () => _highlightMessage(replyToId),
+      ),
     );
   }
 

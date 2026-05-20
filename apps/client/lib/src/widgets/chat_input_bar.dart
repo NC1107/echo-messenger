@@ -1499,25 +1499,15 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
 
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
 
-    // Mention picker keyboard nav takes precedence — Tab/Enter accept the
-    // selected row, arrows move it, Escape closes the picker (without
-    // also bubbling Escape through to message edit-cancel).
-    if (_mentionController.showPicker) {
-      final mentionResult = _handleMentionPickerKey(event);
-      if (mentionResult != KeyEventResult.ignored) return mentionResult;
-      // Space falls through — extractMentionQuery sees the space and
-      // closes the picker, leaving the literal "@" in the text.
-    }
+    final mentionResult = _handleMentionPickerIfActive(event);
+    if (mentionResult != KeyEventResult.ignored) return mentionResult;
 
     if (event.logicalKey == LogicalKeyboardKey.escape) {
       _handleEscapeKey();
     }
 
-    if (event.logicalKey == LogicalKeyboardKey.enter &&
-        !HardwareKeyboard.instance.isShiftPressed) {
-      _isEditing ? _submitEdit() : _sendMessage();
-      return KeyEventResult.handled;
-    }
+    final submitResult = _handleEnterSubmit(event);
+    if (submitResult != KeyEventResult.ignored) return submitResult;
 
     final modResult = _handleModifierShortcut(event);
     if (modResult != KeyEventResult.ignored) return modResult;
@@ -1526,6 +1516,25 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       return _handleArrowUpEditLast();
     }
 
+    return KeyEventResult.ignored;
+  }
+
+  // Mention picker keyboard nav takes precedence — Tab/Enter accept the
+  // selected row, arrows move it, Escape closes the picker (without
+  // also bubbling Escape through to message edit-cancel). Space falls
+  // through — extractMentionQuery sees the space and closes the picker,
+  // leaving the literal "@" in the text.
+  KeyEventResult _handleMentionPickerIfActive(KeyDownEvent event) {
+    if (!_mentionController.showPicker) return KeyEventResult.ignored;
+    return _handleMentionPickerKey(event);
+  }
+
+  KeyEventResult _handleEnterSubmit(KeyDownEvent event) {
+    if (event.logicalKey == LogicalKeyboardKey.enter &&
+        !HardwareKeyboard.instance.isShiftPressed) {
+      _isEditing ? _submitEdit() : _sendMessage();
+      return KeyEventResult.handled;
+    }
     return KeyEventResult.ignored;
   }
 

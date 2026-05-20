@@ -174,14 +174,15 @@ fn validate_upload_request(body: &UploadGroupKeyRequest) -> Result<(), AppError>
     Ok(())
 }
 
-pub async fn upload_group_key(
-    auth: AuthUser,
-    State(state): State<Arc<AppState>>,
-    Path(group_id): Path<Uuid>,
-    Json(body): Json<UploadGroupKeyRequest>,
-) -> Result<impl IntoResponse, AppError> {
-    // Verify membership and role
-    let role_str = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
+/// Authorise the caller as an admin (or above) of the group. Extracted
+/// from [`upload_group_key`] to keep the handler's cognitive complexity
+/// under the lint threshold.
+async fn require_admin_or_above(
+    state: &AppState,
+    group_id: Uuid,
+    user_id: Uuid,
+) -> Result<(), AppError> {
+    let role_str = db::groups::get_member_role(&state.pool, group_id, user_id)
         .await
         .db_ctx("upload_group_key/get_role")?
         .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
@@ -192,21 +193,25 @@ pub async fn upload_group_key(
             "Only admins and owners can upload group keys",
         ));
     }
+    Ok(())
+}
 
-    validate_upload_request(&body)?;
-
-    // Sentinel row + envelopes commit atomically; member-set read inside
-    // the same tx so we see the committed view that matches the writes.
-    let mut tx = state.pool.begin().await.db_ctx("upload_group_key/begin")?;
-
+/// Confirm every envelope's `user_id` is a current member of the group.
+/// Reads the member set inside the caller's transaction so the view
+/// matches the writes that follow.
+async fn ensure_envelopes_target_members(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    group_id: Uuid,
+    envelopes: &[KeyEnvelope],
+) -> Result<(), AppError> {
     let member_ids: std::collections::HashSet<Uuid> =
-        db::groups::get_conversation_member_ids(&mut *tx, group_id)
+        db::groups::get_conversation_member_ids(&mut **tx, group_id)
             .await
             .db_ctx("upload_group_key/members")?
             .into_iter()
             .collect();
 
-    for envelope in &body.envelopes {
+    for envelope in envelopes {
         if !member_ids.contains(&envelope.user_id) {
             return Err(AppError::bad_request(format!(
                 "envelope user_id {} is not a member of this group",
@@ -214,6 +219,36 @@ pub async fn upload_group_key(
             )));
         }
     }
+    Ok(())
+}
+
+/// Map the `store_group_key` DB error to an [`AppError`]. A unique-violation
+/// (`23505`) on the sentinel row maps to 409 Conflict; everything else is
+/// an opaque 500 with the underlying error logged.
+fn map_store_group_key_error(e: sqlx::Error) -> AppError {
+    match &e {
+        sqlx::Error::Database(db_err) if db_err.code().as_deref() == Some("23505") => {
+            AppError::conflict("A group key with this version already exists")
+        }
+        _ => {
+            tracing::error!("DB error in upload_group_key/store: {e:?}");
+            AppError::internal("Failed to store group key")
+        }
+    }
+}
+
+/// Write the sentinel row, every per-member envelope, and the audit row
+/// in a single transaction so the rotation lands atomically. Returns the
+/// newly-stored sentinel row for the response payload.
+async fn persist_group_key_and_envelopes(
+    state: &AppState,
+    group_id: Uuid,
+    auth_user_id: Uuid,
+    body: &UploadGroupKeyRequest,
+) -> Result<db::keys::GroupKeyRow, AppError> {
+    let mut tx = state.pool.begin().await.db_ctx("upload_group_key/begin")?;
+
+    ensure_envelopes_target_members(&mut tx, group_id, &body.envelopes).await?;
 
     // Store a sentinel row in group_keys for version tracking (encrypted_key
     // is a placeholder -- the real per-member keys live in group_key_envelopes).
@@ -222,18 +257,10 @@ pub async fn upload_group_key(
         group_id,
         body.key_version,
         "__envelope__",
-        auth.user_id,
+        auth_user_id,
     )
     .await
-    .map_err(|e| match &e {
-        sqlx::Error::Database(db_err) if db_err.code().as_deref() == Some("23505") => {
-            AppError::conflict("A group key with this version already exists")
-        }
-        _ => {
-            tracing::error!("DB error in upload_group_key/store: {e:?}");
-            AppError::internal("Failed to store group key")
-        }
-    })?;
+    .map_err(map_store_group_key_error)?;
 
     // Store per-member envelopes inside the same tx. Every envelope at a
     // given key_version shares the same min_wire_version — the constraint
@@ -263,17 +290,26 @@ pub async fn upload_group_key(
     db::group_key_rotations::insert_completed_rotation(
         &mut *tx,
         group_id,
-        auth.user_id,
+        auth_user_id,
         &body.triggered_by_event,
         body.key_version,
-        auth.user_id,
+        auth_user_id,
     )
     .await
     .db_ctx("upload_group_key/audit")?;
 
     tx.commit().await.db_ctx("upload_group_key/commit")?;
+    Ok(row)
+}
 
-    // Broadcast key_rotated event to all group members
+/// Broadcast a `group_key_rotated` event to every member of the group and
+/// also echo it back to the uploader so their client caches the new version.
+async fn broadcast_key_rotated(
+    state: &AppState,
+    group_id: Uuid,
+    auth_user_id: Uuid,
+    key_version: i32,
+) {
     let member_ids = db::groups::get_conversation_member_ids(&state.pool, group_id)
         .await
         .unwrap_or_default();
@@ -281,19 +317,33 @@ pub async fn upload_group_key(
     let event = serde_json::json!({
         "type": "group_key_rotated",
         "conversation_id": group_id,
-        "key_version": row.key_version,
-        "created_by": auth.user_id,
+        "key_version": key_version,
+        "created_by": auth_user_id,
     });
     if let Ok(json) = serde_json::to_string(&event) {
         use axum::extract::ws::Message as WsMessage;
         state
             .hub
-            .broadcast_json(&member_ids, &json, Some(auth.user_id));
+            .broadcast_json(&member_ids, &json, Some(auth_user_id));
         // Also notify the uploader so their client caches the new version
         state
             .hub
-            .send_to(&auth.user_id, WsMessage::Text(json.into()));
+            .send_to(&auth_user_id, WsMessage::Text(json.into()));
     }
+}
+
+pub async fn upload_group_key(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(group_id): Path<Uuid>,
+    Json(body): Json<UploadGroupKeyRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    require_admin_or_above(&state, group_id, auth.user_id).await?;
+    validate_upload_request(&body)?;
+
+    let row = persist_group_key_and_envelopes(&state, group_id, auth.user_id, &body).await?;
+
+    broadcast_key_rotated(&state, group_id, auth.user_id, row.key_version).await;
 
     Ok((StatusCode::CREATED, Json(GroupKeyResponse::from_row(row))))
 }

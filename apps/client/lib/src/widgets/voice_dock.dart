@@ -122,19 +122,6 @@ class VoiceDock extends ConsumerWidget {
     final peerCount = voiceLk.peerConnectionStates.length;
     final statusColor = _statusColor(context, voiceLk.isJoining, peerCount);
 
-    if (collapsed) {
-      return _buildCollapsedDock(
-        context,
-        ref,
-        voiceLk,
-        voiceSettings,
-        screenShare,
-        conversationId,
-        channelId,
-        statusColor,
-      );
-    }
-
     final spec = (
       context: context,
       ref: ref,
@@ -145,6 +132,20 @@ class VoiceDock extends ConsumerWidget {
       channelId: channelId,
       m: m,
     );
+
+    if (collapsed) {
+      final compactSpec = (
+        context: context,
+        ref: ref,
+        voiceLk: voiceLk,
+        voiceSettings: voiceSettings,
+        screenShare: screenShare,
+        conversationId: conversationId,
+        channelId: channelId,
+        m: _DockMetrics.compact,
+      );
+      return _buildCollapsedDock(compactSpec, statusColor);
+    }
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTap: onNavigateToLounge,
@@ -183,17 +184,15 @@ class VoiceDock extends ConsumerWidget {
   }
 
   /// Compact vertical dock for the 60px collapsed sidebar.
-  Widget _buildCollapsedDock(
-    BuildContext context,
-    WidgetRef ref,
-    LiveKitVoiceState voiceLk,
-    VoiceSettingsState voiceSettings,
-    ScreenShareState screenShare,
-    String conversationId,
-    String channelId,
-    Color statusColor,
-  ) {
-    const m = _DockMetrics.compact;
+  Widget _buildCollapsedDock(_DockButtonSpec spec, Color statusColor) {
+    final context = spec.context;
+    final ref = spec.ref;
+    final voiceLk = spec.voiceLk;
+    final voiceSettings = spec.voiceSettings;
+    final screenShare = spec.screenShare;
+    final conversationId = spec.conversationId;
+    final channelId = spec.channelId;
+    final m = spec.m;
     final callStartedAt = voiceLk.callStartedAt;
     return GestureDetector(
       behavior: HitTestBehavior.translucent,

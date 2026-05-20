@@ -60,44 +60,57 @@ class ReplyCountBadge extends StatelessWidget {
         : _buildPill(context, label);
   }
 
+  EdgeInsets _topPadding(double topInset) =>
+      EdgeInsets.only(top: topInset, left: isMine ? 0 : 36);
+
+  Alignment get _alignment =>
+      isMine ? Alignment.centerRight : Alignment.centerLeft;
+
+  VoidCallback? get _onTapCallback =>
+      onTap == null ? null : () => onTap!(message);
+
   Widget _buildInline(BuildContext context, String label) {
     return Padding(
-      padding: EdgeInsets.only(top: 2, left: isMine ? 0 : 36),
+      padding: _topPadding(2),
       child: Align(
-        alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+        alignment: _alignment,
         child: Semantics(
           label: hasUnread ? 'View $label (new replies)' : 'View $label',
           button: true,
           child: InkWell(
             borderRadius: BorderRadius.circular(2),
-            onTap: onTap == null ? null : () => onTap!(message),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  label,
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    color: context.accent,
-                    fontWeight: FontWeight.w500,
-                    decoration: TextDecoration.underline,
-                    decorationColor: context.accent.withValues(alpha: 0.4),
-                  ),
-                ),
-                if (hasUnread) _unreadDot(context),
-              ],
-            ),
+            onTap: _onTapCallback,
+            child: _buildInlineRow(context, label),
           ),
         ),
       ),
     );
   }
 
+  Widget _buildInlineRow(BuildContext context, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            color: context.accent,
+            fontWeight: FontWeight.w500,
+            decoration: TextDecoration.underline,
+            decorationColor: context.accent.withValues(alpha: 0.4),
+          ),
+        ),
+        if (hasUnread) _unreadDot(context),
+      ],
+    );
+  }
+
   Widget _buildPill(BuildContext context, String label) {
     return Padding(
-      padding: EdgeInsets.only(top: 4, left: isMine ? 0 : 36),
+      padding: _topPadding(4),
       child: Align(
-        alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+        alignment: _alignment,
         child: Semantics(
           label: 'View $label',
           button: true,
@@ -105,33 +118,37 @@ class ReplyCountBadge extends StatelessWidget {
             color: Colors.transparent,
             child: InkWell(
               borderRadius: BorderRadius.circular(12),
-              onTap: onTap == null ? null : () => onTap!(message),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: context.accent.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.forum_outlined, size: 12, color: context.accent),
-                    const SizedBox(width: 4),
-                    Text(
-                      label,
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: context.accent,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (hasUnread) _unreadDot(context),
-                  ],
-                ),
-              ),
+              onTap: _onTapCallback,
+              child: _buildPillContainer(context, label),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildPillContainer(BuildContext context, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: context.accent.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.forum_outlined, size: 12, color: context.accent),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              color: context.accent,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (hasUnread) _unreadDot(context),
+        ],
       ),
     );
   }
