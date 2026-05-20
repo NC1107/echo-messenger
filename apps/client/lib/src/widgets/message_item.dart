@@ -806,6 +806,21 @@ class _MessageItemState extends State<MessageItem>
       );
     }
     if (_isDecryptFailure(msg.content)) {
+      // Sender side: if WE drafted this message and the system preserved
+      // the original text in failedContent, show the user what they wrote
+      // (dimmed) with a Resend/Delete footer rather than the generic
+      // "couldn't decrypt" pill — the pill makes it look like the message
+      // was sent by someone else. F-006 / expert recommendation in the
+      // 2026-05-19 UI audit.
+      if (isMine && (msg.failedContent ?? '').isNotEmpty) {
+        return OwnDecryptFailedBubble(
+          originalText: msg.failedContent!,
+          onResend: widget.onRetry == null ? null : () => widget.onRetry!(msg),
+          onDelete: widget.onDelete == null
+              ? null
+              : () => widget.onDelete!(msg),
+        );
+      }
       return const DecryptFailurePill();
     }
 
