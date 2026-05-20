@@ -193,6 +193,10 @@ Widget buildChatContentBox(
               onToggleSearch: () => p.onSetShowSearch(!p.showSearch),
               onMembersToggle: p.onMembersToggle,
               onGroupInfo: p.onGroupInfo,
+              // Column mode's left rail already shows the group avatar +
+              // name + member count in its own header; rendering them
+              // here too produced the duplicate label the user reported.
+              hideGroupIdentity: useColumn,
             ),
             if (p.conv.isGroup && !useColumn && !useColumnDrawer)
               ChannelBar(

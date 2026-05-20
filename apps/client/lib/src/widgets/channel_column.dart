@@ -10,6 +10,10 @@
 /// (`channelsProvider` for the channel list, `channelsProvider.notifier`
 /// to join voice, `livekitVoiceProvider` for the active voice session),
 /// so the two layouts are interchangeable without server work.
+///
+/// The right edge is a draggable resize handle; the chosen width is
+/// persisted via [channelColumnWidthProvider]. Right-clicking the rail
+/// body surfaces a context menu for creating new text/voice channels.
 library;
 
 import 'package:flutter/material.dart';
@@ -18,24 +22,28 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/channel.dart';
 import '../models/conversation.dart';
 import '../providers/channel_categories_provider.dart';
+import '../providers/channel_column_width_provider.dart';
 import '../providers/channels_provider.dart';
 import '../providers/livekit_voice/livekit_voice_provider.dart';
+import '../providers/voice_settings_provider.dart';
+import '../services/debug_log_service.dart';
+import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import 'avatar_utils.dart' show buildAvatar, groupAvatarColor;
 
 const String _kTextCategoryKey = 'text';
 const String _kVoiceCategoryKey = 'voice';
 
-class ChannelColumn extends ConsumerWidget {
+class ChannelColumn extends ConsumerStatefulWidget {
   final Conversation conversation;
   final String? selectedTextChannelId;
   final ValueChanged<String?> onTextChannelChanged;
   final VoidCallback? onShowLounge;
 
-  /// Fixed column width. 260 matches the Slack/Discord visual baseline
-  /// and lets a 1280 desktop window comfortably show
-  /// `sidebar + column + chat + members` without crowding.
-  static const double width = 260;
+  /// Legacy fixed-width constant kept for the mobile drawer which still
+  /// needs a known column width to size its parent Row. The desktop
+  /// rail no longer uses this — see [channelColumnWidthProvider].
+  static const double width = channelColumnDefaultWidth;
 
   const ChannelColumn({
     super.key,
@@ -46,9 +54,20 @@ class ChannelColumn extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ChannelColumn> createState() => _ChannelColumnState();
+}
+
+class _ChannelColumnState extends ConsumerState<ChannelColumn> {
+  /// Width while a drag is in progress. Kept in widget state so the rail
+  /// follows the cursor at full frame rate without writing through to
+  /// SharedPreferences on every onHorizontalDragUpdate. Committed to the
+  /// provider on drag end.
+  double? _dragWidth;
+
+  @override
+  Widget build(BuildContext context) {
     final channelsState = ref.watch(channelsProvider);
-    final channels = channelsState.channelsFor(conversation.id)
+    final channels = channelsState.channelsFor(widget.conversation.id)
       ..sort((a, b) => a.position.compareTo(b.position));
     final textChannels = channels.where((c) => c.isText).toList();
     final voiceChannels = channels.where((c) => c.isVoice).toList();
@@ -56,75 +75,247 @@ class ChannelColumn extends ConsumerWidget {
     final collapsed = ref.watch(channelCategoryCollapsedProvider);
     final textCollapsed = collapsed.contains(_kTextCategoryKey);
     final voiceCollapsed = collapsed.contains(_kVoiceCategoryKey);
+    final storedWidth = ref.watch(channelColumnWidthProvider);
+    final effectiveWidth = _dragWidth ?? storedWidth;
 
-    return Container(
-      width: width,
+    final rail = Container(
+      width: effectiveWidth,
       decoration: BoxDecoration(
         color: context.sidebarBg,
         border: Border(right: BorderSide(color: context.border)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _ColumnHeader(conversation: conversation),
-          Divider(height: 1, color: context.border),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              children: [
-                if (textChannels.isNotEmpty) ...[
-                  _CategoryHeader(
-                    label: 'Text Channels',
-                    collapsed: textCollapsed,
-                    onToggle: () => ref
-                        .read(channelCategoryCollapsedProvider.notifier)
-                        .toggle(_kTextCategoryKey),
-                  ),
-                  if (!textCollapsed)
-                    for (final c in textChannels)
-                      _TextChannelRow(
-                        channel: c,
-                        isSelected: c.id == selectedTextChannelId,
-                        onTap: () => onTextChannelChanged(c.id),
-                      ),
-                  const SizedBox(height: 12),
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onSecondaryTapUp: (details) =>
+            _showCreateMenu(details.globalPosition),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _ColumnHeader(conversation: widget.conversation),
+            Divider(height: 1, color: context.border),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                children: [
+                  if (textChannels.isNotEmpty) ...[
+                    _CategoryHeader(
+                      label: 'Text Channels',
+                      collapsed: textCollapsed,
+                      onToggle: () => ref
+                          .read(channelCategoryCollapsedProvider.notifier)
+                          .toggle(_kTextCategoryKey),
+                      onCreate: () => _createChannel('text'),
+                    ),
+                    if (!textCollapsed)
+                      for (final c in textChannels)
+                        _TextChannelRow(
+                          channel: c,
+                          isSelected: c.id == widget.selectedTextChannelId,
+                          onTap: () => widget.onTextChannelChanged(c.id),
+                        ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (voiceChannels.isNotEmpty) ...[
+                    _CategoryHeader(
+                      label: 'Voice Channels',
+                      collapsed: voiceCollapsed,
+                      onToggle: () => ref
+                          .read(channelCategoryCollapsedProvider.notifier)
+                          .toggle(_kVoiceCategoryKey),
+                      onCreate: () => _createChannel('voice'),
+                    ),
+                    if (!voiceCollapsed)
+                      for (final c in voiceChannels)
+                        _VoiceChannelGroup(
+                          channel: c,
+                          members: channelsState.voiceSessionsFor(c.id),
+                          isActive:
+                              voiceState.channelId == c.id &&
+                              voiceState.conversationId ==
+                                  widget.conversation.id,
+                          onJoin: () => _join(c),
+                          onOpenLounge: widget.onShowLounge,
+                        ),
+                  ],
                 ],
-                if (voiceChannels.isNotEmpty) ...[
-                  _CategoryHeader(
-                    label: 'Voice Channels',
-                    collapsed: voiceCollapsed,
-                    onToggle: () => ref
-                        .read(channelCategoryCollapsedProvider.notifier)
-                        .toggle(_kVoiceCategoryKey),
-                  ),
-                  if (!voiceCollapsed)
-                    for (final c in voiceChannels)
-                      _VoiceChannelGroup(
-                        channel: c,
-                        members: channelsState.voiceSessionsFor(c.id),
-                        isActive:
-                            voiceState.channelId == c.id &&
-                            voiceState.conversationId == conversation.id,
-                        onJoin: () => _join(ref, c),
-                        onOpenLounge: onShowLounge,
-                      ),
-                ],
-              ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    return Stack(
+      children: [
+        rail,
+        Positioned(
+          right: 0,
+          top: 0,
+          bottom: 0,
+          width: 6,
+          child: MouseRegion(
+            cursor: SystemMouseCursors.resizeColumn,
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onHorizontalDragUpdate: (details) {
+                setState(() {
+                  _dragWidth = ((_dragWidth ?? storedWidth) + details.delta.dx)
+                      .clamp(channelColumnMinWidth, channelColumnMaxWidth);
+                });
+              },
+              onHorizontalDragEnd: (_) {
+                final committed = _dragWidth;
+                _dragWidth = null;
+                if (committed != null) {
+                  ref
+                      .read(channelColumnWidthProvider.notifier)
+                      .setWidth(committed);
+                }
+              },
+              onHorizontalDragCancel: () =>
+                  setState(() => _dragWidth = null),
+              child: const SizedBox.expand(),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  Future<void> _join(WidgetRef ref, GroupChannel channel) async {
-    // Channels notifier owns the HTTP + LiveKit-join handshake; this
-    // matches what channel_bar.dart does so behaviour is identical
-    // regardless of which layout the user picked.
-    await ref
+  Future<void> _join(GroupChannel channel) async {
+    // Two-step join, mirroring channel_bar.dart's `_handleVoiceChipTap`:
+    //
+    //   1. POST to /api/groups/:id/voice/:chan/join — records membership
+    //      so the server's voice session reflects the new participant.
+    //   2. LiveKit join — opens the WebRTC connection that actually
+    //      streams audio and is what flips `livekitVoiceProvider.isActive`
+    //      to true.
+    //
+    // The old code only did step 1, so voiceActive stayed false, the
+    // home screen's `_resolveRightPanel` refused to render the lounge,
+    // and any `onShowLounge` callback flicker-dismissed almost
+    // immediately. Issue surfaced once Column mode shipped — bar mode
+    // never had this bug because it did both calls already.
+    DebugLogService.instance.log(
+      LogLevel.info,
+      'VoiceLoungeUI',
+      'voice channel selected (column): ${channel.name} id=${channel.id}',
+    );
+    final success = await ref
         .read(channelsProvider.notifier)
-        .joinVoiceChannel(conversation.id, channel.id);
-    onShowLounge?.call();
+        .joinVoiceChannel(widget.conversation.id, channel.id);
+    if (!success) return;
+
+    final voiceSettings = ref.read(voiceSettingsProvider);
+    await ref
+        .read(livekitVoiceProvider.notifier)
+        .joinChannel(
+          conversationId: widget.conversation.id,
+          channelId: channel.id,
+          startMuted: voiceSettings.selfMuted || voiceSettings.selfDeafened,
+        );
+    widget.onShowLounge?.call();
+  }
+
+  Future<void> _showCreateMenu(Offset position) async {
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (overlay == null) return;
+    final choice = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        position.dx,
+        position.dy,
+        overlay.size.width - position.dx,
+        overlay.size.height - position.dy,
+      ),
+      items: const [
+        PopupMenuItem(
+          value: 'text',
+          child: ListTile(
+            leading: Icon(Icons.tag, size: 18),
+            title: Text('New text channel'),
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+        PopupMenuItem(
+          value: 'voice',
+          child: ListTile(
+            leading: Icon(Icons.volume_up_outlined, size: 18),
+            title: Text('New voice channel'),
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+      ],
+    );
+    if (choice == null || !mounted) return;
+    await _createChannel(choice);
+  }
+
+  Future<void> _createChannel(String kind) async {
+    final name = await _promptChannelName(kind);
+    if (name == null || name.isEmpty || !mounted) return;
+    final success = await ref
+        .read(channelsProvider.notifier)
+        .createChannel(widget.conversation.id, name, kind);
+    if (!mounted) return;
+    if (success) {
+      ToastService.show(
+        context,
+        kind == 'voice'
+            ? 'Voice channel "$name" created'
+            : 'Channel #$name created',
+        type: ToastType.success,
+      );
+    } else {
+      ToastService.show(
+        context,
+        'Could not create channel',
+        type: ToastType.error,
+      );
+    }
+  }
+
+  Future<String?> _promptChannelName(String kind) {
+    final controller = TextEditingController();
+    final title = kind == 'voice'
+        ? 'New voice channel'
+        : 'New text channel';
+    final hint = kind == 'voice' ? 'lounge' : 'general';
+    return showDialog<String>(
+      context: context,
+      builder: (dialogCtx) {
+        return AlertDialog(
+          backgroundColor: context.surface,
+          title: Text(title, style: TextStyle(color: context.textPrimary)),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: InputDecoration(
+              hintText: hint,
+              prefixIcon: Icon(
+                kind == 'voice' ? Icons.volume_up_outlined : Icons.tag,
+                size: 18,
+              ),
+            ),
+            onSubmitted: (v) => Navigator.of(dialogCtx).pop(v.trim()),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(dialogCtx).pop(controller.text.trim()),
+              child: const Text('Create'),
+            ),
+          ],
+        );
+      },
+    );
   }
 }
 
@@ -190,10 +381,17 @@ class _CategoryHeader extends StatelessWidget {
   final String label;
   final bool collapsed;
   final VoidCallback onToggle;
+
+  /// Optional inline "+" button to create a channel in this category.
+  /// Mirrors the right-click menu surface so users who don't think to
+  /// right-click can still discover the action.
+  final VoidCallback? onCreate;
+
   const _CategoryHeader({
     required this.label,
     required this.collapsed,
     required this.onToggle,
+    this.onCreate,
   });
 
   @override
@@ -204,7 +402,7 @@ class _CategoryHeader extends StatelessWidget {
       child: InkWell(
         onTap: onToggle,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
+          padding: const EdgeInsets.fromLTRB(8, 4, 6, 6),
           child: Row(
             children: [
               Icon(
@@ -224,6 +422,19 @@ class _CategoryHeader extends StatelessWidget {
                   ),
                 ),
               ),
+              if (onCreate != null)
+                InkWell(
+                  borderRadius: BorderRadius.circular(4),
+                  onTap: onCreate,
+                  child: Padding(
+                    padding: const EdgeInsets.all(2),
+                    child: Icon(
+                      Icons.add,
+                      size: 14,
+                      color: context.textMuted,
+                    ),
+                  ),
+                ),
             ],
           ),
         ),

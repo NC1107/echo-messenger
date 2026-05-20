@@ -6,7 +6,7 @@ part of 'biometric_provider.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$biometricHash() => r'67c498962f61c6ab6f9994b667f14206fb883d1e';
+String _$biometricHash() => r'22e5a4d37814e4baa62ee300b968c5a24069d01e';
 
 /// Migrated from `StateNotifier` to `@riverpod` Notifier (audit 2026-04-30).
 /// Singleton lifetime via `keepAlive: true` because the lock-session timer
