@@ -271,6 +271,9 @@ class _VoiceMessageWidgetState extends State<VoiceMessageWidget> {
     );
   }
 
+  IconData get _playbackIcon =>
+      _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded;
+
   // ---------------------------------------------------------------------------
   // Build
   // ---------------------------------------------------------------------------
@@ -313,13 +316,7 @@ class _VoiceMessageWidgetState extends State<VoiceMessageWidget> {
                         color: accentColor.withValues(alpha: 0.15),
                         shape: BoxShape.circle,
                       ),
-                      child: Icon(
-                        _isPlaying
-                            ? Icons.pause_rounded
-                            : Icons.play_arrow_rounded,
-                        size: 20,
-                        color: accentColor,
-                      ),
+                      child: Icon(_playbackIcon, size: 20, color: accentColor),
                     ),
                   ),
           ),

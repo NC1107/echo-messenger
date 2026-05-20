@@ -235,11 +235,7 @@ class _FormCard extends StatelessWidget {
       builder: (context, constraints) {
         // Clamp the card width so it doesn't collide with the brand panel at
         // ~800px-wide tablets. 40% of available width keeps it proportional.
-        final cardWidth = constraints.maxWidth > 0
-            ? constraints.maxWidth * 0.4 < 440
-                  ? constraints.maxWidth * 0.4
-                  : 440.0
-            : 440.0;
+        final cardWidth = _resolveCardWidth(constraints.maxWidth);
         return SizedBox(
           width: cardWidth,
           child: Container(
@@ -279,5 +275,11 @@ class _FormCard extends StatelessWidget {
         );
       },
     );
+  }
+
+  double _resolveCardWidth(double maxWidth) {
+    if (maxWidth <= 0) return 440.0;
+    final scaled = maxWidth * 0.4;
+    return scaled < 440 ? scaled : 440.0;
   }
 }

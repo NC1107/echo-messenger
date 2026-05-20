@@ -101,7 +101,7 @@ class _StatsGrid extends StatelessWidget {
         final width = constraints.maxWidth;
         final colsIfSmall = width >= 480 ? 3 : 2;
         final cols = width >= 720 ? 4 : colsIfSmall;
-        final spacing = 12.0;
+        const spacing = 12.0;
         final cardWidth = (width - spacing * (cols - 1)) / cols;
         return Wrap(
           spacing: spacing,
