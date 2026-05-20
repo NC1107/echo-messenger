@@ -151,6 +151,34 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                               child: const Text('Forgot password?'),
                             ),
                           ),
+                          // Divider + label visually separates the recovery
+                          // affordance ("Forgot password?") from the
+                          // create-account CTA so they don't read as one
+                          // stacked block of links.
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 8,
+                              horizontal: 24,
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(child: Divider(color: context.border)),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                  ),
+                                  child: Text(
+                                    'New here?',
+                                    style: TextStyle(
+                                      color: context.textMuted,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(child: Divider(color: context.border)),
+                              ],
+                            ),
+                          ),
                           // TextButton + Text already produce a
                           // button-role accessibility node named "Create an
                           // account" — wrapping in another Semantics

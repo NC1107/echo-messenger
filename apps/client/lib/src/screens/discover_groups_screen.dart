@@ -324,6 +324,8 @@ class _DiscoverGroupsScreenState extends ConsumerState<DiscoverGroupsScreen> {
                   const SizedBox(height: 6),
                   Text(
                     group.description!,
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: context.textSecondary,
                       fontSize: 14,
