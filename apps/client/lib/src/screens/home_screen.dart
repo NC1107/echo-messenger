@@ -34,7 +34,6 @@ import '../widgets/keyboard_shortcuts_overlay.dart';
 import '../widgets/global_search_overlay.dart';
 import '../widgets/whats_new_modal.dart';
 import '../widgets/quick_switcher_overlay.dart';
-import '../widgets/voice_dock.dart';
 import '../widgets/voice_footer.dart';
 import '../widgets/window_chrome.dart';
 import 'contacts_screen.dart';
@@ -376,7 +375,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void _showQuickSwitcher() {
     showDialog(
       context: context,
-      barrierColor: Colors.black12,
+      barrierColor: Colors.black54,
+      barrierLabel: 'Dismiss quick switcher',
       builder: (ctx) =>
           QuickSwitcherOverlay(onSelect: (conv) => _selectConversation(conv)),
     );
@@ -385,7 +385,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void _showGlobalSearch() {
     showDialog(
       context: context,
-      barrierColor: Colors.black12,
+      barrierColor: Colors.black54,
+      barrierLabel: 'Dismiss global search',
       builder: (ctx) => GlobalSearchOverlay(
         onResultTap: (conversationId, messageId) {
           final conversations = ref.read(conversationsProvider).conversations;
@@ -402,7 +403,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void _showKeyboardShortcuts() {
     showDialog<void>(
       context: context,
-      barrierColor: Colors.black12,
+      barrierColor: Colors.black54,
+      barrierLabel: 'Dismiss keyboard shortcuts',
       builder: (_) => const KeyboardShortcutsOverlay(),
     );
   }
@@ -764,77 +766,87 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 final displayName = conv.displayName(myUserId);
                 final isSelected = conv.id == _selectedConversation?.id;
 
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Tooltip(
-                    message: displayName,
-                    preferBelow: false,
-                    child: Semantics(
-                      label: 'conversation: $displayName',
-                      button: true,
-                      child: GestureDetector(
-                        onTap: () => _selectConversation(conv),
-                        child: SizedBox(
-                          width: 44,
-                          height: 44,
-                          // Stack so the left-edge selection pill can sit
-                          // alongside the centred avatar without affecting
-                          // its layout. Matches the pattern used in
-                          // conversation_item so both sidebars agree.
-                          child: Stack(
-                            children: [
-                              Center(
-                                child: Builder(
-                                  builder: (_) {
-                                    final String? avatarUrl;
-                                    if (conv.isGroup) {
-                                      avatarUrl = resolveAvatarUrl(
-                                        conv.iconUrl,
-                                        serverUrl,
+                // KeyedSubtree so element identity tracks conv.id rather
+                // than the position index — prevents the Stack +
+                // conditional selection-pill subtree from briefly
+                // binding to the wrong conversation when the list
+                // reorders after a new message / pin / delete (TD-10).
+                return KeyedSubtree(
+                  key: ValueKey('conv-rail-${conv.id}'),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Tooltip(
+                      message: displayName,
+                      preferBelow: false,
+                      child: Semantics(
+                        label: 'conversation: $displayName',
+                        button: true,
+                        child: GestureDetector(
+                          onTap: () => _selectConversation(conv),
+                          child: SizedBox(
+                            width: 44,
+                            height: 44,
+                            // Stack so the left-edge selection pill can sit
+                            // alongside the centred avatar without affecting
+                            // its layout. Matches the pattern used in
+                            // conversation_item so both sidebars agree.
+                            child: Stack(
+                              children: [
+                                Center(
+                                  child: Builder(
+                                    builder: (_) {
+                                      final String? avatarUrl;
+                                      if (conv.isGroup) {
+                                        avatarUrl = resolveAvatarUrl(
+                                          conv.iconUrl,
+                                          serverUrl,
+                                        );
+                                      } else {
+                                        final peer = conv.members
+                                            .where((m) => m.userId != myUserId)
+                                            .firstOrNull;
+                                        avatarUrl = resolveAvatarUrl(
+                                          peer?.avatarUrl,
+                                          serverUrl,
+                                        );
+                                      }
+                                      return buildAvatar(
+                                        name: displayName,
+                                        radius: 18,
+                                        imageUrl: avatarUrl,
+                                        bgColor: conv.isGroup
+                                            ? groupAvatarColor(displayName)
+                                            : null,
+                                        fallbackIcon: conv.isGroup
+                                            ? const Icon(
+                                                Icons.group,
+                                                size: 16,
+                                                color: Colors.white,
+                                              )
+                                            : null,
                                       );
-                                    } else {
-                                      final peer = conv.members
-                                          .where((m) => m.userId != myUserId)
-                                          .firstOrNull;
-                                      avatarUrl = resolveAvatarUrl(
-                                        peer?.avatarUrl,
-                                        serverUrl,
-                                      );
-                                    }
-                                    return buildAvatar(
-                                      name: displayName,
-                                      radius: 18,
-                                      imageUrl: avatarUrl,
-                                      bgColor: conv.isGroup
-                                          ? groupAvatarColor(displayName)
-                                          : null,
-                                      fallbackIcon: conv.isGroup
-                                          ? const Icon(
-                                              Icons.group,
-                                              size: 16,
-                                              color: Colors.white,
-                                            )
-                                          : null,
-                                    );
-                                  },
+                                    },
+                                  ),
                                 ),
-                              ),
-                              if (isSelected)
-                                Positioned(
-                                  left: 0,
-                                  top: 8,
-                                  bottom: 8,
-                                  child: IgnorePointer(
-                                    child: Container(
-                                      width: 4,
-                                      decoration: BoxDecoration(
-                                        color: context.activeRowAccent,
-                                        borderRadius: BorderRadius.circular(2),
+                                if (isSelected)
+                                  Positioned(
+                                    left: 0,
+                                    top: 8,
+                                    bottom: 8,
+                                    child: IgnorePointer(
+                                      child: Container(
+                                        width: 4,
+                                        decoration: BoxDecoration(
+                                          color: context.activeRowAccent,
+                                          borderRadius: BorderRadius.circular(
+                                            2,
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -1052,22 +1064,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   /// Keep the selected conversation in sync with provider state so that
   /// changes (e.g. encryption toggle) propagate to ChatPanel immediately.
-  /// IMPORTANT: Do NOT clear _selectedConversation when fresh is null --
-  /// the conversation may be temporarily absent during a list reload.
+  /// IMPORTANT: Do NOT clear _selectedConversation when fresh is null
+  /// AND the list is currently reloading — the conversation may be
+  /// temporarily absent. Once the load settles, clear it so deleting
+  /// the last group doesn't leave a stale chat panel rendered (TD-17).
   void _syncSelectedConversation() {
     if (_selectedConversation == null) return;
-    final convs = ref.watch(conversationsProvider).conversations;
+    final convState = ref.watch(conversationsProvider);
+    final convs = convState.conversations;
     final fresh = convs
         .where((c) => c.id == _selectedConversation!.id)
         .firstOrNull;
     if (fresh != null && fresh != _selectedConversation) {
       _selectedConversation = fresh;
+      return;
     }
-    // If the conversation was permanently removed (e.g. user left it),
-    // clear selection so mobile doesn't get stuck showing a stale panel.
-    if (fresh == null && convs.isNotEmpty) {
-      // Only clear if conversations have loaded (non-empty list means the
-      // list isn't mid-refresh). Empty list during reload is ambiguous.
+    // Permanently removed (left, deleted, kicked) — clear selection.
+    // Gate on isLoading rather than emptiness so deleting the very
+    // last conversation still clears the panel instead of getting
+    // stuck because convs.isEmpty.
+    if (fresh == null && !convState.isLoading) {
       _selectedConversation = null;
       _narrowPanelIndex = 0;
     }
@@ -1109,8 +1125,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     ..._buildMembersPanel(),
                   ],
                 ),
-                if (voiceActive && !_showSettings)
-                  _buildDesktopVoiceDock(animatedSidebarWidth),
+                // Voice dock used to float here as an AnimatedPositioned
+                // overlay at bottom: 60, which made it occlude the sidebar
+                // chrome (bug-report row, update banner). It now renders
+                // inline inside ConversationPanel just above the bottom
+                // chrome so everything flows naturally and nothing is
+                // covered. F-029 in the 2026-05-19 UI audit.
                 if (_whatsNewNotes != null)
                   WhatsNewInlineOverlay(
                     notes: _whatsNewNotes!,
@@ -1276,26 +1296,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     ];
   }
 
-  /// Voice dock positioned above the user status bar.
-  Widget _buildDesktopVoiceDock(double animatedSidebarWidth) {
-    return AnimatedPositioned(
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeInOut,
-      bottom: 60,
-      left: 0,
-      width: animatedSidebarWidth,
-      child: VoiceDock(
-        width: animatedSidebarWidth,
-        collapsed: _sidebarCollapsed,
-        onNavigateToLounge: () {
-          setState(() {
-            _showingLounge = true;
-            _userDismissedLounge = false;
-          });
-        },
-      ),
-    );
-  }
+  // _buildDesktopVoiceDock removed — VoiceDock now renders inline inside
+  // ConversationPanel above the bottom chrome (status bar, update banner,
+  // bug-report row) so the dock no longer occludes those rows.
+  // F-029 in the 2026-05-19 UI audit.
 
   /// Tablet layout (600-899px): sidebar + flex chat
   Widget _buildWideLayout() {

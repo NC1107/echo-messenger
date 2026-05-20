@@ -324,6 +324,8 @@ class _DiscoverGroupsScreenState extends ConsumerState<DiscoverGroupsScreen> {
                   const SizedBox(height: 6),
                   Text(
                     group.description!,
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: context.textSecondary,
                       fontSize: 14,
@@ -415,7 +417,7 @@ class _DiscoverGroupsScreenState extends ConsumerState<DiscoverGroupsScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               child: Text(
-                'Public groups. Join with one tap — your messages stay encrypted.',
+                'Public groups. Server-stored — open a DM for end-to-end encryption.',
                 style: TextStyle(color: context.textMuted, fontSize: 13),
               ),
             ),
@@ -560,110 +562,120 @@ class _GroupDiscoveryItem extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Material(
-        color: context.cardRowBg,
-        borderRadius: BorderRadius.circular(14),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final isNarrow = constraints.maxWidth < 400;
-                final joinButton = _buildJoinAffordance(context);
-                final nameColumn = Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        group.name,
-                        style: TextStyle(
-                          color: context.textPrimary,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: const BoxDecoration(
-                              color: EchoTheme.online,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${_onlineCount(group)}',
-                            style: const TextStyle(
-                              color: EchoTheme.online,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            '${group.memberCount} member${group.memberCount == 1 ? '' : 's'}',
-                            style: TextStyle(
-                              color: context.textMuted,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (group.description != null &&
-                          group.description!.isNotEmpty) ...[
-                        const SizedBox(height: 6),
+      child: Semantics(
+        label: 'discover group ${group.name} — tap to preview',
+        button: true,
+        child: Material(
+          color: context.cardRowBg,
+          borderRadius: BorderRadius.circular(14),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final isNarrow = constraints.maxWidth < 400;
+                  final joinButton = _buildJoinAffordance(context);
+                  final nameColumn = Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         Text(
-                          group.description!,
+                          group.name,
                           style: TextStyle(
-                            color: context.textSecondary,
-                            fontSize: 13,
-                            height: 1.35,
+                            color: context.textPrimary,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
                           ),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: const BoxDecoration(
+                                color: EchoTheme.online,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${_onlineCount(group)}',
+                              style: const TextStyle(
+                                color: EchoTheme.online,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '${group.memberCount} member${group.memberCount == 1 ? '' : 's'}',
+                              style: TextStyle(
+                                color: context.textMuted,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (group.description != null &&
+                            group.description!.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            group.description!,
+                            style: TextStyle(
+                              color: context.textSecondary,
+                              fontSize: 13,
+                              height: 1.35,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                        if (isNarrow) ...[
+                          const SizedBox(height: 10),
+                          joinButton,
+                        ],
                       ],
-                      if (isNarrow) ...[const SizedBox(height: 10), joinButton],
-                    ],
-                  ),
-                );
+                    ),
+                  );
 
-                return ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 68),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Group avatar — bright solid background with white glyph,
-                      // deterministically picked from the group palette.
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: groupAvatarColor(group.name),
-                          borderRadius: BorderRadius.circular(22),
+                  return ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 68),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Group avatar — bright solid background with white glyph,
+                        // deterministically picked from the group palette.
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: groupAvatarColor(group.name),
+                            borderRadius: BorderRadius.circular(22),
+                          ),
+                          alignment: Alignment.center,
+                          child: const Icon(
+                            Icons.group,
+                            size: 22,
+                            color: Colors.white,
+                          ),
                         ),
-                        alignment: Alignment.center,
-                        child: const Icon(
-                          Icons.group,
-                          size: 22,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      // Name + stats + description (+ button on narrow)
-                      nameColumn,
-                      if (!isNarrow) ...[const SizedBox(width: 12), joinButton],
-                    ],
-                  ),
-                );
-              },
+                        const SizedBox(width: 12),
+                        // Name + stats + description (+ button on narrow)
+                        nameColumn,
+                        if (!isNarrow) ...[
+                          const SizedBox(width: 12),
+                          joinButton,
+                        ],
+                      ],
+                    ),
+                  );
+                },
+              ),
             ),
           ),
         ),

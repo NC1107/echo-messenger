@@ -233,12 +233,26 @@ class SettingsRootView extends ConsumerWidget {
                 section: SettingsSection.about,
                 trailing: 'v$appVersion',
               ),
-              CardRow(
-                icon: Icons.logout,
-                iconColor: EchoTheme.danger,
-                label: 'Log out',
-                destructive: true,
-                onTap: onLogout,
+            ],
+          ),
+          // Log out lives in its own card so the destructive action sits
+          // alone, visually divorced from neutral chrome like "About".
+          // Pattern matches the standard "destructive action at the bottom"
+          // shape from iOS Settings / Discord / etc. F-039 in the
+          // 2026-05-19 UI audit.
+          const SizedBox(height: EchoSectionTokens.groupGap),
+          _CardGroup(
+            children: [
+              Semantics(
+                label: 'settings log-out',
+                button: true,
+                child: CardRow(
+                  icon: Icons.logout,
+                  iconColor: EchoTheme.danger,
+                  label: 'Log out',
+                  destructive: true,
+                  onTap: onLogout,
+                ),
               ),
             ],
           ),
@@ -256,14 +270,20 @@ class SettingsRootView extends ConsumerWidget {
     String? trailing,
   }) {
     final isSelected = selected == section;
-    return Container(
-      color: isSelected ? context.accentLight : null,
-      child: CardRow(
-        icon: icon,
-        iconColor: iconColor,
-        label: settingsSectionLabel(section),
-        trailingValue: trailing,
-        onTap: () => onTap(section),
+    final slug = section.name.toLowerCase();
+    return Semantics(
+      label: 'settings tab $slug',
+      button: true,
+      selected: isSelected,
+      child: Container(
+        color: isSelected ? context.accentLight : null,
+        child: CardRow(
+          icon: icon,
+          iconColor: iconColor,
+          label: settingsSectionLabel(section),
+          trailingValue: trailing,
+          onTap: () => onTap(section),
+        ),
       ),
     );
   }
@@ -552,11 +572,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           Container(width: 1, color: context.border),
-          // Content area -- fills remaining width
+          // Content area — caps at 960px so the form columns don't sprawl
+          // across an ultrawide display with a desert of empty pixels
+          // between the sidebar and the actual fields. Wider screens get
+          // the form left-aligned against the sidebar; the surplus space
+          // sits on the trailing edge.
           Expanded(
-            child: SettingsContent(
-              key: ValueKey(_selectedSection),
-              section: _selectedSection,
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 960),
+                child: SettingsContent(
+                  key: ValueKey(_selectedSection),
+                  section: _selectedSection,
+                ),
+              ),
             ),
           ),
         ],

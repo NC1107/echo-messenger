@@ -1105,13 +1105,15 @@ class EchoSectionTokens {
   /// Vertical gap above a [SectionHeader] label.
   static const double headerTopGap = 24;
 
-  /// All-caps muted section label text style.
+  /// Sentence-case muted section label text style. Bumped slightly from
+  /// the previous all-caps treatment (11/700/1.2 letter-spacing) so the
+  /// header still reads as a category divider without screaming.
   static TextStyle sectionLabelStyle(BuildContext context) {
     return TextStyle(
       color: context.textMuted,
-      fontSize: 11,
-      fontWeight: FontWeight.w700,
-      letterSpacing: 1.2,
+      fontSize: 12,
+      fontWeight: FontWeight.w600,
+      letterSpacing: 0.2,
     );
   }
 }

@@ -36,12 +36,13 @@ class RetryRow extends StatelessWidget {
         children: [
           const Icon(Icons.error_rounded, size: 16, color: EchoTheme.danger),
           const SizedBox(width: 6),
-          Flexible(
+          const Flexible(
             child: Text(
-              message.content.contains('not have been delivered')
-                  ? 'Message may not have been delivered'
-                  : 'Failed to send',
-              style: const TextStyle(
+              // Unified failure label across voice + text. Retry / Delete
+              // sit right next to this text, so the previous "Tap to retry"
+              // suffix was redundant. See F-030 in the 2026-05-19 UI audit.
+              "Couldn't send",
+              style: TextStyle(
                 fontSize: 12,
                 color: EchoTheme.danger,
                 fontWeight: FontWeight.w500,

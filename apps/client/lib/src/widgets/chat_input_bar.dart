@@ -86,6 +86,12 @@ class ChatInputBar extends ConsumerStatefulWidget {
   ConsumerState<ChatInputBar> createState() => ChatInputBarState();
 }
 
+/// Direction of a mention-picker selection move, expressed as visual
+/// intent rather than a raw +1 / -1 delta. The picker ListView uses
+/// `reverse: true`, so encoding the inversion here keeps the key
+/// handler reading as `up` / `down`.
+enum _MentionMove { up, down }
+
 class ChatInputBarState extends ConsumerState<ChatInputBar> {
   // The text composer, focus node, edit-message state, and (in a later
   // slice) mention controller live on [_controller]. Forwarders below
@@ -170,8 +176,63 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     _loadDraft(widget.conversation.id);
   }
 
+  /// Index of the selected row in the mention picker. Reset to 0 each time
+  /// the picker opens or the query changes so the first match is always
+  /// the keyboard-accept target.
+  int _mentionPickerIndex = 0;
+  String _lastMentionQuery = '';
+  bool _lastMentionShowing = false;
+  // Cached candidate list — recomputed only when picker state changes.
+  // Reading _mentionCandidates per keystroke was allocating a new filtered
+  // list each time (audit perf + frontend findings).
+  List<String> _cachedMentionCandidates = const [];
+
   void _onMentionChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    final showing = _mentionController.showPicker;
+    final query = _mentionController.query;
+    final changed =
+        showing != _lastMentionShowing || query != _lastMentionQuery;
+    if (!changed) return; // skip rebuild when nothing visible changed
+    _mentionPickerIndex = 0;
+    _cachedMentionCandidates = showing
+        ? MentionAutocomplete.candidateValues(_filteredMentionMembers, query)
+        : const [];
+    _lastMentionShowing = showing;
+    _lastMentionQuery = query;
+    setState(() {});
+  }
+
+  /// Candidate values currently rendered by the mention picker. Cached
+  /// in [_cachedMentionCandidates] and updated only in [_onMentionChanged].
+  List<String> get _mentionCandidates => _cachedMentionCandidates;
+
+  /// Accept the currently-selected mention candidate (Tab/Enter pressed
+  /// while the picker is open). No-op when there are no candidates.
+  void _acceptMentionSelection() {
+    final candidates = _mentionCandidates;
+    if (candidates.isEmpty) return;
+    final idx = _mentionPickerIndex.clamp(0, candidates.length - 1);
+    _handleMentionSelected(candidates[idx]);
+  }
+
+  /// Semantic direction for picker navigation. The candidate list is
+  /// rendered with `reverse: true`, so the *visual* "down arrow"
+  /// actually moves to a smaller index. Encapsulating that here means
+  /// the key handler reads as `_MentionMove.down` rather than
+  /// `_moveMentionSelection(-1)` and a future maintainer can't
+  /// accidentally flip the sign (TD-22).
+  void _moveMentionSelection(_MentionMove direction) {
+    final candidates = _mentionCandidates;
+    if (candidates.isEmpty) return;
+    final delta = switch (direction) {
+      _MentionMove.up => 1, // up arrow → higher index in the reverse list
+      _MentionMove.down => -1, // down arrow → lower index
+    };
+    final next = (_mentionPickerIndex + delta) % candidates.length;
+    setState(() {
+      _mentionPickerIndex = next < 0 ? next + candidates.length : next;
+    });
   }
 
   @override
@@ -1438,6 +1499,32 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
 
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
 
+    // Mention picker keyboard nav takes precedence — Tab/Enter accept the
+    // selected row, arrows move it, Escape closes the picker (without
+    // also bubbling Escape through to message edit-cancel).
+    if (_mentionController.showPicker) {
+      if (event.logicalKey == LogicalKeyboardKey.tab ||
+          (event.logicalKey == LogicalKeyboardKey.enter &&
+              !HardwareKeyboard.instance.isShiftPressed)) {
+        _acceptMentionSelection();
+        return KeyEventResult.handled;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+        _moveMentionSelection(_MentionMove.down);
+        return KeyEventResult.handled;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+        _moveMentionSelection(_MentionMove.up);
+        return KeyEventResult.handled;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.escape) {
+        _mentionController.dismiss();
+        return KeyEventResult.handled;
+      }
+      // Space falls through — extractMentionQuery sees the space and
+      // closes the picker, leaving the literal "@" in the text.
+    }
+
     if (event.logicalKey == LogicalKeyboardKey.escape) {
       _handleEscapeKey();
     }
@@ -1825,6 +1912,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       return MentionAutocomplete(
         members: _filteredMentionMembers,
         mentionQuery: _mentionController.query,
+        selectedIndex: _mentionPickerIndex,
         onMentionSelected: _handleMentionSelected,
       );
     }

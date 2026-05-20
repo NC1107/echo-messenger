@@ -524,7 +524,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
       return 'Group encryption key not available yet. Tap to retry.';
     }
     if (msg.contains('cannot decrypt') || msg.contains('Could not decrypt')) {
-      return 'Message could not be decrypted.';
+      return "Couldn't decrypt this message";
     }
     if (msg.contains('OTP key_id') && msg.contains('not found')) {
       return 'Encryption key mismatch. Ask the other person to resend.';
@@ -532,7 +532,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     if (msg.contains('Auth expired')) {
       return 'Session expired. Please try again.';
     }
-    return 'Message could not be secured. Tap to retry.';
+    return "Couldn't send · Tap to retry";
   }
 
   /// Add a failed message to the chat so the user can see the error.
@@ -619,6 +619,12 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
                 .read(cryptoProvider.notifier)
                 .seedInitialGroupKey(conversationId);
             keyResult = await groupCrypto.getGroupKey(conversationId);
+            // TD-5: if seedInitialGroupKey lost a 409 race the local
+            // cache may still be empty even though the server now has
+            // a fresh key version. Force a network refetch before we
+            // give up, so a rotation won-elsewhere doesn't bounce the
+            // sender into the failed-message retry loop.
+            keyResult ??= await groupCrypto.fetchGroupKey(conversationId);
           }
         }
 

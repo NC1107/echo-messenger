@@ -10,6 +10,7 @@ import '../providers/chat_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../theme/echo_theme.dart';
 import '../theme/motion_tokens.dart';
+import 'message/rich_text_content.dart';
 import '../theme/responsive.dart';
 import 'message/reply_quote.dart';
 
@@ -376,9 +377,17 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
               color: isMine ? context.sentBubble : context.recvBubble,
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Text(
-              reply.content,
-              style: TextStyle(fontSize: 13, color: context.textPrimary),
+            // Per #449-2: swap plain Text for RichTextContent so
+            // markdown bold/italic, @mentions, and URL autolinks
+            // render in thread replies the same way they do in the
+            // main chat. Compact mode matches the thread's denser
+            // visual rhythm.
+            child: RichTextContent(
+              text: reply.content,
+              textColor: context.textPrimary,
+              accentHoverColor: context.accentHover,
+              textSecondaryColor: context.textSecondary,
+              compact: true,
             ),
           ),
         ],
@@ -397,8 +406,13 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
         button: true,
         child: GestureDetector(
           onTap: () {
+            // Per #449-1: stop closing the thread on reply. Users were
+            // losing context every time they tapped Reply because the
+            // panel collapsed back to the main chat. Fire the parent
+            // reply handler so the composer goes into reply-to-thread
+            // mode, but keep the thread panel open so the user can
+            // read context while composing.
             widget.onReply?.call(widget.parentMessage);
-            widget.onClose();
           },
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),

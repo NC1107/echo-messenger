@@ -85,6 +85,14 @@ class CryptoState {
 /// not change.
 @Riverpod(keepAlive: true)
 class CryptoNotifier extends _$CryptoNotifier {
+  /// Per-conversation single-flight tracker for [seedInitialGroupKey].
+  /// Without this, multiple admins joining a group simultaneously (or one
+  /// admin firing the self-heal repeatedly) issue concurrent rotations:
+  /// each does probe + member fetch + N identity-key fetches + envelope
+  /// POST, and N-1 of those POSTs lose a 409 race. Audit P2 critical
+  /// finding (rotation storm).
+  final Set<String> _rotatingGroups = <String>{};
+
   @override
   CryptoState build() {
     return const CryptoState();
@@ -409,7 +417,40 @@ class CryptoNotifier extends _$CryptoNotifier {
   /// Idempotent against the server's UNIQUE constraint on
   /// `(conversation_id, key_version)` — a parallel client racing on
   /// the same group will get 409 and short-circuit.
-  Future<int?> seedInitialGroupKey(String conversationId) async {
+  Future<int?> seedInitialGroupKey(
+    String conversationId, {
+    int? currentVersion,
+  }) async {
+    // Single-flight per conversation. Drops concurrent attempts so a
+    // multi-admin group, an invite-link burst, or rapid Send retries
+    // can't fan out to A×(N+2) parallel HTTP requests per join (audit
+    // critical finding — rotation storm). The first caller does the
+    // work; subsequent callers get `null` and rely on the next
+    // group_key_rotated WS event to populate the local cache.
+    if (_rotatingGroups.contains(conversationId)) {
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'GroupRotation',
+        'seedInitialGroupKey: rotation already in flight for '
+            '$conversationId — skipping',
+      );
+      return null;
+    }
+    _rotatingGroups.add(conversationId);
+    try {
+      return await _seedInitialGroupKeyInner(
+        conversationId,
+        currentVersion: currentVersion,
+      );
+    } finally {
+      _rotatingGroups.remove(conversationId);
+    }
+  }
+
+  Future<int?> _seedInitialGroupKeyInner(
+    String conversationId, {
+    int? currentVersion,
+  }) async {
     final groupCrypto = ref.read(groupCryptoServiceProvider);
     final crypto = ref.read(cryptoServiceProvider);
     final token = ref.read(authProvider).token ?? '';
@@ -423,27 +464,53 @@ class CryptoNotifier extends _$CryptoNotifier {
     // stale identity keys (and are therefore unwrappable). Probe
     // /keys/latest — if a key already exists we rotate to version+1
     // instead of hardcoding v=1, which would 409-conflict and leave the
-    // group wedged forever. We don't try to decrypt; we just read the
-    // version number off the response.
+    // group wedged forever. Callers with a fresh version hint (e.g. the
+    // group_key_rotation_requested WS payload) can pass currentVersion
+    // and skip the probe entirely (TD-6).
     var nextVersion = 1;
-    try {
-      final probe = await http.get(
-        Uri.parse('$serverUrl/api/groups/$conversationId/keys/latest'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
-      if (probe.statusCode == 200) {
-        final body = jsonDecode(probe.body) as Map<String, dynamic>;
-        final existing = body['key_version'] as int?;
-        if (existing != null) nextVersion = existing + 1;
+    if (currentVersion != null) {
+      nextVersion = currentVersion + 1;
+    } else {
+      try {
+        final probe = await http.get(
+          Uri.parse('$serverUrl/api/groups/$conversationId/keys/latest'),
+          headers: {'Authorization': 'Bearer $token'},
+        );
+        if (probe.statusCode == 200) {
+          final body = jsonDecode(probe.body) as Map<String, dynamic>;
+          final existing = body['key_version'] as int?;
+          if (existing != null) nextVersion = existing + 1;
+        } else if (probe.statusCode == 401 || probe.statusCode == 403) {
+          // TD-18: 401/403 means the rotation will also be rejected;
+          // bail rather than uploading v=1 envelopes the server can't
+          // accept. The caller's WS event will retry once auth refreshes.
+          DebugLogService.instance.log(
+            LogLevel.warning,
+            'GroupRotation',
+            'seedInitialGroupKey: /keys/latest probe returned '
+                '${probe.statusCode} for $conversationId — aborting '
+                'rotation (auth path will retry).',
+          );
+          return null;
+        }
+        // 404 (no key yet) falls through with nextVersion == 1.
+      } catch (e) {
+        // TD-18: network/decoder failures fall through to v=1 (the
+        // brand-new-group case). Log so a post-mortem can distinguish
+        // legitimate first-key rotations from blocked recovery attempts.
+        DebugLogService.instance.log(
+          LogLevel.warning,
+          'GroupRotation',
+          'seedInitialGroupKey: /keys/latest probe failed for '
+              '$conversationId — falling through to v=1: $e',
+        );
       }
-    } catch (_) {
-      // Probe failure is fine — we fall through to v=1, which is the
-      // correct value for a brand-new group.
     }
 
     return groupCrypto.performRotation(
       conversationId,
       nextVersion,
+      selfUserId: myUserId,
       triggeredByEvent: nextVersion == 1 ? 'first_key' : 'recover_wedged',
       fetchMembers: () async {
         try {
@@ -485,6 +552,16 @@ class CryptoNotifier extends _$CryptoNotifier {
           return crypto.getIdentityPublicKey();
         }
         return crypto.fetchPeerIdentityKey(userId, forceRefresh: true);
+      },
+      // TD-4: refuse to wrap the group secret under a changed peer
+      // identity key. The force-refresh above silently updates the
+      // TOFU cache to whatever the server returned; the rotation
+      // checks the per-user "changed" flag and aborts if anyone's
+      // key is unconfirmed. Self is never flagged (we generate our
+      // own key) so the check is a no-op for myUserId.
+      hasIdentityKeyChanged: (userId) async {
+        if (userId == myUserId) return false;
+        return crypto.hasPeerIdentityKeyChanged(userId);
       },
     );
   }

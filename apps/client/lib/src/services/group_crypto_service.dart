@@ -650,6 +650,8 @@ class GroupCryptoService {
     int keyVersion, {
     required Future<List<Map<String, dynamic>>> Function() fetchMembers,
     required Future<Uint8List?> Function(String userId) fetchIdentityKey,
+    Future<bool> Function(String userId)? hasIdentityKeyChanged,
+    String? selfUserId,
     String triggeredByEvent = 'unspecified',
   }) {
     // Audit P1-4: timeline event captures the full rotation cost (member
@@ -662,6 +664,8 @@ class GroupCryptoService {
         keyVersion,
         fetchMembers: fetchMembers,
         fetchIdentityKey: fetchIdentityKey,
+        hasIdentityKeyChanged: hasIdentityKeyChanged,
+        selfUserId: selfUserId,
         triggeredByEvent: triggeredByEvent,
       ),
       args: {'conversation': conversationId, 'keyVersion': keyVersion},
@@ -673,6 +677,8 @@ class GroupCryptoService {
     int keyVersion, {
     required Future<List<Map<String, dynamic>>> Function() fetchMembers,
     required Future<Uint8List?> Function(String userId) fetchIdentityKey,
+    Future<bool> Function(String userId)? hasIdentityKeyChanged,
+    String? selfUserId,
     required String triggeredByEvent,
   }) async {
     // Drop the stale key first so we never encrypt with the now-revoked
@@ -691,11 +697,70 @@ class GroupCryptoService {
     final newKeyBytes = Uint8List.fromList(base64Decode(generateGroupKey()));
     final newKeyB64 = base64Encode(newKeyBytes);
 
+    // Fetch all identity keys concurrently. The previous serial for-loop
+    // was O(N) round-trips before any envelope could be built — a
+    // 100-member group took 5–10s on mobile. Future.wait parallelises
+    // the N requests; the server's /api/keys/bundle endpoint is per-user
+    // but the calls overlap on the wire so the wall time collapses to
+    // roughly one RTT regardless of N. (TD-1 in TECHNICAL_DEBT.md.)
+    final userIds = members
+        .map((m) => m['user_id'] as String?)
+        .where((id) => id != null && id.isNotEmpty)
+        .cast<String>()
+        .toList();
+    final identityKeys = await Future.wait(userIds.map(fetchIdentityKey));
+
+    // TD-21: if the rotator's own identity key is unavailable (e.g.
+    // keyring locked, secure storage migration in flight), uploading
+    // envelopes that exclude self would leave us unable to decrypt
+    // anything we send in this group until the next rotation re-
+    // includes us. Hard-abort so the caller can retry once the
+    // keyring is unlocked. Other members with null keys still get
+    // skipped further down — they'll be included in the next rotation
+    // once they publish.
+    if (selfUserId != null) {
+      for (var i = 0; i < userIds.length; i++) {
+        if (userIds[i] == selfUserId && identityKeys[i] == null) {
+          debugPrint(
+            '[GroupCrypto] performRotation aborted: local identity '
+            'key unavailable (keyring locked?). Retry when crypto '
+            'is ready.',
+          );
+          return null;
+        }
+      }
+    }
+
+    // TD-4: TOFU bypass guard. fetchPeerIdentityKey(forceRefresh: true)
+    // silently trusts whatever the server returned, so wrapping the
+    // group secret under a changed identity key would hand a fresh
+    // envelope to a key the user has never confirmed. Abort the
+    // rotation when any participant's TOFU flag is set — admins can
+    // acknowledge the change in the chat header and retry. Skipped
+    // when the caller didn't supply the checker (preserves the legacy
+    // performRotation contract).
+    if (hasIdentityKeyChanged != null) {
+      final changedFlags = await Future.wait(
+        userIds.map(hasIdentityKeyChanged),
+      );
+      final changedUsers = <String>[
+        for (var i = 0; i < userIds.length; i++)
+          if (changedFlags[i]) userIds[i],
+      ];
+      if (changedUsers.isNotEmpty) {
+        debugPrint(
+          '[GroupCrypto] performRotation aborted: identity key '
+          'changed for ${changedUsers.join(', ')} (TOFU flag set). '
+          'Acknowledge the change and retry.',
+        );
+        return null;
+      }
+    }
+
     final envelopes = <Map<String, dynamic>>[];
-    for (final m in members) {
-      final userId = m['user_id'] as String?;
-      if (userId == null || userId.isEmpty) continue;
-      final identityKey = await fetchIdentityKey(userId);
+    for (var i = 0; i < userIds.length; i++) {
+      final userId = userIds[i];
+      final identityKey = identityKeys[i];
       if (identityKey == null) {
         debugPrint(
           '[GroupCrypto] performRotation: missing identity key for $userId',

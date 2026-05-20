@@ -14,7 +14,6 @@ import '../providers/crypto_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/update_provider.dart';
 import '../providers/websocket_provider.dart';
-import '../services/local_network_permission_service.dart';
 import '../services/message_cache.dart';
 import '../services/push_token_service.dart';
 import '../services/update_service.dart' as update_svc;
@@ -76,18 +75,11 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     // last-known size after navigation lands on home/login.
     await WindowStateService.enterSplash();
 
-    // Prime the iOS/macOS local-network permission popup with an in-app
-    // explainer BEFORE any non-loopback request — auto-login below contacts
-    // the server, which is what triggers the OS popup. Running the
-    // explainer after auto-login (the previous ordering) was a no-op:
-    // testers hit "Don't Allow" on the bare OS dialog and silently broke
-    // server connectivity. No-op on other platforms and after the first
-    // run. Not gated on login state so first-launch unauthenticated users
-    // also see the context before the register/login form's first request.
-    if (mounted) {
-      await LocalNetworkPermissionService.showIfNeeded(context);
-      if (!mounted) return;
-    }
+    // The iOS/macOS local-network permission explainer used to fire here
+    // before auto-login. Removed per direct user feedback — the bare OS
+    // dialog is enough, and the in-app overlay added friction on the
+    // splash that users didn't want. The service file is kept in case
+    // we want to restore a friendlier variant later.
 
     _setStatus('Checking session…');
     final loggedIn = await _attemptAutoLogin();
@@ -123,6 +115,11 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     // instead of navigating immediately.
     final updateState = ref.read(updateProvider);
     if (!kIsWeb && update_svc.canAutoUpdate && updateState.updateAvailable) {
+      // Grow the chromeless splash window to a size that comfortably fits
+      // the actionable update prompt — the 320×440 splash dimensions
+      // crowded the Download/Restart/Skip stack.
+      await WindowStateService.enterUpdatePrompt();
+      if (!mounted) return;
       setState(() {
         _showUpdatePrompt = true;
         _loggedIn = loggedIn;

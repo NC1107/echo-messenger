@@ -110,6 +110,7 @@ extension CryptoHandlersOn on WsMessageHandler {
       groupCrypto.performRotation(
         conversationId,
         keyVersion,
+        selfUserId: myUserId,
         fetchMembers: () async {
           try {
             final resp = await http.get(
@@ -142,6 +143,13 @@ extension CryptoHandlersOn on WsMessageHandler {
             return crypto.getIdentityPublicKey();
           }
           return crypto.fetchPeerIdentityKey(userId, forceRefresh: true);
+        },
+        // TD-4: same TOFU-bypass guard as seedInitialGroupKey. If any
+        // peer's identity key changed on the most recent refresh,
+        // refuse to wrap the new group key under it.
+        hasIdentityKeyChanged: (userId) async {
+          if (userId == myUserId) return false;
+          return crypto.hasPeerIdentityKeyChanged(userId);
         },
       ),
     );

@@ -32,6 +32,7 @@ import 'echo_logo_icon.dart';
 import 'empty_state.dart';
 import 'feedback_dialog.dart';
 import 'skeleton_loader.dart';
+import 'voice_dock.dart';
 import 'voice_footer.dart';
 
 // Re-export avatar utilities so existing `show` imports keep working.
@@ -549,19 +550,37 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               // Hide the status bar on mobile narrow — redundant with the
               // bottom tab bar that already exposes Settings + identity.
               //
-              // The update banner / bug-report row sits ABOVE the VoiceFooter
-              // so the desktop voice-dock overlay (`_buildDesktopVoiceDock`,
-              // anchored at `bottom: 60`) can't cover the bug-report button
-              // when a call is active (#913).
+              // Stack from top → bottom of the sidebar bottom chrome:
+              //   1. VoiceDock — full call controls when voice is active
+              //      (renders SizedBox.shrink() otherwise)
+              //   2. Update banner / bug-report row
+              //   3. VoiceFooter — slim "tap to return to lounge" handle
+              //      while voice is active (collapses when inactive)
+              //   4. User status bar
+              // VoiceDock used to be a floating AnimatedPositioned overlay
+              // at `bottom: 60` which occluded everything beneath it
+              // (F-029 in the 2026-05-19 UI audit) — flowing it inline
+              // means the bug-report and update affordances stay reachable
+              // during a call.
+              if (MediaQuery.sizeOf(context).width >= 600)
+                // LayoutBuilder hands the dock the actual column width so
+                // it doesn't under-fill (sidebar default is 350, dock
+                // used to hardcode 320) or overflow on resize. TD-11.
+                LayoutBuilder(
+                  builder: (context, constraints) => VoiceDock(
+                    width: constraints.maxWidth,
+                    onNavigateToLounge: widget.onNavigateToLounge,
+                  ),
+                ),
               if (MediaQuery.sizeOf(context).width >= 600)
                 _buildSidebarUpdateBanner(context),
-              // Explicit gap between bug-report row and voice dock to prevent
-              // visual occlusion when corners round.
               if (MediaQuery.sizeOf(context).width >= 600)
                 const SizedBox(height: 4),
               // On narrow (mobile), VoiceFooter is rendered at the Scaffold
-              // level in home_screen.dart above the bottom tab bar.
-              if (MediaQuery.sizeOf(context).width >= 600)
+              // level in home_screen.dart above the bottom tab bar — desktop
+              // exposes the same tap-to-return-to-lounge through VoiceDock
+              // above, so we don't double up on a second voice ribbon.
+              if (MediaQuery.sizeOf(context).width < 600)
                 VoiceFooter(onNavigateToLounge: widget.onNavigateToLounge),
               if (MediaQuery.sizeOf(context).width >= 600)
                 _buildUserStatusBar(
@@ -670,25 +689,33 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           // Right: non-draggable action buttons.
           // All icons at 18px with uniform 44x44 tap targets per WCAG 2.5.5.
           if (widget.onScanQr != null)
-            IconButton(
-              icon: const Icon(Icons.qr_code_scanner, size: 18),
-              color: context.textSecondary,
-              tooltip: 'Scan QR to add contact',
-              onPressed: widget.onScanQr,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+            Semantics(
+              label: 'scan QR to add contact',
+              button: true,
+              child: IconButton(
+                icon: const Icon(Icons.qr_code_scanner, size: 18),
+                color: context.textSecondary,
+                tooltip: 'Scan QR to add contact',
+                onPressed: widget.onScanQr,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+              ),
             ),
           const SizedBox(width: 2),
           _buildNewActionMenu(context, pendingCount),
           if (!isMobile && widget.onShowKeyboardShortcuts != null) ...[
             const SizedBox(width: 2),
-            IconButton(
-              icon: const Icon(Icons.help_outline, size: 18),
-              color: context.textSecondary,
-              tooltip: 'Keyboard shortcuts (Ctrl+/)',
-              onPressed: widget.onShowKeyboardShortcuts,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+            Semantics(
+              label: 'show keyboard shortcuts',
+              button: true,
+              child: IconButton(
+                icon: const Icon(Icons.help_outline, size: 18),
+                color: context.textSecondary,
+                tooltip: 'Keyboard shortcuts (Ctrl+/)',
+                onPressed: widget.onShowKeyboardShortcuts,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+              ),
             ),
           ],
           // Global-search entrypoint on both mobile and desktop. The
@@ -698,26 +725,34 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           // (see the feedback_desktop_search memory rule).
           if (widget.onGlobalSearch != null) ...[
             const SizedBox(width: 2),
-            IconButton(
-              icon: const Icon(Icons.search_outlined, size: 18),
-              color: context.textSecondary,
-              tooltip: isMobile
-                  ? 'Search messages'
-                  : 'Search messages (Ctrl+Shift+F)',
-              onPressed: widget.onGlobalSearch,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+            Semantics(
+              label: 'global search',
+              button: true,
+              child: IconButton(
+                icon: const Icon(Icons.search_outlined, size: 18),
+                color: context.textSecondary,
+                tooltip: isMobile
+                    ? 'Search messages'
+                    : 'Search messages (Ctrl+Shift+F)',
+                onPressed: widget.onGlobalSearch,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+              ),
             ),
           ],
           if (widget.onCollapseSidebar != null) ...[
             const SizedBox(width: 2),
-            IconButton(
-              icon: const Icon(Icons.chevron_left, size: 18),
-              color: context.textSecondary,
-              tooltip: 'Collapse sidebar',
-              onPressed: widget.onCollapseSidebar,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+            Semantics(
+              label: 'collapse sidebar',
+              button: true,
+              child: IconButton(
+                icon: const Icon(Icons.chevron_left, size: 18),
+                color: context.textSecondary,
+                tooltip: 'Collapse sidebar',
+                onPressed: widget.onCollapseSidebar,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+              ),
             ),
           ],
         ],
@@ -734,100 +769,109 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        PopupMenuButton<String>(
-          icon: Icon(Icons.add, size: 18, color: context.textSecondary),
-          tooltip: 'New',
-          padding: EdgeInsets.zero,
-          // 44×44 tap target per WCAG 2.5.5
-          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-          // Menu minimum width so text never clips on narrow viewports
-          menuPadding: const EdgeInsets.symmetric(vertical: 4),
-          popUpAnimationStyle: AnimationStyle.noAnimation,
-          offset: const Offset(0, 36),
-          onSelected: (value) {
-            switch (value) {
-              case 'chat':
-                widget.onNewChat?.call();
-              case 'group':
-                widget.onNewGroup?.call();
-              case 'discover':
-                widget.onDiscover?.call();
-              case 'saved':
-                widget.onSavedMessages?.call();
-            }
-          },
-          itemBuilder: (context) => const [
-            PopupMenuItem(
-              value: 'chat',
-              child: SizedBox(
-                width: 200,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.person_add_outlined, size: 18),
-                    SizedBox(width: 10),
-                    Flexible(
-                      child: Text('New Chat', overflow: TextOverflow.ellipsis),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            PopupMenuItem(
-              value: 'group',
-              child: SizedBox(
-                width: 200,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.group_add_outlined, size: 18),
-                    SizedBox(width: 10),
-                    Flexible(
-                      child: Text('New Group', overflow: TextOverflow.ellipsis),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            PopupMenuItem(
-              value: 'discover',
-              child: SizedBox(
-                width: 200,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.explore_outlined, size: 18),
-                    SizedBox(width: 10),
-                    Flexible(
-                      child: Text(
-                        'Discover Groups',
-                        overflow: TextOverflow.ellipsis,
+        Semantics(
+          label: 'new chat menu',
+          button: true,
+          child: PopupMenuButton<String>(
+            icon: Icon(Icons.add, size: 18, color: context.textSecondary),
+            tooltip: 'New',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+            // Menu minimum width so text never clips on narrow viewports
+            menuPadding: const EdgeInsets.symmetric(vertical: 4),
+            popUpAnimationStyle: AnimationStyle.noAnimation,
+            offset: const Offset(0, 36),
+            onSelected: (value) {
+              switch (value) {
+                case 'chat':
+                  widget.onNewChat?.call();
+                case 'group':
+                  widget.onNewGroup?.call();
+                case 'discover':
+                  widget.onDiscover?.call();
+                case 'saved':
+                  widget.onSavedMessages?.call();
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: 'chat',
+                child: SizedBox(
+                  width: 200,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.person_add_outlined, size: 18),
+                      SizedBox(width: 10),
+                      Flexible(
+                        child: Text(
+                          'New Chat',
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-            PopupMenuItem(
-              value: 'saved',
-              child: SizedBox(
-                width: 200,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.bookmark_border_outlined, size: 18),
-                    SizedBox(width: 10),
-                    Flexible(
-                      child: Text(
-                        'Saved Messages',
-                        overflow: TextOverflow.ellipsis,
+              PopupMenuItem(
+                value: 'group',
+                child: SizedBox(
+                  width: 200,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.group_add_outlined, size: 18),
+                      SizedBox(width: 10),
+                      Flexible(
+                        child: Text(
+                          'New Group',
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+              PopupMenuItem(
+                value: 'discover',
+                child: SizedBox(
+                  width: 200,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.explore_outlined, size: 18),
+                      SizedBox(width: 10),
+                      Flexible(
+                        child: Text(
+                          'Discover Groups',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'saved',
+                child: SizedBox(
+                  width: 200,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.bookmark_border_outlined, size: 18),
+                      SizedBox(width: 10),
+                      Flexible(
+                        child: Text(
+                          'Saved Messages',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
         if (pendingCount > 0 &&
             (kIsWeb ||
@@ -1250,16 +1294,20 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       child: Align(
         alignment: Alignment.centerLeft,
-        child: TextButton.icon(
-          icon: const Icon(Icons.bug_report_outlined, size: 14),
-          label: const Text('Report a bug'),
-          onPressed: () => showFeedbackDialog(context),
-          style: TextButton.styleFrom(
-            foregroundColor: context.textMuted,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            minimumSize: Size.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            textStyle: const TextStyle(fontSize: 11),
+        child: Semantics(
+          label: 'report a bug',
+          button: true,
+          child: TextButton.icon(
+            icon: const Icon(Icons.bug_report_outlined, size: 14),
+            label: const Text('Report a bug'),
+            onPressed: () => showFeedbackDialog(context),
+            style: TextButton.styleFrom(
+              foregroundColor: context.textMuted,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              textStyle: const TextStyle(fontSize: 11),
+            ),
           ),
         ),
       ),
@@ -1294,13 +1342,17 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           ),
           const SizedBox(width: 10),
           _buildUserNameAndStatus(context, myUsername, wsConnected, wsReplaced),
-          IconButton(
-            icon: const Icon(Icons.settings_outlined, size: 18),
-            color: context.textSecondary,
-            tooltip: 'Settings',
-            onPressed: widget.onSettings,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          Semantics(
+            label: 'open settings',
+            button: true,
+            child: IconButton(
+              icon: const Icon(Icons.settings_outlined, size: 18),
+              color: context.textSecondary,
+              tooltip: 'Settings',
+              onPressed: widget.onSettings,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+            ),
           ),
         ],
       ),

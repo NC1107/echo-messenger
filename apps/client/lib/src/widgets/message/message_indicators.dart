@@ -122,7 +122,7 @@ class DecryptFailurePill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: 'Message could not be decrypted',
+      label: "Couldn't decrypt this message",
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
@@ -135,7 +135,7 @@ class DecryptFailurePill extends StatelessWidget {
             Icon(Icons.lock_outline, size: 16, color: context.textSecondary),
             const SizedBox(width: 6),
             Text(
-              'Message could not be decrypted',
+              "Couldn't decrypt this message",
               style: GoogleFonts.inter(
                 fontStyle: FontStyle.italic,
                 color: context.textSecondary,
@@ -145,6 +145,96 @@ class DecryptFailurePill extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Recovery affordance for the sender's OWN message when decrypt-back-to-
+/// self fails (group-E2E wedge case, CLAUDE.md note #344). Renders the
+/// user's preserved [originalText] at reduced opacity so they see what
+/// they actually wrote, with a footer that points out only they can see
+/// it locally + Resend/Delete callbacks.
+///
+/// Other messengers (Signal, iMessage, WhatsApp) never surface this case
+/// to the sender because they keep the plaintext locally; Element X
+/// added an in-thread retry-with-key-refresh affordance. Echo's approach
+/// matches Element's because the wedge can happen between identity-key
+/// drifts that we can recover from via [seedInitialGroupKey].
+class OwnDecryptFailedBubble extends StatelessWidget {
+  final String originalText;
+  final VoidCallback? onResend;
+  final VoidCallback? onDelete;
+
+  const OwnDecryptFailedBubble({
+    super.key,
+    required this.originalText,
+    this.onResend,
+    this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Opacity(
+          opacity: 0.7,
+          child: Text(
+            originalText,
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 14,
+              color: EchoTheme.warning.withValues(alpha: 0.9),
+            ),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                "Only you can see this — recipients couldn't decrypt",
+                style: TextStyle(fontSize: 11, color: context.textMuted),
+              ),
+            ),
+            if (onResend != null) ...[
+              const SizedBox(width: 8),
+              TextButton(
+                onPressed: onResend,
+                style: TextButton.styleFrom(
+                  minimumSize: Size.zero,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  foregroundColor: context.accent,
+                ),
+                child: const Text('Resend', style: TextStyle(fontSize: 11)),
+              ),
+            ],
+            if (onDelete != null) ...[
+              TextButton(
+                onPressed: onDelete,
+                style: TextButton.styleFrom(
+                  minimumSize: Size.zero,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  foregroundColor: context.textMuted,
+                ),
+                child: const Text('Delete', style: TextStyle(fontSize: 11)),
+              ),
+            ],
+          ],
+        ),
+      ],
     );
   }
 }

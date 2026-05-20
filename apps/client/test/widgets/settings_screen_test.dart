@@ -110,8 +110,8 @@ void main() {
       await tester.pumpWidget(_rootApp());
       await tester.pumpAndSettle();
 
-      expect(find.text('ACCOUNT PREFERENCES'), findsOneWidget);
-      expect(find.text('ECHO'), findsOneWidget);
+      expect(find.text('Account preferences'), findsOneWidget);
+      expect(find.text('Echo'), findsOneWidget);
     });
 
     testWidgets('renders Log out button', (tester) async {

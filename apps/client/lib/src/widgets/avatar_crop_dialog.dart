@@ -115,8 +115,19 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
   // The decoded image (nullable until async decode completes).
   img.Image? _decoded;
 
-  // Viewport dimensions for the preview area.
-  static const _previewSize = 280.0;
+  // Viewport dimensions for the preview area. Picked at runtime in
+  // [didChangeDependencies] so the desktop window gets a roomier cropper
+  // (mouse users can't pinch-zoom; they pan + use the zoom slider).
+  static const _previewSizeMobile = 280.0;
+  static const _previewSizeDesktop = 460.0;
+  double _previewSize = _previewSizeMobile;
+
+  /// Cached minimum scale at which the image still covers the preview
+  /// square. Recomputed only when the image decodes or the preview
+  /// viewport flips between mobile/desktop. Avoids the per-frame
+  /// `_previewSize / min(imgW, imgH)` arithmetic in build() that the
+  /// performance reviewer flagged in TD-13.
+  double _minScale = 1.0;
 
   // Scale and offset of the image inside the preview square.
   // The image is scaled so its shorter side fills the preview initially.
@@ -137,6 +148,43 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
     _decodeImage();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Pick a roomier viewport on desktop where pinch isn't available.
+    // The phone-friendly default stays for narrow viewports.
+    final w = MediaQuery.sizeOf(context).width;
+    final isDesktop = w >= 800;
+    final desired = isDesktop ? _previewSizeDesktop : _previewSizeMobile;
+    if (_previewSize == desired) return;
+    // TD-12: wrap the size flip in setState so the next build sees the
+    // new viewport. The Custompaint mask, slider min, and crop preview
+    // all key off _previewSize.
+    setState(() {
+      _previewSize = desired;
+      if (_decoded != null) {
+        _refitToViewport();
+      }
+    });
+  }
+
+  /// Recompute scale + offset to center the decoded image inside the
+  /// current `_previewSize`. Also refreshes `_minScale` so the zoom
+  /// slider doesn't have to derive it per build (TD-13).
+  void _refitToViewport() {
+    if (_decoded == null) return;
+    final imgW = _decoded!.width.toDouble();
+    final imgH = _decoded!.height.toDouble();
+    _minScale = _previewSize / (imgW < imgH ? imgW : imgH);
+    _scale = _minScale;
+    final scaledW = imgW * _scale;
+    final scaledH = imgH * _scale;
+    _offset = Offset(
+      (_previewSize - scaledW) / 2,
+      (_previewSize - scaledH) / 2,
+    );
+  }
+
   Future<void> _decodeImage() async {
     try {
       final decoded = await _decodeAsync(widget.rawBytes);
@@ -147,18 +195,20 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
       }
       final imgW = decoded.width.toDouble();
       final imgH = decoded.height.toDouble();
-      // Scale so the shorter side covers the preview square.
-      final initScale = _previewSize / (imgW < imgH ? imgW : imgH);
-      // Centre the image.
-      final scaledW = imgW * initScale;
-      final scaledH = imgH * initScale;
+      // Scale so the shorter side covers the preview square. Cache the
+      // min so the build-time Slider doesn't recompute it every frame
+      // (TD-13).
+      final minScale = _previewSize / (imgW < imgH ? imgW : imgH);
+      final scaledW = imgW * minScale;
+      final scaledH = imgH * minScale;
       final initOffset = Offset(
         (_previewSize - scaledW) / 2,
         (_previewSize - scaledH) / 2,
       );
       setState(() {
         _decoded = decoded;
-        _scale = initScale;
+        _minScale = minScale;
+        _scale = minScale;
         _offset = initOffset;
       });
     } catch (e) {
@@ -184,6 +234,38 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
     _baseScale = _scale;
     _baseFocalPoint = details.focalPoint;
     _baseOffset = _offset;
+  }
+
+  /// Mouse / accessibility slider — bumps [_scale] without pinch.
+  /// Keeps the image centred on the new scale so the crop frame stays
+  /// sensible across the full range.
+  void _onZoomSliderChanged(double newScale) {
+    if (_decoded == null) return;
+    final imgW = _decoded!.width.toDouble();
+    final imgH = _decoded!.height.toDouble();
+    final minScale = _previewSize / (imgW < imgH ? imgW : imgH);
+    final clamped = newScale.clamp(minScale, 6.0);
+    // Anchor the zoom on the centre of the preview so the user's frame
+    // doesn't drift off-axis.
+    final centre = Offset(_previewSize / 2, _previewSize / 2);
+    final ratio = clamped / _scale;
+    final newOffset = Offset(
+      centre.dx - (centre.dx - _offset.dx) * ratio,
+      centre.dy - (centre.dy - _offset.dy) * ratio,
+    );
+    // Inline clamp using the new scale; _clampOffset reads _scale via
+    // closure, so apply the update first then clamp.
+    final scaledW = imgW * clamped;
+    final scaledH = imgH * clamped;
+    final minX = _previewSize - scaledW;
+    final minY = _previewSize - scaledH;
+    setState(() {
+      _scale = clamped;
+      _offset = Offset(
+        newOffset.dx.clamp(minX, 0.0),
+        newOffset.dy.clamp(minY, 0.0),
+      );
+    });
   }
 
   void _onScaleUpdate(ScaleUpdateDetails details) {
@@ -301,13 +383,38 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
                 ),
               ),
             Text(
-              'Pan and pinch to frame your avatar',
+              'Drag to frame · use the slider to zoom',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: 12),
             _buildCropPreview(),
+            if (_decoded != null) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(
+                    Icons.zoom_out,
+                    size: 18,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  Expanded(
+                    child: Slider(
+                      min: _minScale,
+                      max: 6.0,
+                      value: _scale.clamp(_minScale, 6.0),
+                      onChanged: _onZoomSliderChanged,
+                    ),
+                  ),
+                  Icon(
+                    Icons.zoom_in,
+                    size: 18,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -365,7 +472,7 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
 
               // Circular mask overlay — darkened corners, bright circle border.
               CustomPaint(
-                size: const Size(_previewSize, _previewSize),
+                size: Size(_previewSize, _previewSize),
                 painter: _CircleMaskPainter(scrim: context.overlayScrim),
               ),
             ],

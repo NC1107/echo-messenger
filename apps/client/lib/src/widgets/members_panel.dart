@@ -83,9 +83,9 @@ class MembersPanel extends ConsumerWidget {
       }
     }
 
-    addGroup('OWNER — ${owners.length}', owners);
-    addGroup('ADMIN — ${admins.length}', admins);
-    addGroup('MEMBERS — ${regulars.length}', regulars);
+    addGroup('Owner · ${owners.length}', owners);
+    addGroup('Admins · ${admins.length}', admins);
+    addGroup('Members · ${regulars.length}', regulars);
 
     return Container(
       width: 280,
@@ -103,8 +103,12 @@ class MembersPanel extends ConsumerWidget {
             ),
             child: Align(
               alignment: Alignment.centerLeft,
+              // The conversation header already shows "<N> members" as a
+              // subtitle (chat_header_bar.dart). Repeating the count on the
+              // right-rail header was redundant; keep the count off this
+              // surface and just label what the panel is.
               child: Text(
-                '${members.length} ${members.length == 1 ? 'member' : 'members'}',
+                'Members',
                 style: TextStyle(
                   color: context.textPrimary,
                   fontSize: 14,
@@ -127,9 +131,9 @@ class MembersPanel extends ConsumerWidget {
                       item.headerLabel!,
                       style: TextStyle(
                         color: context.textMuted,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.6,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.2,
                       ),
                     ),
                   );
@@ -314,8 +318,13 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
 
     switch (role) {
       case 'owner':
-        bgColor = EchoTheme.warning.withValues(alpha: 0.15);
-        textColor = EchoTheme.warning;
+        // Reserve amber (EchoTheme.warning) for actual warnings —
+        // "Experimental" feature pill, away presence, etc. Owner is a
+        // positive role attribute, so use a brighter accent variant so
+        // it still distinguishes from Admin (same accent at lower alpha)
+        // without leaning on the warning palette.
+        bgColor = EchoTheme.accentHover.withValues(alpha: 0.22);
+        textColor = EchoTheme.accentHover;
         label = 'Owner';
       case 'admin':
         bgColor = context.accent.withValues(alpha: 0.15);
@@ -351,7 +360,7 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
         widget.canRemove && !widget.isMe && _isHovered && !_isRemoving;
 
     return Semantics(
-      label: 'member: ${member.username}',
+      label: 'member ${member.username} — open profile',
       button: true,
       child: GestureDetector(
         onTap: () {

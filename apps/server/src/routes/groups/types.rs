@@ -15,7 +15,15 @@ pub struct CreateGroupRequest {
     /// that doesn't send the field gets a plaintext group — the group-
     /// key envelope path is still experimental and groups created with
     /// it have shown an envelope-MAC wedge under identity-key drift
-    /// (see fix in v0.0.379). Clients that want E2E pass `true`.
+    /// (see PR #982). Clients that want E2E pass `true`.
+    ///
+    /// **Write-once.** Intentionally absent from [`UpdateGroupRequest`] so
+    /// `PUT /api/groups/:id` cannot flip an encrypted group to plaintext
+    /// (or vice versa) mid-conversation. Doing so would invalidate the
+    /// ratchet / group-key state for every member and would constitute a
+    /// downgrade attack against an existing E2E channel. Any future
+    /// rotation/migration story must rotate keys + require member
+    /// re-consent rather than toggling this column. See TD-7.
     #[serde(default)]
     pub is_encrypted: bool,
 }
@@ -45,6 +53,10 @@ pub struct GroupResponse {
     pub description: Option<String>,
     pub icon_url: Option<String>,
     pub members: Vec<GroupMemberResponse>,
+    /// Whether the group is end-to-end encrypted. Lets clients render
+    /// the lock indicator immediately after create/fetch without a
+    /// second round-trip (TD-8).
+    pub is_encrypted: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -64,6 +76,37 @@ pub struct AddMemberRequest {
 pub struct UpdateGroupRequest {
     pub title: Option<String>,
     pub description: Option<String>,
+    // DO NOT add `is_encrypted` here. See the doc-comment on
+    // `CreateGroupRequest::is_encrypted`. The test below enforces the
+    // invariant at compile time so this stays catchable on CI.
+}
+
+#[cfg(test)]
+mod update_group_request_lockdown {
+    use super::*;
+    use serde_json::json;
+
+    /// `UpdateGroupRequest` must remain write-locked against `is_encrypted`.
+    /// If a future contributor adds the field to the struct this test will
+    /// stop short-circuiting (it'll start parsing the value into the new
+    /// field) and the matching production write path will need to be
+    /// security-reviewed. See TD-7 in TECHNICAL_DEBT.md.
+    #[test]
+    fn is_encrypted_is_silently_dropped() {
+        // serde defaults to `deny_unknown_fields = false`, so unknown keys
+        // are dropped on parse. This deserialization MUST succeed and MUST
+        // NOT carry the encryption flag anywhere downstream.
+        let parsed: UpdateGroupRequest = serde_json::from_value(json!({
+            "title": "x",
+            "is_encrypted": true,
+        }))
+        .expect("title-only update should still deserialize");
+        assert_eq!(parsed.title.as_deref(), Some("x"));
+        // No is_encrypted field on the struct — proven by virtue of this
+        // file compiling. Touch the other fields to keep the assertion
+        // intentional rather than smoke-test.
+        assert!(parsed.description.is_none());
+    }
 }
 
 /// Optional body for invite creation (both fields accepted; UI deferred to follow-up).

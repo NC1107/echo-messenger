@@ -209,6 +209,20 @@ class ParticipantGrid extends StatelessWidget {
   }
 
   Widget _buildGridLayout(List<Widget> tiles) {
+    // Single-participant case: a 2- or 3-column grid leaves the lone tile
+    // pinned to the top-left of an empty grid. Render a centred, sized tile
+    // so a solo user sees themselves in the middle of the lounge.
+    if (tiles.length == 1) {
+      return Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+            maxWidth: 320,
+            maxHeight: 320 * 136 / 112,
+          ),
+          child: AspectRatio(aspectRatio: 112 / 136, child: tiles.first),
+        ),
+      );
+    }
     return OrientationBuilder(
       builder: (context, orientation) {
         final crossAxisCount = orientation == Orientation.portrait ? 2 : 3;

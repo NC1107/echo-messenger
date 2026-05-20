@@ -118,8 +118,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
               children: [
                 const AuthBackground(),
                 AuthLayout(
+                  // Brand-panel tagline stays as the welcoming line; form
+                  // card title is the action verb so the wide layout doesn't
+                  // print "Welcome back." twice side-by-side.
                   tagline: 'Welcome back.',
-                  formTitle: 'Welcome back.',
+                  formTitle: 'Log in to Echo',
                   compactHeader: _buildHeader(serverUrl),
                   narrowPadding: const EdgeInsets.fromLTRB(
                     24,
@@ -149,6 +152,34 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                 foregroundColor: context.textSecondary,
                               ),
                               child: const Text('Forgot password?'),
+                            ),
+                          ),
+                          // Divider + label visually separates the recovery
+                          // affordance ("Forgot password?") from the
+                          // create-account CTA so they don't read as one
+                          // stacked block of links.
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 8,
+                              horizontal: 24,
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(child: Divider(color: context.border)),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                  ),
+                                  child: Text(
+                                    'New here?',
+                                    style: TextStyle(
+                                      color: context.textMuted,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(child: Divider(color: context.border)),
+                              ],
                             ),
                           ),
                           // TextButton + Text already produce a
