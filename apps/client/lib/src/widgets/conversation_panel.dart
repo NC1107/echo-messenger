@@ -265,10 +265,13 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         );
       },
       onLeave: canLeave ? () => _leaveGroup(conv) : null,
-      onDelete: conv.isGroup
-          ? (canDeleteGroup ? () => _deleteGroup(conv) : null)
-          : () => _deleteDm(conv),
+      onDelete: _resolveDeleteCallback(conv, canDeleteGroup),
     );
+  }
+
+  VoidCallback? _resolveDeleteCallback(Conversation conv, bool canDeleteGroup) {
+    if (!conv.isGroup) return () => _deleteDm(conv);
+    return canDeleteGroup ? () => _deleteGroup(conv) : null;
   }
 
   void _showConversationContextMenu(

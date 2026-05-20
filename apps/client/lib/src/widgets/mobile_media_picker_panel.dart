@@ -4,6 +4,7 @@ import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
 
 import '../theme/echo_theme.dart';
+import 'emoji_picker_config.dart';
 import 'gif_picker_widget.dart';
 
 /// Full-width inline picker for mobile that replaces the system keyboard.
@@ -135,42 +136,11 @@ class _MobileMediaPickerPanelState extends State<MobileMediaPickerPanel>
           style: const TextStyle(fontFamilyFallback: ['NotoEmoji']),
           child: EmojiPicker(
             onEmojiSelected: widget.onEmojiSelected,
-            config: Config(
-              height:
-                  400, // ignored when inside Expanded, but required by package
-              checkPlatformCompatibility: true,
-              emojiViewConfig: EmojiViewConfig(
-                backgroundColor: context.surface,
-                columns: columns,
-                emojiSizeMax: 28,
-                verticalSpacing: 0,
-                horizontalSpacing: 0,
-                noRecents: Text(
-                  'No recents yet.',
-                  style: TextStyle(fontSize: 12, color: context.textMuted),
-                ),
-              ),
-              categoryViewConfig: CategoryViewConfig(
-                initCategory: Category.SMILEYS,
-                recentTabBehavior: RecentTabBehavior.RECENT,
-                backgroundColor: context.surface,
-                indicatorColor: context.accent,
-                iconColorSelected: context.accent,
-                iconColor: context.textMuted,
-              ),
-              skinToneConfig: SkinToneConfig(
-                enabled: true,
-                dialogBackgroundColor: context.surface,
-                indicatorColor: context.accent,
-              ),
-              bottomActionBarConfig: const BottomActionBarConfig(
-                enabled: false,
-              ),
-              searchViewConfig: SearchViewConfig(
-                backgroundColor: context.surface,
-                buttonIconColor: context.textSecondary,
-                hintText: 'Find an emoji...',
-              ),
+            // height ignored when inside Expanded, but the package requires it.
+            config: buildEchoEmojiPickerConfig(
+              context,
+              height: 400,
+              columns: columns,
             ),
           ),
         ),

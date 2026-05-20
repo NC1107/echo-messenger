@@ -388,16 +388,8 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   Widget _stepIndicatorRow(BuildContext context, int index, String label) {
     final isActive = index == _currentPage;
     final isDone = index < _currentPage;
-    final dotColor = isActive
-        ? context.accent
-        : isDone
-        ? context.accent.withValues(alpha: 0.6)
-        : context.border;
-    final textColor = isActive
-        ? context.textPrimary
-        : isDone
-        ? context.textSecondary
-        : context.textMuted;
+    final dotColor = _resolveStepDotColor(context, isActive, isDone);
+    final textColor = _resolveStepTextColor(context, isActive, isDone);
     return Row(
       children: [
         Container(
@@ -416,6 +408,22 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         ),
       ],
     );
+  }
+
+  Color _resolveStepDotColor(BuildContext context, bool isActive, bool isDone) {
+    if (isActive) return context.accent;
+    if (isDone) return context.accent.withValues(alpha: 0.6);
+    return context.border;
+  }
+
+  Color _resolveStepTextColor(
+    BuildContext context,
+    bool isActive,
+    bool isDone,
+  ) {
+    if (isActive) return context.textPrimary;
+    if (isDone) return context.textSecondary;
+    return context.textMuted;
   }
 
   Widget _buildPageView() {

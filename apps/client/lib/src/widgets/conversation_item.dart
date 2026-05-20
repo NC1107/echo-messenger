@@ -386,11 +386,13 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
   }
 
   double _resolveHorizontalPadding(bool isCozy, bool isCompact) {
-    return (isCozy ? 14 : (isCompact ? 10 : 12)).toDouble();
+    if (isCozy) return 14;
+    return isCompact ? 10 : 12;
   }
 
   double _resolveAvatarSpacing(bool isCozy, bool isCompact) {
-    return (isCozy ? 14 : (isCompact ? 8 : 12)).toDouble();
+    if (isCozy) return 14;
+    return isCompact ? 8 : 12;
   }
 
   Color _resolveTimestampColor(BuildContext context, bool hasUnread) {

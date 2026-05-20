@@ -285,9 +285,7 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
     final isMobile = Responsive.isMobile(context);
     final screenWidth = MediaQuery.of(context).size.width;
     // Responsive width: tablets (< 900) get screen-48, desktops get fixed 560
-    final width = isMobile
-        ? screenWidth - 32
-        : (screenWidth < 900 ? screenWidth - 48 : 560.0);
+    final width = _resolveOverlayWidth(isMobile, screenWidth);
 
     // A non-focusable Focus observer: it sees raw key events but never owns
     // primary focus, so it can't steal the user's first keystroke from the
@@ -391,6 +389,12 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
         ),
       ),
     );
+  }
+
+  double _resolveOverlayWidth(bool isMobile, double screenWidth) {
+    if (isMobile) return screenWidth - 32;
+    if (screenWidth < 900) return screenWidth - 48;
+    return 560.0;
   }
 
   /// Build the flat row list (headers + tiles) and render it lazily via

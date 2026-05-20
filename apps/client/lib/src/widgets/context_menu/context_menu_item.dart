@@ -69,9 +69,7 @@ class _ContextMenuItemState extends State<ContextMenuItem> {
             vertical: widget.dense ? 6 : 9,
           ),
           decoration: BoxDecoration(
-            color: _pressed
-                ? hoverBg.withValues(alpha: 0.9)
-                : (_hover ? hoverBg : Colors.transparent),
+            color: _resolveBackground(hoverBg),
             borderRadius: BorderRadius.circular(6),
           ),
           child: Row(
@@ -109,6 +107,12 @@ class _ContextMenuItemState extends State<ContextMenuItem> {
         ),
       ),
     );
+  }
+
+  Color _resolveBackground(Color hoverBg) {
+    if (_pressed) return hoverBg.withValues(alpha: 0.9);
+    if (_hover) return hoverBg;
+    return Colors.transparent;
   }
 }
 

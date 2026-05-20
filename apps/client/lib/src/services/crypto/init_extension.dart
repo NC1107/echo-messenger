@@ -32,7 +32,7 @@ extension CryptoServiceInit on CryptoService {
     // secure storage. SecureKeyStore on web uses Web Crypto API encryption
     // which can fail to decrypt after page refresh in some browsers, so
     // SharedPreferences (plain localStorage) is the reliable fallback.
-    final removeFromPrefs = !kIsWeb;
+    const removeFromPrefs = !kIsWeb;
 
     final namedOk = await _migrateNamedKeys(prefs, store, removeFromPrefs);
     final prefixedOk = await _migratePrefixedKeys(
