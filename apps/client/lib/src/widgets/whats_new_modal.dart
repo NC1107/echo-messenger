@@ -118,15 +118,7 @@ class WhatsNewModal extends ConsumerWidget {
                 IconButton(
                   icon: const Icon(Icons.close),
                   color: context.textMuted,
-                  onPressed: () async {
-                    await ref.read(releaseNotesProvider.notifier).markShown();
-                    if (!context.mounted) return;
-                    if (onClose != null) {
-                      onClose!();
-                    } else {
-                      Navigator.of(context).pop();
-                    }
-                  },
+                  onPressed: () => _dismiss(context, ref),
                 ),
             ],
           ),
@@ -181,15 +173,7 @@ class WhatsNewModal extends ConsumerWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
           child: FilledButton(
-            onPressed: () async {
-              await ref.read(releaseNotesProvider.notifier).markShown();
-              if (!context.mounted) return;
-              if (onClose != null) {
-                onClose!();
-              } else {
-                Navigator.of(context).pop();
-              }
-            },
+            onPressed: () => _dismiss(context, ref),
             style: FilledButton.styleFrom(
               backgroundColor: context.accent,
               minimumSize: const Size.fromHeight(48),
@@ -199,6 +183,16 @@ class WhatsNewModal extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  Future<void> _dismiss(BuildContext context, WidgetRef ref) async {
+    await ref.read(releaseNotesProvider.notifier).markShown();
+    if (!context.mounted) return;
+    if (onClose != null) {
+      onClose!();
+    } else {
+      Navigator.of(context).pop();
+    }
   }
 }
 

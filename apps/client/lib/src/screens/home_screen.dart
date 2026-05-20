@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/conversation.dart';
+import '../providers/channel_layout_provider.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/crypto_provider.dart';
@@ -1393,6 +1394,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       );
     }
 
+    final layout = ref.watch(channelLayoutProvider);
+    // Discord-style channel drawer: kicks in on the same path the outer
+    // edge-swipe-back uses, but only when the user has opted into the
+    // column layout AND the open conversation is a group with channels.
+    // Otherwise we keep the existing swipe-to-conversations behaviour.
+    final useColumnDrawer =
+        layout == ChannelLayout.column &&
+        (_selectedConversation?.isGroup ?? false);
+
     Widget chatContent = ChatPanel(
       conversation: _selectedConversation,
       onGroupInfo: _showGroupInfo,
@@ -1402,6 +1412,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         _showingLounge = true;
         _userDismissedLounge = false;
       }),
+      onConversationSelected: useColumnDrawer
+          ? (id) {
+              final next = ref
+                  .read(conversationsProvider)
+                  .conversations
+                  .where((c) => c.id == id)
+                  .firstOrNull;
+              if (next != null) {
+                setState(() => _selectedConversation = next);
+              }
+            }
+          : null,
     );
 
     // Note: a "● <channel> — Tap to view voice" rejoin banner used to sit
@@ -1418,40 +1440,52 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             if (!didPop) setState(() => _narrowPanelIndex = 0);
           },
           child: GestureDetector(
-            onHorizontalDragStart: (startDetails) {
-              _swipeStartX = startDetails.globalPosition.dx;
-              _swipeSnapController.stop();
-            },
-            onHorizontalDragUpdate: (details) {
-              if (_swipeStartX == null) return;
-              if (_swipeStartX! >= _edgeSwipeZone) return;
+            // Suppressed in column mode so the channel-drawer's own
+            // edge-swipe wins. The drawer covers the same "go back to
+            // navigation" affordance for column users.
+            onHorizontalDragStart: useColumnDrawer
+                ? null
+                : (startDetails) {
+                    _swipeStartX = startDetails.globalPosition.dx;
+                    _swipeSnapController.stop();
+                  },
+            onHorizontalDragUpdate: useColumnDrawer
+                ? null
+                : (details) {
+                    if (_swipeStartX == null) return;
+                    if (_swipeStartX! >= _edgeSwipeZone) return;
 
-              final deltaX = details.globalPosition.dx - _swipeStartX!;
+                    final deltaX = details.globalPosition.dx - _swipeStartX!;
 
-              if (deltaX > _edgeSwipeThreshold) {
-                // Threshold crossed — complete navigation and reset.
-                _swipeStartX = null;
-                setState(() {
-                  _swipeProgress = 0.0;
-                  _narrowPanelIndex = 0;
-                });
-                return;
-              }
+                    if (deltaX > _edgeSwipeThreshold) {
+                      // Threshold crossed — complete navigation and reset.
+                      _swipeStartX = null;
+                      setState(() {
+                        _swipeProgress = 0.0;
+                        _narrowPanelIndex = 0;
+                      });
+                      return;
+                    }
 
-              // Update in-progress feedback.
-              final progress =
-                  (deltaX.clamp(0.0, _edgeSwipeThreshold) /
-                  _edgeSwipeThreshold);
-              setState(() => _swipeProgress = progress);
-            },
-            onHorizontalDragEnd: (_) {
-              if (_swipeProgress > 0.0) {
-                // Snap back from current progress to 0 over 150 ms.
-                _swipeSnapController.value = _swipeProgress;
-                _swipeSnapController.animateBack(0.0, curve: Curves.easeOut);
-              }
-              _swipeStartX = null;
-            },
+                    // Update in-progress feedback.
+                    final progress =
+                        (deltaX.clamp(0.0, _edgeSwipeThreshold) /
+                        _edgeSwipeThreshold);
+                    setState(() => _swipeProgress = progress);
+                  },
+            onHorizontalDragEnd: useColumnDrawer
+                ? null
+                : (_) {
+                    if (_swipeProgress > 0.0) {
+                      // Snap back from current progress to 0 over 150 ms.
+                      _swipeSnapController.value = _swipeProgress;
+                      _swipeSnapController.animateBack(
+                        0.0,
+                        curve: Curves.easeOut,
+                      );
+                    }
+                    _swipeStartX = null;
+                  },
             child: Stack(
               children: [
                 chatContent,
