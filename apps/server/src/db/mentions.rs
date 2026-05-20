@@ -145,6 +145,92 @@ async fn resolve_username_mentions(
     Ok(rows.into_iter().map(|(uid,)| uid).collect())
 }
 
+/// Scan `content` for every mention signal: explicit `@<username>` tokens
+/// plus the two broadcast keywords.  Returns the lowercase username list
+/// and the broadcast flags as a single tuple so the caller can decide
+/// whether any further DB work is required.
+fn scan_mention_signals(content: &str) -> (Vec<String>, bool, bool) {
+    (
+        extract_at_usernames(content),
+        is_standalone_keyword(content, "everyone"),
+        is_standalone_keyword(content, "here"),
+    )
+}
+
+/// #829: defence-in-depth -- verify the sender is a non-removed member of
+/// the conversation before persisting any mention rows. The upstream
+/// `send_message` path already enforces membership, but a future caller
+/// that forgets to gate could otherwise turn `@everyone` into an
+/// unauthenticated broadcast against an arbitrary group.
+async fn sender_is_member(
+    pool: &PgPool,
+    conversation_id: Uuid,
+    sender_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    let row: (bool,) = sqlx::query_as(
+        "SELECT EXISTS ( \
+             SELECT 1 FROM conversation_members \
+             WHERE conversation_id = $1 \
+               AND user_id = $2 \
+               AND is_removed = false \
+         )",
+    )
+    .bind(conversation_id)
+    .bind(sender_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0)
+}
+
+/// Resolve the parsed signal set to the de-duplicated, sender-stripped
+/// list of `user_id`s to write to the `mentions` table.  For broadcast
+/// keywords we pull every member; for `@<username>` we pull only matching
+/// members.  Self-mentions are dropped so the sender doesn't bump their
+/// own badge.
+async fn resolve_mention_targets(
+    pool: &PgPool,
+    conversation_id: Uuid,
+    sender_id: Uuid,
+    usernames: &[String],
+    mentions_everyone: bool,
+    mentions_here: bool,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    let mut targets: Vec<Uuid> = Vec::new();
+
+    if mentions_everyone || mentions_here {
+        targets.extend(resolve_broadcast_members(pool, conversation_id).await?);
+    }
+
+    if !usernames.is_empty() {
+        targets.extend(resolve_username_mentions(pool, conversation_id, usernames).await?);
+    }
+
+    targets.retain(|uid| *uid != sender_id);
+    targets.sort_unstable();
+    targets.dedup();
+    Ok(targets)
+}
+
+/// Bulk-insert one row per target into `mentions` with `ON CONFLICT DO
+/// NOTHING` so a redelivery is a no-op.  Uses `UNNEST` to bind a single
+/// array parameter rather than building a variadic `VALUES` clause.
+async fn insert_mention_rows(
+    pool: &PgPool,
+    message_id: Uuid,
+    targets: &[Uuid],
+) -> Result<usize, sqlx::Error> {
+    let inserted = sqlx::query(
+        "INSERT INTO mentions (message_id, mentioned_user_id) \
+         SELECT $1, uid FROM UNNEST($2::uuid[]) AS t(uid) \
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(message_id)
+    .bind(targets)
+    .execute(pool)
+    .await?;
+    Ok(inserted.rows_affected() as usize)
+}
+
 /// Insert mention rows for `message_id` in conversation `conv_id`.
 ///
 /// Resolves `@<username>` tokens against the conversation's member list
@@ -162,71 +248,33 @@ pub async fn extract_and_persist(
     sender_id: Uuid,
     content: &str,
 ) -> Result<usize, sqlx::Error> {
-    let usernames = extract_at_usernames(content);
-    let mentions_everyone = is_standalone_keyword(content, "everyone");
-    let mentions_here = is_standalone_keyword(content, "here");
+    let (usernames, mentions_everyone, mentions_here) = scan_mention_signals(content);
 
     if usernames.is_empty() && !mentions_everyone && !mentions_here {
         return Ok(0);
     }
 
-    // #829: defence-in-depth -- verify the sender is a non-removed member of
-    // the conversation before persisting any mention rows. The upstream
-    // `send_message` path already enforces membership, but a future caller
-    // that forgets to gate could otherwise turn `@everyone` into an
-    // unauthenticated broadcast against an arbitrary group. Bail with an
-    // empty result so callers' logging stays quiet on legitimate misses.
-    let is_member: (bool,) = sqlx::query_as(
-        "SELECT EXISTS ( \
-             SELECT 1 FROM conversation_members \
-             WHERE conversation_id = $1 \
-               AND user_id = $2 \
-               AND is_removed = false \
-         )",
-    )
-    .bind(conversation_id)
-    .bind(sender_id)
-    .fetch_one(pool)
-    .await?;
-    if !is_member.0 {
+    // Bail with an empty result so callers' logging stays quiet on
+    // legitimate misses (non-member sender, e.g. removed mid-flight).
+    if !sender_is_member(pool, conversation_id, sender_id).await? {
         return Ok(0);
     }
 
-    // Resolve to user_ids.  For broadcast keywords we pull every member;
-    // for `@<username>` we pull only matching members.
-    let mut targets: Vec<Uuid> = Vec::new();
-
-    if mentions_everyone || mentions_here {
-        targets.extend(resolve_broadcast_members(pool, conversation_id).await?);
-    }
-
-    if !usernames.is_empty() {
-        targets.extend(resolve_username_mentions(pool, conversation_id, &usernames).await?);
-    }
-
-    // Drop the sender (a self-mention should not bump their own badge)
-    // and de-dupe across the broadcast / explicit paths.
-    targets.retain(|uid| *uid != sender_id);
-    targets.sort_unstable();
-    targets.dedup();
+    let targets = resolve_mention_targets(
+        pool,
+        conversation_id,
+        sender_id,
+        &usernames,
+        mentions_everyone,
+        mentions_here,
+    )
+    .await?;
 
     if targets.is_empty() {
         return Ok(0);
     }
 
-    // Build `INSERT ... VALUES (..), (..)` with ON CONFLICT DO NOTHING.
-    // Using UNNEST here lets us bind a single array parameter.
-    let inserted = sqlx::query(
-        "INSERT INTO mentions (message_id, mentioned_user_id) \
-         SELECT $1, uid FROM UNNEST($2::uuid[]) AS t(uid) \
-         ON CONFLICT DO NOTHING",
-    )
-    .bind(message_id)
-    .bind(&targets)
-    .execute(pool)
-    .await?;
-
-    Ok(inserted.rows_affected() as usize)
+    insert_mention_rows(pool, message_id, &targets).await
 }
 
 #[cfg(test)]
