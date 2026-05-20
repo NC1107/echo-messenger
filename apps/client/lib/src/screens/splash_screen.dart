@@ -483,16 +483,7 @@ class _UpdatePromptBody extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final update = ref.watch(updateProvider);
-    final isDownloading = update.status == UpdateStatus.downloading;
-    final isInstalling = update.status == UpdateStatus.installing;
-    final isReady = update.status == UpdateStatus.readyToInstall;
-    final isError = update.status == UpdateStatus.error;
-    final isBusy = isDownloading || isInstalling;
-
     final accent = context.accent;
-    final logoSize = compact ? 64.0 : 84.0;
-    final wordmarkSize = compact ? 22.0 : 28.0;
-    final taglineSize = compact ? 12.0 : 13.0;
     final outerPadding = compact
         ? const EdgeInsets.fromLTRB(28, 44, 28, 22)
         : const EdgeInsets.fromLTRB(36, 24, 36, 38);
@@ -501,192 +492,231 @@ class _UpdatePromptBody extends ConsumerWidget {
       opacity: fade,
       child: Stack(
         children: [
-          Positioned(
-            top: compact ? -120 : -40,
-            left: 0,
-            right: 0,
-            child: IgnorePointer(
-              child: Center(
-                child: Container(
-                  width: compact ? 360 : 420,
-                  height: compact ? 360 : 420,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: RadialGradient(
-                      colors: [
-                        accent.withValues(alpha: 0.13),
-                        accent.withValues(alpha: 0.0),
-                      ],
-                      stops: const [0.0, 0.6],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
+          _buildHaloBackdrop(accent),
           Padding(
             padding: outerPadding,
             child: Column(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Brand block (logo + wordmark + tagline). Identical
-                // geometry to _SplashBody so the prompt slides into the
-                // same window without a visual jolt.
-                Padding(
-                  padding: EdgeInsets.only(top: compact ? 12 : 60),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      EchoLogoIcon(size: logoSize),
-                      SizedBox(height: compact ? 18 : 24),
-                      Text(
-                        'Echo',
-                        style: TextStyle(
-                          fontSize: wordmarkSize,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.5,
-                          height: 1.0,
-                          color: context.textPrimary,
-                        ),
-                      ),
-                      SizedBox(height: compact ? 8 : 10),
-                      Text(
-                        'Update available',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: taglineSize,
-                          color: context.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // Action block. Mirrors _SplashBody's status-caption +
-                // progress-sweep position so the eye lands in the same
-                // place across both screens.
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'v$appVersion  →  v${update.latestVersion}',
-                      style: EchoTheme.mono(
-                        fontSize: 12,
-                        color: context.textMuted,
-                        letterSpacing: 0.4,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    if (isDownloading) ...[
-                      SizedBox(
-                        width: compact ? 220 : 280,
-                        child: LinearProgressIndicator(
-                          value: update.downloadProgress,
-                          color: accent,
-                          backgroundColor: context.border,
-                          minHeight: 4,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Downloading… ${(update.downloadProgress * 100).toInt()}%',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: context.textMuted,
-                        ),
-                      ),
-                    ] else if (isInstalling) ...[
-                      Text(
-                        'Installing…',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: context.textMuted,
-                        ),
-                      ),
-                    ] else if (isReady) ...[
-                      SizedBox(
-                        width: compact ? 220 : 280,
-                        child: FilledButton.icon(
-                          onPressed: () =>
-                              ref.read(updateProvider.notifier).applyUpdate(),
-                          icon: const Icon(Icons.restart_alt, size: 16),
-                          label: const Text('Restart to Update'),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: accent,
-                            minimumSize: const Size(double.infinity, 40),
-                            shape: const StadiumBorder(),
-                          ),
-                        ),
-                      ),
-                    ] else ...[
-                      SizedBox(
-                        width: compact ? 220 : 280,
-                        child: FilledButton(
-                          onPressed: () => ref
-                              .read(updateProvider.notifier)
-                              .downloadUpdate(),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: accent,
-                            minimumSize: const Size(double.infinity, 40),
-                            shape: const StadiumBorder(),
-                          ),
-                          child: const Text('Download Update'),
-                        ),
-                      ),
-                    ],
-                    if (isError) ...[
-                      const SizedBox(height: 10),
-                      Text(
-                        update.errorMessage ?? 'Download failed',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.redAccent,
-                        ),
-                      ),
-                    ],
-                    if (!isReady && !isInstalling) ...[
-                      const SizedBox(height: 6),
-                      TextButton(
-                        onPressed: isBusy ? null : onSkip,
-                        child: Text(
-                          'Skip',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: isBusy
-                                ? context.textMuted.withValues(alpha: 0.4)
-                                : context.textMuted,
-                          ),
-                        ),
-                      ),
-                    ],
-                    if (!compact) ...[
-                      const SizedBox(height: 18),
-                      Text(
-                        'v$appVersion',
-                        style: EchoTheme.mono(
-                          fontSize: 10,
-                          color: context.textMuted,
-                          letterSpacing: 0.3,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                if (compact)
-                  Text(
-                    'v$appVersion',
-                    style: EchoTheme.mono(
-                      fontSize: 10,
-                      color: context.textMuted,
-                      letterSpacing: 0.3,
-                    ),
-                  ),
+                _buildBrandBlock(context),
+                _buildActionBlock(context, ref, update, accent),
+                if (compact) _buildVersionLabel(context),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildHaloBackdrop(Color accent) {
+    return Positioned(
+      top: compact ? -120 : -40,
+      left: 0,
+      right: 0,
+      child: IgnorePointer(
+        child: Center(
+          child: Container(
+            width: compact ? 360 : 420,
+            height: compact ? 360 : 420,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: RadialGradient(
+                colors: [
+                  accent.withValues(alpha: 0.13),
+                  accent.withValues(alpha: 0.0),
+                ],
+                stops: const [0.0, 0.6],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBrandBlock(BuildContext context) {
+    final logoSize = compact ? 64.0 : 84.0;
+    final wordmarkSize = compact ? 22.0 : 28.0;
+    final taglineSize = compact ? 12.0 : 13.0;
+    return Padding(
+      padding: EdgeInsets.only(top: compact ? 12 : 60),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          EchoLogoIcon(size: logoSize),
+          SizedBox(height: compact ? 18 : 24),
+          Text(
+            'Echo',
+            style: TextStyle(
+              fontSize: wordmarkSize,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.5,
+              height: 1.0,
+              color: context.textPrimary,
+            ),
+          ),
+          SizedBox(height: compact ? 8 : 10),
+          Text(
+            'Update available',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: taglineSize,
+              color: context.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionBlock(
+    BuildContext context,
+    WidgetRef ref,
+    dynamic update,
+    Color accent,
+  ) {
+    final isDownloading = update.status == UpdateStatus.downloading;
+    final isInstalling = update.status == UpdateStatus.installing;
+    final isReady = update.status == UpdateStatus.readyToInstall;
+    final isError = update.status == UpdateStatus.error;
+    final isBusy = isDownloading || isInstalling;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'v$appVersion  →  v${update.latestVersion}',
+          style: EchoTheme.mono(
+            fontSize: 12,
+            color: context.textMuted,
+            letterSpacing: 0.4,
+          ),
+        ),
+        const SizedBox(height: 16),
+        _buildPrimaryAction(
+          context,
+          ref,
+          update,
+          accent,
+          isDownloading: isDownloading,
+          isInstalling: isInstalling,
+          isReady: isReady,
+        ),
+        if (isError) _buildErrorMessage(update),
+        if (!isReady && !isInstalling) _buildSkipButton(context, isBusy),
+        if (!compact) ...[
+          const SizedBox(height: 18),
+          _buildVersionLabel(context),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildPrimaryAction(
+    BuildContext context,
+    WidgetRef ref,
+    dynamic update,
+    Color accent, {
+    required bool isDownloading,
+    required bool isInstalling,
+    required bool isReady,
+  }) {
+    if (isDownloading) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: compact ? 220 : 280,
+            child: LinearProgressIndicator(
+              value: update.downloadProgress,
+              color: accent,
+              backgroundColor: context.border,
+              minHeight: 4,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Downloading… ${(update.downloadProgress * 100).toInt()}%',
+            style: TextStyle(fontSize: 12, color: context.textMuted),
+          ),
+        ],
+      );
+    }
+    if (isInstalling) {
+      return Text(
+        'Installing…',
+        style: TextStyle(fontSize: 12, color: context.textMuted),
+      );
+    }
+    if (isReady) {
+      return SizedBox(
+        width: compact ? 220 : 280,
+        child: FilledButton.icon(
+          onPressed: () => ref.read(updateProvider.notifier).applyUpdate(),
+          icon: const Icon(Icons.restart_alt, size: 16),
+          label: const Text('Restart to Update'),
+          style: FilledButton.styleFrom(
+            backgroundColor: accent,
+            minimumSize: const Size(double.infinity, 40),
+            shape: const StadiumBorder(),
+          ),
+        ),
+      );
+    }
+    return SizedBox(
+      width: compact ? 220 : 280,
+      child: FilledButton(
+        onPressed: () =>
+            ref.read(updateProvider.notifier).downloadUpdate(),
+        style: FilledButton.styleFrom(
+          backgroundColor: accent,
+          minimumSize: const Size(double.infinity, 40),
+          shape: const StadiumBorder(),
+        ),
+        child: const Text('Download Update'),
+      ),
+    );
+  }
+
+  Widget _buildErrorMessage(dynamic update) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Text(
+        update.errorMessage ?? 'Download failed',
+        textAlign: TextAlign.center,
+        style: const TextStyle(fontSize: 12, color: Colors.redAccent),
+      ),
+    );
+  }
+
+  Widget _buildSkipButton(BuildContext context, bool isBusy) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: TextButton(
+        onPressed: isBusy ? null : onSkip,
+        child: Text(
+          'Skip',
+          style: TextStyle(
+            fontSize: 12,
+            color: isBusy
+                ? context.textMuted.withValues(alpha: 0.4)
+                : context.textMuted,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVersionLabel(BuildContext context) {
+    return Text(
+      'v$appVersion',
+      style: EchoTheme.mono(
+        fontSize: 10,
+        color: context.textMuted,
+        letterSpacing: 0.3,
       ),
     );
   }
