@@ -230,11 +230,11 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
           ),
           subtitle: Text(
             _isEncrypted
-                ? 'Messages are encrypted per-member with the Signal-style '
-                      'group key. May fail to decrypt under certain identity-'
-                      'key changes.'
-                : 'Messages are stored on the server in plaintext. Standard '
-                      'auth still protects access.',
+                ? 'On (beta): end-to-end encrypted with a per-member group '
+                      'key. No server-side search; new joiners may need a '
+                      'key refresh.'
+                : 'Off: server can read messages, supports search and '
+                      'moderation. Your account auth still protects access.',
             style: TextStyle(color: context.textMuted, fontSize: 12),
           ),
           activeThumbColor: context.accent,
