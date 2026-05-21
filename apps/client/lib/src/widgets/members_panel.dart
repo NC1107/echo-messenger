@@ -10,8 +10,7 @@ import '../providers/websocket_provider.dart';
 import '../screens/user_profile_screen.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
-import 'avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
-import 'conversation_item.dart' show presenceStatusDotColor;
+import 'user_avatar.dart';
 
 class MembersPanel extends ConsumerWidget {
   final Conversation? conversation;
@@ -376,39 +375,15 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
-                // Avatar with presence dot overlaid (matches conversation list
-                // pattern in conversation_item.dart — #403).
-                Stack(
-                  children: [
-                    buildAvatar(
-                      name: member.username,
-                      radius: 14,
-                      imageUrl: resolveAvatarUrl(
-                        member.avatarUrl,
-                        ref.watch(serverUrlProvider),
-                      ),
-                    ),
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: Container(
-                        width: 10,
-                        height: 10,
-                        decoration: BoxDecoration(
-                          color: presenceStatusDotColor(
-                            context,
-                            widget.presenceStatus,
-                            widget.isOnline,
-                          ),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: context.sidebarBg,
-                            width: 2,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                // The row-level GestureDetector handles the tap; the
+                // avatar widget renders chrome only.
+                UserAvatar(
+                  userId: member.userId,
+                  username: member.username,
+                  avatarUrl: member.avatarUrl,
+                  radius: 14,
+                  showPresence: true,
+                  openProfileOnTap: false,
                 ),
                 const SizedBox(width: 12),
                 // Username + role icon + activity line (slice 7).
