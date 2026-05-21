@@ -23,6 +23,7 @@ import '../../theme/echo_theme.dart';
 import '../../version.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/feedback_dialog.dart';
+import '../../widgets/input_dialog.dart';
 
 class AboutSection extends ConsumerStatefulWidget {
   const AboutSection({super.key});
@@ -87,62 +88,14 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
   /// On success, captures `server_id` so future PRs can pin server identity
   /// across hostname changes.
   Future<void> _showAddServerDialog() async {
-    final controller = TextEditingController();
-
-    final newUrl = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: context.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.border),
-        ),
-        title: Text(
-          'Add server',
-          style: TextStyle(
-            color: context.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Enter the URL of an Echo server. The URL is checked before '
-              "it's added so we can fail fast on typos.",
-              style: TextStyle(
-                color: context.textSecondary,
-                fontSize: 13,
-                height: 1.4,
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              style: TextStyle(color: context.textPrimary, fontSize: 14),
-              decoration: const InputDecoration(
-                labelText: 'Server URL',
-                hintText: 'https://echo-messenger.us',
-              ),
-              keyboardType: TextInputType.url,
-              autofocus: true,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () =>
-                Navigator.pop(dialogContext, controller.text.trim()),
-            child: const Text('Check & add'),
-          ),
-        ],
-      ),
+    final newUrl = await showEchoInputDialog(
+      context,
+      title: 'Add server',
+      hintText: 'https://echo-messenger.us',
+      helperText:
+          "The URL is checked before it's added so we can fail fast on typos.",
+      keyboardType: TextInputType.url,
+      confirmLabel: 'Check & add',
     );
 
     if (newUrl == null || newUrl.isEmpty) return;

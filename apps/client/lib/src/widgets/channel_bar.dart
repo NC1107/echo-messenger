@@ -14,6 +14,7 @@ import '../services/debug_log_service.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
 import 'confirm_dialog.dart';
+import 'user_avatar.dart';
 
 class ChannelBar extends ConsumerStatefulWidget {
   final String conversationId;
@@ -362,19 +363,13 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
           for (int i = 0; i < visible.length; i++)
             Positioned(
               left: i * (radius * 2 - overlap),
-              child: CircleAvatar(
+              child: UserAvatar(
+                userId: visible[i].userId,
+                username: visible[i].username,
+                avatarUrl: visible[i].avatarUrl,
                 radius: radius,
-                backgroundColor: context.accent.withValues(alpha: 0.7),
-                child: Text(
-                  visible[i].username.isNotEmpty
-                      ? visible[i].username[0].toUpperCase()
-                      : '?',
-                  style: TextStyle(
-                    fontSize: 8,
-                    color: Theme.of(context).colorScheme.onPrimary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                bgColor: context.accent.withValues(alpha: 0.7),
+                openProfileOnTap: false,
               ),
             ),
         ],
@@ -1169,24 +1164,17 @@ class _VoicePeekRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final initial = participant.username.isNotEmpty
-        ? participant.username[0].toUpperCase()
-        : '?';
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         children: [
-          CircleAvatar(
+          UserAvatar(
+            userId: participant.userId,
+            username: participant.username,
+            avatarUrl: participant.avatarUrl,
             radius: 10,
-            backgroundColor: context.accent.withValues(alpha: 0.7),
-            child: Text(
-              initial,
-              style: TextStyle(
-                fontSize: 10,
-                color: Theme.of(context).colorScheme.onPrimary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+            bgColor: context.accent.withValues(alpha: 0.7),
+            openProfileOnTap: false,
           ),
           const SizedBox(width: 8),
           Expanded(

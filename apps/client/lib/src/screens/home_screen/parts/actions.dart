@@ -97,13 +97,13 @@ mixin _HomeScreenActionsMixin on ConsumerState<HomeScreen> {
           return Dialog(
             backgroundColor: context.surface,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(EchoRadii.lg),
               side: BorderSide(color: context.border),
             ),
             child: SizedBox(
               width: (size.width * 0.4).clamp(360, 520).toDouble(),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(EchoRadii.lg),
                 child: SingleChildScrollView(
                   child: NewMessageScreen(
                     onStartConversation: (conv) {
@@ -156,14 +156,14 @@ mixin _HomeScreenActionsMixin on ConsumerState<HomeScreen> {
         return Dialog(
           backgroundColor: context.surface,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(EchoRadii.lg),
             side: BorderSide(color: context.border),
           ),
           child: SizedBox(
             width: (size.width * 0.4).clamp(320, 560).toDouble(),
             height: (size.height * 0.7).clamp(400, 720).toDouble(),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(EchoRadii.lg),
               child: DiscoverGroupsScreen(onCreateGroup: _openCreateGroup),
             ),
           ),
@@ -201,14 +201,14 @@ mixin _HomeScreenActionsMixin on ConsumerState<HomeScreen> {
         return Dialog(
           backgroundColor: context.surface,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(EchoRadii.lg),
             side: BorderSide(color: context.border),
           ),
           child: SizedBox(
             width: (size.width * 0.4).clamp(320, 560).toDouble(),
             height: (size.height * 0.65).clamp(400, 680).toDouble(),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(EchoRadii.lg),
               child: ContactsScreen(
                 onStartConversation: (conv) {
                   Navigator.pop(dialogContext);
@@ -230,14 +230,14 @@ mixin _HomeScreenActionsMixin on ConsumerState<HomeScreen> {
         return Dialog(
           backgroundColor: context.surface,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(EchoRadii.lg),
             side: BorderSide(color: context.border),
           ),
           child: SizedBox(
             width: (size.width * 0.4).clamp(320, 560).toDouble(),
             height: (size.height * 0.65).clamp(400, 680).toDouble(),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(EchoRadii.lg),
               child: const CreateGroupScreen(),
             ),
           ),
@@ -271,14 +271,14 @@ mixin _HomeScreenActionsMixin on ConsumerState<HomeScreen> {
         return Dialog(
           backgroundColor: context.surface,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(EchoRadii.lg),
             side: BorderSide(color: context.border),
           ),
           child: SizedBox(
             width: (size.width * 0.45).clamp(340.0, 600.0),
             height: (size.height * 0.7).clamp(400.0, 720.0),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(EchoRadii.lg),
               child: SavedMessagesScreen(
                 onNavigateToConversation: (convId, messageId) {
                   Navigator.pop(dialogContext);

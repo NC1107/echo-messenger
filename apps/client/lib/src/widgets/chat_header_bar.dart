@@ -550,9 +550,9 @@ class ChatHeaderBar extends ConsumerWidget {
           final height = (size.height * 0.85).clamp(520.0, 900.0).toDouble();
           return Dialog(
             backgroundColor: Colors.transparent,
-            insetPadding: const EdgeInsets.all(24),
+            insetPadding: const EdgeInsets.all(EchoSpacing.xl),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(EchoRadii.lg),
               child: SizedBox(
                 width: width,
                 height: height,

@@ -41,6 +41,7 @@ import 'chat_input_bar/attach_option.dart';
 import 'chat_input_bar/media_marker_helpers.dart';
 import 'chat_input_bar/media_picker_toggle.dart';
 import 'echo_bottom_sheet.dart';
+import 'input_dialog.dart';
 import 'chat_input_bar/recording_row.dart';
 import 'chat_input_bar/send_button.dart';
 import 'chat_input_bar/upload_helpers.dart';
@@ -406,7 +407,12 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
             _buildAutocompletePickers(),
             // Input area
             Container(
-              padding: EdgeInsets.fromLTRB(20, 8, 20, bottomPadding),
+              padding: EdgeInsets.fromLTRB(
+                20,
+                EchoSpacing.sm,
+                20,
+                bottomPadding,
+              ),
               color: context.chatBg,
               child: Column(
                 mainAxisSize: MainAxisSize.min,

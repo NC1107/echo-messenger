@@ -263,12 +263,12 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       return Scaffold(
         backgroundColor: Colors.transparent,
         body: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(EchoRadii.lg),
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: context.mainBg,
               border: Border.all(color: context.border),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(EchoRadii.lg),
             ),
             child: body,
           ),
@@ -313,12 +313,12 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       return Scaffold(
         backgroundColor: Colors.transparent,
         body: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(EchoRadii.lg),
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: context.mainBg,
               border: Border.all(color: context.border),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(EchoRadii.lg),
             ),
             child: body,
           ),
@@ -890,7 +890,7 @@ class _ProgressSweepState extends State<_ProgressSweep>
           const barFraction = 0.4;
           final barWidth = width * barFraction;
           return ClipRRect(
-            borderRadius: BorderRadius.circular(999),
+            borderRadius: BorderRadius.circular(EchoRadii.pill),
             child: Container(
               color: track,
               child: AnimatedBuilder(
@@ -908,7 +908,7 @@ class _ProgressSweepState extends State<_ProgressSweep>
                         child: Container(
                           decoration: BoxDecoration(
                             color: accent,
-                            borderRadius: BorderRadius.circular(999),
+                            borderRadius: BorderRadius.circular(EchoRadii.pill),
                           ),
                         ),
                       ),

@@ -43,8 +43,8 @@ class _NewMessagesPillState extends State<NewMessagesPill>
   @override
   Widget build(BuildContext context) {
     return Positioned(
-      bottom: 12,
-      right: 24,
+      bottom: EchoSpacing.md,
+      right: EchoSpacing.xl,
       child: Align(
         alignment: Alignment.centerRight,
         child: Semantics(
@@ -58,12 +58,12 @@ class _NewMessagesPillState extends State<NewMessagesPill>
                 scale: Tween<double>(begin: 0.7, end: 1.0).animate(_scale),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
+                    horizontal: EchoSpacing.lg,
+                    vertical: EchoSpacing.sm,
                   ),
                   decoration: BoxDecoration(
                     color: context.accent,
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(EchoRadii.xxl),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withValues(alpha: 0.25),
@@ -83,7 +83,7 @@ class _NewMessagesPillState extends State<NewMessagesPill>
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      const SizedBox(width: 4),
+                      const SizedBox(width: EchoSpacing.xs),
                       const Icon(
                         Icons.arrow_downward,
                         size: 14,

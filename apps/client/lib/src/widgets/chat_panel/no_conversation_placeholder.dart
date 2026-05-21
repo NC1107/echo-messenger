@@ -23,7 +23,7 @@ class NoConversationPlaceholder extends StatelessWidget {
               size: 56,
               color: context.textMuted.withValues(alpha: 0.4),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: EchoSpacing.xl),
             Text(
               'No conversation selected',
               style: TextStyle(
@@ -32,12 +32,12 @@ class NoConversationPlaceholder extends StatelessWidget {
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: EchoSpacing.sm),
             Text(
               'Choose a conversation from the sidebar or start a new one',
               style: TextStyle(color: context.textMuted, fontSize: 14),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: EchoSpacing.xl),
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -49,26 +49,26 @@ class NoConversationPlaceholder extends StatelessWidget {
                     backgroundColor: context.accent,
                     foregroundColor: context.onAccent,
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 12,
+                      horizontal: EchoSpacing.xl,
+                      vertical: EchoSpacing.md,
                     ),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(EchoRadii.md),
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: EchoSpacing.md),
                 OutlinedButton.icon(
                   onPressed: () => context.push('/discover-groups'),
                   icon: const Icon(Icons.explore_outlined, size: 18),
                   label: const Text('Browse Groups'),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 12,
+                      horizontal: EchoSpacing.xl,
+                      vertical: EchoSpacing.md,
                     ),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(EchoRadii.md),
                     ),
                   ),
                 ),

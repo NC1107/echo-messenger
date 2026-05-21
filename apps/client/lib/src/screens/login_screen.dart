@@ -126,9 +126,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                   formTitle: 'Log in to Echo',
                   compactHeader: _buildHeader(serverUrl),
                   narrowPadding: const EdgeInsets.fromLTRB(
-                    24,
-                    24,
-                    24,
+                    EchoSpacing.xl,
+                    EchoSpacing.xl,
+                    EchoSpacing.xl,
                     _bottomPad,
                   ),
                   formColumn: Form(
@@ -138,12 +138,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           _buildUsernameField(),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: EchoSpacing.lg),
                           _buildPasswordField(),
                           _buildErrorMessage(authState),
-                          const SizedBox(height: 24),
+                          const SizedBox(height: EchoSpacing.xl),
                           _buildLoginButton(authState),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: EchoSpacing.xs),
                           Semantics(
                             button: true,
                             label: 'forgot-password',
@@ -161,15 +161,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           // stacked block of links.
                           Padding(
                             padding: const EdgeInsets.symmetric(
-                              vertical: 8,
-                              horizontal: 24,
+                              vertical: EchoSpacing.sm,
+                              horizontal: EchoSpacing.xl,
                             ),
                             child: Row(
                               children: [
                                 Expanded(child: Divider(color: context.border)),
                                 Padding(
                                   padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
+                                    horizontal: EchoSpacing.md,
                                   ),
                                   child: Text(
                                     'New here?',
