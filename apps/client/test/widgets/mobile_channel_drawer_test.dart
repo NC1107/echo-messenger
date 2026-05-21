@@ -1,5 +1,6 @@
 import 'package:echo_app/src/models/channel.dart';
 import 'package:echo_app/src/models/conversation.dart';
+import 'package:echo_app/src/providers/auth_provider.dart';
 import 'package:echo_app/src/providers/channels_provider.dart';
 import 'package:echo_app/src/providers/conversations_provider.dart';
 import 'package:echo_app/src/widgets/mobile_channel_drawer.dart';
@@ -22,6 +23,16 @@ void main() {
     isGroup: true,
     name: name,
     members: const [ConversationMember(userId: 'me', username: 'me')],
+  );
+
+  Conversation dm(String id, String peerName) => Conversation(
+    id: id,
+    isGroup: false,
+    name: peerName,
+    members: [
+      const ConversationMember(userId: 'me', username: 'me'),
+      ConversationMember(userId: '${id}-peer', username: peerName),
+    ],
   );
 
   GroupChannel text(String id, String name, {int pos = 0}) => GroupChannel(
@@ -47,6 +58,13 @@ void main() {
       conversationsProvider.overrideWith(
         () => _StubConversations(ConversationsState(conversations: convs)),
       );
+
+  // Pins authProvider.userId so `Conversation.displayName(myUserId)`
+  // can identify the peer in 1:1 DMs (otherwise an empty userId picks
+  // the wrong member and the rail labels render as the self user).
+  Override authOverride = authProvider.overrideWith(
+    () => _StubAuth(const AuthState(userId: 'me', username: 'me')),
+  );
 
   Future<void> openDrawer(WidgetTester tester) async {
     // `pumpApp` already wraps in an outer Scaffold(body: widget); the
@@ -82,6 +100,7 @@ void main() {
           onDrawerChanged: (open) => drawerOpen = open,
         ),
         overrides: [
+          authOverride,
           channelsOverride({
             'c1': [text('t1', 'general'), text('t2', 'releases', pos: 1)],
           }),
@@ -111,6 +130,7 @@ void main() {
           ),
         ),
         overrides: [
+          authOverride,
           channelsOverride({
             'c1': [text('t1', 'general')],
           }),
@@ -127,6 +147,33 @@ void main() {
       await tester.tap(find.bySemanticsLabel('group Taco Lovers'));
       await tester.pumpAndSettle();
       expect(switched, 'c2');
+    });
+
+    testWidgets('rail lists 1:1 DMs alongside groups', (tester) async {
+      String? switched;
+      await tester.pumpApp(
+        Scaffold(
+          drawer: MobileChannelDrawer(
+            conversation: conv('c1', 'Echo Devs'),
+            selectedTextChannelId: null,
+            onTextChannelChanged: (_) {},
+            onConversationSelected: (id) => switched = id,
+          ),
+        ),
+        overrides: [
+          authOverride,
+          channelsOverride({
+            'c1': [text('t1', 'general')],
+          }),
+          conversationsOverride([conv('c1', 'Echo Devs'), dm('d1', 'jake')]),
+        ],
+      );
+      await openDrawer(tester);
+      expect(find.bySemanticsLabel('group Echo Devs'), findsOneWidget);
+      expect(find.bySemanticsLabel('chat with jake'), findsOneWidget);
+      await tester.tap(find.bySemanticsLabel('chat with jake'));
+      await tester.pumpAndSettle();
+      expect(switched, 'd1');
     });
   });
 }
@@ -145,4 +192,12 @@ class _StubConversations extends ConversationsNotifier {
 
   @override
   ConversationsState build() => _initial;
+}
+
+class _StubAuth extends AuthNotifier {
+  _StubAuth(this._initial);
+  final AuthState _initial;
+
+  @override
+  AuthState build() => _initial;
 }
