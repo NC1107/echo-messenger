@@ -4,12 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../screens/group_info_screen.dart';
 import '../screens/user_profile_screen.dart';
 import '../theme/echo_theme.dart';
+import 'echo_bottom_sheet.dart';
 
 /// Opens the user profile in a bottom sheet on mobile or a dialog on desktop.
 ///
 /// On screens >= 900 px wide a centred [Dialog] (400 x 500) is shown.
-/// On narrower screens a drag-down-dismissible [ModalBottomSheet] covers
-/// ~85 % of the viewport height so chat context remains visible above it.
+/// On narrower screens an [showEchoBottomSheet] is opened with a drag
+/// handle, capped at ~85 % of the viewport height so chat context stays
+/// visible above it.
 void showUserProfileSheet(BuildContext context, WidgetRef ref, String userId) {
   final width = MediaQuery.of(context).size.width;
   if (width >= 900) {
@@ -29,13 +31,11 @@ void showUserProfileSheet(BuildContext context, WidgetRef ref, String userId) {
       ),
     );
   } else {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetCtx) =>
-          _ProfileSheet(child: UserProfileScreen(userId: userId)),
+    showEchoBottomSheet<void>(
+      context,
+      dragHandle: true,
+      builder: (_) =>
+          _ProfileSheetBody(child: UserProfileScreen(userId: userId)),
     );
   }
 }
@@ -43,7 +43,8 @@ void showUserProfileSheet(BuildContext context, WidgetRef ref, String userId) {
 /// Opens the group info panel in a bottom sheet on mobile or a dialog on desktop.
 ///
 /// On screens >= 900 px wide a wide [Dialog] (680 x 600) is shown.
-/// On narrower screens a drag-down-dismissible [ModalBottomSheet] is used.
+/// On narrower screens an [showEchoBottomSheet] is opened with a drag
+/// handle.
 void showGroupProfileSheet(
   BuildContext context,
   WidgetRef ref,
@@ -70,21 +71,21 @@ void showGroupProfileSheet(
       ),
     );
   } else {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetCtx) =>
-          _ProfileSheet(child: GroupInfoScreen(conversationId: conversationId)),
+    showEchoBottomSheet<void>(
+      context,
+      dragHandle: true,
+      builder: (_) => _ProfileSheetBody(
+        child: GroupInfoScreen(conversationId: conversationId),
+      ),
     );
   }
 }
 
-/// Shared bottom-sheet container: rounded top corners, drag handle, and
-/// an 85 %-viewport height constraint so the sheet feels intentional.
-class _ProfileSheet extends StatelessWidget {
-  const _ProfileSheet({required this.child});
+/// Inner body for the profile/group-info sheet — caps at 85 % of the
+/// viewport so chat context stays peeking out above the sheet and
+/// pushes the bottom edge up when the soft keyboard opens.
+class _ProfileSheetBody extends StatelessWidget {
+  const _ProfileSheetBody({required this.child});
 
   final Widget child;
 
@@ -94,30 +95,9 @@ class _ProfileSheet extends StatelessWidget {
     final screenHeight = MediaQuery.of(context).size.height;
     return Padding(
       padding: EdgeInsets.only(bottom: viewInsets.bottom),
-      child: Container(
+      child: ConstrainedBox(
         constraints: BoxConstraints(maxHeight: screenHeight * 0.85),
-        decoration: BoxDecoration(
-          color: context.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Drag handle
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: context.border,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            Flexible(child: child),
-          ],
-        ),
+        child: child,
       ),
     );
   }

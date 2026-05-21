@@ -20,6 +20,7 @@ import '../theme/responsive.dart';
 import '../utils/time_utils.dart';
 import 'avatar_utils.dart' show buildAvatar, groupAvatarColor, resolveAvatarUrl;
 import 'chat_header_widgets.dart';
+import 'echo_bottom_sheet.dart';
 import 'group_members_sheet.dart' show showGroupMembersSheet;
 import 'shared_media_gallery.dart';
 
@@ -562,17 +563,11 @@ class ChatHeaderBar extends ConsumerWidget {
       );
       return;
     }
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => ClipRRect(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-        child: SizedBox(
-          height: MediaQuery.of(context).size.height * 0.85,
-          child: SharedMediaGallery(conversationId: conv.id),
-        ),
+    showEchoBottomSheet<void>(
+      context,
+      builder: (_) => SizedBox(
+        height: MediaQuery.of(context).size.height * 0.85,
+        child: SharedMediaGallery(conversationId: conv.id),
       ),
     );
   }

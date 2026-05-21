@@ -38,6 +38,7 @@ import 'chat_input_bar/file_pickers.dart' as pickers;
 import 'chat_input_bar/attach_option.dart';
 import 'chat_input_bar/media_marker_helpers.dart';
 import 'chat_input_bar/media_picker_toggle.dart';
+import 'echo_bottom_sheet.dart';
 import 'chat_input_bar/recording_row.dart';
 import 'chat_input_bar/send_button.dart';
 import 'chat_input_bar/upload_helpers.dart';
@@ -1209,44 +1210,38 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   // ---------------------------------------------------------------------------
 
   void _showMobileAttachMenu() {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: context.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AttachOption(
-                icon: Icons.photo_library_outlined,
-                label: 'Photos & Videos',
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _pickImageFromGallery();
-                },
-              ),
-              AttachOption(
-                icon: Icons.camera_alt_outlined,
-                label: 'Camera',
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _pickImageFromCamera();
-                },
-              ),
-              AttachOption(
-                icon: Icons.insert_drive_file_outlined,
-                label: 'File',
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _pickFile();
-                },
-              ),
-            ],
-          ),
+    showEchoBottomSheet<void>(
+      context,
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AttachOption(
+              icon: Icons.photo_library_outlined,
+              label: 'Photos & Videos',
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickImageFromGallery();
+              },
+            ),
+            AttachOption(
+              icon: Icons.camera_alt_outlined,
+              label: 'Camera',
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickImageFromCamera();
+              },
+            ),
+            AttachOption(
+              icon: Icons.insert_drive_file_outlined,
+              label: 'File',
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickFile();
+              },
+            ),
+          ],
         ),
       ),
     );

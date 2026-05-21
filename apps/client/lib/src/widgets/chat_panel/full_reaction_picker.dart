@@ -2,7 +2,7 @@ import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/chat_message.dart';
-import '../../theme/echo_theme.dart';
+import '../echo_bottom_sheet.dart';
 import '../emoji_picker_config.dart';
 
 /// Show the full emoji-picker bottom sheet for adding a reaction to a message.
@@ -20,13 +20,8 @@ Future<void> showFullReactionPicker(
   required String myUserId,
   required void Function(String emoji, bool alreadyReacted) onPick,
 }) {
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: context.surface,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-    ),
+  return showEchoBottomSheet<void>(
+    context,
     builder: (sheetContext) => SizedBox(
       height: 380,
       child: DefaultTextStyle(

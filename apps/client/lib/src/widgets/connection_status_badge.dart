@@ -9,6 +9,7 @@ import '../providers/websocket_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../version.dart';
+import 'echo_bottom_sheet.dart';
 
 /// Threshold past which we stop calling the state "reconnecting" and start
 /// calling it "offline". Matches the legacy chat-header dot's display logic;
@@ -168,17 +169,14 @@ class _ConnectionStatusBadgeState extends ConsumerState<ConnectionStatusBadge>
   }
 
   Future<void> _openMobileSheet(_ConnectionStateKind kind) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
+    await showEchoBottomSheet<void>(
+      context,
       builder: (sheetContext) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: _ConnectionStatusPopover(
-              kind: kind,
-              onDismiss: () => Navigator.of(sheetContext).maybePop(),
-            ),
+        return Padding(
+          padding: const EdgeInsets.all(16),
+          child: _ConnectionStatusPopover(
+            kind: kind,
+            onDismiss: () => Navigator.of(sheetContext).maybePop(),
           ),
         );
       },

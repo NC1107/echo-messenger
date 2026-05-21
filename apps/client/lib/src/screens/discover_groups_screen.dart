@@ -11,6 +11,7 @@ import '../providers/server_url_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../widgets/avatar_utils.dart' show groupAvatarColor;
+import '../widgets/echo_bottom_sheet.dart';
 import '../widgets/empty_state.dart';
 
 /// A public group returned by the discovery endpoint.
@@ -212,155 +213,137 @@ class _DiscoverGroupsScreenState extends ConsumerState<DiscoverGroupsScreen> {
   /// Show a bottom-sheet preview of a group with full details and a Join CTA.
   /// Lets users decide whether to join before committing.
   void _showGroupPreview(_PublicGroup group) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: context.surface,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
+    showEchoBottomSheet<void>(
+      context,
+      dragHandle: true,
       builder: (sheetCtx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Drag handle
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    margin: const EdgeInsets.only(bottom: 16),
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Avatar + name
+              Row(
+                children: [
+                  Container(
+                    width: 56,
+                    height: 56,
                     decoration: BoxDecoration(
-                      color: context.textMuted.withValues(alpha: 0.4),
-                      borderRadius: BorderRadius.circular(2),
+                      color: groupAvatarColor(group.name),
+                      borderRadius: BorderRadius.circular(28),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      Icons.group,
+                      size: 28,
+                      color: Colors.white,
                     ),
                   ),
-                ),
-                // Avatar + name
-                Row(
-                  children: [
-                    Container(
-                      width: 56,
-                      height: 56,
-                      decoration: BoxDecoration(
-                        color: groupAvatarColor(group.name),
-                        borderRadius: BorderRadius.circular(28),
-                      ),
-                      alignment: Alignment.center,
-                      child: const Icon(
-                        Icons.group,
-                        size: 28,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            group.name,
-                            style: TextStyle(
-                              color: context.textPrimary,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          group.name,
+                          style: TextStyle(
+                            color: context.textPrimary,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.public,
+                              size: 13,
+                              color: context.textMuted,
                             ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 2),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.public,
-                                size: 13,
+                            const SizedBox(width: 4),
+                            Text(
+                              'Public group',
+                              style: TextStyle(
                                 color: context.textMuted,
+                                fontSize: 12,
                               ),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Public group',
-                                style: TextStyle(
-                                  color: context.textMuted,
-                                  fontSize: 12,
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Icon(
-                                Icons.people_outline,
-                                size: 13,
+                            ),
+                            const SizedBox(width: 10),
+                            Icon(
+                              Icons.people_outline,
+                              size: 13,
+                              color: context.textMuted,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${group.memberCount} '
+                              'member${group.memberCount == 1 ? '' : 's'}',
+                              style: TextStyle(
                                 color: context.textMuted,
+                                fontSize: 12,
                               ),
-                              const SizedBox(width: 4),
-                              Text(
-                                '${group.memberCount} '
-                                'member${group.memberCount == 1 ? '' : 's'}',
-                                style: TextStyle(
-                                  color: context.textMuted,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                if (group.description != null &&
-                    group.description!.isNotEmpty) ...[
-                  const SizedBox(height: 18),
-                  Text(
-                    'About',
-                    style: TextStyle(
-                      color: context.textMuted,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.6,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    group.description!,
-                    maxLines: 4,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: context.textSecondary,
-                      fontSize: 14,
-                      height: 1.45,
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ],
-                const SizedBox(height: 24),
-                // Join CTA — disabled when already joined.
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: group.joined
-                        ? null
-                        : () {
-                            Navigator.of(sheetCtx).pop();
-                            _joinGroup(group);
-                          },
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    child: Text(
-                      group.joined ? 'Already joined' : 'Join group',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+              ),
+              if (group.description != null &&
+                  group.description!.isNotEmpty) ...[
+                const SizedBox(height: 18),
+                Text(
+                  'About',
+                  style: TextStyle(
+                    color: context.textMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  group.description!,
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: context.textSecondary,
+                    fontSize: 14,
+                    height: 1.45,
                   ),
                 ),
               ],
-            ),
+              const SizedBox(height: 24),
+              // Join CTA — disabled when already joined.
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: group.joined
+                      ? null
+                      : () {
+                          Navigator.of(sheetCtx).pop();
+                          _joinGroup(group);
+                        },
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: Text(
+                    group.joined ? 'Already joined' : 'Join group',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         );
       },

@@ -24,6 +24,7 @@ import '../services/message_cache.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/time_utils.dart';
+import 'echo_bottom_sheet.dart';
 
 const _kAuthorizationHeader = 'Authorization';
 const _kDisappearingMessagesLabel = 'Disappearing messages';
@@ -81,80 +82,74 @@ class _IdentityChangedBadgeState extends ConsumerState<IdentityChangedBadge> {
     // display name down from the header.
     final peerLabel = widget.peerUserId;
 
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: context.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
+    await showEchoBottomSheet<void>(
+      context,
       builder: (sheetCtx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.warning_amber_rounded,
-                        size: 18,
-                        color: EchoTheme.warning,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Identity key changed',
-                          style: GoogleFonts.inter(
-                            color: sheetCtx.textPrimary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.warning_amber_rounded,
+                      size: 18,
+                      color: EchoTheme.warning,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Identity key changed',
+                        style: GoogleFonts.inter(
+                          color: sheetCtx.textPrimary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                ListTile(
-                  leading: Icon(
-                    Icons.verified_user_outlined,
-                    color: sheetCtx.accent,
-                  ),
-                  title: const Text('Verify safety number'),
-                  onTap: () {
-                    Navigator.of(sheetCtx).pop();
-                    SafetyNumberScreen.show(
-                      context,
-                      ref,
-                      peerUserId: widget.peerUserId,
-                      peerUsername: peerLabel,
-                      myUsername: myName,
-                    );
-                  },
+              ),
+              ListTile(
+                leading: Icon(
+                  Icons.verified_user_outlined,
+                  color: sheetCtx.accent,
                 ),
-                ListTile(
-                  leading: const Icon(
-                    Icons.check_circle_outline,
-                    color: EchoTheme.warning,
-                  ),
-                  title: const Text('Trust new key'),
-                  onTap: () async {
-                    Navigator.of(sheetCtx).pop();
-                    await ref
-                        .read(cryptoProvider.notifier)
-                        .acceptIdentityKeyChange(widget.peerUserId);
-                    if (mounted) {
-                      setState(() => _changed = false);
-                    }
-                  },
+                title: const Text('Verify safety number'),
+                onTap: () {
+                  Navigator.of(sheetCtx).pop();
+                  SafetyNumberScreen.show(
+                    context,
+                    ref,
+                    peerUserId: widget.peerUserId,
+                    peerUsername: peerLabel,
+                    myUsername: myName,
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.check_circle_outline,
+                  color: EchoTheme.warning,
                 ),
-              ],
-            ),
+                title: const Text('Trust new key'),
+                onTap: () async {
+                  Navigator.of(sheetCtx).pop();
+                  await ref
+                      .read(cryptoProvider.notifier)
+                      .acceptIdentityKeyChange(widget.peerUserId);
+                  if (mounted) {
+                    setState(() => _changed = false);
+                  }
+                },
+              ),
+            ],
           ),
         );
       },
