@@ -756,4 +756,3 @@ class _GroupResult {
     required this.memberCount,
   });
 }
-

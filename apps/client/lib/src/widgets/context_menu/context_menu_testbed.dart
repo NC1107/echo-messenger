@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
 import 'echo_context_menu.dart';
 
@@ -349,7 +350,10 @@ ContextMenuModel _demoMemberModel(BuildContext context) {
 
 void _toast(BuildContext context, String msg) {
   if (!context.mounted) return;
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text(msg), duration: const Duration(seconds: 1)),
+  ToastService.show(
+    context,
+    msg,
+    type: ToastType.info,
+    duration: const Duration(seconds: 1),
   );
 }
