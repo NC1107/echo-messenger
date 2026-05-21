@@ -13,6 +13,7 @@ import '../providers/server_url_provider.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
 import '../utils/fuzzy_score.dart';
+import 'user_avatar.dart';
 
 /// Universal search overlay (Ctrl+Shift+F or search icon).
 ///
@@ -571,22 +572,12 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Row(
             children: [
-              CircleAvatar(
+              UserAvatar(
+                userId: r.userId,
+                username: label,
+                avatarUrl: r.avatarUrl,
                 radius: 16,
-                backgroundColor: context.accent.withValues(alpha: 0.15),
-                backgroundImage: r.avatarUrl != null
-                    ? NetworkImage(r.avatarUrl!)
-                    : null,
-                child: r.avatarUrl == null
-                    ? Text(
-                        _getAvatarInitial(label),
-                        style: TextStyle(
-                          color: context.accent,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      )
-                    : null,
+                openProfileOnTap: false,
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -766,6 +757,3 @@ class _GroupResult {
   });
 }
 
-String _getAvatarInitial(String label) {
-  return label.isNotEmpty ? label[0].toUpperCase() : '?';
-}
