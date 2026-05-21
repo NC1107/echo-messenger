@@ -73,31 +73,13 @@ extension _BuildHelpers on ChatInputBarState {
   }
 
   Future<void> _showLinkDialog() async {
-    final urlController = TextEditingController();
-    final url = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Insert link'),
-        content: TextField(
-          controller: urlController,
-          autofocus: true,
-          keyboardType: TextInputType.url,
-          decoration: const InputDecoration(hintText: 'https://…'),
-          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, urlController.text.trim()),
-            child: const Text('Insert'),
-          ),
-        ],
-      ),
+    final url = await showEchoInputDialog(
+      context,
+      title: 'Insert link',
+      hintText: 'https://…',
+      keyboardType: TextInputType.url,
+      confirmLabel: 'Insert',
     );
-    urlController.dispose();
     if (url == null || url.isEmpty) return;
     if (!mounted) return;
 
@@ -160,11 +142,14 @@ extension _BuildHelpers on ChatInputBarState {
             onPickFile: _pickFile,
             onShowMobileMenu: _showMobileAttachMenu,
           ),
-        if (!_isEditing) const SizedBox(width: 8),
+        if (!_isEditing) const SizedBox(width: EchoSpacing.sm),
         Expanded(
           child: Container(
             constraints: const BoxConstraints(minHeight: 40),
-            padding: const EdgeInsets.only(left: 12, right: 4),
+            padding: const EdgeInsets.only(
+              left: EchoSpacing.md,
+              right: EchoSpacing.xs,
+            ),
             decoration: BoxDecoration(
               color: context.surface,
               borderRadius: BorderRadius.circular(22),

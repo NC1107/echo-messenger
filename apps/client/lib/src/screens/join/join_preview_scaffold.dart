@@ -10,6 +10,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../../theme/echo_theme.dart';
+import '../../widgets/user_avatar.dart';
 
 /// Resolved preview data fed into [JoinPreviewScaffold]. Each screen
 /// builds one of these from its API response.
@@ -221,7 +222,7 @@ class _PreviewCard extends StatelessWidget {
               ],
               if (preview != null && preview!.members.isNotEmpty) ...[
                 const SizedBox(height: 18),
-                _MemberStrip(members: preview!.members, serverUrl: serverUrl),
+                _MemberStrip(members: preview!.members),
               ],
               if (error != null) ...[
                 const SizedBox(height: 16),
@@ -417,11 +418,7 @@ class _MemberCountRow extends StatelessWidget {
 
 class _MemberStrip extends StatelessWidget {
   final List<JoinPreviewMember> members;
-  final String serverUrl;
-  const _MemberStrip({required this.members, required this.serverUrl});
-
-  static String _avatarInitial(String username) =>
-      username.isNotEmpty ? username[0].toUpperCase() : '?';
+  const _MemberStrip({required this.members});
 
   @override
   Widget build(BuildContext context) {
@@ -445,22 +442,12 @@ class _MemberStrip extends StatelessWidget {
                 shape: BoxShape.circle,
                 border: Border.all(color: context.surface, width: 2),
               ),
-              child: CircleAvatar(
+              child: UserAvatar(
+                userId: member.userId,
+                username: member.username,
+                avatarUrl: member.avatarUrl,
                 radius: (avatarSize - 4) / 2,
-                backgroundColor: context.surfaceHover,
-                backgroundImage: member.avatarUrl != null
-                    ? NetworkImage('$serverUrl${member.avatarUrl}')
-                    : null,
-                child: member.avatarUrl == null
-                    ? Text(
-                        _avatarInitial(member.username),
-                        style: TextStyle(
-                          color: context.textSecondary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      )
-                    : null,
+                openProfileOnTap: false,
               ),
             ),
           );

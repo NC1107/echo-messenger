@@ -16,11 +16,17 @@ mixin _ConversationPanelBannersMixin on ConsumerState<ConversationPanel> {
     return GestureDetector(
       onTap: widget.onShowContacts,
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        margin: const EdgeInsets.symmetric(
+          horizontal: EchoSpacing.lg,
+          vertical: EchoSpacing.xs,
+        ),
+        padding: const EdgeInsets.symmetric(
+          horizontal: EchoSpacing.md,
+          vertical: EchoSpacing.sm,
+        ),
         decoration: BoxDecoration(
           color: context.accent.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(EchoRadii.md),
           border: Border.all(color: context.accent.withValues(alpha: 0.3)),
         ),
         child: Row(
@@ -60,13 +66,16 @@ mixin _ConversationPanelBannersMixin on ConsumerState<ConversationPanel> {
           },
           child: Container(
             height: 56,
-            margin: const EdgeInsets.symmetric(horizontal: 16),
+            margin: const EdgeInsets.symmetric(horizontal: EchoSpacing.lg),
             decoration: BoxDecoration(
               color: context.surface,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: EchoTheme.warning, width: 1),
             ),
-            padding: const EdgeInsets.only(left: 12, right: 4),
+            padding: const EdgeInsets.only(
+              left: EchoSpacing.md,
+              right: EchoSpacing.xs,
+            ),
             child: Row(
               children: [
                 const Icon(

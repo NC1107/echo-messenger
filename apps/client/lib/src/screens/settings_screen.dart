@@ -162,52 +162,52 @@ class SettingsRootView extends ConsumerWidget {
               _row(
                 context,
                 icon: Icons.mood_outlined,
-                iconColor: const Color(0xFF22C55E),
+                iconColor: context.settingsIconPalette.status,
                 section: SettingsSection.status,
               ),
               if (onSavedMessages != null)
                 CardRow(
                   icon: Icons.bookmark_outline,
-                  iconColor: const Color(0xFF0EA5E9),
+                  iconColor: context.settingsIconPalette.info,
                   label: 'Saved Messages',
                   onTap: onSavedMessages!,
                 ),
               _row(
                 context,
                 icon: Icons.palette_outlined,
-                iconColor: const Color(0xFF8B5CF6),
+                iconColor: context.settingsIconPalette.appearance,
                 section: SettingsSection.appearance,
                 trailing: appearanceTrailing,
               ),
               _row(
                 context,
                 icon: Icons.language_outlined,
-                iconColor: const Color(0xFF0EA5E9),
+                iconColor: context.settingsIconPalette.info,
                 section: SettingsSection.language,
                 trailing: languageTrailing,
               ),
               _row(
                 context,
                 icon: Icons.notifications_outlined,
-                iconColor: const Color(0xFFEF4444),
+                iconColor: context.settingsIconPalette.notifications,
                 section: SettingsSection.notifications,
               ),
               _row(
                 context,
                 icon: Icons.mic_outlined,
-                iconColor: const Color(0xFF22C55E),
+                iconColor: context.settingsIconPalette.voiceVideo,
                 section: SettingsSection.voiceVideo,
               ),
               _row(
                 context,
                 icon: Icons.lock_outline,
-                iconColor: const Color(0xFF14B8A6),
+                iconColor: context.settingsIconPalette.privacy,
                 section: SettingsSection.privacy,
               ),
               _row(
                 context,
                 icon: Icons.devices_outlined,
-                iconColor: const Color(0xFFF59E0B),
+                iconColor: context.settingsIconPalette.devices,
                 section: SettingsSection.devices,
               ),
               _row(
@@ -219,7 +219,7 @@ class SettingsRootView extends ConsumerWidget {
               _row(
                 context,
                 icon: Icons.accessibility_outlined,
-                iconColor: const Color(0xFF3B82F6),
+                iconColor: context.settingsIconPalette.accessibility,
                 section: SettingsSection.accessibility,
               ),
             ],
@@ -234,7 +234,7 @@ class SettingsRootView extends ConsumerWidget {
                   child: CardRow(
                     key: const Key('settings-admin-dashboard-tile'),
                     icon: Icons.shield_outlined,
-                    iconColor: const Color(0xFFEAB308),
+                    iconColor: context.settingsIconPalette.admin,
                     label: 'Admin dashboard',
                     onTap: () => context.push('/admin'),
                   ),
@@ -242,7 +242,7 @@ class SettingsRootView extends ConsumerWidget {
               _row(
                 context,
                 icon: Icons.info_outline,
-                iconColor: const Color(0xFF8B5CF6),
+                iconColor: context.settingsIconPalette.appearance,
                 section: SettingsSection.about,
                 trailing: 'v$appVersion',
               ),

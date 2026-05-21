@@ -4,6 +4,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+import '../services/toast_service.dart';
+
 /// Fullscreen image annotation editor (MVP for #908).
 ///
 /// Lets the user free-hand draw on top of an image with a single primary
@@ -117,12 +119,10 @@ class _ImageAnnotationEditorState extends State<ImageAnnotationEditor> {
               as RenderRepaintBoundary?;
       if (boundary == null) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Failed to export image. Try a smaller image or close other apps.',
-              ),
-            ),
+          ToastService.show(
+            context,
+            'Failed to export image. Try a smaller image or close other apps.',
+            type: ToastType.error,
           );
         }
         return;
@@ -137,12 +137,10 @@ class _ImageAnnotationEditorState extends State<ImageAnnotationEditor> {
       image.dispose();
       if (byteData == null) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Failed to export image. Try a smaller image or close other apps.',
-              ),
-            ),
+          ToastService.show(
+            context,
+            'Failed to export image. Try a smaller image or close other apps.',
+            type: ToastType.error,
           );
         }
         return;

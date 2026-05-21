@@ -27,6 +27,7 @@ import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
 import '../widgets/chat_panel.dart';
 import '../widgets/confirm_dialog.dart';
+import '../widgets/empty_state.dart';
 import '../widgets/conversation_panel.dart'
     show ConversationPanel, buildAvatar, groupAvatarColor, resolveAvatarUrl;
 import '../widgets/members_panel.dart';

@@ -174,9 +174,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   formTitle: 'Create your account',
                   compactHeader: _buildHeader(context),
                   narrowPadding: const EdgeInsets.fromLTRB(
-                    24,
-                    24,
-                    24,
+                    EchoSpacing.xl,
+                    EchoSpacing.xl,
+                    EchoSpacing.xl,
                     _bottomPad,
                   ),
                   formColumn: Form(
@@ -185,7 +185,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         _buildUsernameField(),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: EchoSpacing.lg),
                         _buildPasswordField(),
                         if (_passwordText.isNotEmpty ||
                             _passwordFocused ||

@@ -9,6 +9,7 @@ import '../../providers/privacy_provider.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
 import '../../widgets/confirm_dialog.dart';
+import '../../widgets/user_avatar.dart';
 
 /// SharedPreferences key + reader for the "preserve original filenames"
 /// toggle. Default `true` (preserve). When `false`, uploads are sent with a
@@ -577,25 +578,16 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
         )
       else
         ...contacts.blockedUsers.map((user) {
-          final initials = (user.displayName ?? user.username)
-              .substring(0, 1)
-              .toUpperCase();
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                CircleAvatar(
+                UserAvatar(
+                  userId: user.blockedId,
+                  username: user.displayName ?? user.username,
                   radius: 24,
-                  backgroundColor: context.accent.withValues(alpha: 0.15),
-                  child: Text(
-                    initials,
-                    style: TextStyle(
-                      color: context.accent,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  openProfileOnTap: false,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -708,12 +700,12 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
               const SizedBox(height: 12),
               const Row(
                 children: [
-                  Icon(Icons.verified_user, color: Colors.green, size: 18),
+                  Icon(Icons.verified_user, color: EchoTheme.online, size: 18),
                   SizedBox(width: 8),
                   Text(
                     'Encryption keys active',
                     style: TextStyle(
-                      color: Colors.green,
+                      color: EchoTheme.online,
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
                     ),

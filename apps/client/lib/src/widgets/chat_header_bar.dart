@@ -469,13 +469,9 @@ class ChatHeaderBar extends ConsumerWidget {
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
         ),
-      IconButton(
-        icon: const Icon(Icons.push_pin_outlined, size: 20),
-        color: context.textSecondary,
-        tooltip: 'Pinned messages',
+      _PinnedMessagesIconButton(
+        pinnedCount: pinnedCount,
         onPressed: () => _showPinnedMessagesDialog(context, ref, conv),
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
       ),
       IconButton(
         icon: Icon(showSearch ? Icons.search_off : Icons.search, size: 20),
@@ -550,9 +546,9 @@ class ChatHeaderBar extends ConsumerWidget {
           final height = (size.height * 0.85).clamp(520.0, 900.0).toDouble();
           return Dialog(
             backgroundColor: Colors.transparent,
-            insetPadding: const EdgeInsets.all(24),
+            insetPadding: const EdgeInsets.all(EchoSpacing.xl),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(EchoRadii.lg),
               child: SizedBox(
                 width: width,
                 height: height,
@@ -774,5 +770,70 @@ class ChatHeaderBar extends ConsumerWidget {
         );
       }
     }
+  }
+}
+
+/// Pinned-messages action button with an inline numeric badge.
+///
+/// Mirrors the visual language of the conversation list's unread-count
+/// badge: top-right anchor, accent fill, white-on-accent text, "99+" cap.
+/// Falls through to a plain [IconButton] when there are no pinned messages.
+class _PinnedMessagesIconButton extends StatelessWidget {
+  final int pinnedCount;
+  final VoidCallback onPressed;
+
+  const _PinnedMessagesIconButton({
+    required this.pinnedCount,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tooltip = pinnedCount > 0
+        ? 'Pinned messages ($pinnedCount)'
+        : 'Pinned messages';
+    final button = IconButton(
+      icon: const Icon(Icons.push_pin_outlined, size: 20),
+      color: context.textSecondary,
+      tooltip: tooltip,
+      onPressed: onPressed,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+    );
+
+    if (pinnedCount <= 0) return button;
+
+    final label = pinnedCount > 99 ? '99+' : '$pinnedCount';
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        button,
+        Positioned(
+          top: 6,
+          right: 4,
+          child: IgnorePointer(
+            child: Container(
+              constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              decoration: BoxDecoration(
+                color: context.accent,
+                shape: BoxShape.rectangle,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                label,
+                style: GoogleFonts.inter(
+                  color: Theme.of(context).colorScheme.onPrimary,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  height: 1,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
