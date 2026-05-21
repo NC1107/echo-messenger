@@ -7,10 +7,10 @@ enum NotificationSound {
   /// No sound.
   none,
 
-  /// The default "ding" (received.mp3).
+  /// The default "ding" (received.ogg).
   defaultSound,
 
-  /// A softer "whoosh" tone (sent.mp3) used as an alternate notification.
+  /// A softer "whoosh" tone (sent.ogg) used as an alternate notification.
   subtle;
 
   /// Persisted string value stored in SharedPreferences.
@@ -32,8 +32,8 @@ enum NotificationSound {
   /// Asset path for this sound, or null when [none].
   String? get assetPath => switch (this) {
     NotificationSound.none => null,
-    NotificationSound.defaultSound => 'sounds/received.mp3',
-    NotificationSound.subtle => 'sounds/sent.mp3',
+    NotificationSound.defaultSound => 'sounds/received.ogg',
+    NotificationSound.subtle => 'sounds/sent.ogg',
   };
 }
 
@@ -127,8 +127,8 @@ class SoundService {
     try {
       // AssetSource prepends `assets/` internally on every platform, so
       // the path here must NOT include it — otherwise Linux resolves to
-      // `assets/assets/sounds/sent.mp3` and fails to load.
-      await _sentPlayer.play(AssetSource('sounds/sent.mp3'), volume: 0.4);
+      // `assets/assets/sounds/sent.ogg` and fails to load.
+      await _sentPlayer.play(AssetSource('sounds/sent.ogg'), volume: 0.4);
     } catch (e) {
       debugPrint('[Sound] Failed to play sent sound: $e');
     }
@@ -173,7 +173,7 @@ class SoundService {
     if (!_enabled) return;
     try {
       await _voiceJoinPlayer.play(
-        AssetSource('sounds/voice_join.mp3'),
+        AssetSource('sounds/voice_join.ogg'),
         volume: 0.5,
       );
     } catch (e) {
@@ -184,15 +184,20 @@ class SoundService {
   /// Play a louder ping when the local user is @-mentioned in a message.
   ///
   /// Bypasses the [enabled] global only when no template asset is bundled
-  /// for mentions yet — for now it reuses `received.mp3` at higher volume
+  /// for mentions yet — for now it reuses `received.ogg` at higher volume
   /// so the user can distinguish a mention from a normal message even with
-  /// the same sample. Swap to `assets/sounds/mention.mp3` once a dedicated
+  /// the same sample. Swap to `assets/sounds/mention.ogg` once a dedicated
   /// chime ships.
+  ///
+  /// OGG Vorbis is chosen over MP3 because `gst-plugins-base` (which ships
+  /// in every Linux GStreamer install) decodes Vorbis out of the box, while
+  /// MP3 requires `gst-libav` which the AppImage build does NOT bundle —
+  /// MP3 assets played as silence on Linux desktops (#prod-2026-05-21).
   Future<void> playMention() async {
     if (!_enabled) return;
     try {
       await _mentionPlayer
-          .play(AssetSource('sounds/received.mp3'), volume: 0.6)
+          .play(AssetSource('sounds/received.ogg'), volume: 0.6)
           .catchError((Object e) {
             debugPrint('[Sound] Failed to play mention sound (late): $e');
           });
@@ -206,7 +211,7 @@ class SoundService {
     if (!_enabled) return;
     try {
       await _voiceLeavePlayer.play(
-        AssetSource('sounds/voice_leave.mp3'),
+        AssetSource('sounds/voice_leave.ogg'),
         volume: 0.5,
       );
     } catch (e) {
