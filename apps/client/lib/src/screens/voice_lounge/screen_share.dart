@@ -157,118 +157,134 @@ class _DraggableScreenShareWindowState
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (ctx, constraints) {
-        if (!_positioned) {
-          _left = constraints.maxWidth - widget.initialRight - _width;
-          _positioned = true;
-        }
-        // Clamp position within bounds
-        _left = _left.clamp(0, constraints.maxWidth - 60);
-        _top = _top.clamp(0, constraints.maxHeight - 40);
+    // The widget is rendered as a Stack child by callers. Flutter
+    // requires direct Stack children to be Positioned (or
+    // unpositioned) — wrapping the Positioned inside a LayoutBuilder
+    // breaks that invariant and produced a parent-data exception
+    // widget tests had to drain. Wrap the whole tree in Positioned.fill
+    // so the outer Stack sees a Positioned; then put an inner Stack
+    // around the LayoutBuilder so the draggable Positioned still has a
+    // legitimate Stack parent.
+    return Positioned.fill(
+      child: LayoutBuilder(
+        builder: (ctx, constraints) {
+          if (!_positioned) {
+            _left = constraints.maxWidth - widget.initialRight - _width;
+            _positioned = true;
+          }
+          // Clamp position within bounds
+          _left = _left.clamp(0, constraints.maxWidth - 60);
+          _top = _top.clamp(0, constraints.maxHeight - 40);
 
-        return Positioned(
-          left: _left,
-          top: _top,
-          child: GestureDetector(
-            onPanUpdate: (d) {
-              setState(() {
-                _left += d.delta.dx;
-                _top += d.delta.dy;
-              });
-            },
-            child: Container(
-              width: _width,
-              height: _height,
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.85),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: (widget.isLocal ? EchoTheme.danger : context.accent)
-                      .withValues(alpha: 0.6),
-                  width: 1.5,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.5),
-                    blurRadius: 16,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Stack(
-                children: [
-                  Positioned.fill(child: widget.child),
-                  // Label badge
-                  Positioned(
-                    top: 6,
-                    left: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 3,
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned(
+                left: _left,
+                top: _top,
+                child: GestureDetector(
+                  onPanUpdate: (d) {
+                    setState(() {
+                      _left += d.delta.dx;
+                      _top += d.delta.dy;
+                    });
+                  },
+                  child: Container(
+                    width: _width,
+                    height: _height,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.85),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color:
+                            (widget.isLocal ? EchoTheme.danger : context.accent)
+                                .withValues(alpha: 0.6),
+                        width: 1.5,
                       ),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.6),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.screen_share,
-                            size: 11,
-                            color: Colors.white70,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            widget.label,
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w500,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.5),
+                          blurRadius: 16,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Stack(
+                      children: [
+                        Positioned.fill(child: widget.child),
+                        // Label badge
+                        Positioned(
+                          top: 6,
+                          left: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.6),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.screen_share,
+                                  size: 11,
+                                  color: Colors.white70,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  widget.label,
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  // Resize handle (bottom-right corner)
-                  Positioned(
-                    right: 0,
-                    bottom: 0,
-                    child: GestureDetector(
-                      onPanUpdate: (d) {
-                        setState(() {
-                          _width = (_width + d.delta.dx).clamp(
-                            _minWidth,
-                            constraints.maxWidth - _left,
-                          );
-                          _height = (_height + d.delta.dy).clamp(
-                            _minHeight,
-                            constraints.maxHeight - _top,
-                          );
-                        });
-                      },
-                      child: Container(
-                        width: 20,
-                        height: 20,
-                        alignment: Alignment.bottomRight,
-                        child: Icon(
-                          Icons.open_in_full,
-                          size: 12,
-                          color: Colors.white.withValues(alpha: 0.4),
                         ),
-                      ),
+                        // Resize handle (bottom-right corner)
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: GestureDetector(
+                            onPanUpdate: (d) {
+                              setState(() {
+                                _width = (_width + d.delta.dx).clamp(
+                                  _minWidth,
+                                  constraints.maxWidth - _left,
+                                );
+                                _height = (_height + d.delta.dy).clamp(
+                                  _minHeight,
+                                  constraints.maxHeight - _top,
+                                );
+                              });
+                            },
+                            child: Container(
+                              width: 20,
+                              height: 20,
+                              alignment: Alignment.bottomRight,
+                              child: Icon(
+                                Icons.open_in_full,
+                                size: 12,
+                                color: Colors.white.withValues(alpha: 0.4),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
-        );
-      },
+            ],
+          );
+        },
+      ),
     );
   }
 }
