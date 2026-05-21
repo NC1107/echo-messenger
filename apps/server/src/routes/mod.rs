@@ -9,6 +9,7 @@ pub mod groups;
 pub mod keys;
 pub mod link_preview;
 pub mod media;
+pub mod media_chunked;
 pub mod messages;
 pub mod polls;
 pub mod push;
@@ -35,6 +36,7 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::set_header::SetResponseHeaderLayer;
 use uuid::Uuid;
 
+use crate::metrics::MessageRateCounter;
 use crate::middleware::rate_limit;
 use crate::ws::hub::Hub;
 
@@ -54,6 +56,10 @@ pub struct AppState {
     pub hub: Hub,
     pub ticket_store: TicketStore,
     pub media_tickets: MediaTicketStore,
+    /// Sliding-window counter feeding the admin dashboard's
+    /// "messages per second" tile (#681). Bumped from the WS relay path
+    /// after each successful store-and-fanout.
+    pub message_rate: Arc<MessageRateCounter>,
 }
 
 /// Narrow view of [`AppState`] for the auth handlers (`register`, `login`,
@@ -280,10 +286,34 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpNet>) -> Route
         .route("/device/{device_id}", delete(keys::revoke_device))
         .route("/otp-count", get(keys::get_otp_count));
 
+    // Chunked-upload routes (#556).  These coexist with the legacy
+    // `POST /api/media/upload` single-shot endpoint at `/upload`.  Each
+    // chunked route carries its own DefaultBodyLimit (32 MB, comfortably
+    // above the 16 MB hard cap on a single PATCH body) so the parent
+    // router's 100 MB MAX_FILE_SIZE limit -- which protects the legacy
+    // multipart upload -- isn't accidentally applied to chunks too.
+    let chunk_body_limit = DefaultBodyLimit::max(32 * 1024 * 1024);
+
     let media_routes = Router::new()
         .route(
             "/upload",
             post(media::upload).layer(middleware::from_fn(media_upload_limit)),
+        )
+        .route(
+            "/upload/init",
+            post(media_chunked::init).layer(chunk_body_limit),
+        )
+        .route(
+            "/upload/{id}",
+            get(media_chunked::get_state).layer(chunk_body_limit),
+        )
+        .route(
+            "/upload/{id}/chunk",
+            patch(media_chunked::upload_chunk).layer(chunk_body_limit),
+        )
+        .route(
+            "/upload/{id}/finalize",
+            post(media_chunked::finalize).layer(chunk_body_limit),
         )
         .route("/ticket", post(media::request_media_ticket))
         .route("/{id}", get(media::download))
@@ -417,7 +447,9 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpNet>) -> Route
         .route("/api/search", get(search::universal_search))
         .route("/api/feedback", post(feedback::create_feedback))
         .route("/api/admin/stats", get(admin::get_stats))
+        .route("/api/admin/stats/realtime", get(admin::get_realtime_stats))
         .route("/api/admin/feedback", get(admin::list_feedback))
+        .route("/api/admin/promote/{user_id}", post(admin::promote_user))
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/api/health", get(health))

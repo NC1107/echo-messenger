@@ -227,6 +227,18 @@ class SettingsRootView extends ConsumerWidget {
           const SectionHeader('Echo'),
           _CardGroup(
             children: [
+              if (ref.watch(authProvider).isAdmin)
+                Semantics(
+                  label: 'settings admin dashboard',
+                  button: true,
+                  child: CardRow(
+                    key: const Key('settings-admin-dashboard-tile'),
+                    icon: Icons.shield_outlined,
+                    iconColor: const Color(0xFFEAB308),
+                    label: 'Admin dashboard',
+                    onTap: () => context.push('/admin'),
+                  ),
+                ),
               _row(
                 context,
                 icon: Icons.info_outline,

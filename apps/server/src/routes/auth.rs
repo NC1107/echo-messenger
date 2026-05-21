@@ -64,6 +64,10 @@ pub struct AuthResponse {
     pub access_token: String,
     pub refresh_token: String,
     pub avatar_url: Option<String>,
+    /// Operator flag: lets the client gate the admin dashboard tile in
+    /// settings without an extra round-trip. Fresh server bootstrap (no
+    /// admin yet) auto-promotes the first registered account.
+    pub is_admin: bool,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -76,6 +80,9 @@ pub struct RefreshRequest {
 pub struct RefreshResponse {
     pub access_token: String,
     pub refresh_token: String,
+    /// Echoed from the user row so a client that signed in before the
+    /// operator was promoted picks up the new flag without re-logging in.
+    pub is_admin: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -157,18 +164,19 @@ pub async fn register(
     let password_hash = tokio::task::spawn_blocking(move || password::hash_password(&pw))
         .await
         .map_err(|_| AppError::internal("Password hashing failed"))??;
-    let user_id = db::users::create_user(&state.pool, &body.username, &password_hash).await?;
-    let access_token = jwt::create_token(user_id, &state.jwt_secret)?;
-    let (refresh_token, _family_id) = issue_refresh_token(&state.pool, user_id).await?;
+    let created = db::users::create_user(&state.pool, &body.username, &password_hash).await?;
+    let access_token = jwt::create_token(created.id, &state.jwt_secret)?;
+    let (refresh_token, _family_id) = issue_refresh_token(&state.pool, created.id).await?;
 
     // Web clients consume the cookie; mobile/desktop still read the JSON body.
     let jar = jar.add(build_refresh_cookie(refresh_token.clone()));
 
     let response = AuthResponse {
-        user_id: user_id.to_string(),
+        user_id: created.id.to_string(),
         access_token,
         refresh_token,
         avatar_url: None,
+        is_admin: created.is_admin,
     };
 
     Ok((StatusCode::CREATED, jar, Json(response)))
@@ -222,6 +230,7 @@ pub async fn login(
         access_token,
         refresh_token,
         avatar_url: user.avatar_url,
+        is_admin: user.is_admin,
     };
 
     Ok((jar, Json(response)))
@@ -379,6 +388,15 @@ pub async fn refresh(
 
     let access_token = jwt::create_token(row.user_id, &state.jwt_secret)?;
 
+    // Re-read is_admin from the canonical row so promotion / demotion that
+    // happens between login and refresh propagates to the client on its
+    // next 15-minute access-token roll.
+    let (is_admin,): (bool,) = sqlx::query_as("SELECT is_admin FROM users WHERE id = $1")
+        .bind(row.user_id)
+        .fetch_one(&state.pool)
+        .await
+        .db_ctx("refresh/lookup_is_admin")?;
+
     let jar = jar.add(build_refresh_cookie(new_raw_token.clone()));
 
     Ok((
@@ -386,6 +404,7 @@ pub async fn refresh(
         Json(RefreshResponse {
             access_token,
             refresh_token: new_raw_token,
+            is_admin,
         }),
     ))
 }

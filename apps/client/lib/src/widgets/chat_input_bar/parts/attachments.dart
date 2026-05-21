@@ -167,16 +167,38 @@ extension _Attachments on ChatInputBarState {
     final preserve = await readPreserveOriginalFilenames();
     final uploadFileName = preserve ? fileName : genericFilename(fileName);
 
-    final uploader = UploadClient(ref.read(authProvider.notifier));
-    final result = await uploader.uploadFile(
-      serverUrl: serverUrl,
-      path: '/api/media/upload',
-      bytes: bytes,
-      fileName: uploadFileName,
-      mimeType: mimeType,
-      extraFields: {'conversation_id': widget.conversation.id},
-      onProgress: onProgress,
-    );
+    // Files above the chunked-upload threshold go through the resumable
+    // PATCH pipeline (#556).  Cloudflare's edge cap is 100 MB; the chunked
+    // path streams 5 MB chunks server-side so it can ferry files multiples
+    // of that without ever pinning the whole payload in server RAM.
+    final UploadResult result;
+    if (bytes.length > kChunkedUploadThresholdBytes) {
+      final auth = ref.read(authProvider.notifier);
+      final chunked = ChunkedUploadClient(
+        tokenGetter: () => auth.currentToken,
+        refresher: auth.refreshAccessToken,
+      );
+      final chunkedResult = await chunked.uploadBytes(
+        bytes: bytes,
+        serverUrl: serverUrl,
+        mimeType: mimeType,
+        filename: uploadFileName,
+        conversationId: widget.conversation.id,
+        onProgress: onProgress,
+      );
+      result = chunkedResult.toUploadResult();
+    } else {
+      final uploader = UploadClient(ref.read(authProvider.notifier));
+      result = await uploader.uploadFile(
+        serverUrl: serverUrl,
+        path: '/api/media/upload',
+        bytes: bytes,
+        fileName: uploadFileName,
+        mimeType: mimeType,
+        extraFields: {'conversation_id': widget.conversation.id},
+        onProgress: onProgress,
+      );
+    }
 
     if (result.ok) {
       // Pre-populate the dimension cache so ImageAttachment can reserve the

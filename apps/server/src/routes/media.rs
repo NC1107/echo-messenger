@@ -27,7 +27,7 @@ use crate::error::{AppError, DbErrCtx, ErrorCode};
 /// Uses [`imagesize`] which parses only the file header — no full decode,
 /// no large allocations. Returns `None` for non-image formats or when the
 /// header is unrecognised; the caller stores `NULL` in those cases.
-fn read_image_dimensions(path: &str) -> Option<(u32, u32)> {
+pub(super) fn read_image_dimensions(path: &str) -> Option<(u32, u32)> {
     match imagesize::size(path) {
         Ok(dim) => Some((dim.width as u32, dim.height as u32)),
         Err(_) => None,
@@ -81,7 +81,7 @@ const ALLOWED_MIME_TYPES: &[&str] = &[
 ];
 
 /// Derive a file extension from a MIME type.
-fn extension_for_mime(mime: &str) -> &str {
+pub(super) fn extension_for_mime(mime: &str) -> &str {
     match mime {
         "image/jpeg" => "jpg",
         "image/png" => "png",
@@ -248,7 +248,7 @@ async fn stream_field_to_temp(
 /// Validate the magic bytes from the head buffer against the allowed MIME
 /// types.  Mirrors `validate_bytes` but accepts a head slice rather than
 /// requiring the whole file in RAM.
-fn validate_head(head: &[u8], declared_mime: &str) -> Result<String, AppError> {
+pub(super) fn validate_head(head: &[u8], declared_mime: &str) -> Result<String, AppError> {
     match infer::get(head) {
         Some(inferred) => {
             let m = inferred.mime_type();
@@ -352,7 +352,7 @@ async fn process_multipart_fields(
 }
 
 /// Build the JSON response with media metadata.
-fn build_upload_response(
+pub(super) fn build_upload_response(
     row: &db::media::MediaRow,
     thumb_url: Option<String>,
 ) -> serde_json::Value {
@@ -447,7 +447,7 @@ pub async fn upload(
 /// Run ffmpeg to extract the first frame of a video as a JPEG thumbnail.
 /// Returns `Err` if ffmpeg isn't installed or exits non-zero — the caller
 /// logs a warning and continues without a thumbnail.
-async fn generate_video_thumbnail(input: &str, output: &str) -> Result<(), String> {
+pub(super) async fn generate_video_thumbnail(input: &str, output: &str) -> Result<(), String> {
     let result = tokio::process::Command::new("ffmpeg")
         .args([
             "-y",

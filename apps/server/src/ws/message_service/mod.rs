@@ -128,6 +128,13 @@ pub(super) async fn handle_send_message(
         return;
     };
 
+    // Bump the dashboard "messages per second" counter exactly once per
+    // accepted relay (post-store, pre-fanout). Hot path: a single relaxed
+    // atomic fetch-add, no allocation, no lock except for the once-per-second
+    // bucket roll inside `MessageRateCounter`.  Carries no per-user or
+    // per-content data — see `metrics.rs` for the privacy invariant.
+    state.message_rate.record();
+
     let deliver = ServerMessage::NewMessage {
         message_id: stored.id,
         from_user_id: sender_id,
