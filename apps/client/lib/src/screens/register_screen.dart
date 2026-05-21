@@ -10,6 +10,7 @@ import '../theme/echo_theme.dart';
 import '../utils/version_utils.dart';
 import '../widgets/auth/auth_layout.dart';
 import '../widgets/auth/auth_scaffold_chrome.dart';
+import '../widgets/auth/server_subtitle.dart';
 import '../widgets/echo_logo_icon.dart';
 import '../widgets/window_chrome.dart';
 
@@ -233,6 +234,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   }
 
   Widget _buildHeader(BuildContext context) {
+    final serverUrl = ref.watch(serverUrlProvider);
     return Column(
       children: [
         Row(
@@ -256,6 +258,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
           'Create your account',
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 16),
         ),
+        const SizedBox(height: 6),
+        ServerSubtitle(serverUrl: serverUrl),
       ],
     );
   }
