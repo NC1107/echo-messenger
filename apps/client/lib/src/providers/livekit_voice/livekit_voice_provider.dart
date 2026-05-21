@@ -919,10 +919,17 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
 
   void _startAudioLevelPolling() {
     _audioLevelTimer?.cancel();
-    _audioLevelTimer = Timer.periodic(
-      const Duration(milliseconds: 100),
-      (_) => _pollAudioLevels(),
-    );
+    // Web on CanvasKit is far more expensive per repaint than native, and
+    // every audio-level publish (currently observed by `ref.watch(
+    // livekitVoiceProvider)` callers in the lounge) triggers a wholesale
+    // rebuild of the participant grid. The 100 ms cadence that was fine
+    // on desktop/mobile crashed Chrome tabs in voice calls; throttle to
+    // 250 ms there and let `_pollAudioLevels` skip publishes when the
+    // numbers haven't meaningfully changed.
+    final interval = kIsWeb
+        ? const Duration(milliseconds: 250)
+        : const Duration(milliseconds: 100);
+    _audioLevelTimer = Timer.periodic(interval, (_) => _pollAudioLevels());
   }
 
   void _stopAudioLevelPolling() {
@@ -970,12 +977,40 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       peerLevels[key] = p.audioLevel;
     }
 
-    if (!_disposed) {
+    // Dedup: when nobody is talking, the values are all near-zero on every
+    // tick — republishing identical state burns CanvasKit on web for no
+    // visual change. Compare to 0.01 because LiveKit returns floating
+    // noise around the silence floor that's not perceptible in the UI.
+    if (!_disposed && _audioLevelsChanged(localLevel, peerLevels)) {
       state = state.copyWith(
         localAudioLevel: localLevel,
         peerAudioLevels: peerLevels,
       );
     }
+  }
+
+  /// Returns true when the new audio-level snapshot is meaningfully
+  /// different from the one currently published. Treats values below
+  /// 0.01 as silence and ignores fluctuations between two silence
+  /// readings so the participant grid doesn't rebuild ten times per
+  /// second when nothing is happening.
+  bool _audioLevelsChanged(double newLocal, Map<String, double> newPeers) {
+    const epsilon = 0.01;
+    final prev = state;
+    bool changed(double a, double b) {
+      final aQuiet = a < epsilon;
+      final bQuiet = b < epsilon;
+      if (aQuiet && bQuiet) return false;
+      return (a - b).abs() >= epsilon;
+    }
+
+    if (changed(prev.localAudioLevel, newLocal)) return true;
+    if (prev.peerAudioLevels.length != newPeers.length) return true;
+    for (final entry in newPeers.entries) {
+      final prevLevel = prev.peerAudioLevels[entry.key] ?? 0.0;
+      if (changed(prevLevel, entry.value)) return true;
+    }
+    return false;
   }
 
   // -------------------------------------------------------------------------
