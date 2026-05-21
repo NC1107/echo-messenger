@@ -13,6 +13,7 @@ import '../services/crypto_service.dart';
 import '../services/debug_log_service.dart';
 import '../services/message_cache.dart';
 import '../services/group_crypto_service.dart';
+import '../services/group_rotation_election.dart';
 import '../screens/settings/notification_section.dart'
     show shouldSuppressNotification;
 import '../services/notification_service.dart';
