@@ -10,9 +10,10 @@ import '../providers/auth_provider.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
-import '../providers/websocket_provider.dart';
+import '../providers/user_presence_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
+import '../utils/presence.dart';
 import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
 import '../widgets/profile_sheets.dart';
 import 'safety_number_screen.dart';
@@ -294,21 +295,11 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
 
     final fullAvatarUrl = resolveAvatarUrl(_avatarUrl, serverUrl);
 
-    final wsState = ref.watch(websocketProvider);
-    final isOnline = wsState.onlineUsers.contains(widget.userId);
-    final presenceStatus = wsState.presenceStatusFor(widget.userId);
-
-    final Color ringColor;
-    if (!isOnline) {
-      ringColor = const Color(0xFF6B6B6F);
-    } else {
-      ringColor = switch (presenceStatus) {
-        'online' => EchoTheme.online,
-        'away' => EchoTheme.warning,
-        'dnd' => EchoTheme.danger,
-        _ => const Color(0xFF6B6B6F),
-      };
-    }
+    final presence = ref.watch(userPresenceProvider(widget.userId));
+    final ringColor = presenceColor(
+      presence.status,
+      isOnline: presence.isOnline,
+    );
 
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
