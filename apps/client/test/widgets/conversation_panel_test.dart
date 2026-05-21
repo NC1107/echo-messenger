@@ -1,12 +1,116 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:echo_app/src/models/contact.dart';
 import 'package:echo_app/src/models/conversation.dart';
 import 'package:echo_app/src/providers/auth_provider.dart';
+import 'package:echo_app/src/providers/contacts_provider.dart';
+import 'package:echo_app/src/providers/conversation_filter_provider.dart';
+import 'package:echo_app/src/providers/conversations_provider.dart';
+import 'package:echo_app/src/providers/update_provider.dart';
+import 'package:echo_app/src/providers/websocket_provider.dart';
+import 'package:echo_app/src/theme/echo_theme.dart';
 import 'package:echo_app/src/widgets/conversation_panel.dart';
 
 import '../helpers/mock_providers.dart';
 import '../helpers/pump_app.dart';
+
+// ---------------------------------------------------------------------------
+// Test fakes for the conversation_panel parts tests.
+// ---------------------------------------------------------------------------
+
+/// Stub conversations notifier that records calls to the mutation methods
+/// the panel invokes (leaveGroup / deleteGroup / leaveConversation / etc.),
+/// so the action-mixin tests can assert that the confirm path reaches the
+/// right notifier method.
+class _RecordingConversationsNotifier extends ConversationsNotifier {
+  _RecordingConversationsNotifier(this._initial);
+
+  final List<Conversation> _initial;
+
+  final List<String> leaveGroupCalls = [];
+  final List<String> deleteGroupCalls = [];
+  final List<String> leaveConversationCalls = [];
+
+  @override
+  ConversationsState build() => ConversationsState(conversations: _initial);
+
+  @override
+  Future<void> loadConversations() async {}
+
+  @override
+  Future<bool> leaveGroup(String groupId) async {
+    leaveGroupCalls.add(groupId);
+    return true;
+  }
+
+  @override
+  Future<bool> deleteGroup(String groupId) async {
+    deleteGroupCalls.add(groupId);
+    return true;
+  }
+
+  @override
+  Future<bool> leaveConversation(String conversationId) async {
+    leaveConversationCalls.add(conversationId);
+    return true;
+  }
+}
+
+class _FakeContactsWithPending extends Contacts {
+  _FakeContactsWithPending(this._pending);
+
+  final List<Contact> _pending;
+
+  @override
+  ContactsState build() => ContactsState(pendingRequests: _pending);
+
+  @override
+  Future<void> loadContacts() async {}
+
+  @override
+  Future<void> loadPending({bool force = false}) async {}
+}
+
+class _ErrorConversationsNotifier extends ConversationsNotifier {
+  @override
+  ConversationsState build() =>
+      const ConversationsState(error: 'load failed', conversations: []);
+
+  @override
+  Future<void> loadConversations() async {}
+}
+
+void _noopTap(Conversation _) {}
+
+class _FakeUpdateNotifier extends Update {
+  _FakeUpdateNotifier(this._initial);
+
+  final UpdateState _initial;
+
+  @override
+  UpdateState build() => _initial;
+
+  @override
+  Future<void> check({bool force = false}) async {}
+
+  @override
+  Future<void> downloadUpdate() async {}
+
+  @override
+  void cancelDownload() {}
+
+  @override
+  Future<void> applyUpdate() async {}
+
+  @override
+  Future<void> dismiss() async {
+    state = state.copyWith(dismissed: true);
+  }
+}
 
 void main() {
   group('ConversationPanel', () {
@@ -319,6 +423,663 @@ void main() {
         findsNothing,
       );
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // header.dart — filter chips, "+" menu items, status picker.
+  // -------------------------------------------------------------------------
+  group('ConversationPanel header', () {
+    testWidgets('filter chip tap updates conversationFilterTypeProvider', (
+      tester,
+    ) async {
+      final container = ProviderContainer(
+        overrides: [
+          ...standardOverrides(),
+          // Stub the update provider so its 30-min periodic timer doesn't
+          // leak past the test (the real Update.build() starts a Timer).
+          updateProvider.overrideWith(
+            () => _FakeUpdateNotifier(const UpdateState()),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: EchoTheme.darkTheme,
+            darkTheme: EchoTheme.darkTheme,
+            themeMode: ThemeMode.dark,
+            home: const Scaffold(
+              body: ConversationPanel(onConversationTap: _noopTap),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // Default filter is `all`.
+      expect(
+        container.read(conversationFilterTypeProvider),
+        ConversationFilterType.all,
+      );
+
+      await tester.tap(find.text('Groups'));
+      await tester.pump();
+      expect(
+        container.read(conversationFilterTypeProvider),
+        ConversationFilterType.groups,
+      );
+
+      await tester.tap(find.text('DMs'));
+      await tester.pump();
+      expect(
+        container.read(conversationFilterTypeProvider),
+        ConversationFilterType.dms,
+      );
+    });
+
+    testWidgets(
+      '"+" menu exposes Saved Messages and routes to the saved callback',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        var savedCalled = false;
+
+        await tester.pumpApp(
+          ConversationPanel(
+            onConversationTap: (_) {},
+            onNewChat: () {},
+            onNewGroup: () {},
+            onDiscover: () {},
+            onSavedMessages: () => savedCalled = true,
+          ),
+          overrides: standardOverrides(),
+        );
+        await tester.pump();
+
+        await tester.tap(find.byIcon(Icons.add));
+        await tester.pumpAndSettle();
+
+        // The fourth item in the menu is Saved Messages.
+        expect(find.text('Saved Messages'), findsOneWidget);
+        await tester.tap(find.text('Saved Messages'));
+        await tester.pumpAndSettle();
+        expect(savedCalled, isTrue);
+      },
+    );
+
+    testWidgets('Contacts callback wires the scan-QR header icon', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      var scanCalled = false;
+
+      await tester.pumpApp(
+        ConversationPanel(
+          onConversationTap: (_) {},
+          onScanQr: () => scanCalled = true,
+        ),
+        overrides: standardOverrides(),
+      );
+      await tester.pump();
+
+      // Header exposes the scan-QR icon only when the callback is provided.
+      expect(find.byIcon(Icons.qr_code_scanner), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.qr_code_scanner));
+      await tester.pump();
+      expect(scanCalled, isTrue);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // banners.dart — pending banner, replaced banner, update banner, bug row.
+  // -------------------------------------------------------------------------
+  group('ConversationPanel banners', () {
+    const samplePending = [
+      Contact(
+        id: 'req-1',
+        userId: 'user-x',
+        username: 'newperson',
+        status: 'pending_received',
+      ),
+    ];
+
+    testWidgets('pending-contacts banner renders when there are requests', (
+      tester,
+    ) async {
+      var showContactsCalled = false;
+
+      await tester.pumpApp(
+        ConversationPanel(
+          onConversationTap: (_) {},
+          onShowContacts: () => showContactsCalled = true,
+        ),
+        overrides: [
+          authOverride(loggedInAuthState),
+          serverUrlOverride(),
+          conversationsOverride(const []),
+          contactsProvider.overrideWith(
+            () => _FakeContactsWithPending(samplePending),
+          ),
+          webSocketOverride(),
+          cryptoOverride(),
+        ],
+      );
+      await tester.pump();
+
+      expect(find.text('1 pending contact request'), findsOneWidget);
+
+      await tester.tap(find.text('1 pending contact request'));
+      await tester.pump();
+      expect(showContactsCalled, isTrue);
+    });
+
+    testWidgets('pluralises pending-contacts banner correctly', (tester) async {
+      const twoPending = [
+        Contact(
+          id: 'req-1',
+          userId: 'user-a',
+          username: 'a',
+          status: 'pending_received',
+        ),
+        Contact(
+          id: 'req-2',
+          userId: 'user-b',
+          username: 'b',
+          status: 'pending_received',
+        ),
+      ];
+
+      await tester.pumpApp(
+        ConversationPanel(onConversationTap: (_) {}),
+        overrides: [
+          authOverride(loggedInAuthState),
+          serverUrlOverride(),
+          conversationsOverride(const []),
+          contactsProvider.overrideWith(
+            () => _FakeContactsWithPending(twoPending),
+          ),
+          webSocketOverride(),
+          cryptoOverride(),
+        ],
+      );
+      await tester.pump();
+
+      expect(find.text('2 pending contact requests'), findsOneWidget);
+    });
+
+    testWidgets('session-replaced banner renders + dismiss hides it', (
+      tester,
+    ) async {
+      await tester.pumpApp(
+        ConversationPanel(onConversationTap: (_) {}),
+        overrides: [
+          authOverride(loggedInAuthState),
+          serverUrlOverride(),
+          conversationsOverride(const []),
+          contactsOverride(),
+          webSocketOverride(
+            const WebSocketState(isConnected: false, wasReplaced: true),
+          ),
+          cryptoOverride(),
+        ],
+      );
+      await tester.pump();
+
+      expect(
+        find.text('Signed in on another device. Tap to reconnect.'),
+        findsOneWidget,
+      );
+
+      // Tap the dismiss IconButton (tooltip is the most reliable hook — the
+      // IconButton(tooltip: 'Dismiss') sits inside the banner Semantics).
+      await tester.tap(find.byTooltip('Dismiss'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Signed in on another device. Tap to reconnect.'),
+        findsNothing,
+      );
+    });
+
+    testWidgets(
+      'bug-report row renders by default when no update is in flight',
+      (tester) async {
+        await tester.pumpApp(
+          ConversationPanel(onConversationTap: (_) {}),
+          overrides: standardOverrides(conversations: const []),
+        );
+        await tester.pump();
+
+        expect(find.text('Report a bug'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'update banner replaces the bug-report row when an update is available',
+      (tester) async {
+        await tester.pumpApp(
+          ConversationPanel(onConversationTap: (_) {}),
+          overrides: [
+            ...standardOverrides(conversations: const []),
+            updateProvider.overrideWith(
+              () => _FakeUpdateNotifier(
+                const UpdateState(
+                  status: UpdateStatus.readyToInstall,
+                  latestVersion: '9.9.9',
+                ),
+              ),
+            ),
+          ],
+        );
+        await tester.pump();
+
+        // readyToInstall renders "vX.Y.Z ready" with a Restart button.
+        expect(find.text('v9.9.9 ready'), findsOneWidget);
+        expect(find.text('Restart'), findsOneWidget);
+        // The bug-report row is suppressed while the update banner shows.
+        expect(find.text('Report a bug'), findsNothing);
+      },
+    );
+
+    testWidgets('downloading update banner shows percentage and Cancel', (
+      tester,
+    ) async {
+      await tester.pumpApp(
+        ConversationPanel(onConversationTap: (_) {}),
+        overrides: [
+          ...standardOverrides(conversations: const []),
+          updateProvider.overrideWith(
+            () => _FakeUpdateNotifier(
+              const UpdateState(
+                status: UpdateStatus.downloading,
+                latestVersion: '9.9.9',
+                downloadProgress: 0.42,
+              ),
+            ),
+          ),
+        ],
+      );
+      await tester.pump();
+
+      expect(find.text('Downloading update... 42%'), findsOneWidget);
+      expect(find.text('Cancel'), findsOneWidget);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // list_renderer.dart — empty / error / pinned / search states.
+  // -------------------------------------------------------------------------
+  group('ConversationPanel list renderer', () {
+    testWidgets('error state shows retry button when load fails empty', (
+      tester,
+    ) async {
+      await tester.pumpApp(
+        ConversationPanel(onConversationTap: (_) {}),
+        overrides: [
+          authOverride(loggedInAuthState),
+          serverUrlOverride(),
+          conversationsProvider.overrideWith(
+            () => _ErrorConversationsNotifier(),
+          ),
+          contactsOverride(),
+          webSocketOverride(),
+          cryptoOverride(),
+        ],
+      );
+      await tester.pump();
+
+      expect(find.text("Couldn't load conversations"), findsOneWidget);
+      expect(find.text('Retry'), findsOneWidget);
+    });
+
+    testWidgets('pinned conversations appear above an unpinned one with the '
+        'PINNED section header', (tester) async {
+      // Two conversations: one pinned (server flag), one not. Pinned must
+      // appear first with a PINNED header and divider above the unpinned row.
+      final convs = [
+        const Conversation(
+          id: 'conv-pinned',
+          name: 'Pinned Group',
+          isGroup: true,
+          isPinned: true,
+          lastMessage: 'old',
+          lastMessageTimestamp: '2026-01-01T00:00:00Z',
+          members: [
+            ConversationMember(userId: 'user-x', username: 'x'),
+            ConversationMember(userId: 'test-user-id', username: 'testuser'),
+          ],
+        ),
+        const Conversation(
+          id: 'conv-normal',
+          name: 'Normal Group',
+          isGroup: true,
+          lastMessage: 'newer',
+          lastMessageTimestamp: '2026-01-15T00:00:00Z',
+          members: [
+            ConversationMember(userId: 'user-y', username: 'y'),
+            ConversationMember(userId: 'test-user-id', username: 'testuser'),
+          ],
+        ),
+      ];
+
+      await tester.pumpApp(
+        ConversationPanel(onConversationTap: (_) {}),
+        overrides: standardOverrides(conversations: convs),
+      );
+      // Two pumps: first builds with empty pinnedIds, the post-frame
+      // `_loadPinnedIds` merges the server-pinned set in.
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('PINNED'), findsOneWidget);
+
+      // Pinned group's tile must be rendered above the unpinned one in the
+      // list's y-axis.
+      final pinnedY = tester.getCenter(find.text('Pinned Group')).dy;
+      final normalY = tester.getCenter(find.text('Normal Group')).dy;
+      expect(pinnedY, lessThan(normalY));
+    });
+
+    testWidgets('search-mode empty state shows "No results found" copy', (
+      tester,
+    ) async {
+      final container = ProviderContainer(
+        overrides: [
+          ...standardOverrides(conversations: sampleConversations),
+          updateProvider.overrideWith(
+            () => _FakeUpdateNotifier(const UpdateState()),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: EchoTheme.darkTheme,
+            darkTheme: EchoTheme.darkTheme,
+            themeMode: ThemeMode.dark,
+            home: const Scaffold(
+              body: ConversationPanel(onConversationTap: _noopTap),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // Now that the widget is mounted and watching the search query
+      // provider, mutate it — the widget keeps the auto-dispose alive so no
+      // dangling scheduler timer leaks past the test.
+      container
+          .read(conversationSearchQueryProvider.notifier)
+          .set('zzz-unmatched-zzz');
+      await tester.pump();
+
+      expect(
+        find.textContaining("No results found for 'zzz-unmatched-zzz'"),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+      'mobile slidable swipe actions render Mute / Pin / Delete for a DM',
+      (tester) async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        tester.view.physicalSize = const Size(400, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        try {
+          await tester.pumpApp(
+            ConversationPanel(onConversationTap: (_) {}),
+            overrides: standardOverrides(
+              conversations: [sampleConversations.first],
+            ),
+          );
+          await tester.pump();
+
+          // The DM row must be wrapped in a Slidable. Swiping reveals the
+          // action pane with the Mute / Pin / Delete actions.
+          final slidable = find.byType(Slidable);
+          expect(slidable, findsOneWidget);
+          await tester.drag(slidable, const Offset(-300, 0));
+          await tester.pumpAndSettle();
+
+          expect(find.text('Mute'), findsOneWidget);
+          expect(find.text('Pin'), findsOneWidget);
+          expect(find.text('Delete'), findsOneWidget);
+        } finally {
+          debugDefaultTargetPlatformOverride = null;
+        }
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // actions.dart — confirm dialog → notifier wiring for delete / leave flows.
+  // -------------------------------------------------------------------------
+  group('ConversationPanel actions confirm dialogs', () {
+    testWidgets('mobile-swipe Delete on a DM confirms then '
+        'calls leaveConversation', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      try {
+        final recording = _RecordingConversationsNotifier([
+          sampleConversations.first,
+        ]);
+
+        await tester.pumpApp(
+          ConversationPanel(onConversationTap: (_) {}),
+          overrides: [
+            authOverride(loggedInAuthState),
+            serverUrlOverride(),
+            conversationsProvider.overrideWith(() => recording),
+            contactsOverride(),
+            webSocketOverride(),
+            cryptoOverride(),
+          ],
+        );
+        await tester.pump();
+
+        await tester.drag(find.byType(Slidable), const Offset(-300, 0));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Delete'));
+        await tester.pumpAndSettle();
+
+        // Confirm dialog renders the DM-deletion copy.
+        expect(find.text('Delete Conversation'), findsOneWidget);
+
+        // Tap the destructive confirm — the FilledButton labelled "Delete".
+        await tester.tap(
+          find.descendant(
+            of: find.byType(FilledButton),
+            matching: find.text('Delete'),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(recording.leaveConversationCalls, ['conv-1']);
+
+        // Let the success toast's dismiss timer expire so the binding's
+        // post-test invariant check doesn't trip on a pending Timer.
+        await tester.pump(const Duration(seconds: 10));
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    testWidgets(
+      'mobile-swipe Leave on a group confirms then calls leaveGroup',
+      (tester) async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        tester.view.physicalSize = const Size(400, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        try {
+          // Use a group conversation where the test user is just a member, so
+          // _resolveCanLeave returns true.
+          final groupConv = sampleConversations[1];
+
+          final recording = _RecordingConversationsNotifier([groupConv]);
+
+          await tester.pumpApp(
+            ConversationPanel(onConversationTap: (_) {}),
+            overrides: [
+              authOverride(loggedInAuthState),
+              serverUrlOverride(),
+              conversationsProvider.overrideWith(() => recording),
+              contactsOverride(),
+              webSocketOverride(),
+              cryptoOverride(),
+            ],
+          );
+          await tester.pump();
+
+          await tester.drag(find.byType(Slidable), const Offset(-300, 0));
+          await tester.pumpAndSettle();
+
+          // For a group the destructive swipe action is labelled "Leave".
+          await tester.tap(find.text('Leave'));
+          await tester.pumpAndSettle();
+
+          // Confirm dialog renders the group-leave copy.
+          expect(find.text('Leave Group'), findsOneWidget);
+
+          await tester.tap(
+            find.descendant(
+              of: find.byType(FilledButton),
+              matching: find.text('Leave'),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(recording.leaveGroupCalls, ['conv-2']);
+
+          // Let the success toast's dismiss timer expire.
+          await tester.pump(const Duration(seconds: 10));
+        } finally {
+          debugDefaultTargetPlatformOverride = null;
+        }
+      },
+    );
+
+    testWidgets('cancelling the confirm dialog does NOT call the notifier', (
+      tester,
+    ) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      try {
+        final recording = _RecordingConversationsNotifier([
+          sampleConversations.first,
+        ]);
+
+        await tester.pumpApp(
+          ConversationPanel(onConversationTap: (_) {}),
+          overrides: [
+            authOverride(loggedInAuthState),
+            serverUrlOverride(),
+            conversationsProvider.overrideWith(() => recording),
+            contactsOverride(),
+            webSocketOverride(),
+            cryptoOverride(),
+          ],
+        );
+        await tester.pump();
+
+        await tester.drag(find.byType(Slidable), const Offset(-300, 0));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Delete'));
+        await tester.pumpAndSettle();
+        expect(find.text('Delete Conversation'), findsOneWidget);
+
+        // Tap Cancel — confirm should resolve false and the notifier method
+        // must NOT have been invoked.
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+
+        expect(recording.leaveConversationCalls, isEmpty);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // compose_fab.dart — additional FAB coverage.
+  // -------------------------------------------------------------------------
+  group('ConversationPanel compose FAB', () {
+    testWidgets(
+      'long-press menu Discover Groups routes to the discover callback',
+      (tester) async {
+        tester.view.physicalSize = const Size(390, 844);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        var discoverCalled = false;
+
+        await tester.pumpApp(
+          ConversationPanel(
+            onConversationTap: (_) {},
+            onNewChat: () {},
+            onNewGroup: () {},
+            onDiscover: () => discoverCalled = true,
+          ),
+          overrides: standardOverrides(),
+        );
+        await tester.pump();
+
+        await tester.longPress(find.byIcon(Icons.edit_outlined));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Discover groups'));
+        await tester.pumpAndSettle();
+        expect(discoverCalled, isTrue);
+      },
+    );
+
+    testWidgets(
+      'FAB hidden on desktop layout (width >= 600) even with onNewChat set',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        await tester.pumpApp(
+          ConversationPanel(
+            onConversationTap: (_) {},
+            onNewChat: () {},
+            onNewGroup: () {},
+            onDiscover: () {},
+          ),
+          overrides: standardOverrides(),
+        );
+        await tester.pump();
+
+        // The desktop "+" header menu is the entry-point on wide layouts;
+        // the pencil FAB must not render alongside it. The header's "+" icon
+        // is `Icons.add`, not `Icons.edit_outlined`.
+        expect(find.byIcon(Icons.edit_outlined), findsNothing);
+        expect(find.byIcon(Icons.add), findsOneWidget);
+      },
+    );
   });
 
   group('buildAvatar', () {
