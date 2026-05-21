@@ -72,11 +72,7 @@ void main() {
     });
 
     testWidgets('custom labels appear on the buttons', (tester) async {
-      await pumpOpenDialog(
-        tester,
-        confirmLabel: 'Delete',
-        cancelLabel: 'Keep',
-      );
+      await pumpOpenDialog(tester, confirmLabel: 'Delete', cancelLabel: 'Keep');
       expect(find.text('Delete'), findsOneWidget);
       expect(find.text('Keep'), findsOneWidget);
       await tester.tap(find.text('Keep'));
