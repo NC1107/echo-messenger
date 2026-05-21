@@ -19,21 +19,49 @@ pub struct UserRow {
     pub status_message: Option<String>,
     #[allow(dead_code)]
     pub status_text: Option<String>,
+    /// Operator flag — admin dashboard access (Phase 1, #681).
+    /// Surfaced in the login / register response so the client can gate
+    /// the dashboard tile without a separate round-trip.
+    #[sqlx(default)]
+    pub is_admin: bool,
+}
+
+/// Result of inserting a new user. Carries the auto-assigned id plus the
+/// `is_admin` flag so the registration handler can surface admin status
+/// on the very first signup without a second round-trip.
+#[derive(Debug)]
+pub struct CreatedUser {
+    pub id: Uuid,
+    pub is_admin: bool,
 }
 
 pub async fn create_user(
     pool: &PgPool,
     username: &str,
     password_hash: &str,
-) -> Result<Uuid, sqlx::Error> {
-    let row: (Uuid,) =
-        sqlx::query_as("INSERT INTO users (username, password_hash) VALUES ($1, $2) RETURNING id")
-            .bind(username)
-            .bind(password_hash)
-            .fetch_one(pool)
-            .await?;
+) -> Result<CreatedUser, sqlx::Error> {
+    // First-user bootstrap: when the users table is empty (and so by
+    // construction no admin exists yet), this signup becomes the operator.
+    // The `NOT EXISTS` subquery sees its snapshot inside the same statement
+    // as the INSERT, so even with two concurrent registrations against an
+    // empty table only one row sees an empty table -- the other observes
+    // the freshly inserted row and gets `is_admin = FALSE`.  Combined with
+    // the unique-username constraint this means a fresh DB deterministically
+    // gets exactly one admin from the registration path.
+    let row: (Uuid, bool) = sqlx::query_as(
+        "INSERT INTO users (username, password_hash, is_admin) \
+         VALUES ($1, $2, (SELECT NOT EXISTS (SELECT 1 FROM users))) \
+         RETURNING id, is_admin",
+    )
+    .bind(username)
+    .bind(password_hash)
+    .fetch_one(pool)
+    .await?;
 
-    Ok(row.0)
+    Ok(CreatedUser {
+        id: row.0,
+        is_admin: row.1,
+    })
 }
 
 pub async fn find_by_username(
@@ -41,7 +69,8 @@ pub async fn find_by_username(
     username: &str,
 ) -> Result<Option<UserRow>, sqlx::Error> {
     sqlx::query_as::<_, UserRow>(
-        "SELECT id, username, password_hash, avatar_url, display_name, bio, status_message, status_text FROM users WHERE username = $1",
+        "SELECT id, username, password_hash, avatar_url, display_name, bio, \
+         status_message, status_text, is_admin FROM users WHERE username = $1",
     )
     .bind(username)
     .fetch_optional(pool)
@@ -50,7 +79,8 @@ pub async fn find_by_username(
 
 pub async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Option<UserRow>, sqlx::Error> {
     sqlx::query_as::<_, UserRow>(
-        "SELECT id, username, password_hash, avatar_url, display_name, bio, status_message, status_text FROM users WHERE id = $1",
+        "SELECT id, username, password_hash, avatar_url, display_name, bio, \
+         status_message, status_text, is_admin FROM users WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(pool)

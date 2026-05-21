@@ -42,6 +42,11 @@ class AuthState {
   /// not yet loaded or when the user has no status set.
   final String? statusText;
 
+  /// Operator flag from the server's auth response. Gates the
+  /// "Admin dashboard" tile in settings (#681 Phase 1). Defaults to
+  /// `false` so existing call sites that omit it stay locked down.
+  final bool isAdmin;
+
   const AuthState({
     this.isLoggedIn = false,
     this.userId,
@@ -54,6 +59,7 @@ class AuthState {
     this.presenceStatus = 'online',
     this.onboardingCompleted = true,
     this.statusText,
+    this.isAdmin = false,
   });
 
   // @S107: copyWith mirrors the AuthState constructor; refactoring to a param
@@ -74,6 +80,7 @@ class AuthState {
     // Use the sentinel pattern so callers can explicitly clear statusText to
     // null without copyWith silently keeping the previous value.
     Object? statusText = _kKeep,
+    bool? isAdmin,
   }) {
     return AuthState(
       isLoggedIn: isLoggedIn ?? this.isLoggedIn,
@@ -89,6 +96,7 @@ class AuthState {
       statusText: statusText == _kKeep
           ? this.statusText
           : statusText as String?,
+      isAdmin: isAdmin ?? this.isAdmin,
     );
   }
 }
@@ -171,6 +179,7 @@ class AuthNotifier extends _$AuthNotifier
         // browser; we deliberately ignore the body value to avoid storing it.
         final refreshToken = kIsWeb ? null : data['refresh_token'] as String?;
         final userId = data['user_id'] as String;
+        final isAdmin = data['is_admin'] as bool? ?? false;
 
         await _storeTokens(
           accessToken: accessToken,
@@ -187,6 +196,7 @@ class AuthNotifier extends _$AuthNotifier
           token: accessToken,
           refreshToken: refreshToken,
           onboardingCompleted: false,
+          isAdmin: isAdmin,
         );
       } else {
         String errorMsg = 'Registration failed';
@@ -236,6 +246,7 @@ class AuthNotifier extends _$AuthNotifier
         final refreshToken = kIsWeb ? null : data['refresh_token'] as String?;
         final userId = data['user_id'] as String;
         final avatarUrl = data['avatar_url'] as String?;
+        final isAdmin = data['is_admin'] as bool? ?? false;
 
         await _storeTokens(
           accessToken: accessToken,
@@ -252,6 +263,7 @@ class AuthNotifier extends _$AuthNotifier
           token: accessToken,
           refreshToken: refreshToken,
           avatarUrl: avatarUrl,
+          isAdmin: isAdmin,
         );
 
         // Start background service to keep WebSocket alive on mobile
