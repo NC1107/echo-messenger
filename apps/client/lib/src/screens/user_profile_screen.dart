@@ -15,6 +15,7 @@ import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/presence.dart';
 import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
+import '../widgets/confirm_dialog.dart';
 import '../widgets/profile_sheets.dart';
 import 'safety_number_screen.dart';
 
@@ -640,36 +641,16 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
   }
 
   Future<void> _blockContact() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: context.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.border),
-        ),
-        title: const Text('Block user'),
-        content: Text(
+    final confirmed = await showEchoConfirmDialog(
+      context,
+      title: 'Block user',
+      content:
           'Are you sure you want to block @$_username? '
           'They will not be able to message you.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(
-              'Cancel',
-              style: TextStyle(color: context.textSecondary),
-            ),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
-            child: const Text('Block'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Block',
+      destructive: true,
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     final serverUrl = ref.read(serverUrlProvider);
     try {

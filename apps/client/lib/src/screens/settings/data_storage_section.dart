@@ -9,6 +9,7 @@ import '../../services/export_service.dart';
 import '../../services/message_cache.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
+import '../../widgets/confirm_dialog.dart';
 
 class DataStorageSection extends ConsumerStatefulWidget {
   const DataStorageSection({super.key});
@@ -49,36 +50,15 @@ class _DataStorageSectionState extends ConsumerState<DataStorageSection> {
   }
 
   Future<void> _clearMessageCache() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: context.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.border),
-        ),
-        title: Text(
-          'Clear Message Cache',
-          style: TextStyle(color: context.textPrimary, fontSize: 18),
-        ),
-        content: Text(
+    final confirmed = await showEchoConfirmDialog(
+      context,
+      title: 'Clear Message Cache',
+      content:
           'Cached messages will be reloaded from the server. '
           'No data will be lost.',
-          style: TextStyle(color: context.textSecondary, fontSize: 14),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Clear'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Clear',
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
 
     await MessageCache.clearAll();
     await _calculateCacheSize();
@@ -109,36 +89,15 @@ class _DataStorageSectionState extends ConsumerState<DataStorageSection> {
   }
 
   Future<void> _exportChats() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: context.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.border),
-        ),
-        title: Text(
-          'Export chats',
-          style: TextStyle(color: context.textPrimary, fontSize: 18),
-        ),
-        content: Text(
+    final confirmed = await showEchoConfirmDialog(
+      context,
+      title: 'Export chats',
+      content:
           'Your locally cached messages will be saved as a JSON file. '
           'Private keys and Signal session state are not included.',
-          style: TextStyle(color: context.textSecondary, fontSize: 14),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Export'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Export',
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
 
     setState(() => _isExporting = true);
     try {

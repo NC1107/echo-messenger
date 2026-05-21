@@ -13,6 +13,7 @@ import '../../providers/server_url_provider.dart';
 import '../../providers/websocket_provider.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
+import '../../widgets/confirm_dialog.dart';
 
 class DevicesSection extends ConsumerStatefulWidget {
   const DevicesSection({super.key});
@@ -125,46 +126,17 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
   }
 
   Future<void> _revokeDevice(_Device device) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: context.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.border),
-        ),
-        title: Text(
-          'Revoke ${device.displayLabel}',
-          style: const TextStyle(
-            color: EchoTheme.danger,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        content: Text(
+    final confirmed = await showEchoConfirmDialog(
+      context,
+      title: 'Revoke ${device.displayLabel}',
+      content:
           'This will remove ${device.displayLabel} from your account. '
           'Any active session on that device will be signed out immediately.',
-          style: TextStyle(
-            color: context.textSecondary,
-            fontSize: 14,
-            height: 1.5,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
-            child: const Text('Revoke'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Revoke',
+      destructive: true,
     );
 
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     final serverUrl = ref.read(serverUrlProvider);
     try {
@@ -200,45 +172,15 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
 
   /// Revoke every device except the current one after confirming with the user.
   Future<void> _revokeOtherDevices(int currentDeviceId) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: context.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.border),
-        ),
-        title: Text(
-          'Log out all other devices',
-          style: TextStyle(
-            color: context.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        content: Text(
-          'This will log out every device except this one. Continue?',
-          style: TextStyle(
-            color: context.textSecondary,
-            fontSize: 14,
-            height: 1.5,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
-            child: const Text('Log out others'),
-          ),
-        ],
-      ),
+    final confirmed = await showEchoConfirmDialog(
+      context,
+      title: 'Log out all other devices',
+      content: 'This will log out every device except this one. Continue?',
+      confirmLabel: 'Log out others',
+      destructive: true,
     );
 
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     final serverUrl = ref.read(serverUrlProvider);
     try {

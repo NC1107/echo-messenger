@@ -8,6 +8,7 @@ import '../../providers/crypto_provider.dart';
 import '../../providers/privacy_provider.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
+import '../../widgets/confirm_dialog.dart';
 
 /// SharedPreferences key + reader for the "preserve original filenames"
 /// toggle. Default `true` (preserve). When `false`, uploads are sent with a
@@ -216,47 +217,14 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
   }
 
   Future<void> _confirmUnblock(String userId, String username) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: context.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.border),
-        ),
-        title: Text(
-          'Unblock @$username?',
-          style: TextStyle(
-            color: context.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        content: Text(
-          'They will be able to message you again.',
-          style: TextStyle(
-            color: context.textSecondary,
-            fontSize: 14,
-            height: 1.5,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(
-              'Cancel',
-              style: TextStyle(color: context.textSecondary),
-            ),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Unblock'),
-          ),
-        ],
-      ),
+    final confirmed = await showEchoConfirmDialog(
+      context,
+      title: 'Unblock @$username?',
+      content: 'They will be able to message you again.',
+      confirmLabel: 'Unblock',
     );
 
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     final success = await ref
         .read(contactsProvider.notifier)

@@ -24,6 +24,7 @@ import '../utils/fuzzy_score.dart';
 import '../utils/presence.dart';
 import '../widgets/avatar_crop_dialog.dart';
 import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
+import '../widgets/confirm_dialog.dart';
 import '../widgets/member_role.dart';
 import '../widgets/user_avatar.dart';
 import '../widgets/context_menu/actions/member_actions_registry.dart';
@@ -356,31 +357,17 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
 
   Future<void> _deleteGroup() async {
     final groupName = _conversation?.name ?? 'this group';
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete Group'),
-        content: Text(
+    final confirmed = await showEchoConfirmDialog(
+      context,
+      title: 'Delete Group',
+      content:
           'Are you sure you want to delete "$groupName"? '
           'This will permanently remove all messages and members. '
           'This action cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Delete',
+      destructive: true,
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     final token = ref.read(authProvider).token;
     if (token == null) return;
@@ -417,28 +404,15 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   }
 
   Future<void> _leaveGroup() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Leave Group'),
-        content: const Text('Are you sure you want to leave this group?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
-            child: const Text('Leave'),
-          ),
-        ],
-      ),
+    final confirmed = await showEchoConfirmDialog(
+      context,
+      title: 'Leave Group',
+      content: 'Are you sure you want to leave this group?',
+      confirmLabel: 'Leave',
+      destructive: true,
     );
 
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     final token = ref.read(authProvider).token;
     if (token == null) return;
@@ -468,27 +442,14 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   }
 
   Future<void> _kickMember(ConversationMember member) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Remove Member'),
-        content: Text('Remove ${member.username} from this group?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
-            child: const Text('Remove'),
-          ),
-        ],
-      ),
+    final confirmed = await showEchoConfirmDialog(
+      context,
+      title: 'Remove Member',
+      content: 'Remove ${member.username} from this group?',
+      confirmLabel: 'Remove',
+      destructive: true,
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     final token = ref.read(authProvider).token;
     if (token == null) return;
@@ -526,30 +487,16 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   }
 
   Future<void> _banMember(ConversationMember member) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Ban Member'),
-        content: Text(
+    final confirmed = await showEchoConfirmDialog(
+      context,
+      title: 'Ban Member',
+      content:
           'Ban ${member.username} from this group? '
           'They will not be able to rejoin.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
-            child: const Text('Ban'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Ban',
+      destructive: true,
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     final token = ref.read(authProvider).token;
     if (token == null) return;
@@ -788,27 +735,14 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   }
 
   Future<void> _deleteChannel(String channelId, String channelName) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete Channel'),
-        content: Text('Delete channel "$channelName"? This cannot be undone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+    final confirmed = await showEchoConfirmDialog(
+      context,
+      title: 'Delete Channel',
+      content: 'Delete channel "$channelName"? This cannot be undone.',
+      confirmLabel: 'Delete',
+      destructive: true,
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     final success = await ref
         .read(channelsProvider.notifier)
