@@ -206,7 +206,7 @@ class _WinButtonState extends State<_WinButton> {
       context,
     ).colorScheme.onSurface.withValues(alpha: 0.65);
     final hoverBg = widget.isClose
-        ? Colors.red.withValues(alpha: 0.85)
+        ? EchoTheme.danger.withValues(alpha: 0.85)
         : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.12);
 
     return Tooltip(

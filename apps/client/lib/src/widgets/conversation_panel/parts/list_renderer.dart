@@ -304,13 +304,14 @@ mixin _ConversationPanelListRendererMixin
           SlidableAction(
             onPressed: (_) => _toggleMuteWithFeedback(conv.id),
             icon: conv.isMuted ? Icons.volume_up : Icons.volume_off,
-            backgroundColor: Colors.blueGrey,
+            backgroundColor: context.surfaceHover,
+            foregroundColor: context.textPrimary,
             label: conv.isMuted ? 'Unmute' : 'Mute',
           ),
           SlidableAction(
             onPressed: (_) => _togglePin(conv.id),
             icon: Icons.push_pin,
-            backgroundColor: Colors.orange,
+            backgroundColor: EchoTheme.warning,
             label: isPinned ? 'Unpin' : 'Pin',
           ),
           SlidableAction(

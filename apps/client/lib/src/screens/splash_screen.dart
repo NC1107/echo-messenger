@@ -696,7 +696,7 @@ class _UpdatePromptBody extends ConsumerWidget {
       child: Text(
         update.errorMessage ?? 'Download failed',
         textAlign: TextAlign.center,
-        style: const TextStyle(fontSize: 12, color: Colors.redAccent),
+        style: const TextStyle(fontSize: 12, color: EchoTheme.danger),
       ),
     );
   }

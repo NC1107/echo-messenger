@@ -270,11 +270,11 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
       return const Center(child: CircularProgressIndicator());
     }
     if (contactsState.contacts.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           'No contacts available.\nAdd contacts first.',
           textAlign: TextAlign.center,
-          style: TextStyle(color: Colors.grey),
+          style: TextStyle(color: context.textMuted),
         ),
       );
     }
