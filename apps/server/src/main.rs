@@ -86,6 +86,17 @@ async fn main() {
             async move { cleanup_orphan_media_files(&pool).await }
         }
     });
+    // Sweep abandoned chunked-upload sessions hourly (#556).  Idle window is
+    // 24 h so a user who closed their laptop overnight can still resume.
+    spawn_periodic("stale_uploads", std::time::Duration::from_secs(3600), {
+        let pool = pool.clone();
+        move || {
+            let pool = pool.clone();
+            async move {
+                echo_server::routes::media_chunked::cleanup_stale_uploads(&pool, 24 * 60 * 60).await
+            }
+        }
+    });
 
     // Evict stale entries from the typing_service membership/member-ID/conv-kind
     // caches; without this, entries accumulate unboundedly on long-running servers.

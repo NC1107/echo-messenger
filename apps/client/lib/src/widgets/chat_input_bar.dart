@@ -26,6 +26,7 @@ import '../screens/settings/privacy_section.dart'
 import '../services/slash_commands.dart';
 import '../services/sound_service.dart';
 import '../services/toast_service.dart';
+import '../services/chunked_upload_client.dart';
 import '../services/upload_client.dart';
 import '../services/emoji_shortcodes.dart';
 import '../theme/echo_theme.dart';
