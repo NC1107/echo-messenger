@@ -45,10 +45,7 @@ Future<bool> showEchoConfirmDialog(
           ? content
           : Text(
               content.toString(),
-              style: TextStyle(
-                color: dialogCtx.textSecondary,
-                fontSize: 14,
-              ),
+              style: TextStyle(color: dialogCtx.textSecondary, fontSize: 14),
             );
       return AlertDialog(
         backgroundColor: dialogCtx.surface,
@@ -59,7 +56,11 @@ Future<bool> showEchoConfirmDialog(
         title: Text(
           title,
           style: TextStyle(
-            color: dialogCtx.textPrimary,
+            // Destructive confirms colour the title red as an extra
+            // signal beyond the red confirm button — matches the
+            // pattern conversation_panel and chat_header_bar already
+            // used by hand.
+            color: destructive ? EchoTheme.danger : dialogCtx.textPrimary,
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
