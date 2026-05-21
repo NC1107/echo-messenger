@@ -11,6 +11,7 @@ import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
 import '../version.dart';
+import '../widgets/confirm_dialog.dart';
 import '../widgets/settings/card_row.dart';
 import '../widgets/settings/section_header.dart';
 import '../widgets/settings/user_header_card.dart';
@@ -366,61 +367,38 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   SettingsSection? _mobileDetailSection;
 
   Future<void> _logout() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: context.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.border),
-        ),
-        title: Text(
-          _logOutLabel,
-          style: TextStyle(
-            color: context.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Are you sure you want to log out?',
-              style: TextStyle(
-                color: context.textSecondary,
-                fontSize: 14,
-                height: 1.5,
-              ),
+    final confirmed = await showEchoConfirmDialog(
+      context,
+      title: _logOutLabel,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Are you sure you want to log out?',
+            style: TextStyle(
+              color: context.textSecondary,
+              fontSize: 14,
+              height: 1.5,
             ),
-            const SizedBox(height: 12),
-            const Text(
-              'Your local encryption keys will be cleared. '
-              'Old encrypted messages on this device may become unreadable.',
-              style: TextStyle(
-                color: EchoTheme.danger,
-                fontSize: 13,
-                height: 1.5,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
-            child: const Text(_logOutLabel),
+          const SizedBox(height: 12),
+          const Text(
+            'Your local encryption keys will be cleared. '
+            'Old encrypted messages on this device may become unreadable.',
+            style: TextStyle(
+              color: EchoTheme.danger,
+              fontSize: 13,
+              height: 1.5,
+            ),
           ),
         ],
       ),
+      confirmLabel: _logOutLabel,
+      destructive: true,
     );
 
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     ref.read(websocketProvider.notifier).disconnect();
     ref.read(chatProvider.notifier).clear();
