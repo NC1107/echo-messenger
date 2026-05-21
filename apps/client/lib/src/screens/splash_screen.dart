@@ -496,7 +496,13 @@ class _UpdatePromptBody extends ConsumerWidget {
     // card at every window size.
     return FadeTransition(
       opacity: fade,
+      // StackFit.expand forces the rounded card chain to fill the whole
+      // chromeless window. Without it the non-positioned Center wraps
+      // tightly around its content, the ClipRRect shrinks to that size,
+      // and the transparent window corners show through as black on
+      // compositors that don't paint window translucency.
       child: Stack(
+        fit: StackFit.expand,
         children: [
           _buildHaloBackdrop(accent),
           Center(
