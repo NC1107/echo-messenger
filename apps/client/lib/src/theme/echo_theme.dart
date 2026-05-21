@@ -1095,6 +1095,45 @@ extension EchoColors on BuildContext {
   Color get mutedSurface => textMuted.withValues(alpha: 0.6);
 }
 
+/// Canonical corner-radius scale.
+///
+/// Before this token set the codebase carried 10+ distinct radius values
+/// (2, 4, 6, 8, 10, 12, 14, 16, 20, 22, 32) sprinkled across widgets that
+/// otherwise shared a visual language. New code should reach for one of
+/// these constants; existing surfaces migrate opportunistically — see
+/// the "Componentize when you'd otherwise paste twice" section in
+/// CLAUDE.md.
+///
+/// Step is roughly 1.5x. `pill` is a sentinel large enough to round any
+/// reasonable button or chip into a full pill regardless of height.
+class EchoRadii {
+  const EchoRadii._();
+  static const double xs = 4.0;
+  static const double sm = 6.0;
+  static const double md = 8.0;
+  static const double lg = 12.0;
+  static const double xl = 16.0;
+  static const double xxl = 20.0;
+  static const double pill = 999.0;
+}
+
+/// Canonical spacing scale.
+///
+/// Mirrors [EchoRadii]: use these constants for paddings, margins, and
+/// gaps to keep rhythm consistent. Edge-case values (3, 10, 14, 20, 40)
+/// should be replaced with the nearest token unless a pixel-precise
+/// reason is documented at the callsite.
+class EchoSpacing {
+  const EchoSpacing._();
+  static const double xs = 4.0;
+  static const double sm = 8.0;
+  static const double md = 12.0;
+  static const double lg = 16.0;
+  static const double xl = 24.0;
+  static const double xxl = 32.0;
+  static const double huge = 48.0;
+}
+
 /// Shared layout tokens for sectioned card lists (e.g. Settings).
 class EchoSectionTokens {
   EchoSectionTokens._();
