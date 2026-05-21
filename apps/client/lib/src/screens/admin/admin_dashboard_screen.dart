@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/admin_realtime_provider.dart';
 import '../../providers/admin_stats_provider.dart';
+import '../../widgets/skeleton_loader.dart';
 
 /// Operator dashboard for issue #682. Renders the headline metrics from
 /// `GET /api/admin/stats` in a responsive grid and the latest open feedback
@@ -31,13 +32,36 @@ class AdminDashboardScreen extends ConsumerWidget {
         ],
       ),
       body: async.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const _DashboardLoadingSkeleton(),
         error: (err, _) => _ErrorView(
           message: err.toString(),
           onRetry: () => ref.read(adminDashboardProvider.notifier).refresh(),
         ),
         data: (data) => _DashboardBody(data: data),
       ),
+    );
+  }
+}
+
+/// Loading state for the whole dashboard — same skeleton card grid the
+/// realtime section uses, plus a stub of the "Last 24h" aggregate grid so
+/// the layout doesn't jump when data arrives.
+class _DashboardLoadingSkeleton extends StatelessWidget {
+  const _DashboardLoadingSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Text('Realtime', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        const StatCardGridSkeleton(),
+        const SizedBox(height: 24),
+        Text('Last 24h', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        const StatCardGridSkeleton(count: 6),
+      ],
     );
   }
 }
@@ -127,10 +151,7 @@ class _RealtimeSectionState extends ConsumerState<_RealtimeSection> {
     });
 
     return async.when(
-      loading: () => const Padding(
-        padding: EdgeInsets.symmetric(vertical: 24),
-        child: Center(child: CircularProgressIndicator()),
-      ),
+      loading: () => const StatCardGridSkeleton(),
       error: (err, _) => _RealtimeError(err),
       data: (data) => _RealtimeGrid(stats: data),
     );

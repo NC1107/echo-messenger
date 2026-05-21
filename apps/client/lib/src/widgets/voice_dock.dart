@@ -273,7 +273,7 @@ class VoiceDock extends ConsumerWidget {
   ) {
     if (isJoining) return context.textMuted;
     if (peerCount > 0) return EchoTheme.online;
-    return Colors.orange;
+    return EchoTheme.warning;
   }
 
   /// Status indicator icon + channel name / peer count.

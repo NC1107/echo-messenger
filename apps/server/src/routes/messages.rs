@@ -563,67 +563,6 @@ pub async fn get_thread_replies(
 }
 
 // ---------------------------------------------------------------------------
-// GET /api/threads/participated -- threads the user has participated in
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Deserialize)]
-pub struct ParticipatedThreadsQuery {
-    /// Page size (default 50, max 100). Pagination is cursor-based on
-    /// `last_reply_at`; pass `before` to fetch the next page.
-    pub limit: Option<i64>,
-    /// Optional cursor: only threads whose most-recent reply is strictly
-    /// older than `before` are returned. Without it the latest page is
-    /// served.
-    #[serde(default, deserialize_with = "deserialize_lenient_datetime")]
-    pub before: Option<DateTime<Utc>>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ParticipatedThreadDto {
-    pub parent_message_id: Uuid,
-    pub conversation_id: Uuid,
-    pub channel_id: Option<Uuid>,
-    /// Truncated parent text. On encrypted conversations this is ciphertext
-    /// and clients fall back to "[Encrypted]" if decryption fails.
-    pub parent_preview: Option<String>,
-    pub parent_sender_username: Option<String>,
-    pub reply_count: i64,
-    pub unread_reply_count: i64,
-    pub last_reply_at: DateTime<Utc>,
-    pub last_reply_sender_username: Option<String>,
-}
-
-impl From<db::messages::ParticipatedThreadRow> for ParticipatedThreadDto {
-    fn from(row: db::messages::ParticipatedThreadRow) -> Self {
-        Self {
-            parent_message_id: row.parent_message_id,
-            conversation_id: row.conversation_id,
-            channel_id: row.channel_id,
-            parent_preview: row.parent_preview,
-            parent_sender_username: row.parent_sender_username,
-            reply_count: row.reply_count,
-            unread_reply_count: row.unread_reply_count,
-            last_reply_at: row.last_reply_at,
-            last_reply_sender_username: row.last_reply_sender_username,
-        }
-    }
-}
-
-pub async fn list_participated_threads(
-    auth: AuthUser,
-    State(state): State<Arc<AppState>>,
-    Query(params): Query<ParticipatedThreadsQuery>,
-) -> Result<impl IntoResponse, AppError> {
-    let limit = params.limit.unwrap_or(50).clamp(1, 100);
-    let rows =
-        db::messages::get_participated_threads(&state.pool, auth.user_id, params.before, limit)
-            .await
-            .db_ctx("list_participated_threads")?;
-    let dtos: Vec<ParticipatedThreadDto> = rows.into_iter().map(Into::into).collect();
-    Ok(Json(dtos))
-}
-
-// ---------------------------------------------------------------------------
 // GET /api/conversations/:conversation_id/search -- full-text message search
 // ---------------------------------------------------------------------------
 

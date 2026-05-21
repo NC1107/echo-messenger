@@ -344,7 +344,7 @@ void main() {
           expect(find.text('No conversation selected'), findsOneWidget);
           expect(
             find.text(
-              'Choose a conversation from the sidebar or start a new chat',
+              'Choose a conversation from the sidebar or start a new chat.',
             ),
             findsOneWidget,
           );
@@ -417,8 +417,8 @@ void main() {
           // The empty state also surfaces two action buttons.  Asserting
           // them pins the empty-state composition since the buttons live
           // in _buildEmptyState (listeners.dart) alongside the headline.
-          expect(find.text('Add Contact'), findsOneWidget);
-          expect(find.text('Browse Groups'), findsOneWidget);
+          expect(find.text('Add contact'), findsOneWidget);
+          expect(find.text('Browse groups'), findsOneWidget);
         },
       );
     });

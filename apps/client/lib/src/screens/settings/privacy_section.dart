@@ -700,12 +700,12 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
               const SizedBox(height: 12),
               const Row(
                 children: [
-                  Icon(Icons.verified_user, color: Colors.green, size: 18),
+                  Icon(Icons.verified_user, color: EchoTheme.online, size: 18),
                   SizedBox(width: 8),
                   Text(
                     'Encryption keys active',
                     style: TextStyle(
-                      color: Colors.green,
+                      color: EchoTheme.online,
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
                     ),

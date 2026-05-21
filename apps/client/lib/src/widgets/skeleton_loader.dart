@@ -229,6 +229,64 @@ class ConversationListSkeleton extends StatelessWidget {
   }
 }
 
+/// Skeleton placeholder for a single stats card (admin dashboard etc.).
+/// Mirrors the dimensions of the realtime/aggregate cards in
+/// `admin_dashboard_screen.dart` so the layout doesn't reflow on load.
+class StatCardSkeleton extends StatelessWidget {
+  const StatCardSkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return _ShimmerEffect(
+      child: Card(
+        elevation: 0,
+        color: scheme.surfaceContainerHigh,
+        child: const Padding(
+          padding: EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SkeletonLine(width: 110, height: 11),
+              SizedBox(height: 12),
+              SkeletonLine(width: 64, height: 26),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Responsive grid of [count] [StatCardSkeleton]s — matches the column
+/// breakpoints used by `_RealtimeGrid` / `_StatsGrid` so the loading
+/// skeleton occupies the same footprint as the real content.
+class StatCardGridSkeleton extends StatelessWidget {
+  final int count;
+
+  const StatCardGridSkeleton({super.key, this.count = 4});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final cols = width >= 720 ? 4 : (width >= 480 ? 2 : 1);
+        const spacing = 12.0;
+        final cardWidth = (width - spacing * (cols - 1)) / cols;
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: List.generate(
+            count,
+            (_) => SizedBox(width: cardWidth, child: const StatCardSkeleton()),
+          ),
+        );
+      },
+    );
+  }
+}
+
 /// A list of skeleton message items for the chat loading state.
 class MessageListSkeleton extends StatelessWidget {
   final int count;

@@ -220,7 +220,7 @@ class EchoTheme {
 
     return ThemeData(
       brightness: Brightness.dark,
-      extensions: const [EchoColorExtension.dark],
+      extensions: const [EchoColorExtension.dark, SettingsIconPalette.defaults],
       scaffoldBackgroundColor: mainBg,
       textTheme: textTheme,
       colorScheme: const ColorScheme.dark(
@@ -394,7 +394,10 @@ class EchoTheme {
 
     return ThemeData(
       brightness: Brightness.light,
-      extensions: const [EchoColorExtension.light],
+      extensions: const [
+        EchoColorExtension.light,
+        SettingsIconPalette.defaults,
+      ],
       scaffoldBackgroundColor: lightMainBg,
       textTheme: textTheme,
       colorScheme: const ColorScheme.light(
@@ -495,7 +498,10 @@ class EchoTheme {
 
     return ThemeData(
       brightness: Brightness.dark,
-      extensions: const [EchoColorExtension.graphite],
+      extensions: const [
+        EchoColorExtension.graphite,
+        SettingsIconPalette.defaults,
+      ],
       scaffoldBackgroundColor: graphiteMainBg,
       textTheme: textTheme,
       colorScheme: const ColorScheme.dark(
@@ -592,7 +598,10 @@ class EchoTheme {
 
     return ThemeData(
       brightness: Brightness.dark,
-      extensions: const [EchoColorExtension.ember],
+      extensions: const [
+        EchoColorExtension.ember,
+        SettingsIconPalette.defaults,
+      ],
       scaffoldBackgroundColor: emberMainBg,
       textTheme: textTheme,
       colorScheme: const ColorScheme.dark(
@@ -689,7 +698,10 @@ class EchoTheme {
 
     return ThemeData(
       brightness: Brightness.light,
-      extensions: const [EchoColorExtension.sakura],
+      extensions: const [
+        EchoColorExtension.sakura,
+        SettingsIconPalette.defaults,
+      ],
       scaffoldBackgroundColor: sakuraMainBg,
       textTheme: textTheme,
       colorScheme: const ColorScheme.light(
@@ -809,6 +821,7 @@ class EchoTheme {
           textMuted: const Color(0xFFAAAAAA),
           accentLight: const Color(0x337C9BFF),
         ),
+        SettingsIconPalette.defaults,
       ],
     );
   }
@@ -1132,6 +1145,119 @@ class EchoSpacing {
   static const double xl = 24.0;
   static const double xxl = 32.0;
   static const double huge = 48.0;
+}
+
+/// ThemeExtension carrying the per-section icon tints used on the Settings
+/// screen. Lifted out of inline `Color(0xFF...)` literals so each theme can
+/// override the palette without forking the whole screen.
+///
+/// All current themes reuse the dark-theme palette (it reads fine on every
+/// backdrop today); themes that want a tuned palette can register their own
+/// `SettingsIconPalette(...)` in `ThemeData(extensions: [...])`.
+@immutable
+class SettingsIconPalette extends ThemeExtension<SettingsIconPalette> {
+  /// `mood_outlined` (Status row).
+  final Color status;
+
+  /// `bookmark_outline` (Saved Messages) + `language_outlined` (Language).
+  final Color info;
+
+  /// `palette_outlined` (Appearance) + `info_outline` (About).
+  final Color appearance;
+
+  /// `notifications_outlined`.
+  final Color notifications;
+
+  /// `mic_outlined` (Voice & video).
+  final Color voiceVideo;
+
+  /// `lock_outline` (Privacy & security).
+  final Color privacy;
+
+  /// `devices_outlined`.
+  final Color devices;
+
+  /// `accessibility_outlined`.
+  final Color accessibility;
+
+  /// `shield_outlined` (Admin dashboard).
+  final Color admin;
+
+  const SettingsIconPalette({
+    required this.status,
+    required this.info,
+    required this.appearance,
+    required this.notifications,
+    required this.voiceVideo,
+    required this.privacy,
+    required this.devices,
+    required this.accessibility,
+    required this.admin,
+  });
+
+  /// Default palette — tuned against the dark theme but legible against every
+  /// current Echo theme. Light themes that want softer hues can register their
+  /// own [SettingsIconPalette] override.
+  static const defaults = SettingsIconPalette(
+    status: Color(0xFF22C55E),
+    info: Color(0xFF0EA5E9),
+    appearance: Color(0xFF8B5CF6),
+    notifications: Color(0xFFEF4444),
+    voiceVideo: Color(0xFF22C55E),
+    privacy: Color(0xFF14B8A6),
+    devices: Color(0xFFF59E0B),
+    accessibility: Color(0xFF3B82F6),
+    admin: Color(0xFFEAB308),
+  );
+
+  @override
+  SettingsIconPalette copyWith({
+    Color? status,
+    Color? info,
+    Color? appearance,
+    Color? notifications,
+    Color? voiceVideo,
+    Color? privacy,
+    Color? devices,
+    Color? accessibility,
+    Color? admin,
+  }) {
+    return SettingsIconPalette(
+      status: status ?? this.status,
+      info: info ?? this.info,
+      appearance: appearance ?? this.appearance,
+      notifications: notifications ?? this.notifications,
+      voiceVideo: voiceVideo ?? this.voiceVideo,
+      privacy: privacy ?? this.privacy,
+      devices: devices ?? this.devices,
+      accessibility: accessibility ?? this.accessibility,
+      admin: admin ?? this.admin,
+    );
+  }
+
+  @override
+  SettingsIconPalette lerp(SettingsIconPalette? other, double t) {
+    if (other is! SettingsIconPalette) return this;
+    return SettingsIconPalette(
+      status: Color.lerp(status, other.status, t)!,
+      info: Color.lerp(info, other.info, t)!,
+      appearance: Color.lerp(appearance, other.appearance, t)!,
+      notifications: Color.lerp(notifications, other.notifications, t)!,
+      voiceVideo: Color.lerp(voiceVideo, other.voiceVideo, t)!,
+      privacy: Color.lerp(privacy, other.privacy, t)!,
+      devices: Color.lerp(devices, other.devices, t)!,
+      accessibility: Color.lerp(accessibility, other.accessibility, t)!,
+      admin: Color.lerp(admin, other.admin, t)!,
+    );
+  }
+}
+
+/// Convenience accessor for [SettingsIconPalette]; falls back to
+/// [SettingsIconPalette.defaults] when a theme doesn't register one.
+extension SettingsIconPaletteContext on BuildContext {
+  SettingsIconPalette get settingsIconPalette =>
+      Theme.of(this).extension<SettingsIconPalette>() ??
+      SettingsIconPalette.defaults;
 }
 
 /// Shared layout tokens for sectioned card lists (e.g. Settings).
