@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:echo_app/src/providers/admin_realtime_provider.dart';
 import 'package:echo_app/src/providers/admin_stats_provider.dart';
 import 'package:echo_app/src/screens/admin/admin_dashboard_screen.dart';
+import 'package:echo_app/src/theme/echo_theme.dart';
+import 'package:echo_app/src/widgets/skeleton_loader.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -24,7 +26,10 @@ void main() {
             realtimeOverride ?? _RealtimeStubNotifier.new,
           ),
         ],
-        child: const MaterialApp(home: AdminDashboardScreen()),
+        child: MaterialApp(
+          theme: EchoTheme.darkTheme,
+          home: const AdminDashboardScreen(),
+        ),
       ),
     );
   }
@@ -32,7 +37,11 @@ void main() {
   testWidgets('renders the loading state', (tester) async {
     await pump(tester, override: _LoadingNotifier.new);
     // No settle — the loading state is intentionally indefinite.
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    // The dashboard now renders skeleton cards while loading instead of a
+    // centred spinner. Verify the skeleton grid is present (one for the
+    // realtime section + one for the 24h aggregate panel).
+    expect(find.byType(StatCardGridSkeleton), findsNWidgets(2));
+    expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(find.text('Admin Dashboard'), findsOneWidget);
   });
 

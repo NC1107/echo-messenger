@@ -31,7 +31,7 @@ class RecordingRow extends StatelessWidget {
       constraints: const BoxConstraints(minHeight: 44),
       decoration: BoxDecoration(
         color: context.surface,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(EchoRadii.lg),
         border: Border.all(
           color: EchoTheme.danger.withValues(alpha: 0.6),
           width: 1,
@@ -40,10 +40,10 @@ class RecordingRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          const SizedBox(width: 12),
+          const SizedBox(width: EchoSpacing.md),
           // Pulsing red dot
           const PulsingDot(color: EchoTheme.danger),
-          const SizedBox(width: 8),
+          const SizedBox(width: EchoSpacing.sm),
           Text(
             _formatDuration(recordingDuration),
             style: const TextStyle(
@@ -53,10 +53,10 @@ class RecordingRow extends StatelessWidget {
               fontFeatures: [FontFeature.tabularFigures()],
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: EchoSpacing.md),
           // Mini waveform bars (live amplitude)
           Expanded(child: LiveWaveformBars(amplitudes: recordingAmplitudes)),
-          const SizedBox(width: 8),
+          const SizedBox(width: EchoSpacing.sm),
           // Cancel button
           IconButton(
             icon: Icon(
@@ -71,7 +71,7 @@ class RecordingRow extends StatelessWidget {
           ),
           // Stop / send button
           Padding(
-            padding: const EdgeInsets.only(right: 4),
+            padding: const EdgeInsets.only(right: EchoSpacing.xs),
             child: GestureDetector(
               onTap: onStop,
               child: SizedBox(

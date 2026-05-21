@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 
 import '../providers/server_url_provider.dart';
+import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../widgets/auth/auth_layout.dart';
 import '../widgets/auth/auth_scaffold_chrome.dart';
@@ -65,10 +66,10 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
       if (!mounted) return;
 
       if (response.statusCode == 200) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Password reset! Log in with your new password.'),
-          ),
+        ToastService.show(
+          context,
+          'Password reset! Log in with your new password.',
+          type: ToastType.success,
         );
         context.go('/login');
       } else {

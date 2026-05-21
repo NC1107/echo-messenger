@@ -281,7 +281,7 @@ class _VoiceVideoSectionState extends ConsumerState<VoiceVideoSection> {
 
   Color _micLevelColor() {
     if (_micLevel > 0.7) return EchoTheme.danger;
-    if (_micLevel > 0.4) return Colors.orange;
+    if (_micLevel > 0.4) return EchoTheme.warning;
     return EchoTheme.online;
   }
 

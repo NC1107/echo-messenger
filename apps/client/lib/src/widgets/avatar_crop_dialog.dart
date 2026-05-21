@@ -379,7 +379,7 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Text(
                   _error!,
-                  style: const TextStyle(color: Colors.red, fontSize: 12),
+                  style: const TextStyle(color: EchoTheme.danger, fontSize: 12),
                 ),
               ),
             Text(
@@ -450,7 +450,7 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
           child: Stack(
             children: [
               // Checkerboard background (shows when no image yet).
-              Container(color: Colors.grey.shade800),
+              Container(color: context.surfaceHover),
 
               if (_decoded != null)
                 Positioned(

@@ -12,6 +12,7 @@ import '../../models/canvas_models.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/canvas_provider.dart';
 import '../../providers/server_url_provider.dart';
+import '../../services/toast_service.dart';
 import '../../services/upload_client.dart';
 import '../../theme/echo_theme.dart';
 import '../../theme/motion_tokens.dart';
@@ -356,7 +357,7 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
   }
 
   void _showSnackBar(BuildContext ctx, String message) {
-    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(message)));
+    ToastService.show(ctx, message, type: ToastType.error);
   }
 
   void _addImageByUrl(String url) {

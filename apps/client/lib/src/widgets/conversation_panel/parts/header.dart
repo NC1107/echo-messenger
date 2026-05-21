@@ -16,7 +16,7 @@ mixin _ConversationPanelHeaderMixin
 
     return Container(
       height: headerHeight,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: EchoSpacing.lg),
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: context.border, width: 1)),
       ),
@@ -267,7 +267,10 @@ mixin _ConversationPanelHeaderMixin
   Widget _buildFilterChips() {
     final activeFilter = ref.watch(conversationFilterTypeProvider);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.symmetric(
+        horizontal: EchoSpacing.lg,
+        vertical: EchoSpacing.xs,
+      ),
       child: Row(
         children: [
           _buildChip('All', ConversationFilterType.all, activeFilter),
@@ -354,7 +357,7 @@ mixin _ConversationPanelHeaderMixin
   }) {
     return Container(
       height: 56,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: EchoSpacing.lg),
       decoration: BoxDecoration(
         color: context.mainBg,
         border: Border(top: BorderSide(color: context.border, width: 1)),

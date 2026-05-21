@@ -13,13 +13,16 @@ class SystemTimelineMessage extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = msg.content.replaceFirst('[system:', '').replaceFirst(']', '');
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: EchoSpacing.sm),
       child: Center(
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          padding: const EdgeInsets.symmetric(
+            horizontal: EchoSpacing.md,
+            vertical: EchoSpacing.xs,
+          ),
           decoration: BoxDecoration(
             color: context.surface,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(EchoRadii.lg),
             border: Border.all(color: context.border),
           ),
           child: Row(

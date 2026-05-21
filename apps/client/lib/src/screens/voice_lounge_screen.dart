@@ -755,7 +755,17 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   ) {
     return _buildLoungeScaffold(context, [
       Positioned.fill(child: _buildBackground(context)),
-      Column(children: [Expanded(child: contentArea)]),
+      // Reserve the top strip for the floating header badge + the
+      // background-picker button so a remote screen share (or any other
+      // edge-to-edge contentArea like a video tile) doesn't sit under
+      // them. 64 px = badge/button top:16 + their ~32 px height + a
+      // little breathing room before the share frame begins.
+      Column(
+        children: [
+          const SizedBox(height: 64),
+          Expanded(child: contentArea),
+        ],
+      ),
       if (!_spotlightMode) Positioned.fill(child: drawingOverlay),
       ..._buildSubmenuFollowers(conversationId),
       Positioned(bottom: 16, left: 0, right: 0, child: dock),

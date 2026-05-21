@@ -16,7 +16,7 @@ class FloatingDatePill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Positioned(
-      top: 8,
+      top: EchoSpacing.sm,
       left: 0,
       right: 0,
       child: Center(
@@ -24,12 +24,15 @@ class FloatingDatePill extends StatelessWidget {
           opacity: visible ? 1.0 : 0.0,
           duration: const Duration(milliseconds: 200),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            padding: const EdgeInsets.symmetric(
+              horizontal: EchoSpacing.md,
+              vertical: EchoSpacing.xs,
+            ),
             decoration: BoxDecoration(
               // Solid surface (was translucent) + thin border + soft shadow
               // for legibility while scrolling fast (design canvas).
               color: context.surface,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(EchoRadii.lg),
               border: Border.all(color: context.border, width: 1),
               boxShadow: [
                 BoxShadow(

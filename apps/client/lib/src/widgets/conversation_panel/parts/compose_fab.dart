@@ -19,8 +19,8 @@ mixin _ConversationPanelComposeFabMixin on ConsumerState<ConversationPanel> {
     final hasMenu = widget.onNewGroup != null || widget.onDiscover != null;
 
     return Positioned(
-      right: 16,
-      bottom: 16,
+      right: EchoSpacing.lg,
+      bottom: EchoSpacing.lg,
       child: hasMenu
           ? _ComposeFabMenu(
               onNewChat: widget.onNewChat,
@@ -32,11 +32,11 @@ mixin _ConversationPanelComposeFabMixin on ConsumerState<ConversationPanel> {
               button: true,
               child: Material(
                 color: context.accent,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(EchoRadii.xl),
                 elevation: 4,
                 child: InkWell(
                   onTap: widget.onNewChat,
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(EchoRadii.xl),
                   child: SizedBox(
                     width: 56,
                     height: 56,
@@ -152,12 +152,12 @@ class _ComposeFabMenu extends StatelessWidget {
       button: true,
       child: Material(
         color: context.accent,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(EchoRadii.xl),
         elevation: 4,
         child: InkWell(
           onTap: onNewChat,
           onLongPress: () => _openMenu(context),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(EchoRadii.xl),
           child: SizedBox(
             width: 56,
             height: 56,

@@ -426,10 +426,10 @@ class _UnreadBadge extends StatelessWidget {
     final label = count > 99 ? '99+' : '$count';
     return Container(
       constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-      padding: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.symmetric(horizontal: EchoSpacing.xs),
       decoration: BoxDecoration(
         color: bgColor,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(EchoRadii.md),
         border: Border.all(color: ringColor, width: 2),
       ),
       child: Center(

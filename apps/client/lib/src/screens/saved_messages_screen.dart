@@ -69,10 +69,12 @@ class _SavedMessagesScreenState extends State<SavedMessagesScreen> {
   }
 
   Widget _buildEmpty(BuildContext context) {
-    return const EmptyState(
+    return EmptyState(
       icon: Icons.bookmark_outline,
       title: 'No saved messages',
       body: 'Long-press any message and choose Save to bookmark it.',
+      ctaLabel: 'Back to chats',
+      onCta: () => Navigator.of(context).pop(),
     );
   }
 

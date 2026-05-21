@@ -43,9 +43,16 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+    # Phase 1 of the domain migration (#1063, docs/domain-migration/):
+    # both the apex AND `us-east.echo-messenger.us` (US-East regional alias)
+    # are matched by the same router. Future regional servers will be
+    # separate hosts behind separate routers — not a Host union — but
+    # while the regional split is still virtual (one process serving
+    # both names) the union keeps Traefik's certresolver behaviour
+    # simple and the priority pinned at 100.
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.echo-api.rule=Host(`echo-messenger.us`) && (PathPrefix(`/api`) || PathPrefix(`/ws`))"
+      - "traefik.http.routers.echo-api.rule=(Host(`echo-messenger.us`) || Host(`us-east.echo-messenger.us`)) && (PathPrefix(`/api`) || PathPrefix(`/ws`))"
       - "traefik.http.routers.echo-api.priority=100"
       - "traefik.http.routers.echo-api.tls=true"
       - "traefik.http.routers.echo-api.tls.certresolver=cloudflare"
@@ -57,9 +64,13 @@ services:
   web:
     image: ghcr.io/nc1107/echo-messenger/web:${WEB_VERSION:?WEB_VERSION must be set to a published release tag (no 'latest' fallback)}
     restart: unless-stopped
+    # Phase 1 of the domain migration (#1063, docs/domain-migration/):
+    # `web.echo-messenger.us` becomes the canonical hostname for the
+    # web build, but the apex keeps serving the same content so legacy
+    # bookmarks don't break. Phase 2 will redirect apex → web.
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.echo-web.rule=Host(`echo-messenger.us`)"
+      - "traefik.http.routers.echo-web.rule=Host(`echo-messenger.us`) || Host(`web.echo-messenger.us`)"
       - "traefik.http.routers.echo-web.priority=1"
       - "traefik.http.routers.echo-web.tls=true"
       - "traefik.http.routers.echo-web.tls.certresolver=cloudflare"
