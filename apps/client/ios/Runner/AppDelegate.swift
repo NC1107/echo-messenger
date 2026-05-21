@@ -15,6 +15,27 @@ import UserNotifications
   ) -> Bool {
     NSLog("[Echo] didFinishLaunching start")
 
+    // Install a global handler so any Objective-C exception that
+    // escapes Swift (e.g. unrecognized-selector crashes inside a
+    // dispatched block, like the iOS 26 voice/video crash we saw on
+    // TestFlight build 546) logs its selector, receiver class, and
+    // symbolicated call stack to Console.app before the process
+    // aborts. Stripped binary offsets in the .ips crash report aren't
+    // actionable without the dSYM; the human-readable lines this
+    // writes are.
+    NSSetUncaughtExceptionHandler { exception in
+      let name = exception.name.rawValue
+      let reason = exception.reason ?? "(no reason)"
+      NSLog("[Echo] UNCAUGHT EXCEPTION: %@ — %@", name, reason)
+      let userInfo = exception.userInfo ?? [:]
+      if !userInfo.isEmpty {
+        NSLog("[Echo] EXCEPTION userInfo: %@", userInfo as NSDictionary)
+      }
+      for line in exception.callStackSymbols {
+        NSLog("[Echo] EXCEPTION stack: %@", line)
+      }
+    }
+
     // Set up push notification delegate
     UNUserNotificationCenter.current().delegate = self
 
