@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../providers/release_notes_provider.dart';
 import '../theme/echo_theme.dart';
+import 'echo_bottom_sheet.dart';
 
 /// Bottom-sheet style "What's New" modal showing the GitHub release
 /// notes for the version the user just updated to.  Markdown body is
@@ -279,10 +280,8 @@ Future<void> maybeShowWhatsNew(
     // overlay so the title bar stays draggable.
     onShow?.call(view);
   } else {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
+    await showEchoBottomSheet<void>(
+      context,
       builder: (_) => WhatsNewModal(notes: view),
     );
   }
