@@ -18,10 +18,12 @@ import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/media_ticket_provider.dart';
 import '../providers/server_url_provider.dart';
-import '../providers/websocket_provider.dart';
+import '../providers/user_presence_provider.dart';
 import '../utils/fuzzy_score.dart';
+import '../utils/presence.dart';
 import '../widgets/avatar_crop_dialog.dart';
 import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
+import '../widgets/user_avatar.dart';
 import '../widgets/context_menu/actions/member_actions_registry.dart';
 import '../widgets/context_menu/echo_context_menu.dart';
 import '../widgets/profile_sheets.dart';
@@ -1237,13 +1239,21 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     required ConversationMember member,
     required String myUserId,
     required bool isOwnerOrAdmin,
-    required bool isOnline,
   }) {
-    final serverUrl = ref.read(serverUrlProvider);
     final isMe = member.userId == myUserId;
     final role = member.role ?? 'member';
-    final onlineStatus = isOnline ? 'online' : 'away';
-    final activity = isMe ? 'You' : onlineStatus;
+    // "You" trumps the presence label on the row that represents the
+    // viewer themselves; everyone else gets the standard activity line.
+    final String activity;
+    if (isMe) {
+      activity = 'You';
+    } else {
+      final presence = ref.watch(userPresenceProvider(member.userId));
+      activity = presenceLabel(
+        presence.status,
+        isOnline: presence.isOnline,
+      );
+    }
 
     return InkWell(
       onTap: () {
@@ -1272,24 +1282,17 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Row(
           children: [
-            buildAvatar(
-              name: member.username,
+            // The outer InkWell owns the tap; UserAvatar renders the
+            // avatar + presence dot in one go.
+            UserAvatar(
+              userId: member.userId,
+              username: member.username,
+              avatarUrl: member.avatarUrl,
               radius: 18,
-              imageUrl: resolveAvatarUrl(member.avatarUrl, serverUrl),
+              showPresence: true,
+              openProfileOnTap: false,
             ),
             const SizedBox(width: 10),
-            // Online presence dot, ringed in the surface color so it reads
-            // against any avatar background.
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                color: isOnline ? EchoTheme.online : context.textMuted,
-                shape: BoxShape.circle,
-                border: Border.all(color: context.surface, width: 1.5),
-              ),
-            ),
-            const SizedBox(width: 8),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1357,10 +1360,6 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     required String myUserId,
     required bool isOwnerOrAdmin,
   }) {
-    final onlineUsers = ref.watch(
-      websocketProvider.select((s) => s.onlineUsers),
-    );
-
     int sortByName(ConversationMember a, ConversationMember b) =>
         a.username.toLowerCase().compareTo(b.username.toLowerCase());
 
@@ -1398,7 +1397,6 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
           member: m,
           myUserId: myUserId,
           isOwnerOrAdmin: isOwnerOrAdmin,
-          isOnline: onlineUsers.contains(m.userId),
         );
       }
     }

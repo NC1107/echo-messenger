@@ -6,7 +6,7 @@ import '../models/conversation.dart';
 import '../providers/auth_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
-import '../providers/websocket_provider.dart';
+import '../providers/user_presence_provider.dart';
 import '../screens/user_profile_screen.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
@@ -32,24 +32,6 @@ class MembersPanel extends ConsumerWidget {
     final members = conv.members;
     final auth = ref.watch(authProvider);
     final myUserId = auth.userId ?? '';
-    final myPresenceStatus = auth.presenceStatus;
-    final onlineUsers = ref.watch(
-      websocketProvider.select((s) => s.onlineUsers),
-    );
-    final presenceStatuses = ref.watch(
-      websocketProvider.select((s) => s.presenceStatuses),
-    );
-
-    // Resolve presence for any member: self is always online (server doesn't
-    // broadcast presence to self); others come from the WS-tracked maps.
-    ({bool isOnline, String status}) presenceFor(ConversationMember m) {
-      if (m.userId == myUserId) {
-        return (isOnline: true, status: myPresenceStatus);
-      }
-      final online = onlineUsers.contains(m.userId);
-      final status = presenceStatuses[m.userId] ?? 'online';
-      return (isOnline: online, status: status);
-    }
 
     // Determine if current user is owner or admin
     final myMember = members.where((m) => m.userId == myUserId).firstOrNull;
@@ -76,10 +58,7 @@ class MembersPanel extends ConsumerWidget {
       if (roster.isEmpty) return;
       items.add(_MemberListItem.header(headerLabel));
       for (final m in roster) {
-        final p = presenceFor(m);
-        items.add(
-          _MemberListItem.member(m, isOnline: p.isOnline, status: p.status),
-        );
+        items.add(_MemberListItem.member(m));
       }
     }
 
@@ -144,8 +123,6 @@ class MembersPanel extends ConsumerWidget {
                   conversationId: conv.id,
                   canRemove: canRemove && member.role != 'owner',
                   isMe: member.userId == myUserId,
-                  isOnline: item.isOnline,
-                  presenceStatus: item.status,
                 );
               },
             ),
@@ -161,30 +138,18 @@ class _MemberListItem {
   final bool isHeader;
   final String? headerLabel;
   final ConversationMember? member;
-  final bool isOnline;
-  final String status;
 
   const _MemberListItem._({
     required this.isHeader,
     this.headerLabel,
     this.member,
-    this.isOnline = false,
-    this.status = 'offline',
   });
 
   factory _MemberListItem.header(String label) =>
       _MemberListItem._(isHeader: true, headerLabel: label);
 
-  factory _MemberListItem.member(
-    ConversationMember m, {
-    required bool isOnline,
-    required String status,
-  }) => _MemberListItem._(
-    isHeader: false,
-    member: m,
-    isOnline: isOnline,
-    status: status,
-  );
+  factory _MemberListItem.member(ConversationMember m) =>
+      _MemberListItem._(isHeader: false, member: m);
 }
 
 class _MemberRow extends ConsumerStatefulWidget {
@@ -192,16 +157,12 @@ class _MemberRow extends ConsumerStatefulWidget {
   final String conversationId;
   final bool canRemove;
   final bool isMe;
-  final bool isOnline;
-  final String presenceStatus;
 
   const _MemberRow({
     required this.member,
     required this.conversationId,
     required this.canRemove,
     required this.isMe,
-    required this.isOnline,
-    required this.presenceStatus,
   });
 
   @override
@@ -348,6 +309,18 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
     final showRemove =
         widget.canRemove && !widget.isMe && _isHovered && !_isRemoving;
 
+    // Self isn't broadcast by the WS, so use auth's local status.
+    // Everyone else reads from the centralized provider.
+    final UserPresence presence;
+    if (widget.isMe) {
+      final myStatus = ref.watch(
+        authProvider.select((s) => s.presenceStatus),
+      );
+      presence = UserPresence(status: myStatus, isOnline: true);
+    } else {
+      presence = ref.watch(userPresenceProvider(member.userId));
+    }
+
     return Semantics(
       label: 'member ${member.username} — open profile',
       button: true,
@@ -419,8 +392,8 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
                       ),
                       Text(
                         presenceLabel(
-                          widget.presenceStatus,
-                          isOnline: widget.isOnline,
+                          presence.status,
+                          isOnline: presence.isOnline,
                         ),
                         style: TextStyle(
                           color: context.textMuted,

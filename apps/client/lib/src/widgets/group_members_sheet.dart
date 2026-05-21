@@ -15,6 +15,7 @@ import '../providers/auth_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../screens/user_profile_screen.dart';
 import '../theme/echo_theme.dart';
+import '../utils/presence.dart';
 import 'user_avatar.dart';
 
 /// Shows the [GroupMembersSheet] as a modal bottom sheet.
@@ -83,23 +84,18 @@ class _GroupMembersSheetState extends ConsumerState<GroupMembersSheet> {
     final auth = ref.watch(authProvider);
     final myUserId = auth.userId ?? '';
     final myPresenceStatus = auth.presenceStatus;
-    final onlineUsers = ref.watch(
-      websocketProvider.select((s) => s.onlineUsers),
-    );
-    final presenceStatuses = ref.watch(
-      websocketProvider.select((s) => s.presenceStatuses),
-    );
+    final ws = ref.watch(websocketProvider);
 
     final members = conv.members;
 
-    // Resolve online/status for each member (mirrors MembersPanel logic).
-    ({bool isOnline, String status}) presenceFor(ConversationMember m) {
+    // Resolve online/status for each member: self is never broadcast by
+    // the WS, so substitute auth's local status. Everyone else uses the
+    // central presenceFor lookup.
+    UserPresence presenceFor(ConversationMember m) {
       if (m.userId == myUserId) {
-        return (isOnline: true, status: myPresenceStatus);
+        return UserPresence(status: myPresenceStatus, isOnline: true);
       }
-      final online = onlineUsers.contains(m.userId);
-      final status = presenceStatuses[m.userId] ?? 'online';
-      return (isOnline: online, status: status);
+      return ws.presenceFor(m.userId);
     }
 
     // Sort: online first, then alphabetical within each bucket.
@@ -197,11 +193,8 @@ class _GroupMembersSheetState extends ConsumerState<GroupMembersSheet> {
                         itemCount: sorted.length,
                         itemBuilder: (context, index) {
                           final member = sorted[index];
-                          final presence = presenceFor(member);
                           return _MobilesMemberRow(
                             member: member,
-                            isOnline: presence.isOnline,
-                            presenceStatus: presence.status,
                             isMe: member.userId == myUserId,
                           );
                         },
@@ -217,16 +210,9 @@ class _GroupMembersSheetState extends ConsumerState<GroupMembersSheet> {
 
 class _MobilesMemberRow extends ConsumerWidget {
   final ConversationMember member;
-  final bool isOnline;
-  final String presenceStatus;
   final bool isMe;
 
-  const _MobilesMemberRow({
-    required this.member,
-    required this.isOnline,
-    required this.presenceStatus,
-    required this.isMe,
-  });
+  const _MobilesMemberRow({required this.member, required this.isMe});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

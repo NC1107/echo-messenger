@@ -6,7 +6,7 @@ part of 'user_presence_provider.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$userPresenceHash() => r'03fd47f477919993466a00bcc478ab9baf98ae1d';
+String _$userPresenceHash() => r'5663ea8853fc186266ebd02cd0e08914e58f969d';
 
 /// Copied from Dart SDK
 class _SystemHash {

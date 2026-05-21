@@ -16,6 +16,30 @@ import '../theme/echo_theme.dart';
 
 const Color _offlineGray = Color(0xFF6B6B6F);
 
+/// Snapshot of a single user's presence: WebSocket-tracked online flag
+/// + last-seen status string. Constructed by `WebSocketState.presenceFor`
+/// and `userPresenceProvider`; consumed everywhere a widget needs to
+/// colour a dot, label an activity line, or sort by presence.
+@immutable
+class UserPresence {
+  final String status;
+  final bool isOnline;
+  const UserPresence({required this.status, required this.isOnline});
+
+  /// Sentinel for "we have no record of this user yet" — looks the same
+  /// as a deliberately-offline user to peers.
+  static const offline = UserPresence(status: 'offline', isOnline: false);
+
+  @override
+  bool operator ==(Object other) =>
+      other is UserPresence &&
+      other.status == status &&
+      other.isOnline == isOnline;
+
+  @override
+  int get hashCode => Object.hash(status, isOnline);
+}
+
 /// Resolve the colour for a presence dot, ring, or badge.
 ///
 /// Off-line and `'invisible'` both fall through to the muted grey so they
