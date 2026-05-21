@@ -10,6 +10,7 @@ import '../providers/chat_provider.dart';
 import '../providers/theme_provider.dart' show UIDensity, uiDensityProvider;
 import '../theme/echo_theme.dart';
 import '../theme/motion_tokens.dart';
+import '../utils/presence.dart';
 import 'avatar_utils.dart';
 // Stack + Positioned (active edge bar overlay) come from material.dart.
 
@@ -33,22 +34,6 @@ double conversationItemHeightFor(UIDensity density) => switch (density) {
   UIDensity.normal => kConversationItemHeight,
   UIDensity.compact => kConversationItemHeightCompact,
 };
-
-/// Return the dot color for a peer presence status.
-Color presenceStatusDotColor(
-  BuildContext context,
-  String presenceStatus,
-  bool isOnline,
-) {
-  if (!isOnline) return const Color(0xFF6B6B6F);
-  return switch (presenceStatus) {
-    'online' => EchoTheme.online,
-    'away' => EchoTheme.warning,
-    'dnd' => EchoTheme.danger,
-    'invisible' => const Color(0xFF6B6B6F),
-    _ => const Color(0xFF6B6B6F),
-  };
-}
 
 /// Compose the screen-reader announcement for a conversation row (#631).
 ///
@@ -454,10 +439,9 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                   width: dotSize,
                   height: dotSize,
                   decoration: BoxDecoration(
-                    color: presenceStatusDotColor(
-                      context,
+                    color: presenceColor(
                       widget.peerPresenceStatus,
-                      widget.isPeerOnline,
+                      isOnline: widget.isPeerOnline,
                     ),
                     shape: BoxShape.circle,
                     border: Border.all(color: context.sidebarBg, width: 2),

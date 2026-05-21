@@ -10,6 +10,7 @@ import '../providers/websocket_provider.dart';
 import '../screens/user_profile_screen.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
+import '../utils/presence.dart';
 import 'user_avatar.dart';
 
 class MembersPanel extends ConsumerWidget {
@@ -184,17 +185,6 @@ class _MemberListItem {
     isOnline: isOnline,
     status: status,
   );
-}
-
-/// Map a presence status to the activity-line label shown under the username.
-String _presenceLabel(String status, bool isOnline) {
-  if (!isOnline || status == 'invisible') return 'offline';
-  return switch (status) {
-    'online' => 'online',
-    'away' => 'away',
-    'dnd' => 'do not disturb',
-    _ => 'online',
-  };
 }
 
 class _MemberRow extends ConsumerStatefulWidget {
@@ -428,7 +418,10 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
                         ],
                       ),
                       Text(
-                        _presenceLabel(widget.presenceStatus, widget.isOnline),
+                        presenceLabel(
+                          widget.presenceStatus,
+                          isOnline: widget.isOnline,
+                        ),
                         style: TextStyle(
                           color: context.textMuted,
                           fontSize: 11,
