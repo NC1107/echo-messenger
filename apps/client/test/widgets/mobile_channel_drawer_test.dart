@@ -31,7 +31,7 @@ void main() {
     name: peerName,
     members: [
       const ConversationMember(userId: 'me', username: 'me'),
-      ConversationMember(userId: '${id}-peer', username: peerName),
+      ConversationMember(userId: '$id-peer', username: peerName),
     ],
   );
 

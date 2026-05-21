@@ -115,7 +115,9 @@ class WebSocketState {
   /// pattern with a single method call.
   UserPresence presenceFor(String userId) {
     final isOnline = onlineUsers.contains(userId);
-    final status = isOnline ? (presenceStatuses[userId] ?? 'online') : 'offline';
+    final status = isOnline
+        ? (presenceStatuses[userId] ?? 'online')
+        : 'offline';
     return UserPresence(status: status, isOnline: isOnline);
   }
 
