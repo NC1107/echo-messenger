@@ -25,7 +25,5 @@ part 'user_presence_provider.g.dart';
 
 @Riverpod(keepAlive: true)
 UserPresence userPresence(Ref ref, String userId) {
-  return ref.watch(
-    websocketProvider.select((s) => s.presenceFor(userId)),
-  );
+  return ref.watch(websocketProvider.select((s) => s.presenceFor(userId)));
 }
