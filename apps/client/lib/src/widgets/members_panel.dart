@@ -11,6 +11,7 @@ import '../screens/user_profile_screen.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/presence.dart';
+import 'member_role.dart';
 import 'user_avatar.dart';
 
 class MembersPanel extends ConsumerWidget {
@@ -261,48 +262,6 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
     }
   }
 
-  Widget _buildRoleBadge(String role) {
-    final Color bgColor;
-    final Color textColor;
-    final String label;
-
-    switch (role) {
-      case 'owner':
-        // Reserve amber (EchoTheme.warning) for actual warnings —
-        // "Experimental" feature pill, away presence, etc. Owner is a
-        // positive role attribute, so use a brighter accent variant so
-        // it still distinguishes from Admin (same accent at lower alpha)
-        // without leaning on the warning palette.
-        bgColor = EchoTheme.accentHover.withValues(alpha: 0.22);
-        textColor = EchoTheme.accentHover;
-        label = 'Owner';
-      case 'admin':
-        bgColor = context.accent.withValues(alpha: 0.15);
-        textColor = context.accentHover;
-        label = 'Admin';
-      default:
-        return const SizedBox.shrink();
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(left: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: textColor,
-          fontSize: 10,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.3,
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final member = widget.member;
@@ -313,9 +272,7 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
     // Everyone else reads from the centralized provider.
     final UserPresence presence;
     if (widget.isMe) {
-      final myStatus = ref.watch(
-        authProvider.select((s) => s.presenceStatus),
-      );
+      final myStatus = ref.watch(authProvider.select((s) => s.presenceStatus));
       presence = UserPresence(status: myStatus, isOnline: true);
     } else {
       presence = ref.watch(userPresenceProvider(member.userId));
@@ -357,21 +314,9 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
                     children: [
                       Row(
                         children: [
-                          if (member.role == 'owner') ...[
-                            const Icon(
-                              Icons.star_rounded,
-                              size: 14,
-                              color: Colors.amber,
-                              semanticLabel: 'owner',
-                            ),
-                            const SizedBox(width: 4),
-                          ] else if (member.role == 'admin') ...[
-                            const Icon(
-                              Icons.shield_rounded,
-                              size: 14,
-                              color: Colors.blue,
-                              semanticLabel: 'admin',
-                            ),
+                          if (member.role == 'owner' ||
+                              member.role == 'admin') ...[
+                            MemberRoleIcon(role: member.role),
                             const SizedBox(width: 4),
                           ],
                           Flexible(
@@ -384,10 +329,10 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
                               ),
                             ),
                           ),
-                          if (member.role != null &&
-                              (member.role == 'owner' ||
-                                  member.role == 'admin'))
-                            _buildRoleBadge(member.role!),
+                          MemberRoleBadge(
+                            role: member.role,
+                            margin: const EdgeInsets.only(left: 6),
+                          ),
                         ],
                       ),
                       Text(
