@@ -92,17 +92,20 @@ class EmptyState extends StatelessWidget {
             ),
             if (ctaLabel != null) ...[
               const SizedBox(height: 16),
-              Row(
-                mainAxisSize: MainAxisSize.min,
+              // Wrap so the secondary CTA tucks under the primary on narrow
+              // viewports (e.g. 750 px wide_layout with the sidebar taking
+              // ~360 px) instead of triggering a horizontal overflow.
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                alignment: WrapAlignment.center,
                 children: [
                   FilledButton.tonal(onPressed: onCta, child: Text(ctaLabel!)),
-                  if (secondaryCtaLabel != null) ...[
-                    const SizedBox(width: 8),
+                  if (secondaryCtaLabel != null)
                     TextButton(
                       onPressed: onSecondaryCta,
                       child: Text(secondaryCtaLabel!),
                     ),
-                  ],
                 ],
               ),
             ],
