@@ -24,6 +24,12 @@ import '../theme/echo_theme.dart';
 import '../widgets/echo_logo_icon.dart';
 import '../version.dart';
 
+/// SharedPreferences flag flipped once the splash has been shown end-to-end
+/// at least once. Used to drop the splash minimum hold from 1.5s to 0.4s
+/// on every subsequent launch — first-time users still get the brand
+/// moment, veterans don't pay the tax every cold start.
+const String _kFirstLaunchCompletedKey = 'splash.first_launch_completed';
+
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
 
@@ -98,15 +104,23 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     }
 
     // Keep the splash visible long enough to read the wordmark + tagline
-    // and let the indigo sweep complete one cycle, even when auto-login is
-    // instant. 1500 ms was tuned by hand: short enough that re-launchers
-    // don't feel held up, long enough that the design's animation reads
-    // as a moment instead of a flicker.
+    // and let the indigo sweep complete one cycle on FIRST install. After
+    // that the user has seen the brand moment — veterans don't need to
+    // pay the 1500 ms on every cold launch. Drop to a small 400 ms floor
+    // so the cross-fade still feels intentional but doesn't actively
+    // hold up the app.
     stopwatch.stop();
     final elapsed = stopwatch.elapsedMilliseconds;
-    const minSplashMs = 1500;
+    final prefs = await SharedPreferences.getInstance();
+    final firstLaunchCompleted =
+        prefs.getBool(_kFirstLaunchCompletedKey) ?? false;
+    final minSplashMs = firstLaunchCompleted ? 400 : 1500;
     if (elapsed < minSplashMs) {
       await Future<void>.delayed(Duration(milliseconds: minSplashMs - elapsed));
+    }
+    if (!firstLaunchCompleted) {
+      // Fire-and-forget: the flag flip doesn't gate navigation.
+      unawaited(prefs.setBool(_kFirstLaunchCompletedKey, true));
     }
 
     if (!mounted) return;
