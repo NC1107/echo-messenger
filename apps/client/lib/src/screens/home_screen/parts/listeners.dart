@@ -107,68 +107,14 @@ mixin _HomeScreenListenersMixin
   Widget _buildEmptyState() {
     return Container(
       color: context.chatBg,
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.forum_rounded,
-              size: 64,
-              color: context.textMuted.withValues(alpha: 0.4),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'No conversation selected',
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Choose a conversation from the sidebar or start a new chat',
-              style: TextStyle(color: context.textMuted, fontSize: 14),
-            ),
-            const SizedBox(height: 24),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                FilledButton.icon(
-                  onPressed: _openContacts,
-                  icon: const Icon(Icons.person_add_outlined, size: 18),
-                  label: const Text('Add Contact'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: context.accent,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 12,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                OutlinedButton.icon(
-                  onPressed: _openDiscoverGroups,
-                  icon: const Icon(Icons.explore_outlined, size: 18),
-                  label: const Text('Browse Groups'),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 12,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+      child: EmptyState(
+        icon: Icons.forum_rounded,
+        title: 'No conversation selected',
+        body: 'Choose a conversation from the sidebar or start a new chat.',
+        ctaLabel: 'Add contact',
+        onCta: _openContacts,
+        secondaryCtaLabel: 'Browse groups',
+        onSecondaryCta: _openDiscoverGroups,
       ),
     );
   }
