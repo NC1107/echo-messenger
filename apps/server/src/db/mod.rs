@@ -12,6 +12,7 @@ pub mod polls;
 pub mod push_tokens;
 pub mod reactions;
 pub mod tokens;
+pub mod upload_sessions;
 pub mod users;
 
 use sqlx::PgPool;
