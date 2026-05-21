@@ -300,6 +300,56 @@ mixin _HomeScreenActionsMixin on ConsumerState<HomeScreen> {
     );
   }
 
+  void _openThreads() {
+    final isMobile = MediaQuery.sizeOf(context).width < 600;
+    if (isMobile) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ThreadsScreen(onOpenThread: _navigateToThread),
+        ),
+      );
+      return;
+    }
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        final size = MediaQuery.of(dialogContext).size;
+        return Dialog(
+          backgroundColor: context.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: context.border),
+          ),
+          child: SizedBox(
+            width: (size.width * 0.45).clamp(340.0, 600.0),
+            height: (size.height * 0.7).clamp(400.0, 720.0),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: ThreadsScreen(
+                onOpenThread: (convId, parentId) {
+                  Navigator.pop(dialogContext);
+                  _navigateToThread(convId, parentId);
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Open the conversation containing [parentMessageId] and pass the
+  /// parent id through as `initialMessageId`. The chat panel scrolls to
+  /// that message; opening the thread panel itself is a follow-up the
+  /// chat panel handles via its existing `_openThread` flow when the
+  /// user taps the reply count badge.
+  void _navigateToThread(String conversationId, String parentMessageId) {
+    final conversations = ref.read(conversationsProvider).conversations;
+    final conv = conversations.where((c) => c.id == conversationId).firstOrNull;
+    if (conv == null) return;
+    _selectConversation(conv, messageId: parentMessageId);
+  }
+
   void _openSettings() {
     if (_self._isDesktop || !Responsive.isMobile(context)) {
       setState(() {

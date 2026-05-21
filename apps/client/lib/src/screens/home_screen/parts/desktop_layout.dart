@@ -23,6 +23,7 @@ mixin _HomeScreenDesktopLayoutMixin
       onNewGroup: _openCreateGroup,
       onDiscover: _openDiscoverGroups,
       onSavedMessages: _openSavedMessages,
+      onOpenThreads: _openThreads,
       onCollapseSidebar: onCollapseSidebar,
       onSettings: _openSettings,
       onShowContacts: _openContacts,
