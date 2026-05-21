@@ -12,12 +12,10 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../models/conversation.dart';
 import '../providers/auth_provider.dart';
-import '../providers/server_url_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../screens/user_profile_screen.dart';
 import '../theme/echo_theme.dart';
-import 'avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
-import 'conversation_item.dart' show presenceStatusDotColor;
+import 'user_avatar.dart';
 
 /// Shows the [GroupMembersSheet] as a modal bottom sheet.
 ///
@@ -232,8 +230,6 @@ class _MobilesMemberRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final serverUrl = ref.watch(serverUrlProvider);
-
     return Semantics(
       label: 'member: ${member.username}',
       button: true,
@@ -246,32 +242,15 @@ class _MobilesMemberRow extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
           child: Row(
             children: [
-              // Avatar with presence dot overlay
-              Stack(
-                children: [
-                  buildAvatar(
-                    name: member.username,
-                    radius: 18,
-                    imageUrl: resolveAvatarUrl(member.avatarUrl, serverUrl),
-                  ),
-                  Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: Container(
-                      width: 11,
-                      height: 11,
-                      decoration: BoxDecoration(
-                        color: presenceStatusDotColor(
-                          context,
-                          presenceStatus,
-                          isOnline,
-                        ),
-                        shape: BoxShape.circle,
-                        border: Border.all(color: context.surface, width: 2),
-                      ),
-                    ),
-                  ),
-                ],
+              // Outer InkWell already pops + opens profile, so the avatar
+              // itself shouldn't fight that tap target.
+              UserAvatar(
+                userId: member.userId,
+                username: member.username,
+                avatarUrl: member.avatarUrl,
+                radius: 18,
+                showPresence: true,
+                openProfileOnTap: false,
               ),
               const SizedBox(width: 14),
               // Name + role badge
