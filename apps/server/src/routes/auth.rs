@@ -20,9 +20,20 @@ use super::AuthExtract;
 // Refresh token cookie helpers
 //
 // The web client stores the refresh token in an HttpOnly + Secure +
-// SameSite=Strict cookie scoped to `/api/auth`. Mobile/desktop continue to
+// SameSite=None cookie scoped to `/api/auth`. Mobile/desktop continue to
 // receive the token in the JSON body for backward compatibility. `/refresh`
 // accepts either; cookie wins when both are present.
+//
+// SameSite=None (relaxed from Strict in Phase 2 of the domain migration,
+// #1063) is required because the web build lives at `web.echo-messenger.us`
+// while the API lives at `us-east.echo-messenger.us` — Strict cookies are
+// dropped on the cross-site fetch. The remaining CSRF surface is bounded:
+// only `/api/auth/refresh` and `/api/auth/logout` read the cookie, and the
+// credentialed-CORS allow-list (explicit origins in `CORS_ORIGINS`, see
+// `routes/mod.rs`) prevents a malicious origin from reading the response.
+// Worst case is a forced session rotation or logout — annoying, not
+// credential-stealing. A proper CSRF token (double-submit cookie pattern)
+// is a post-beta hardening item.
 // ---------------------------------------------------------------------------
 
 const REFRESH_COOKIE_NAME: &str = "echo_refresh";
@@ -32,7 +43,7 @@ fn build_refresh_cookie(value: String) -> Cookie<'static> {
     Cookie::build((REFRESH_COOKIE_NAME, value))
         .http_only(true)
         .secure(true)
-        .same_site(SameSite::Strict)
+        .same_site(SameSite::None)
         .path("/api/auth")
         .max_age(time::Duration::seconds(REFRESH_COOKIE_MAX_AGE_SECS))
         .build()
@@ -42,7 +53,7 @@ fn clear_refresh_cookie() -> Cookie<'static> {
     Cookie::build((REFRESH_COOKIE_NAME, ""))
         .http_only(true)
         .secure(true)
-        .same_site(SameSite::Strict)
+        .same_site(SameSite::None)
         .path("/api/auth")
         .max_age(time::Duration::ZERO)
         .build()
