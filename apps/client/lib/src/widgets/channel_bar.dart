@@ -13,6 +13,7 @@ import '../providers/voice_settings_provider.dart';
 import '../services/debug_log_service.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
+import 'confirm_dialog.dart';
 
 class ChannelBar extends ConsumerStatefulWidget {
   final String conversationId;
@@ -113,41 +114,15 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
         );
   }
 
-  Future<bool> _confirmVoiceJoin(String channelName) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: context.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.border),
-        ),
-        title: Text(
-          'Join Voice Channel?',
-          style: TextStyle(
-            color: context.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        content: Text(
-          'Join $channelName now? Your microphone will be enabled based on your voice settings.',
-          style: TextStyle(color: context.textSecondary, fontSize: 14),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Join'),
-          ),
-        ],
-      ),
+  Future<bool> _confirmVoiceJoin(String channelName) {
+    return showEchoConfirmDialog(
+      context,
+      title: 'Join Voice Channel?',
+      content:
+          'Join $channelName now? Your microphone will be enabled '
+          'based on your voice settings.',
+      confirmLabel: 'Join',
     );
-
-    return confirmed ?? false;
   }
 
   Future<void> _leaveVoiceChannel(String channelId) async {

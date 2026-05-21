@@ -11,6 +11,7 @@ import '../screens/user_profile_screen.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/presence.dart';
+import 'confirm_dialog.dart';
 import 'member_role.dart';
 import 'user_avatar.dart';
 
@@ -175,41 +176,15 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
   bool _isRemoving = false;
 
   Future<void> _removeMember() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: context.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.border),
-        ),
-        title: Text(
-          'Remove member',
-          style: TextStyle(
-            color: context.textPrimary,
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        content: Text(
-          'Remove ${widget.member.username} from this group?',
-          style: TextStyle(color: context.textSecondary, fontSize: 14),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
-            child: const Text('Remove'),
-          ),
-        ],
-      ),
+    final confirmed = await showEchoConfirmDialog(
+      context,
+      title: 'Remove member',
+      content: 'Remove ${widget.member.username} from this group?',
+      confirmLabel: 'Remove',
+      destructive: true,
     );
 
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
 
     setState(() => _isRemoving = true);
 
