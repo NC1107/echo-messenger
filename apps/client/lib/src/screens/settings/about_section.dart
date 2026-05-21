@@ -21,6 +21,7 @@ import '../../services/secure_key_store.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
 import '../../version.dart';
+import '../../widgets/confirm_dialog.dart';
 import '../../widgets/feedback_dialog.dart';
 
 class AboutSection extends ConsumerStatefulWidget {
@@ -198,44 +199,15 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
         Uri.tryParse(ref.read(serverUrlProvider))?.host ??
         ref.read(serverUrlProvider);
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: context.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.border),
-        ),
-        title: Text(
-          'Switch server?',
-          style: TextStyle(
-            color: context.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        content: Text(
+    final confirmed = await showEchoConfirmDialog(
+      context,
+      title: 'Switch server?',
+      content:
           "You'll be logged out of $oldHost; messages and keys for both "
           'servers stay on this device.',
-          style: TextStyle(
-            color: context.textSecondary,
-            fontSize: 13,
-            height: 1.4,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Switch'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Switch',
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     await ref.read(serverUrlProvider.notifier).switchTo(target.url);
     if (!mounted) return;
@@ -247,46 +219,17 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
   /// Forget a known server: drop it from the list and best-effort wipe its
   /// scoped state on this device. The active server cannot be forgotten.
   Future<void> _confirmAndForget(KnownServer target) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: context.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.border),
-        ),
-        title: Text(
-          'Forget server?',
-          style: TextStyle(
-            color: context.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        content: Text(
+    final confirmed = await showEchoConfirmDialog(
+      context,
+      title: 'Forget server?',
+      content:
           'This deletes locally-stored keys and message cache for '
           '${Uri.tryParse(target.url)?.host ?? target.url}. '
           'The remote account is not affected.',
-          style: TextStyle(
-            color: context.textSecondary,
-            fontSize: 13,
-            height: 1.4,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
-            child: const Text('Forget'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Forget',
+      destructive: true,
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     // Wipe scoped state. SecureKeyStore.deleteAllForUser only operates on
     // the currently-set scope, so we briefly set it for the user we have
