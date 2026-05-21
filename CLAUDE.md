@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Echo Messenger -- encrypted cross-platform chat app (Discord alternative). Rust server + Flutter client (web, Linux, Windows, Android, iOS). Live at https://echo-messenger.us. Self-hosted via Docker + Traefik.
+Echo Messenger -- encrypted cross-platform chat app (Discord alternative). Rust server + Flutter client (web, Linux, Windows, Android, iOS). Web build at https://web.echo-messenger.us, API + WS at https://us-east.echo-messenger.us (the legacy apex still routes via Traefik host union during the domain migration — see `docs/domain-migration/README.md`). Self-hosted via Docker + Traefik.
 
 ## Git Workflow
 

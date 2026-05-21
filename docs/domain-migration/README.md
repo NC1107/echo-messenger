@@ -31,36 +31,25 @@ Concretely:
 - Server: extend `CORS_ORIGINS` to allow the new web origin.
 - Smoke-verify both new hostnames serve real content.
 
-Apex keeps working. Client never knows the new hostnames exist yet. Easy rollback: drop the added Host matchers, the apex matchers stay intact.
+Apex keeps working. Easy rollback: drop the added Host matchers, the apex matchers stay intact.
 
-See [`phase-1-handoff.md`](./phase-1-handoff.md) for the concrete server-admin steps.
+**Status:** complete. Both new hostnames serve content live alongside the apex.
 
-### Phase 2 — flip the default, redirect the legacy (separate PR, weeks later)
+### Phase 2 — flip the client default + cookie (this PR)
 
-After Phase 1 has been stable for at least a week and we have evidence the new hostnames work end-to-end:
+Now that both hostnames work:
 
-- Ship a client release with `defaultServerUrl = 'https://us-east.echo-messenger.us'`.
-- One-time client migration: rewrite any `KnownServer` entry pointing at the bare apex to `us-east.echo-messenger.us`; re-register push tokens against the new origin.
-- Server: `/api/*` and `/ws` on the apex begin returning `301 Moved Permanently` → `us-east.echo-messenger.us`.
-- Web build at `web.echo-messenger.us` becomes the canonical web app; the apex still serves it for legacy bookmarks for now.
+- Client default URL flipped to `https://us-east.echo-messenger.us` (`apps/client/lib/src/providers/server_url_provider.dart:14`).
+- Refresh-token cookie relaxed from `SameSite=Strict` to `SameSite=None` (`apps/server/src/routes/auth.rs`). Required because the web build at `web.` and the API at `us-east.` are now cross-site origins; Strict cookies would be dropped on the fetch.
+- No `KnownServer` migration code, no apex `301` redirects, no push-token re-registration code. This is a beta with one user (the project owner) — the database gets wiped during the rollout so every credential is fresh anyway.
 
-Wait several weeks for client-update adoption. Watch error rates on apex-API requests; when they fall below 1% of traffic, Phase 3 is safe.
+The CSRF surface after relaxing SameSite is bounded: only `/api/auth/refresh` and `/api/auth/logout` read the cookie, and the credentialed-CORS allow-list prevents a malicious origin from reading the response. Worst case is a forced session rotation — annoying, not credential-stealing. A double-submit cookie or per-session CSRF token is a post-beta hardening item.
 
-### Phase 3 — apex becomes marketing (separate PR, months later)
+### Phase 3 — apex becomes marketing (separate effort, months later)
 
-- Build the marketing site (Next.js static export, Astro, whatever — outside this repo or in a sibling repo).
-- Apex Traefik routers for `/api/*`, `/ws`, and `/` flip to serve the marketing site (with a permanent redirect on legacy API paths just in case).
-- Web bookmarks at the apex 301 → `web.`.
-
-## Cookie + CSRF plan for Phase 2
-
-Once API and web origins differ, the server needs:
-
-- `Set-Cookie: SameSite=None; Secure; Path=/api/auth` (still HttpOnly).
-- Reject any `/api/auth/refresh` whose `Origin` header isn't in the CORS allow-list.
-- A `X-Echo-CSRF` header carrying a token issued at login, checked on every state-changing request (the server already has the session-binding it needs via the JWT; the token can be derived from `jti`).
-
-Native (mobile/desktop) clients use the JSON-body refresh path and are unaffected.
+- Build the marketing site (Next.js static export, Astro, whatever — separate repo or `apps/marketing/`).
+- Apex Traefik router flips to serve the marketing site.
+- `web.echo-messenger.us` is the canonical web-app entry point; the apex `301`s to it.
 
 ## Tracking issues
 
