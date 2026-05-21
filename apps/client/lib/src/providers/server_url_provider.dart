@@ -11,7 +11,12 @@ import 'websocket_provider.dart';
 part 'server_url_provider.g.dart';
 
 /// Default server URL for production deployment.
-const defaultServerUrl = 'https://echo-messenger.us';
+///
+/// Phase 2 of the domain migration (#1063) — moved off the apex onto the
+/// us-east regional alias. The apex is becoming the marketing site;
+/// `us-east.echo-messenger.us` is the centralised server's permanent home.
+/// Self-hosters override via the auth-screen server picker as before.
+const defaultServerUrl = 'https://us-east.echo-messenger.us';
 
 /// SharedPreferences keys.
 const _prefsKeyServerUrl = 'echo_server_url';
