@@ -20,6 +20,7 @@ import '../theme/responsive.dart';
 import '../utils/time_utils.dart';
 import 'avatar_utils.dart' show buildAvatar, groupAvatarColor, resolveAvatarUrl;
 import 'chat_header_widgets.dart';
+import 'confirm_dialog.dart';
 import 'echo_bottom_sheet.dart';
 import 'group_members_sheet.dart' show showGroupMembersSheet;
 import 'shared_media_gallery.dart';
@@ -729,42 +730,17 @@ class ChatHeaderBar extends ConsumerWidget {
         ?.userId;
     if (peerId == null) return;
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: context.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.border),
-        ),
-        title: Text(
-          'Reset encryption keys?',
-          style: GoogleFonts.inter(
-            color: context.textPrimary,
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        content: Text(
+    final confirmed = await showEchoConfirmDialog(
+      context,
+      title: 'Reset encryption keys?',
+      content:
           'This will establish a fresh encrypted session. '
           'Messages encrypted with the old keys may become unreadable.',
-          style: GoogleFonts.inter(color: context.textSecondary, fontSize: 14),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
-            child: const Text('Reset Keys'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Reset Keys',
+      destructive: true,
     );
 
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     try {
       final crypto = ref.read(cryptoServiceProvider);

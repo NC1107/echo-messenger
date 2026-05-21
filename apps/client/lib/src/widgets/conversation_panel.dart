@@ -25,6 +25,7 @@ import '../providers/theme_provider.dart' show uiDensityProvider;
 import '../utils/presence.dart';
 import '../utils/time_utils.dart';
 import 'avatar_utils.dart';
+import 'confirm_dialog.dart';
 import 'connection_status_badge.dart';
 import 'context_menu/actions/conversation_actions_registry.dart';
 import 'context_menu/echo_context_menu.dart';
@@ -308,45 +309,15 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   }
 
   Future<void> _leaveGroup(Conversation conv) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: context.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.border),
-        ),
-        title: const Text(
-          'Leave Group',
-          style: TextStyle(
-            color: EchoTheme.danger,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        content: Text(
-          'Are you sure you want to leave "${conv.name ?? "this group"}"?',
-          style: TextStyle(
-            color: context.textSecondary,
-            fontSize: 14,
-            height: 1.5,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
-            child: const Text('Leave'),
-          ),
-        ],
-      ),
+    final confirmed = await showEchoConfirmDialog(
+      context,
+      title: 'Leave Group',
+      content: 'Are you sure you want to leave "${conv.name ?? "this group"}"?',
+      confirmLabel: 'Leave',
+      destructive: true,
     );
 
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
 
     try {
       final success = await ref
@@ -380,46 +351,17 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   }
 
   Future<void> _deleteGroup(Conversation conv) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: context.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.border),
-        ),
-        title: const Text(
-          'Delete Group',
-          style: TextStyle(
-            color: EchoTheme.danger,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        content: Text(
+    final confirmed = await showEchoConfirmDialog(
+      context,
+      title: 'Delete Group',
+      content:
           'This will permanently delete "${conv.name ?? "this group"}" '
           'and all its messages for everyone. This cannot be undone.',
-          style: TextStyle(
-            color: context.textSecondary,
-            fontSize: 14,
-            height: 1.5,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Delete',
+      destructive: true,
     );
 
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
 
     try {
       final success = await ref
@@ -449,46 +391,17 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   }
 
   Future<void> _deleteDm(Conversation conv) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: context.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.border),
-        ),
-        title: const Text(
-          'Delete Conversation',
-          style: TextStyle(
-            color: EchoTheme.danger,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        content: Text(
+    final confirmed = await showEchoConfirmDialog(
+      context,
+      title: 'Delete Conversation',
+      content:
           'This will remove the conversation from your list. '
           'You can start a new conversation anytime.',
-          style: TextStyle(
-            color: context.textSecondary,
-            fontSize: 14,
-            height: 1.5,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Delete',
+      destructive: true,
     );
 
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
 
     final success = await ref
         .read(conversationsProvider.notifier)
