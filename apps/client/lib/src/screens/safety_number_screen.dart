@@ -14,6 +14,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../providers/crypto_provider.dart';
+import '../services/clipboard_service.dart';
 import '../services/crypto_service.dart';
 import '../services/safety_number_service.dart';
 import '../services/secure_key_store.dart';
@@ -233,12 +234,10 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
 
   Future<void> _copyInviteMessage() async {
     final text = 'Add me on Echo Messenger: $_inviteUrl';
-    await Clipboard.setData(ClipboardData(text: text));
-    if (!mounted) return;
-    ToastService.show(
+    await copyToClipboard(
       context,
-      'Invite message copied',
-      type: ToastType.success,
+      text,
+      successMessage: 'Invite message copied',
     );
   }
 
@@ -433,17 +432,11 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () async {
-                        await Clipboard.setData(
-                          ClipboardData(text: _inviteUrl),
-                        );
-                        if (!mounted) return;
-                        ToastService.show(
-                          context,
-                          'Invite link copied',
-                          type: ToastType.success,
-                        );
-                      },
+                      onPressed: () => copyToClipboard(
+                        context,
+                        _inviteUrl,
+                        successMessage: 'Invite link copied',
+                      ),
                       icon: const Icon(Icons.copy, size: 16),
                       label: const Text('Copy Link'),
                     ),
@@ -481,14 +474,11 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
           label: 'copy safety number',
           button: true,
           child: GestureDetector(
-            onTap: () {
-              Clipboard.setData(ClipboardData(text: _safetyNumber!));
-              ToastService.show(
-                context,
-                'Safety number copied',
-                type: ToastType.success,
-              );
-            },
+            onTap: () => copyToClipboard(
+              context,
+              _safetyNumber!,
+              successMessage: 'Safety number copied',
+            ),
             child: Container(
               width: double.infinity,
               padding: const EdgeInsets.all(16),

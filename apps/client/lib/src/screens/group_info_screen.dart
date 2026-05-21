@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/conversation.dart';
+import '../services/clipboard_service.dart';
 import '../services/toast_service.dart';
 import '../services/upload_client.dart';
 import '../theme/echo_theme.dart';
@@ -23,6 +24,7 @@ import '../utils/fuzzy_score.dart';
 import '../utils/presence.dart';
 import '../widgets/avatar_crop_dialog.dart';
 import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
+import '../widgets/member_role.dart';
 import '../widgets/user_avatar.dart';
 import '../widgets/context_menu/actions/member_actions_registry.dart';
 import '../widgets/context_menu/echo_context_menu.dart';
@@ -1072,51 +1074,6 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   /// Color mapping matches the desktop members panel (#769):
   ///   Owner -> warning amber (rare, high authority)
   ///   Admin -> accent blue
-  List<Widget> _buildRoleBadge(String role) {
-    if (role == 'owner') {
-      return [
-        const SizedBox(width: 6),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-          decoration: BoxDecoration(
-            color: EchoTheme.warning.withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: const Text(
-            'Owner',
-            style: TextStyle(
-              fontSize: 10,
-              color: EchoTheme.warning,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.3,
-            ),
-          ),
-        ),
-      ];
-    }
-    if (role == 'admin') {
-      return [
-        const SizedBox(width: 6),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-          decoration: BoxDecoration(
-            color: context.accent.withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Text(
-            'Admin',
-            style: TextStyle(
-              fontSize: 10,
-              color: context.accentHover,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.3,
-            ),
-          ),
-        ),
-      ];
-    }
-    return [];
-  }
 
   /// Trailing "..." affordance on a member row. Routes through
   /// [EchoContextMenu] so the menu items match right-click and
@@ -1227,9 +1184,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   }
 
   void _copyToClipboardWithToast(String text, String successMessage) {
-    Clipboard.setData(ClipboardData(text: text));
-    if (!mounted) return;
-    ToastService.show(context, successMessage, type: ToastType.success);
+    copyToClipboard(context, text, successMessage: successMessage);
   }
 
   /// Single roster row. Matches the desktop members panel styling (#769):
@@ -1249,10 +1204,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       activity = 'You';
     } else {
       final presence = ref.watch(userPresenceProvider(member.userId));
-      activity = presenceLabel(
-        presence.status,
-        isOnline: presence.isOnline,
-      );
+      activity = presenceLabel(presence.status, isOnline: presence.isOnline);
     }
 
     return InkWell(
@@ -1300,21 +1252,8 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                 children: [
                   Row(
                     children: [
-                      if (role == 'owner') ...[
-                        const Icon(
-                          Icons.star_rounded,
-                          size: 14,
-                          color: Colors.amber,
-                          semanticLabel: 'owner',
-                        ),
-                        const SizedBox(width: 4),
-                      ] else if (role == 'admin') ...[
-                        const Icon(
-                          Icons.shield_rounded,
-                          size: 14,
-                          color: Colors.blue,
-                          semanticLabel: 'admin',
-                        ),
+                      if (role == 'owner' || role == 'admin') ...[
+                        MemberRoleIcon(role: role),
                         const SizedBox(width: 4),
                       ],
                       Flexible(
@@ -1328,7 +1267,10 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                           ),
                         ),
                       ),
-                      ..._buildRoleBadge(role),
+                      MemberRoleBadge(
+                        role: role,
+                        margin: const EdgeInsets.only(left: 6),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 2),
