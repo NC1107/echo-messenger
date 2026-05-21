@@ -24,6 +24,7 @@ import '../providers/websocket_provider.dart';
 import '../screens/settings/privacy_section.dart'
     show readPreserveOriginalFilenames;
 import '../services/slash_commands.dart';
+import '../services/sound_service.dart';
 import '../services/toast_service.dart';
 import '../services/upload_client.dart';
 import '../services/emoji_shortcodes.dart';

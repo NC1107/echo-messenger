@@ -200,6 +200,12 @@ extension _SendHandling on ChatInputBarState {
           replyToUsername: replyTo?.fromUsername,
         );
 
+    // Soft tactile feedback + send chime once the message is committed
+    // locally. The platform haptic is a no-op on desktop and respects
+    // the OS-level system-haptics setting on iOS.
+    HapticFeedback.lightImpact();
+    SoundService().playMessageSent().ignore();
+
     // Clear reply state after capturing the reply info.
     if (replyTo != null) {
       ref.read(chatProvider.notifier).clearReplyTo();

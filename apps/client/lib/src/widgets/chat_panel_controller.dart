@@ -84,14 +84,19 @@ class ChatPanelController extends ChangeNotifier {
     _scrollController = controller;
   }
 
-  /// Returns true when the user is within 150px of the bottom of the list.
-  /// Defaults to true when the controller has no clients yet so the initial
-  /// auto-scroll path runs as if we're already pinned to the bottom.
+  /// Returns true when the user is within ~3 messages of the bottom of the
+  /// list. Defaults to true when the controller has no clients yet so the
+  /// initial auto-scroll path runs as if we're already pinned to the bottom.
+  ///
+  /// The 300px window was chosen so that being two-or-three messages
+  /// scrolled up (a normal reading position) still counts as "at the
+  /// bottom" — otherwise new messages stay hidden and the user has to
+  /// notice the corner pill to see them (#prod-2026-05-21).
   bool isNearBottom() {
     final c = _scrollController;
     if (c == null || !c.hasClients) return true;
     final pos = c.position;
-    return pos.maxScrollExtent - pos.pixels < 150;
+    return pos.maxScrollExtent - pos.pixels < 300;
   }
 
   /// Pick the oldest non-system message as the pagination cursor.
