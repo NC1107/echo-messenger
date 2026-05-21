@@ -41,7 +41,6 @@ import '../widgets/window_chrome.dart';
 import 'contacts_screen.dart';
 import 'new_message_screen.dart';
 import 'saved_messages_screen.dart';
-import 'threads_screen.dart';
 import 'voice_lounge_screen.dart';
 import 'create_group_screen.dart';
 import 'discover_groups_screen.dart';
