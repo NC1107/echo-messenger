@@ -13,6 +13,8 @@ import '../services/crypto_service.dart';
 import '../services/debug_log_service.dart';
 import '../services/message_cache.dart';
 import '../services/group_crypto_service.dart';
+import '../screens/settings/notification_section.dart'
+    show shouldSuppressNotification;
 import '../services/notification_service.dart';
 import '../services/sound_service.dart';
 import '../utils/crypto_utils.dart';
@@ -414,7 +416,12 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
 
     // #26: don't re-notify for messages the user already saw.
     if (fromUserId != myUserId && !alreadySeen) {
-      _notifyIfAllowed(conversationId, senderUsername, decryptedContent);
+      _notifyIfAllowed(
+        conversationId,
+        senderUsername,
+        decryptedContent,
+        isMention: isMention,
+      );
     }
   }
 
@@ -602,34 +609,47 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
     return containsMention(decryptedContent, ref.read(authProvider).username);
   }
 
-  /// Show a notification + play sound if the conversation is not muted.
-  /// Shared between the live and queued decrypt paths.
+  /// Show a notification + play sound if the conversation is not muted and
+  /// the user isn't currently in DND or quiet hours.
+  ///
+  /// Mentions play a louder ping ([SoundService.playMention]) so the user
+  /// can hear the difference between a passing group message and one that
+  /// names them.
   void _notifyIfAllowed(
     String conversationId,
     String senderUsername,
-    String displayContent,
-  ) {
+    String displayContent, {
+    bool isMention = false,
+  }) {
     final conversations = ref.read(conversationsProvider).conversations;
     final conv = conversations.where((c) => c.id == conversationId).firstOrNull;
     final isMuted = conv?.isMuted ?? false;
     if (isMuted) return;
 
-    // Fire-and-forget: playMessageReceived is async but errors are
-    // caught inside it. Use .ignore() to prevent any unhandled-future
-    // warnings from the test runner when the audio plugin is unavailable.
-    SoundService().playMessageReceived().ignore();
-    final body = displayContent.length > 100
-        ? '${displayContent.substring(0, 100)}...'
-        : displayContent;
-    final myUserId = ref.read(authProvider).userId ?? '';
-    NotificationService().showMessageNotification(
-      senderUsername: senderUsername,
-      body: body,
-      conversationId: conversationId,
-      conversationName: conv?.displayName(myUserId),
-      isGroup: conv?.isGroup ?? false,
-      isMuted: isMuted,
-    );
+    // Gate everything below on DND/quiet-hours so the user gets full silence
+    // when they've asked for it. The desktop NotificationService also checks
+    // shouldSuppressNotification, but pre-checking here keeps the sound and
+    // the platform toast aligned and skips a wasted async call.
+    shouldSuppressNotification().then((suppress) {
+      if (suppress) return;
+      if (isMention) {
+        SoundService().playMention().ignore();
+      } else {
+        SoundService().playMessageReceived().ignore();
+      }
+      final body = displayContent.length > 100
+          ? '${displayContent.substring(0, 100)}...'
+          : displayContent;
+      final myUserId = ref.read(authProvider).userId ?? '';
+      NotificationService().showMessageNotification(
+        senderUsername: senderUsername,
+        body: body,
+        conversationId: conversationId,
+        conversationName: conv?.displayName(myUserId),
+        isGroup: conv?.isGroup ?? false,
+        isMuted: isMuted,
+      );
+    });
   }
 
   void _handleCanvasEvent(Map<String, dynamic> json) {

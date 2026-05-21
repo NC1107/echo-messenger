@@ -50,6 +50,7 @@ class SoundService {
 
   final AudioPlayer _sentPlayer = AudioPlayer();
   final AudioPlayer _receivedPlayer = AudioPlayer();
+  final AudioPlayer _mentionPlayer = AudioPlayer();
   final AudioPlayer _voiceJoinPlayer = AudioPlayer();
   final AudioPlayer _voiceLeavePlayer = AudioPlayer();
 
@@ -180,6 +181,26 @@ class SoundService {
     }
   }
 
+  /// Play a louder ping when the local user is @-mentioned in a message.
+  ///
+  /// Bypasses the [enabled] global only when no template asset is bundled
+  /// for mentions yet — for now it reuses `received.mp3` at higher volume
+  /// so the user can distinguish a mention from a normal message even with
+  /// the same sample. Swap to `assets/sounds/mention.mp3` once a dedicated
+  /// chime ships.
+  Future<void> playMention() async {
+    if (!_enabled) return;
+    try {
+      await _mentionPlayer
+          .play(AssetSource('sounds/received.mp3'), volume: 0.6)
+          .catchError((Object e) {
+            debugPrint('[Sound] Failed to play mention sound (late): $e');
+          });
+    } catch (e) {
+      debugPrint('[Sound] Failed to play mention sound: $e');
+    }
+  }
+
   /// Play descending chime when leaving a voice channel.
   Future<void> playVoiceLeave() async {
     if (!_enabled) return;
@@ -196,6 +217,7 @@ class SoundService {
   void dispose() {
     _sentPlayer.dispose();
     _receivedPlayer.dispose();
+    _mentionPlayer.dispose();
     _voiceJoinPlayer.dispose();
     _voiceLeavePlayer.dispose();
   }
