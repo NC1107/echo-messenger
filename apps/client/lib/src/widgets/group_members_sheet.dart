@@ -16,6 +16,7 @@ import '../providers/websocket_provider.dart';
 import '../screens/user_profile_screen.dart';
 import '../theme/echo_theme.dart';
 import '../utils/presence.dart';
+import 'member_role.dart';
 import 'user_avatar.dart';
 
 /// Shows the [GroupMembersSheet] as a modal bottom sheet.
@@ -243,21 +244,8 @@ class _MobilesMemberRow extends ConsumerWidget {
               Expanded(
                 child: Row(
                   children: [
-                    if (member.role == 'owner') ...[
-                      const Icon(
-                        Icons.star_rounded,
-                        size: 14,
-                        color: Colors.amber,
-                        semanticLabel: 'owner',
-                      ),
-                      const SizedBox(width: 4),
-                    ] else if (member.role == 'admin') ...[
-                      const Icon(
-                        Icons.shield_rounded,
-                        size: 14,
-                        color: Colors.blue,
-                        semanticLabel: 'admin',
-                      ),
+                    if (member.role == 'owner' || member.role == 'admin') ...[
+                      MemberRoleIcon(role: member.role),
                       const SizedBox(width: 4),
                     ],
                     Flexible(
@@ -285,44 +273,9 @@ class _MobilesMemberRow extends ConsumerWidget {
                 ),
               ),
               // Role badge chip
-              if (member.role == 'owner' || member.role == 'admin')
-                _roleBadge(context, member.role!),
+              MemberRoleBadge(role: member.role),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _roleBadge(BuildContext context, String role) {
-    final Color bgColor;
-    final Color textColor;
-    final String label;
-
-    if (role == 'owner') {
-      bgColor = EchoTheme.warning.withValues(alpha: 0.15);
-      textColor = EchoTheme.warning;
-      label = 'Owner';
-    } else {
-      bgColor = context.accent.withValues(alpha: 0.15);
-      textColor = context.accentHover;
-      label = 'Admin';
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(left: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        label,
-        style: GoogleFonts.inter(
-          color: textColor,
-          fontSize: 10,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.3,
         ),
       ),
     );

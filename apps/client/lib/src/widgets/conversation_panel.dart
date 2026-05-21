@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:go_router/go_router.dart';
@@ -17,6 +16,7 @@ import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/update_provider.dart';
 import '../providers/websocket_provider.dart';
+import '../services/clipboard_service.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../theme/motion_tokens.dart';
@@ -281,12 +281,10 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   }
 
   void _copyConversationId(String conversationId) {
-    Clipboard.setData(ClipboardData(text: conversationId));
-    if (!mounted) return;
-    ToastService.show(
+    copyToClipboard(
       context,
-      'Conversation ID copied',
-      type: ToastType.success,
+      conversationId,
+      successMessage: 'Conversation ID copied',
     );
   }
 
