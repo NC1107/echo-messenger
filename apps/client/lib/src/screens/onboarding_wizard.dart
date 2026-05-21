@@ -108,6 +108,14 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   static const int _pageCount = 5;
 
   void _next() {
+    // The display-name field on the Welcome page is the only required
+    // input in the entire wizard. Block forward navigation until it has
+    // a value so the user can't land on home with a profile that's just
+    // `@nicolas` everywhere.
+    if (_currentPage == 0 && _displayNameController.text.trim().isEmpty) {
+      _showDisplayNameRequired();
+      return;
+    }
     if (_currentPage < _pageCount - 1) {
       _goToPage(_currentPage + 1);
     } else {
@@ -115,7 +123,22 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
     }
   }
 
-  void _skip() => _finish();
+  void _skip() {
+    if (_displayNameController.text.trim().isEmpty) {
+      _showDisplayNameRequired();
+      return;
+    }
+    _finish();
+  }
+
+  void _showDisplayNameRequired() {
+    if (!mounted) return;
+    ToastService.show(
+      context,
+      'Pick a display name before continuing.',
+      type: ToastType.warning,
+    );
+  }
 
   Future<void> _finish() async {
     setState(() => _saving = true);

@@ -144,7 +144,14 @@ class _CameraPreviewState extends State<_CameraPreview> {
     final rendererInitialized = _rendererInitialized;
     _stream = null;
     _rendererInitialized = false;
-    _renderer.srcObject = null;
+    // Guard the srcObject clear — the underlying RTCVideoRenderer throws
+    // "Call initialize before setting the stream" if dispose() fires
+    // without the renderer ever having been initialised (the settings
+    // screen mounts the preview widget but the user never opened the
+    // camera step). Skip the clear if there was no init.
+    if (rendererInitialized) {
+      _renderer.srcObject = null;
+    }
     if (stream != null) {
       for (final t in stream.getTracks()) {
         t.stop();
