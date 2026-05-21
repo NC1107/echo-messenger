@@ -488,22 +488,36 @@ class _UpdatePromptBody extends ConsumerWidget {
         ? const EdgeInsets.fromLTRB(28, 44, 28, 22)
         : const EdgeInsets.fromLTRB(36, 24, 36, 38);
 
+    // The previous layout used MainAxisAlignment.spaceBetween across the
+    // full viewport, which on anything larger than the 320×440 desktop
+    // splash window left huge empty gaps above and below the action block.
+    // Centring the brand + action as one tight stack and pinning the
+    // version label to the bottom keeps the prompt feeling like a focused
+    // card at every window size.
     return FadeTransition(
       opacity: fade,
       child: Stack(
         children: [
           _buildHaloBackdrop(accent),
-          Padding(
-            padding: outerPadding,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                _buildBrandBlock(context),
-                _buildActionBlock(context, ref, update, accent),
-                if (compact) _buildVersionLabel(context),
-              ],
+          Center(
+            child: Padding(
+              padding: outerPadding,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  _buildBrandBlock(context),
+                  const SizedBox(height: 28),
+                  _buildActionBlock(context, ref, update, accent),
+                ],
+              ),
             ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 16,
+            child: Center(child: _buildVersionLabel(context)),
           ),
         ],
       ),
@@ -540,34 +554,28 @@ class _UpdatePromptBody extends ConsumerWidget {
     final logoSize = compact ? 64.0 : 84.0;
     final wordmarkSize = compact ? 22.0 : 28.0;
     final taglineSize = compact ? 12.0 : 13.0;
-    return Padding(
-      padding: EdgeInsets.only(top: compact ? 12 : 60),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          EchoLogoIcon(size: logoSize),
-          SizedBox(height: compact ? 18 : 24),
-          Text(
-            'Echo',
-            style: TextStyle(
-              fontSize: wordmarkSize,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.5,
-              height: 1.0,
-              color: context.textPrimary,
-            ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        EchoLogoIcon(size: logoSize),
+        SizedBox(height: compact ? 18 : 24),
+        Text(
+          'Echo',
+          style: TextStyle(
+            fontSize: wordmarkSize,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.5,
+            height: 1.0,
+            color: context.textPrimary,
           ),
-          SizedBox(height: compact ? 8 : 10),
-          Text(
-            'Update available',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: taglineSize,
-              color: context.textSecondary,
-            ),
-          ),
-        ],
-      ),
+        ),
+        SizedBox(height: compact ? 8 : 10),
+        Text(
+          'Update available',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: taglineSize, color: context.textSecondary),
+        ),
+      ],
     );
   }
 
@@ -606,10 +614,6 @@ class _UpdatePromptBody extends ConsumerWidget {
         ),
         if (isError) _buildErrorMessage(update),
         if (!isReady && !isInstalling) _buildSkipButton(context, isBusy),
-        if (!compact) ...[
-          const SizedBox(height: 18),
-          _buildVersionLabel(context),
-        ],
       ],
     );
   }
