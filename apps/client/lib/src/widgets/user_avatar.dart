@@ -19,11 +19,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/server_url_provider.dart';
-import '../providers/websocket_provider.dart';
+import '../providers/user_presence_provider.dart';
 import '../screens/user_profile_screen.dart';
 import '../theme/echo_theme.dart';
+import '../utils/presence.dart';
 import 'avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
-import 'conversation_item.dart' show presenceStatusDotColor;
 
 class UserAvatar extends ConsumerWidget {
   /// The user this avatar represents. Used to (a) resolve the tap → open
@@ -94,9 +94,7 @@ class UserAvatar extends ConsumerWidget {
     );
 
     if (showPresence) {
-      final ws = ref.watch(websocketProvider);
-      final status = ws.presenceStatusFor(userId);
-      final isOnline = ws.onlineUsers.contains(userId);
+      final presence = ref.watch(userPresenceProvider(userId));
       final dotSize = (radius * 0.55).clamp(8.0, 14.0).toDouble();
       avatar = Stack(
         clipBehavior: Clip.none,
@@ -109,7 +107,10 @@ class UserAvatar extends ConsumerWidget {
               width: dotSize,
               height: dotSize,
               decoration: BoxDecoration(
-                color: presenceStatusDotColor(context, status, isOnline),
+                color: presenceColor(
+                  presence.status,
+                  isOnline: presence.isOnline,
+                ),
                 shape: BoxShape.circle,
                 border: Border.all(color: EchoTheme.sidebarBg, width: 1.5),
               ),

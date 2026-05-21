@@ -22,6 +22,7 @@ import '../theme/echo_theme.dart';
 import '../theme/motion_tokens.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/theme_provider.dart' show uiDensityProvider;
+import '../utils/presence.dart';
 import '../utils/time_utils.dart';
 import 'avatar_utils.dart';
 import 'connection_status_badge.dart';
@@ -1382,13 +1383,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     );
   }
 
-  static Color _presenceColor(String status) => switch (status) {
-    'away' => EchoTheme.warning,
-    'dnd' => EchoTheme.danger,
-    'invisible' => const Color(0xFF6B6B6F),
-    _ => EchoTheme.online,
-  };
-
   Widget _buildUserAvatar(
     BuildContext context,
     String myUsername,
@@ -1398,7 +1392,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     String presenceStatus,
   ) {
     final dotColor = wsConnected
-        ? _presenceColor(presenceStatus)
+        ? presenceColor(presenceStatus)
         : EchoTheme.warning;
 
     return Semantics(
