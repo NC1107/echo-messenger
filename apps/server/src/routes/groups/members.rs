@@ -10,6 +10,7 @@ use crate::auth::middleware::AuthUser;
 use crate::db;
 use crate::error::{AppError, DbErrCtx, ErrorCode};
 use crate::types::{ConversationKind, Role};
+use crate::ws::rotation::{DEFAULT_ROTATION_DEADLINE_MS, elect_rotation_leader, online_subset};
 use crate::ws::typing_service::invalidate_member_cache;
 
 use super::super::AppState;
@@ -19,17 +20,31 @@ use super::super::AppState;
 /// On encrypted groups, bump the conversation's `key_version`, purge every
 /// existing per-member envelope (so the kicked user can no longer decrypt
 /// future ciphertext, and so a stale envelope cannot be replayed), and
-/// broadcast a `group_key_rotation_requested` event to every remaining member.
+/// broadcast a `group_key_rotation_requested` event to every remaining
+/// member.
 ///
-/// The remaining members race to upload the next envelope batch. The
-/// `(conversation_id, key_version)` UNIQUE constraint on `group_keys` ensures
-/// only the first writer wins; everyone else gets a 409 and falls back to
-/// fetching whatever the winner produced.
+/// **Server-led leader election (Phase 3b).** The event carries
+/// `leader_user_id`, `fallback_order`, and `deadline_ms` so receivers know
+/// who is expected to fire the rotation first instead of every online
+/// member racing to be the one writer. The election is a pure function of
+/// the snapshot we take of the WS hub right here — see
+/// [`crate::ws::rotation::elect_rotation_leader`] for the rule
+/// (lowest-`user_id` online member, no consensus). The
+/// `(conversation_id, key_version)` UNIQUE constraint on `group_keys`
+/// remains the safety net for the cases this election misses: split
+/// brain, retried trigger event, leader crashes between accepting the
+/// hint and posting envelopes. Losers of the race still get HTTP 409 and
+/// fetch the winner's envelope, just like today — the election only
+/// changes which client *starts*, not the correctness floor.
 ///
-/// MVP scope: no leader election, no atomicity beyond the per-row
-/// transaction inside `bump_key_version_and_purge_envelopes`. If the chosen
-/// member crashes mid-rotation the group will surface as undecryptable until
-/// any other live member reuploads the next version.
+/// If no member is online at trigger time the new version is still
+/// recorded on the conversation (the kicked user is denied future
+/// access either way), but the rotation-requested event is suppressed:
+/// nobody can act on it and a deferred-trigger queue is a separate
+/// follow-up. The next sender into the group will hit `getGroupKey`,
+/// notice the missing envelope, and the existing client-side recovery
+/// banner (`docs/group-e2e-design/04-migration-plan.md` Phase 4) takes
+/// over.
 pub(super) async fn rotate_group_key_after_member_loss(state: &Arc<AppState>, group_id: Uuid) {
     let encrypted = match db::groups::is_encrypted(&state.pool, group_id).await {
         Ok(v) => v,
@@ -51,16 +66,50 @@ pub(super) async fn rotate_group_key_after_member_loss(state: &Arc<AppState>, gr
             }
         };
 
-    crate::ws::broadcast::broadcast_to_conversation(
-        state,
-        group_id,
-        &serde_json::json!({
-            "type": "group_key_rotation_requested",
-            "conversation_id": group_id,
-            "key_version": new_version,
-        }),
-    )
-    .await;
+    broadcast_rotation_requested(state, group_id, new_version).await;
+}
+
+/// Build the `group_key_rotation_requested` event with a server-elected
+/// leader and fan it out to the conversation. Extracted from
+/// [`rotate_group_key_after_member_loss`] so the bump/purge path and the
+/// fan-out path can be reasoned about (and tested) independently.
+async fn broadcast_rotation_requested(state: &Arc<AppState>, group_id: Uuid, new_version: i32) {
+    let members = match db::groups::get_conversation_member_ids(&state.pool, group_id).await {
+        Ok(ids) => ids,
+        Err(e) => {
+            tracing::error!(
+                "rotate_group_key/members({group_id}) failed: {e:?} — skipping rotation broadcast"
+            );
+            return;
+        }
+    };
+
+    let online = online_subset(&members, |id| state.hub.device_count(id) > 0);
+    let elected = elect_rotation_leader(&online);
+
+    let Some(leader) = elected else {
+        // No online member can act on this trigger. Suppress the event
+        // (it would land in nobody's inbox anyway) and rely on the
+        // client-side getGroupKey path to recover when a member next
+        // returns. A deferred-trigger queue keyed by reconnect is a
+        // sensible follow-up; see CLAUDE.md / docs/group-e2e-design.
+        tracing::info!(
+            "rotate_group_key({group_id}): no online member at trigger time; \
+             new_version={new_version} stored but rotation-requested event suppressed"
+        );
+        return;
+    };
+
+    let event = serde_json::json!({
+        "type": "group_key_rotation_requested",
+        "conversation_id": group_id,
+        "key_version": new_version,
+        "leader_user_id": leader.leader,
+        "fallback_order": leader.fallback_order,
+        "deadline_ms": DEFAULT_ROTATION_DEADLINE_MS,
+    });
+
+    crate::ws::broadcast::broadcast_to_conversation(state, group_id, &event).await;
 }
 
 /// Broadcast a system-message pill and `new_message` WS event to the group.
