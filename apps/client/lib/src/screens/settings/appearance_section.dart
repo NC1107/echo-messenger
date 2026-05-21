@@ -536,7 +536,13 @@ class _ThemeThumbnail extends StatelessWidget {
               flex: 70,
               child: Container(
                 color: colors.mainBg,
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                // vertical: 6 (was 8). The container is locked to 90 px
+                // by the SizedBox above; with 8-px top + 8-px bottom plus
+                // the header strip + four bubbles + three spacers the
+                // Column overflowed by ~3 px (widget tests had to drain
+                // the parent-data exception). 6/6 keeps the same visual
+                // and stops the overflow.
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
