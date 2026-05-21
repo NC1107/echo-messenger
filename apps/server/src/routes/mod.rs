@@ -35,6 +35,7 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::set_header::SetResponseHeaderLayer;
 use uuid::Uuid;
 
+use crate::metrics::MessageRateCounter;
 use crate::middleware::rate_limit;
 use crate::ws::hub::Hub;
 
@@ -54,6 +55,10 @@ pub struct AppState {
     pub hub: Hub,
     pub ticket_store: TicketStore,
     pub media_tickets: MediaTicketStore,
+    /// Sliding-window counter feeding the admin dashboard's
+    /// "messages per second" tile (#681). Bumped from the WS relay path
+    /// after each successful store-and-fanout.
+    pub message_rate: Arc<MessageRateCounter>,
 }
 
 /// Narrow view of [`AppState`] for the auth handlers (`register`, `login`,
@@ -417,7 +422,9 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpNet>) -> Route
         .route("/api/search", get(search::universal_search))
         .route("/api/feedback", post(feedback::create_feedback))
         .route("/api/admin/stats", get(admin::get_stats))
+        .route("/api/admin/stats/realtime", get(admin::get_realtime_stats))
         .route("/api/admin/feedback", get(admin::list_feedback))
+        .route("/api/admin/promote/{user_id}", post(admin::promote_user))
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/api/health", get(health))

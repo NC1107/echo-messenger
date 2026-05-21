@@ -2,18 +2,29 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:echo_app/src/providers/auth_provider.dart';
 import 'package:echo_app/src/screens/settings_screen.dart';
 import 'package:echo_app/src/theme/echo_theme.dart';
 
 import '../helpers/mock_providers.dart';
 
+const _adminAuthState = AuthState(
+  isLoggedIn: true,
+  userId: 'admin-user-id',
+  username: 'opsy',
+  token: 'fake-jwt-token',
+  refreshToken: 'fake-refresh-token',
+  isAdmin: true,
+);
+
 Widget _rootApp({
   SettingsSection? selected,
   void Function(SettingsSection)? onTap,
   VoidCallback? onLogout,
+  AuthState authState = loggedInAuthState,
 }) {
   return ProviderScope(
-    overrides: [authOverride(loggedInAuthState), serverUrlOverride()],
+    overrides: [authOverride(authState), serverUrlOverride()],
     child: MaterialApp(
       theme: EchoTheme.darkTheme,
       darkTheme: EchoTheme.darkTheme,
@@ -152,6 +163,40 @@ void main() {
 
       await tester.tap(find.text('Log out'));
       expect(loggedOut, isTrue);
+    });
+
+    testWidgets('hides admin dashboard tile for non-admin users', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(_rootApp());
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('settings-admin-dashboard-tile')),
+        findsNothing,
+      );
+      expect(find.text('Admin dashboard'), findsNothing);
+    });
+
+    testWidgets('shows admin dashboard tile for admin users', (tester) async {
+      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(_rootApp(authState: _adminAuthState));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('settings-admin-dashboard-tile')),
+        findsOneWidget,
+      );
+      expect(find.text('Admin dashboard'), findsOneWidget);
     });
   });
 }
