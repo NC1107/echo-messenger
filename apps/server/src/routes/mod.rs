@@ -91,8 +91,16 @@ impl FromRef<Arc<AppState>> for AuthExtract {
 }
 
 pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpNet>) -> Router {
-    let cors_origins = std::env::var("CORS_ORIGINS")
-        .unwrap_or_else(|_| "https://echo-messenger.us,http://localhost:8081".into());
+    // The built-in default covers the centralised deployment so a fresh
+    // self-hoster doesn't have to think about CORS. Self-hosters on a
+    // different apex MUST set CORS_ORIGINS explicitly; otherwise the web
+    // build can't refresh tokens against their server. `web.echo-messenger.us`
+    // is included as part of the domain migration (docs/domain-migration/)
+    // — Phase 1 serves the web build at BOTH apex and web.* so the new
+    // origin needs to be in the credentialed allow-list.
+    let cors_origins = std::env::var("CORS_ORIGINS").unwrap_or_else(|_| {
+        "https://echo-messenger.us,https://web.echo-messenger.us,http://localhost:8081".into()
+    });
 
     let allowed_methods = [
         Method::GET,
