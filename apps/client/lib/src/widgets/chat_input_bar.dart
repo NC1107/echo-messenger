@@ -41,6 +41,7 @@ import 'chat_input_bar/attach_option.dart';
 import 'chat_input_bar/media_marker_helpers.dart';
 import 'chat_input_bar/media_picker_toggle.dart';
 import 'echo_bottom_sheet.dart';
+import 'input_dialog.dart';
 import 'chat_input_bar/recording_row.dart';
 import 'chat_input_bar/send_button.dart';
 import 'chat_input_bar/upload_helpers.dart';
