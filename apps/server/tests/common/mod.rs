@@ -70,6 +70,7 @@ async fn spawn_server_inner(trusted_proxies: Vec<IpNet>) -> String {
         hub,
         ticket_store: Arc::new(dashmap::DashMap::new()),
         media_tickets: Arc::new(dashmap::DashMap::new()),
+        message_rate: Arc::new(echo_server::metrics::MessageRateCounter::new()),
     });
 
     let app = routes::create_router(state, trusted_proxies);

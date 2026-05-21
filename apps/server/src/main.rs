@@ -37,6 +37,7 @@ async fn main() {
         hub: hub.clone(),
         ticket_store: Arc::new(dashmap::DashMap::new()),
         media_tickets: Arc::new(dashmap::DashMap::new()),
+        message_rate: Arc::new(echo_server::metrics::MessageRateCounter::new()),
     });
 
     // Per-task cleanup loops with panic recovery; cadence per task.
