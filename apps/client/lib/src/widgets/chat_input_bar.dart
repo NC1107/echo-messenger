@@ -406,7 +406,12 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
             _buildAutocompletePickers(),
             // Input area
             Container(
-              padding: EdgeInsets.fromLTRB(20, 8, 20, bottomPadding),
+              padding: EdgeInsets.fromLTRB(
+                20,
+                EchoSpacing.sm,
+                20,
+                bottomPadding,
+              ),
               color: context.chatBg,
               child: Column(
                 mainAxisSize: MainAxisSize.min,

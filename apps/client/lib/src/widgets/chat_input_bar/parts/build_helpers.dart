@@ -160,11 +160,14 @@ extension _BuildHelpers on ChatInputBarState {
             onPickFile: _pickFile,
             onShowMobileMenu: _showMobileAttachMenu,
           ),
-        if (!_isEditing) const SizedBox(width: 8),
+        if (!_isEditing) const SizedBox(width: EchoSpacing.sm),
         Expanded(
           child: Container(
             constraints: const BoxConstraints(minHeight: 40),
-            padding: const EdgeInsets.only(left: 12, right: 4),
+            padding: const EdgeInsets.only(
+              left: EchoSpacing.md,
+              right: EchoSpacing.xs,
+            ),
             decoration: BoxDecoration(
               color: context.surface,
               borderRadius: BorderRadius.circular(22),

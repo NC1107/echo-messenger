@@ -1,6 +1,8 @@
 // Translucent overlay shown while a file is being dragged over the chat panel.
 import 'package:flutter/material.dart';
 
+import '../../theme/echo_theme.dart';
+
 class DropOverlay extends StatelessWidget {
   final bool isDragOver;
 
@@ -18,12 +20,12 @@ class DropOverlay extends StatelessWidget {
             child: Center(
               child: Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 32,
+                  horizontal: EchoSpacing.xxl,
                   vertical: 20,
                 ),
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.75),
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(EchoRadii.xl),
                   border: Border.all(
                     color: Colors.white.withValues(alpha: 0.4),
                     width: 2,
@@ -37,7 +39,7 @@ class DropOverlay extends StatelessWidget {
                       size: 40,
                       color: Colors.white.withValues(alpha: 0.9),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: EchoSpacing.md),
                     Text(
                       'Drop file to send',
                       style: TextStyle(

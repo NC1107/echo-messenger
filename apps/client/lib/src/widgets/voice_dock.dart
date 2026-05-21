@@ -569,7 +569,7 @@ class _DockIconButton extends StatelessWidget {
           HapticFeedback.lightImpact();
           onPressed();
         },
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(EchoRadii.md),
         // 44x44 hit target stays constant across density tiers (WCAG 2.5.5);
         // only the visual icon scales.
         child: SizedBox(
