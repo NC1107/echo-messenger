@@ -152,17 +152,22 @@ class AppTitleBar extends StatelessWidget {
           // Full-width drag area underneath everything.
           const Positioned.fill(child: AppDragArea(child: SizedBox.expand())),
           // Centered name — IgnorePointer so clicks fall through to drag area.
+          // Reserve room on macOS so the title can't slide under the
+          // red/yellow/green traffic-light cluster anchored to the left.
           if (title != null && title!.isNotEmpty)
-            Center(
-              child: IgnorePointer(
-                child: Text(
-                  title!,
-                  style: TextStyle(
-                    color: context.textSecondary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
+            Padding(
+              padding: EdgeInsets.only(left: Platform.isMacOS ? 72.0 : 0.0),
+              child: Center(
+                child: IgnorePointer(
+                  child: Text(
+                    title!,
+                    style: TextStyle(
+                      color: context.textSecondary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ),
