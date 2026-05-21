@@ -6,4 +6,5 @@ pub mod hub;
 pub(crate) mod message_service;
 pub(crate) mod protocol;
 pub(crate) mod rate_limit;
+pub mod rotation;
 pub mod typing_service;

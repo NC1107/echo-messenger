@@ -239,6 +239,10 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpNet>) -> Route
                 .layer(middleware::from_fn(edit_message_limit)),
         )
         .route("/messages/{id}/replies", get(messages::get_thread_replies))
+        .route(
+            "/threads/participated",
+            get(messages::list_participated_threads),
+        )
         .route("/messages/{id}/reactions", post(reactions::add_reaction))
         .route(
             "/messages/{message_id}/reactions/{emoji}",
