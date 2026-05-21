@@ -34,7 +34,6 @@ import 'echo_logo_icon.dart';
 import 'empty_state.dart';
 import 'feedback_dialog.dart';
 import 'skeleton_loader.dart';
-import 'threads_sidebar_entry.dart';
 import 'voice_dock.dart';
 import 'voice_footer.dart';
 
@@ -59,12 +58,6 @@ class ConversationPanel extends ConsumerStatefulWidget {
   final VoidCallback? onShowContacts;
   final VoidCallback? onGlobalSearch;
   final VoidCallback? onSavedMessages;
-
-  /// Opens the aggregate Threads screen (#449). When null, the sidebar
-  /// "Threads" row is hidden — used by tests / shells that don't need
-  /// the entry. Production wires this to the home screen's threads
-  /// route.
-  final VoidCallback? onOpenThreads;
 
   /// Opens the keyboard-shortcuts overlay (also bindable to Ctrl+/).
   /// When null, the help icon in the header is hidden.
@@ -96,7 +89,6 @@ class ConversationPanel extends ConsumerStatefulWidget {
     this.onShowContacts,
     this.onGlobalSearch,
     this.onSavedMessages,
-    this.onOpenThreads,
     this.onShowKeyboardShortcuts,
     this.onScanQr,
     this.onMessageContact,
@@ -190,8 +182,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel>
               _buildFilterChips(),
               _buildReplacedBanner(context, wsReplaced),
               if (pendingCount > 0) _buildPendingBanner(pendingCount),
-              if (widget.onOpenThreads != null)
-                ThreadsSidebarEntry(onTap: widget.onOpenThreads),
               Expanded(
                 child: _buildChatsTab(
                   convState,
