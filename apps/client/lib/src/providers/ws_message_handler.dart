@@ -18,6 +18,7 @@ import '../services/sound_service.dart';
 import '../utils/crypto_utils.dart';
 import '../utils/debug_log.dart';
 import '../utils/mention_detection.dart';
+import '../utils/presence.dart';
 import '../utils/uuid_bytes.dart';
 import 'auth_provider.dart';
 import 'canvas_provider.dart';
@@ -106,6 +107,16 @@ class WebSocketState {
   String presenceStatusFor(String userId) {
     if (!onlineUsers.contains(userId)) return 'offline';
     return presenceStatuses[userId] ?? 'online';
+  }
+
+  /// Return a [UserPresence] snapshot — the structured pair that
+  /// downstream widgets actually want. Lets callers replace the inline
+  /// `onlineUsers.contains(...) + presenceStatuses[...] ?? 'online'`
+  /// pattern with a single method call.
+  UserPresence presenceFor(String userId) {
+    final isOnline = onlineUsers.contains(userId);
+    final status = isOnline ? (presenceStatuses[userId] ?? 'online') : 'offline';
+    return UserPresence(status: status, isOnline: isOnline);
   }
 
   String _typingKey(String conversationId, String? channelId) {

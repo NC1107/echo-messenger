@@ -5,13 +5,11 @@ import '../models/contact.dart';
 import '../models/conversation.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
-import '../providers/server_url_provider.dart';
-import '../providers/websocket_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/fuzzy_score.dart';
-import '../widgets/avatar_utils.dart';
 import '../widgets/settings/section_header.dart';
+import '../widgets/user_avatar.dart';
 
 // ---------------------------------------------------------------------------
 // NewMessageScreen
@@ -122,10 +120,6 @@ class _NewMessageScreenState extends ConsumerState<NewMessageScreen> {
             borderRadius: BorderRadius.circular(10),
             child: _DropdownList(
               suggestions: suggestions,
-              serverUrl: ref.read(serverUrlProvider),
-              onlineUsers: ref.read(
-                websocketProvider.select((s) => s.onlineUsers),
-              ),
               selectedIds: _chips.map((c) => c.userId).toSet(),
               onSelect: _selectSuggestion,
             ),
@@ -293,10 +287,6 @@ class _NewMessageScreenState extends ConsumerState<NewMessageScreen> {
   @override
   Widget build(BuildContext context) {
     final contactsState = ref.watch(contactsProvider);
-    final serverUrl = ref.watch(serverUrlProvider);
-    final onlineUsers = ref.watch(
-      websocketProvider.select((s) => s.onlineUsers),
-    );
 
     final suggestions = _filterContacts(contactsState.contacts, _query);
 
@@ -330,8 +320,6 @@ class _NewMessageScreenState extends ConsumerState<NewMessageScreen> {
               Expanded(
                 child: _ContactList(
                   contacts: suggestions,
-                  serverUrl: serverUrl,
-                  onlineUsers: onlineUsers,
                   selectedIds: _chips.map((c) => c.userId).toSet(),
                   onSelect: _selectSuggestion,
                 ),
@@ -605,15 +593,11 @@ class _NewMessageScreenState extends ConsumerState<NewMessageScreen> {
 
 class _ContactList extends StatelessWidget {
   final List<Contact> contacts;
-  final String serverUrl;
-  final Set<String> onlineUsers;
   final Set<String> selectedIds;
   final ValueChanged<Contact> onSelect;
 
   const _ContactList({
     required this.contacts,
-    required this.serverUrl,
-    required this.onlineUsers,
     required this.selectedIds,
     required this.onSelect,
   });
@@ -625,8 +609,6 @@ class _ContactList extends StatelessWidget {
       itemCount: contacts.length,
       itemBuilder: (_, i) => _ContactRow(
         contact: contacts[i],
-        serverUrl: serverUrl,
-        isOnline: onlineUsers.contains(contacts[i].userId),
         isSelected: selectedIds.contains(contacts[i].userId),
         onTap: () => onSelect(contacts[i]),
       ),
@@ -640,15 +622,11 @@ class _ContactList extends StatelessWidget {
 
 class _DropdownList extends StatelessWidget {
   final List<Contact> suggestions;
-  final String serverUrl;
-  final Set<String> onlineUsers;
   final Set<String> selectedIds;
   final ValueChanged<Contact> onSelect;
 
   const _DropdownList({
     required this.suggestions,
-    required this.serverUrl,
-    required this.onlineUsers,
     required this.selectedIds,
     required this.onSelect,
   });
@@ -663,8 +641,6 @@ class _DropdownList extends StatelessWidget {
         itemCount: suggestions.length,
         itemBuilder: (_, i) => _ContactRow(
           contact: suggestions[i],
-          serverUrl: serverUrl,
-          isOnline: onlineUsers.contains(suggestions[i].userId),
           isSelected: selectedIds.contains(suggestions[i].userId),
           onTap: () => onSelect(suggestions[i]),
         ),
@@ -679,15 +655,11 @@ class _DropdownList extends StatelessWidget {
 
 class _ContactRow extends StatelessWidget {
   final Contact contact;
-  final String serverUrl;
-  final bool isOnline;
   final bool isSelected;
   final VoidCallback onTap;
 
   const _ContactRow({
     required this.contact,
-    required this.serverUrl,
-    required this.isOnline,
     required this.isSelected,
     required this.onTap,
   });
@@ -697,7 +669,6 @@ class _ContactRow extends StatelessWidget {
     final displayName = contact.displayName?.isNotEmpty == true
         ? contact.displayName!
         : contact.username;
-    final resolvedAvatar = resolveAvatarUrl(contact.avatarUrl, serverUrl);
 
     return Material(
       color: isSelected ? context.accentLight : Colors.transparent,
@@ -708,30 +679,13 @@ class _ContactRow extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
           child: Row(
             children: [
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  buildAvatar(
-                    name: displayName,
-                    radius: 22,
-                    imageUrl: resolvedAvatar,
-                  ),
-                  Positioned(
-                    right: -1,
-                    bottom: -1,
-                    child: Container(
-                      width: 12,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        color: isOnline
-                            ? EchoTheme.online
-                            : const Color(0xFF6B6B6F),
-                        shape: BoxShape.circle,
-                        border: Border.all(color: context.mainBg, width: 2),
-                      ),
-                    ),
-                  ),
-                ],
+              UserAvatar(
+                userId: contact.userId,
+                username: displayName,
+                avatarUrl: contact.avatarUrl,
+                radius: 22,
+                showPresence: true,
+                openProfileOnTap: false,
               ),
               const SizedBox(width: 12),
               Expanded(
