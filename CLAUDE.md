@@ -136,6 +136,31 @@ Pre-commit hooks (lefthook, run in parallel): cargo fmt check + clippy `-D warni
 - Client: `livekit_voice_provider.dart`, `voice_rtc_provider.dart`, `voice_settings_provider.dart`
 - Requires `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` env vars in production
 
+## Code-quality budgets
+
+These are the rules SonarCloud enforces. Treat them as hard limits, not suggestions — closing batch findings later is far more expensive than writing within budget the first time.
+
+- **Cognitive complexity ≤ 15 per function (S3776).** If you're writing a method that nests three levels of `if`/`switch`/`for` or branches more than ~8 times, split it. Extract the inner branches into named helpers (`_resolveX`, `_buildY`, `_handleZ`) so the outer method reads as an orchestration. Don't ship `someBigMethod()` of 80+ lines just because "it's all related" — the reader can't hold that much.
+- **Function parameters ≤ 7 (S107).** Past 7 params, signatures stop being self-documenting and call sites become a maze of positional/named arguments. Group related params into a small data class (`class XParams { final ...; const XParams({required ...}); }`) before adding the 8th. Exceptions are `copyWith`-style methods on immutable state — those are wide on purpose. Document the exception in a `// S107:` comment so the next reader knows it was deliberate.
+- **No nested ternaries (S3358).** `a ? b : c ? d : e` is unreadable. Pull the inner ternary into a local variable or helper getter (`_resolveColor()`).
+- **No duplicate string literals (S1192).** Three+ uses of the same literal becomes a `const String _kFoo = '...'` at file scope.
+- **No `final` for compile-time constants (S3962).** Use `const` when the value is fully literal.
+
+### Componentize when you'd otherwise paste twice
+
+If you find yourself copy-pasting a widget tree (an avatar + presence dot, a confirm dialog, a bottom-sheet shell, etc.) into a second file, **stop and componentize it instead**. The goal is "change one thing somewhere, every callsite changes" — not "15 hand-rolled copies drift apart over six months." Search the codebase before writing a new widget tree:
+
+- Avatars + presence dot → `UserAvatar` in `widgets/user_avatar.dart`.
+- Confirm dialogs → `showEchoConfirmDialog` in `widgets/confirm_dialog.dart`.
+- Bottom sheets → `showEchoBottomSheet` in `widgets/echo_bottom_sheet.dart`.
+- Member role icon/pill → `MemberRoleIcon` / `MemberRoleBadge` in `widgets/member_role.dart`.
+- Presence colour / label → `presenceColor` / `presenceLabel` in `utils/presence.dart`.
+- Per-user presence lookup → `userPresenceProvider(userId)`.
+- Copy text + toast → `copyToClipboard(context, text, successMessage: ...)`.
+- Empty state with illustration → `EmptyState` in `widgets/empty_state.dart`.
+
+If your use case doesn't fit an existing helper, **extend the helper rather than fork it**. New options or `destructive: true`-style flags belong in the shared widget so the next user picks them up automatically.
+
 ## Critical Conventions
 
 - **WebSocket auth**: ticket-based only (`?ticket=`, NOT `?token=`). Client calls POST /api/auth/ws-ticket for 30-sec single-use ticket. JWT never in WS URL.
