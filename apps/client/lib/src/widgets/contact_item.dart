@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/contact.dart';
 import '../theme/echo_theme.dart';
-import 'avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
+import 'user_avatar.dart';
 
 class ContactItem extends StatefulWidget {
   final Contact contact;
@@ -32,8 +32,6 @@ class _ContactItemState extends State<ContactItem> {
     final contact = widget.contact;
     final username = contact.username;
     final displayName = contact.displayName;
-    final fullAvatarUrl = resolveAvatarUrl(contact.avatarUrl, widget.serverUrl);
-    final isOnline = widget.onlineUsers.contains(contact.userId);
 
     return Material(
       type: MaterialType.transparency,
@@ -56,33 +54,14 @@ class _ContactItemState extends State<ContactItem> {
                   label: 'contact: $username',
                   child: Row(
                     children: [
-                      // Avatar with online dot
-                      Stack(
-                        children: [
-                          buildAvatar(
-                            name: username,
-                            radius: 18,
-                            imageUrl: fullAvatarUrl,
-                          ),
-                          Positioned(
-                            bottom: 0,
-                            right: 0,
-                            child: Container(
-                              width: 10,
-                              height: 10,
-                              decoration: BoxDecoration(
-                                color: isOnline
-                                    ? EchoTheme.online
-                                    : context.textMuted,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: context.sidebarBg,
-                                  width: 2,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
+                      // Row InkWell already calls onProfile on tap.
+                      UserAvatar(
+                        userId: contact.userId,
+                        username: username,
+                        avatarUrl: contact.avatarUrl,
+                        radius: 18,
+                        showPresence: true,
+                        openProfileOnTap: false,
                       ),
                       const SizedBox(width: 12),
                       // Name
