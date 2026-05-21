@@ -21,6 +21,7 @@ import '../services/debug_log_service.dart';
 import '../services/pip_controller.dart';
 import '../theme/echo_theme.dart';
 import '../utils/canvas_utils.dart';
+import '../widgets/echo_bottom_sheet.dart';
 import '../widgets/lounge_drawing_canvas.dart';
 import '../widgets/vertex_mesh_background.dart';
 import '../widgets/voice_canvas.dart';
@@ -620,32 +621,30 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
         ),
       );
     } else {
-      await showModalBottomSheet<void>(
-        context: ctx,
+      await showEchoBottomSheet<void>(
+        ctx,
         builder: (sheetCtx) {
-          return SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.image_outlined),
+                title: const Text('Choose voice lounge background'),
+                onTap: () {
+                  Navigator.of(sheetCtx).pop();
+                  _pickBackground();
+                },
+              ),
+              if (hasCustom)
                 ListTile(
-                  leading: const Icon(Icons.image_outlined),
-                  title: const Text('Choose voice lounge background'),
+                  leading: const Icon(Icons.restore),
+                  title: const Text('Reset to default'),
                   onTap: () {
                     Navigator.of(sheetCtx).pop();
-                    _pickBackground();
+                    _clearBackground();
                   },
                 ),
-                if (hasCustom)
-                  ListTile(
-                    leading: const Icon(Icons.restore),
-                    title: const Text('Reset to default'),
-                    onTap: () {
-                      Navigator.of(sheetCtx).pop();
-                      _clearBackground();
-                    },
-                  ),
-              ],
-            ),
+            ],
           );
         },
       );
