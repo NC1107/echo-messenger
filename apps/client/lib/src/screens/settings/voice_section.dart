@@ -246,24 +246,60 @@ class _VoiceVideoSectionState extends ConsumerState<VoiceVideoSection> {
         '_loadAudioDevices: enumerateDevices returned ${devices.length} '
             'device(s)',
       );
-      final inputs = <Map<String, String>>[
-        {'id': 'default', 'name': 'Default Microphone'},
-      ];
-      final outputs = <Map<String, String>>[
-        {'id': 'default', 'name': 'Default Output'},
-      ];
-      final cameras = <Map<String, String>>[
-        {'id': 'default', 'name': 'Default Camera'},
-      ];
+      final inputs = <Map<String, String>>[];
+      final outputs = <Map<String, String>>[];
+      final cameras = <Map<String, String>>[];
       for (final d in devices) {
-        final label = d.label.isNotEmpty ? d.label : d.deviceId;
-        if (d.kind == 'audioinput' && d.deviceId != 'default') {
+        if (d.deviceId.isEmpty) continue;
+        // On Linux, PulseAudio exposes the default sink/source with
+        // deviceId='default' and an empty label. Accept the device but
+        // substitute a friendly per-kind name when the label is missing.
+        final String label;
+        if (d.label.isNotEmpty) {
+          label = d.label;
+        } else if (d.deviceId == 'default') {
+          label = switch (d.kind) {
+            'audioinput' => 'Default Microphone',
+            'audiooutput' => 'Default Output',
+            'videoinput' => 'Default Camera',
+            _ => 'Default Device',
+          };
+        } else {
+          label = d.deviceId;
+        }
+        if (d.kind == 'audioinput') {
           inputs.add({'id': d.deviceId, 'name': label});
-        } else if (d.kind == 'audiooutput' && d.deviceId != 'default') {
+        } else if (d.kind == 'audiooutput') {
           outputs.add({'id': d.deviceId, 'name': label});
-        } else if (d.kind == 'videoinput' && d.deviceId != 'default') {
+        } else if (d.kind == 'videoinput') {
           cameras.add({'id': d.deviceId, 'name': label});
         }
+      }
+      // If the plugin returned nothing for a kind, keep a sentinel so the
+      // dropdown is never blank. Distinguish "zero devices enumerated"
+      // (Linux PulseAudio unavailable / sandboxed) from "devices returned
+      // but none matched this kind" (e.g. a server with no webcam).
+      final noEnum = devices.isEmpty;
+      if (inputs.isEmpty) {
+        inputs.add({
+          'id': 'default',
+          'name': noEnum
+              // \u2014 = em dash
+              ? 'Using system default \u2014 no enumeration available'
+              : 'Default Microphone',
+        });
+      }
+      if (outputs.isEmpty) {
+        outputs.add({
+          'id': 'default',
+          'name': noEnum
+              // \u2014 = em dash
+              ? 'Using system default \u2014 no enumeration available'
+              : 'Default Output',
+        });
+      }
+      if (cameras.isEmpty) {
+        cameras.add({'id': 'default', 'name': 'Default Camera'});
       }
       if (mounted) {
         setState(() {
