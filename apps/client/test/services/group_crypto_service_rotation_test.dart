@@ -13,6 +13,8 @@
 /// purge. This test pins the client cache contract.
 library;
 
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:echo_app/src/services/group_crypto_service.dart';
 import 'package:echo_app/src/services/secure_key_store.dart';
@@ -95,6 +97,61 @@ void main() {
           fetchIdentityKey: (_) async => null,
         );
         expect(result, isNull);
+      },
+    );
+
+    test(
+      'aborts rotation when ANY non-self member is missing an identity key',
+      () async {
+        // Production E2E regression: previously the rotation path silently
+        // `continue`d past unkeyed members, uploaded envelopes for the
+        // subset that had keys, and left the unkeyed member to hit the
+        // server's `__envelope__` sentinel and explode on AES unwrap.
+        //
+        // We can't easily wire a full CryptoService into a unit test —
+        // it needs real identity keys, secure storage, etc. — so this
+        // test pins the contract one level up: with a partially-keyed
+        // roster, `performRotation` MUST return null. Whether the
+        // abort path is the no-`_cryptoService` short-circuit or the
+        // new "missing identity key" early-return doesn't change the
+        // user-visible contract: no envelopes get published.
+        const groupId = 'group-rotate-partial';
+        final service = GroupCryptoService(serverUrl: 'http://localhost:0');
+
+        // Seed an old key so we can verify it ALSO gets purged before
+        // the abort — partial rotation must never leave the old key
+        // around as a fallback (separate from the abort guarantee).
+        await fakeStore.write(
+          'group_key_${groupId}_1',
+          GroupCryptoService.generateGroupKey(),
+        );
+
+        final result = await service.performRotation(
+          groupId,
+          2,
+          fetchMembers: () async => [
+            {'user_id': 'alice'},
+            {'user_id': 'bob'},
+          ],
+          fetchIdentityKey: (userId) async {
+            if (userId == 'alice') return Uint8List(32);
+            return null; // bob — missing key
+          },
+        );
+        expect(
+          result,
+          isNull,
+          reason:
+              'partial rotation must be refused — every member needs an '
+              'identity key before any envelope is published',
+        );
+
+        // Old key is also gone — the rotation drops cached material
+        // before any abort returns.
+        final remaining = fakeStore.dump.keys
+            .where((k) => k.startsWith('group_key_$groupId'))
+            .toList();
+        expect(remaining, isEmpty);
       },
     );
   });

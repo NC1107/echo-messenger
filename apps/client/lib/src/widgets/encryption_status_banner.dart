@@ -45,6 +45,9 @@ class EncryptionStatusBanner extends ConsumerWidget {
     final outOfSync = ref.watch(
       chatProvider.select((s) => s.isConversationOutOfSync(conversation.id)),
     );
+    final needsRotation = ref.watch(
+      chatProvider.select((s) => s.isGroupAwaitingRotation(conversation.id)),
+    );
 
     if (secureStorageDown) {
       return _Banner(
@@ -88,17 +91,26 @@ class EncryptionStatusBanner extends ConsumerWidget {
       );
     }
 
-    if (outOfSync && conversation.isGroup) {
-      // Group decrypt failures cluster when a member missed a
-      // rotation — the local cached key is stale and the new envelope
-      // is sitting on the server. "Refresh key" drops our cache + a
-      // GET /api/groups/:id/keys/latest pulls the current envelope.
+    if ((needsRotation || outOfSync) && conversation.isGroup) {
+      // Two paths funnel into the same banner:
+      // 1. needsRotation — the server reported 410 Gone from
+      //    /keys/latest because no envelope exists for this user at
+      //    the current key version. Another member must rotate us in.
+      // 2. outOfSync — repeated "[Could not decrypt...]" placeholders
+      //    crossed the threshold; the local cached key is probably
+      //    stale and a fresh envelope is sitting on the server.
+      // "Refresh key" drops the local cache + refetches; if the fetch
+      // returns 410 again the callback re-flags the conversation.
+      final message = needsRotation
+          ? "This group's encryption key was rotated without you. Ask any "
+                'active member to refresh and send a message — the new '
+                'envelope will be delivered to you.'
+          : "Can't decrypt this group's recent messages. The encryption key "
+                'may have rotated — refresh to fetch the latest.';
       return _Banner(
         icon: Icons.refresh,
         color: EchoTheme.warning,
-        message:
-            "Can't decrypt this group's recent messages. The encryption key "
-            'may have rotated — refresh to fetch the latest.',
+        message: message,
         actionLabel: 'Refresh key',
         onAction: () =>
             ref.read(chatProvider.notifier).refreshGroupKey(conversation.id),

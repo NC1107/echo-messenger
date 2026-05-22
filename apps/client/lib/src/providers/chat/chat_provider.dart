@@ -65,6 +65,24 @@ class Chat extends _$Chat
       }
       _sendTimeouts.clear();
     });
+
+    // Plumb the GroupCryptoService 410-Gone callback into chat state.
+    // When the server reports "no envelope for this user at the latest
+    // version", flip the `groupsNeedingRotation` flag so the
+    // EncryptionStatusBanner surfaces the "Refresh key" affordance.
+    final groupCrypto = ref.read(groupCryptoServiceProvider);
+    void handler(String conversationId) {
+      state = state.withGroupRotationNeeded(conversationId);
+    }
+
+    groupCrypto.onGroupNeedsRotation = handler;
+    ref.onDispose(() {
+      // Only detach if no later build installed its own handler.
+      if (identical(groupCrypto.onGroupNeedsRotation, handler)) {
+        groupCrypto.onGroupNeedsRotation = null;
+      }
+    });
+
     return const ChatState();
   }
 

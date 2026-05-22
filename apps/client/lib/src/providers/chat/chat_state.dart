@@ -56,6 +56,17 @@ class ChatState {
   /// closed and reopened). Audit Phase 4 (group recovery UX).
   final Set<String> signatureFailures;
 
+  /// Groups whose latest key version exists on the server but has no
+  /// per-user envelope for the current caller — i.e. another member
+  /// must rotate us in. Populated when
+  /// `GET /api/groups/:id/keys/latest` returns 410 Gone. Drives the
+  /// "Refresh key" banner; cleared by `refreshGroupKey` once a
+  /// healthy envelope is fetched. Prevents the unkeyed-member
+  /// silent-skip bug where rotation completed without an envelope
+  /// for this user and the server then served a sentinel placeholder
+  /// the client tried to decrypt as a key.
+  final Set<String> groupsNeedingRotation;
+
   /// Threshold at which the per-conversation banner becomes visible.
   /// Three is the audit's recommended default; tuning lives in
   /// `06-recommendations.md`.
@@ -69,6 +80,7 @@ class ChatState {
     this.replyToMessage,
     this.consecutiveDecryptFailures = const {},
     this.signatureFailures = const {},
+    this.groupsNeedingRotation = const {},
   }) : _messageIdIndex = messageIdIndex;
 
   /// True when the named conversation has crossed [outOfSyncThreshold]
@@ -82,6 +94,13 @@ class ChatState {
   /// signature failure. Renders a danger-banner with no auto-action.
   bool hasSignatureFailure(String conversationId) {
     return signatureFailures.contains(conversationId);
+  }
+
+  /// True when the named conversation's latest server-side key version
+  /// has no per-user envelope for us — another member must rotate us in.
+  /// Drives the "Refresh key" banner.
+  bool isGroupAwaitingRotation(String conversationId) {
+    return groupsNeedingRotation.contains(conversationId);
   }
 
   /// Get messages for a conversation ID.
@@ -158,6 +177,7 @@ class ChatState {
       replyToMessage: replyToMessage,
       consecutiveDecryptFailures: updatedFailures,
       signatureFailures: updatedSigFailures,
+      groupsNeedingRotation: groupsNeedingRotation,
     );
   }
 
@@ -250,6 +270,44 @@ class ChatState {
       replyToMessage: replyToMessage,
       consecutiveDecryptFailures: next,
       signatureFailures: signatureFailures,
+      groupsNeedingRotation: groupsNeedingRotation,
+    );
+  }
+
+  /// Flag a conversation as needing a fresh group-key envelope. Triggered
+  /// by a 410 Gone from `GET /api/groups/:id/keys/latest`.
+  ChatState withGroupRotationNeeded(String conversationId) {
+    if (groupsNeedingRotation.contains(conversationId)) {
+      return this;
+    }
+    final next = {...groupsNeedingRotation, conversationId};
+    return ChatState(
+      messagesByConversation: messagesByConversation,
+      messageIdIndex: _messageIdIndex,
+      loadingHistory: loadingHistory,
+      hasMore: hasMore,
+      replyToMessage: replyToMessage,
+      consecutiveDecryptFailures: consecutiveDecryptFailures,
+      signatureFailures: signatureFailures,
+      groupsNeedingRotation: next,
+    );
+  }
+
+  /// Clear the needs-rotation flag once a healthy envelope is fetched.
+  ChatState withGroupRotationCleared(String conversationId) {
+    if (!groupsNeedingRotation.contains(conversationId)) {
+      return this;
+    }
+    final next = {...groupsNeedingRotation}..remove(conversationId);
+    return ChatState(
+      messagesByConversation: messagesByConversation,
+      messageIdIndex: _messageIdIndex,
+      loadingHistory: loadingHistory,
+      hasMore: hasMore,
+      replyToMessage: replyToMessage,
+      consecutiveDecryptFailures: consecutiveDecryptFailures,
+      signatureFailures: signatureFailures,
+      groupsNeedingRotation: next,
     );
   }
 
@@ -270,6 +328,7 @@ class ChatState {
       replyToMessage: replyToMessage,
       consecutiveDecryptFailures: consecutiveDecryptFailures,
       signatureFailures: next,
+      groupsNeedingRotation: groupsNeedingRotation,
     );
   }
 
@@ -282,6 +341,7 @@ class ChatState {
     bool clearReply = false,
     Map<String, int>? consecutiveDecryptFailures,
     Set<String>? signatureFailures,
+    Set<String>? groupsNeedingRotation,
   }) {
     return ChatState(
       messagesByConversation:
@@ -295,6 +355,8 @@ class ChatState {
       consecutiveDecryptFailures:
           consecutiveDecryptFailures ?? this.consecutiveDecryptFailures,
       signatureFailures: signatureFailures ?? this.signatureFailures,
+      groupsNeedingRotation:
+          groupsNeedingRotation ?? this.groupsNeedingRotation,
     );
   }
 }
