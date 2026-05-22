@@ -38,6 +38,18 @@ extension _MediaPicker on ChatInputBarState {
                 _pickFile();
               },
             ),
+            AttachOption(
+              icon: Icons.text_format,
+              label: _showFormatToolbarOnMobile
+                  ? 'Hide formatting'
+                  : 'Formatting',
+              onTap: () {
+                Navigator.pop(ctx);
+                setState(() {
+                  _showFormatToolbarOnMobile = !_showFormatToolbarOnMobile;
+                });
+              },
+            ),
           ],
         ),
       ),
