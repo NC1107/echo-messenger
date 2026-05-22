@@ -409,53 +409,48 @@ mixin _HomeScreenDesktopLayoutMixin
   }
 
   /// Draggable resize handle between sidebar and content area.
+  ///
+  /// The hit area stays at 12 px (forgiving for the mouse) but the visible
+  /// seam was previously a 1 px border with no hover state — users would
+  /// hunt-and-peck for the handle. Hovering now brightens the seam to the
+  /// accent colour so the affordance is obvious, while the underlying drag /
+  /// double-click / pull-through behaviour is unchanged.
   Widget _buildResizeHandle() {
-    return MouseRegion(
-      cursor: SystemMouseCursors.resizeColumn,
-      child: Semantics(
-        label: 'Resize sidebar',
-        child: GestureDetector(
-          onHorizontalDragUpdate: (details) {
-            if (_self._sidebarCollapsed) return;
-            // Allow dragging below `_sidebarMinWidth` so users can pull the
-            // handle through to compact mode and the drag-end handler can
-            // snap to collapsed. The lower clamp keeps the sidebar from
-            // disappearing entirely mid-drag (#739).
-            setState(() {
-              _self._sidebarWidth = (_self._sidebarWidth + details.delta.dx)
-                  .clamp(
-                    _HomeScreenState._sidebarPullThroughWidth,
-                    _HomeScreenState._sidebarMaxWidth,
-                  );
-            });
-          },
-          onHorizontalDragEnd: (details) {
-            setState(() {
-              if (_self._sidebarWidth < _HomeScreenState._sidebarMinWidth) {
-                // User pulled past the min — snap to compact and restore the
-                // expanded default for the next expand-from-compact toggle.
-                _self._sidebarCollapsed = true;
-                _self._sidebarWidth = _HomeScreenState._sidebarDefaultWidth;
-              }
-            });
-          },
-          onDoubleTap: () {
-            setState(() {
-              if (_self._sidebarCollapsed) {
-                _self._sidebarCollapsed = false;
-                _self._sidebarWidth = _HomeScreenState._sidebarDefaultWidth;
-              } else {
-                _self._sidebarCollapsed = true;
-              }
-            });
-          },
-          child: Container(
-            width: 12,
-            color: Colors.transparent,
-            child: Center(child: Container(width: 1, color: context.border)),
-          ),
-        ),
-      ),
+    return _ResizeHandle(
+      isCollapsed: _self._sidebarCollapsed,
+      onHorizontalDragUpdate: (details) {
+        if (_self._sidebarCollapsed) return;
+        // Allow dragging below `_sidebarMinWidth` so users can pull the
+        // handle through to compact mode and the drag-end handler can
+        // snap to collapsed. The lower clamp keeps the sidebar from
+        // disappearing entirely mid-drag (#739).
+        setState(() {
+          _self._sidebarWidth = (_self._sidebarWidth + details.delta.dx).clamp(
+            _HomeScreenState._sidebarPullThroughWidth,
+            _HomeScreenState._sidebarMaxWidth,
+          );
+        });
+      },
+      onHorizontalDragEnd: (details) {
+        setState(() {
+          if (_self._sidebarWidth < _HomeScreenState._sidebarMinWidth) {
+            // User pulled past the min — snap to compact and restore the
+            // expanded default for the next expand-from-compact toggle.
+            _self._sidebarCollapsed = true;
+            _self._sidebarWidth = _HomeScreenState._sidebarDefaultWidth;
+          }
+        });
+      },
+      onDoubleTap: () {
+        setState(() {
+          if (_self._sidebarCollapsed) {
+            _self._sidebarCollapsed = false;
+            _self._sidebarWidth = _HomeScreenState._sidebarDefaultWidth;
+          } else {
+            _self._sidebarCollapsed = true;
+          }
+        });
+      },
     );
   }
 
@@ -480,5 +475,72 @@ mixin _HomeScreenDesktopLayoutMixin
         },
       ),
     ];
+  }
+}
+
+/// Sidebar resize handle. Stateful so the seam can highlight on hover and
+/// while a drag is in flight, without forcing a rebuild of the whole
+/// HomeScreen on every pointer enter/exit.
+class _ResizeHandle extends StatefulWidget {
+  final bool isCollapsed;
+  final GestureDragUpdateCallback onHorizontalDragUpdate;
+  final GestureDragEndCallback onHorizontalDragEnd;
+  final VoidCallback onDoubleTap;
+
+  const _ResizeHandle({
+    required this.isCollapsed,
+    required this.onHorizontalDragUpdate,
+    required this.onHorizontalDragEnd,
+    required this.onDoubleTap,
+  });
+
+  @override
+  State<_ResizeHandle> createState() => _ResizeHandleState();
+}
+
+class _ResizeHandleState extends State<_ResizeHandle> {
+  bool _hovering = false;
+  bool _dragging = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final highlighted = _hovering || _dragging;
+    final seamColor = highlighted ? context.accent : context.border;
+    final seamWidth = highlighted ? 2.0 : 1.0;
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeColumn,
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: Tooltip(
+        message: 'Drag to resize, double-click to collapse',
+        waitDuration: const Duration(milliseconds: 500),
+        child: Semantics(
+          label: 'Resize sidebar',
+          child: GestureDetector(
+            onHorizontalDragStart: (_) => setState(() => _dragging = true),
+            onHorizontalDragUpdate: widget.onHorizontalDragUpdate,
+            onHorizontalDragEnd: (details) {
+              setState(() => _dragging = false);
+              widget.onHorizontalDragEnd(details);
+            },
+            onHorizontalDragCancel: () => setState(() => _dragging = false),
+            onDoubleTap: widget.onDoubleTap,
+            // Container is `double.infinity` tall via Row's cross-axis
+            // stretch, transparent fill keeps the full 12 px as hit area.
+            child: Container(
+              width: 12,
+              color: Colors.transparent,
+              alignment: Alignment.center,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 120),
+                curve: Curves.easeOut,
+                width: seamWidth,
+                color: seamColor,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
