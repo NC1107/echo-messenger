@@ -116,7 +116,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   bool _sidebarCollapsed = false;
   double _sidebarWidth = 350;
   static const _sidebarMinWidth = 200.0;
-  static const _sidebarMaxWidth = 500.0;
+  // 640 px gives users on 2560x1440+ displays room to surface long
+  // conversation titles, group names, and last-message previews without
+  // truncation. The previous 500 px cap felt cramped on wide monitors.
+  static const _sidebarMaxWidth = 640.0;
 
   /// Lower clamp during a resize drag — below `_sidebarMinWidth` so the
   /// drag-end handler can detect a pull-through and snap into compact mode
@@ -236,10 +239,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           const SingleActivator(LogicalKeyboardKey.slash, control: true): () {
             _showKeyboardShortcuts();
           },
+          // Power-user shortcuts: open settings (matches the Discord /
+          // browser convention) and close settings with Esc so the panel
+          // never strands the user without a mouse.
+          const SingleActivator(LogicalKeyboardKey.comma, control: true): () {
+            _openSettings();
+          },
+          const SingleActivator(LogicalKeyboardKey.escape): _onEscape,
         },
         child: Focus(autofocus: true, child: layout),
       ),
     );
+  }
+
+  /// Esc closes the inline settings panel on desktop. On narrow viewports
+  /// the settings screen is a real route and its own back button handles
+  /// dismissal, so we only intercept Esc when the inline panel is open.
+  void _onEscape() {
+    if (_showSettings) {
+      setState(() => _showSettings = false);
+    }
   }
 
   bool get _isDesktop => Responsive.isDesktop(context);
