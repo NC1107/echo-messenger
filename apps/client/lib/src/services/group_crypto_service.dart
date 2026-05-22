@@ -117,6 +117,14 @@ class GroupCryptoService {
   /// requests against the server for plaintext groups.
   final Set<String> _unencryptedGroups = {};
 
+  /// Callback fired when the server reports 410 Gone from
+  /// `GET /api/groups/:id/keys/latest` (no envelope at the latest key
+  /// version for this caller). The chat layer wires this to a
+  /// per-conversation "needs rotation" flag that drives the
+  /// EncryptionStatusBanner. Set once at startup; null when no
+  /// listener has registered. Argument is the conversation id.
+  void Function(String conversationId)? onGroupNeedsRotation;
+
   static final _aesGcm = AesGcm.with256bits();
 
   GroupCryptoService({required this.serverUrl});
@@ -572,6 +580,19 @@ class GroupCryptoService {
         headers: {'Authorization': 'Bearer $_token'},
       );
 
+      // 410 Gone: the group has a current key version but the server has
+      // no per-user envelope for us at that version. Another member needs
+      // to rotate us in. Surface the recovery banner instead of caching a
+      // bogus sentinel string as if it were the AES key.
+      if (response.statusCode == 410) {
+        debugPrint(
+          '[GroupCrypto] $conversationId has no envelope for this user at '
+          'the latest key version — flagging for re-rotation.',
+        );
+        onGroupNeedsRotation?.call(conversationId);
+        return null;
+      }
+
       if (response.statusCode != 200) {
         debugPrint(
           '[GroupCrypto] Failed to fetch key for $conversationId: '
@@ -810,16 +831,32 @@ class GroupCryptoService {
       }
     }
 
+    // Abort if ANY member lacks an identity key. The previous behaviour
+    // silently `continue`d, which let rotation "complete" with a subset
+    // of envelopes — the unkeyed member then hit the server's
+    // `__envelope__` sentinel row and fed it to the AES unwrap path,
+    // producing "candidate key has wrong length: 9 bytes" errors with
+    // no actionable signal. Rotation = "make this group encrypted for
+    // these N members"; partial coverage is BUSTED state we must
+    // refuse to publish.
+    final missingKeyUserIds = <String>[
+      for (var i = 0; i < userIds.length; i++)
+        if (identityKeys[i] == null) userIds[i],
+    ];
+    if (missingKeyUserIds.isNotEmpty) {
+      debugPrint(
+        '[GroupCrypto] performRotation aborted: missing identity key for '
+        '${missingKeyUserIds.join(', ')}. Rotation requires every member '
+        "to have published an identity key — partial rotation would wedge "
+        'the unkeyed member(s) on the sentinel envelope row.',
+      );
+      return null;
+    }
+
     final envelopes = <Map<String, dynamic>>[];
     for (var i = 0; i < userIds.length; i++) {
       final userId = userIds[i];
-      final identityKey = identityKeys[i];
-      if (identityKey == null) {
-        debugPrint(
-          '[GroupCrypto] performRotation: missing identity key for $userId',
-        );
-        continue;
-      }
+      final identityKey = identityKeys[i]!;
       final wrapped = await _cryptoService!.encryptForUser(
         newKeyBytes,
         identityKey,

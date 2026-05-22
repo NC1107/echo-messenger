@@ -41,6 +41,13 @@ mixin ChatRecoveryMixin on Notifier<ChatState> {
   /// group. Non-admins get a 401 from the upload and the banner
   /// stays visible.
   Future<void> refreshGroupKey(String conversationId) async {
+    // Clear the needs-rotation + out-of-sync flags BEFORE the fetch so
+    // that if the fetch's 410 callback fires again it can re-set the
+    // flag and keep the banner visible. Order matters: clear → fetch.
+    state = state
+        .withSyncRestored(conversationId)
+        .withGroupRotationCleared(conversationId);
+
     final groupCrypto = ref.read(groupCryptoServiceProvider);
     await groupCrypto.dropCachedKey(conversationId);
     final fetched = await groupCrypto.getGroupKey(conversationId);
@@ -57,7 +64,6 @@ mixin ChatRecoveryMixin on Notifier<ChatState> {
         debugPrint('[Chat] refreshGroupKey self-heal failed: $e');
       }
     }
-    state = state.withSyncRestored(conversationId);
   }
 
   /// Phase 4 dismissal for the GRP2 signature-failure banner. We do
