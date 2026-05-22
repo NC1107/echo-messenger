@@ -379,6 +379,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   SettingsSection _selectedSection = SettingsSection.profile;
   SettingsSection? _mobileDetailSection;
 
+  /// Layout-tier picker with hysteresis. Mirrors [HomeScreen] so dragging the
+  /// window across the 600 px seam doesn't tear down the scaffold — that would
+  /// drop the in-flight mobile detail-page state every frame the user resizes.
+  final StableLayoutDecision _layoutDecision = StableLayoutDecision();
+
   Future<void> _logout() async {
     final confirmed = await showEchoConfirmDialog(
       context,
@@ -424,81 +429,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     context.push('/saved');
   }
 
-  bool get _isMobile => Responsive.isMobile(context);
-
   @override
   Widget build(BuildContext context) {
-    if (_isMobile) {
+    final width = MediaQuery.of(context).size.width;
+    final tier = _layoutDecision.next(width);
+    if (tier == LayoutTier.narrow) {
       return _buildMobileLayout();
     }
     return _buildDesktopLayout();
   }
 
   Widget _buildMobileLayout() {
-    if (_mobileDetailSection != null) {
-      return Scaffold(
-        backgroundColor: context.mainBg,
-        appBar: AppBar(
-          backgroundColor: context.mainBg,
-          title: Text(
-            settingsSectionLabel(_mobileDetailSection!),
-            style: TextStyle(
-              color: context.textPrimary,
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          leading: IconButton(
-            icon: Icon(Icons.arrow_back, color: context.textSecondary),
-            onPressed: () => setState(() => _mobileDetailSection = null),
-          ),
-        ),
-        body: SettingsContent(
-          key: ValueKey(_mobileDetailSection),
-          section: _mobileDetailSection!,
-        ),
-      );
+    final detail = _mobileDetailSection;
+    if (detail != null) {
+      return _buildMobileDetailPage(detail);
     }
+    return _buildMobileRootPage();
+  }
 
+  /// Mobile root: full-screen section list. Tapping a row pushes into the
+  /// detail page (see [_buildMobileDetailPage]) by setting state — we keep
+  /// navigation in-Scaffold rather than pushing a route so that the parent
+  /// route's bottom tab bar (when this screen is embedded in HomeScreen on
+  /// mobile) doesn't disappear on detail entry.
+  Widget _buildMobileRootPage() {
     return Scaffold(
       backgroundColor: context.mainBg,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Row(
-                children: [
-                  if (widget.onBack != null || Navigator.of(context).canPop())
-                    Padding(
-                      padding: const EdgeInsets.only(right: 4),
-                      child: IconButton(
-                        icon: Icon(
-                          Icons.arrow_back,
-                          color: context.textSecondary,
-                        ),
-                        onPressed: () {
-                          if (widget.onBack != null) {
-                            widget.onBack!();
-                          } else {
-                            context.pop();
-                          }
-                        },
-                      ),
-                    ),
-                  Text(
-                    'Settings',
-                    style: TextStyle(
-                      color: context.textPrimary,
-                      fontSize: 28,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            _buildMobileHeader(),
             Expanded(
               child: SettingsRootView(
                 onTap: (section) =>
@@ -510,6 +471,64 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildMobileHeader() {
+    final canPop = widget.onBack != null || Navigator.of(context).canPop();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Row(
+        children: [
+          if (canPop)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: IconButton(
+                icon: Icon(Icons.arrow_back, color: context.textSecondary),
+                onPressed: _handleMobileBack,
+              ),
+            ),
+          Text(
+            'Settings',
+            style: TextStyle(
+              color: context.textPrimary,
+              fontSize: 28,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _handleMobileBack() {
+    if (widget.onBack != null) {
+      widget.onBack!();
+    } else {
+      context.pop();
+    }
+  }
+
+  Widget _buildMobileDetailPage(SettingsSection detail) {
+    return Scaffold(
+      backgroundColor: context.mainBg,
+      appBar: AppBar(
+        backgroundColor: context.mainBg,
+        title: Text(
+          settingsSectionLabel(detail),
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: context.textSecondary),
+          onPressed: () => setState(() => _mobileDetailSection = null),
+        ),
+      ),
+      body: SettingsContent(key: ValueKey(detail), section: detail),
     );
   }
 
