@@ -159,13 +159,19 @@ fn find_set_cookie<'a>(resp: &'a reqwest::Response, name: &str) -> Option<&'a st
 }
 
 /// Assert a Set-Cookie header has the expected security attributes.
+///
+/// `SameSite=None` (relaxed from Strict in Phase 2 of the domain migration,
+/// #1063) — Strict would be dropped on the cross-site fetch from
+/// `web.echo-messenger.us` to `us-east.echo-messenger.us`. Secure +
+/// HttpOnly are still enforced; CSRF protection comes from the explicit
+/// credentialed-CORS allow-list (see `routes/mod.rs`).
 fn assert_refresh_cookie_attrs(set_cookie: &str, expect_max_age: &str) {
     let lower = set_cookie.to_ascii_lowercase();
     assert!(lower.contains("httponly"), "missing HttpOnly: {set_cookie}");
     assert!(lower.contains("secure"), "missing Secure: {set_cookie}");
     assert!(
-        lower.contains("samesite=strict"),
-        "missing SameSite=Strict: {set_cookie}"
+        lower.contains("samesite=none"),
+        "missing SameSite=None: {set_cookie}"
     );
     assert!(
         lower.contains("path=/api/auth"),
