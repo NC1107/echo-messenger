@@ -53,13 +53,13 @@ class _TestMediaDeviceInfo {
 // test above.
 // ---------------------------------------------------------------------------
 
-typedef _DeviceLists = ({
+typedef _ClassifiedDevices = ({
   List<Map<String, String>> inputs,
   List<Map<String, String>> outputs,
   List<Map<String, String>> cameras,
 });
 
-_DeviceLists _classify(List<_TestMediaDeviceInfo> devices) {
+_ClassifiedDevices _classify(List<_TestMediaDeviceInfo> devices) {
   final inputs = <Map<String, String>>[];
   final outputs = <Map<String, String>>[];
   final cameras = <Map<String, String>>[];
