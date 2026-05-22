@@ -1,0 +1,13 @@
+{
+  "name": "07-distinct-keys-ids",
+  "description": "every input byte distinct from every other — guards against accidental swap bugs between key/conv/msg/nonce fields (e.g. signing the wrong UUID).",
+  "group_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+  "conversation_id_b64": "gIGCg4SFhoeIiYqLjI2Ojw==",
+  "message_id_b64": "QEFCQ0RFRkdISUpLTE1OTw==",
+  "nonce_b64": "wMHCw8TFxsfIycrL",
+  "signing_seed_b64": "//79/Pv6+fj39vX08/Lx8O/u7ezr6uno5+bl5OPi4eA=",
+  "verify_key_b64": "uvxxvq06xeS2PpyCFu5xo0quxlci7tvKcotOmzzM45Y=",
+  "plaintext_utf8": "swap-detector",
+  "expected_wire_with_prefix": "GRP2:AcDBwsPExcbHyMnKy3M/RhdaHPMq/bqJzUCo/KCTBeWw2ZDb+z1hO7Qiiz3wVDyZuQmT3r7U+ZF+4bHHo7PWjZ4fWV7SF9+KSN+4Oj8pqKJLQl3g1Xawo5RXNJ4444bHEXnIAj/2UxaqDw==",
+  "expected_signature_b64": "iz3wVDyZuQmT3r7U+ZF+4bHHo7PWjZ4fWV7SF9+KSN+4Oj8pqKJLQl3g1Xawo5RXNJ4444bHEXnIAj/2UxaqDw=="
+}

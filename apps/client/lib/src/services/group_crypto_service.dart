@@ -290,6 +290,53 @@ class GroupCryptoService {
     required Uint8List conversationIdBytes,
     required Uint8List messageIdBytes,
     required SimpleKeyPair senderSigningKey,
+  }) {
+    // Nonce omitted => AesGcm draws one from the system CSPRNG.
+    return _packGrp2Internal(
+      plaintext: plaintext,
+      keyBase64: keyBase64,
+      conversationIdBytes: conversationIdBytes,
+      messageIdBytes: messageIdBytes,
+      senderSigningKey: senderSigningKey,
+      nonceOverride: null,
+    );
+  }
+
+  /// Test-only seam: pack a GRP2 wire with a caller-supplied nonce so the
+  /// output is deterministic and can be compared byte-for-byte against
+  /// the Rust reference implementation. Production code MUST go through
+  /// [encryptGroupMessageV2] so the AES-GCM nonce comes from the system
+  /// CSPRNG — reusing a nonce under the same key is catastrophic.
+  ///
+  /// Added for the cross-impl wire-compat test suite (audit P2-2). Lives
+  /// in the same crate so the test doesn't have to fork the wire-format
+  /// assembly and silently drift from production.
+  @visibleForTesting
+  static Future<String> packGrp2WithNonce({
+    required String plaintext,
+    required String keyBase64,
+    required Uint8List conversationIdBytes,
+    required Uint8List messageIdBytes,
+    required SimpleKeyPair senderSigningKey,
+    required Uint8List nonce,
+  }) {
+    return _packGrp2Internal(
+      plaintext: plaintext,
+      keyBase64: keyBase64,
+      conversationIdBytes: conversationIdBytes,
+      messageIdBytes: messageIdBytes,
+      senderSigningKey: senderSigningKey,
+      nonceOverride: nonce,
+    );
+  }
+
+  static Future<String> _packGrp2Internal({
+    required String plaintext,
+    required String keyBase64,
+    required Uint8List conversationIdBytes,
+    required Uint8List messageIdBytes,
+    required SimpleKeyPair senderSigningKey,
+    required Uint8List? nonceOverride,
   }) async {
     final keyBytes = base64Decode(keyBase64);
     if (keyBytes.length != _groupKeyBytesLength) {
@@ -298,12 +345,18 @@ class GroupCryptoService {
         '${keyBytes.length}',
       );
     }
+    if (nonceOverride != null && nonceOverride.length != 12) {
+      throw ArgumentError(
+        'GRP2 nonce override must be 12 bytes, got ${nonceOverride.length}',
+      );
+    }
     final secretKey = SecretKey(keyBytes);
     final plaintextBytes = utf8.encode(plaintext);
 
     final secretBox = await _aesGcm.encrypt(
       plaintextBytes,
       secretKey: secretKey,
+      nonce: nonceOverride,
     );
     final nonce = Uint8List.fromList(secretBox.nonce);
     final ciphertext = Uint8List.fromList(secretBox.cipherText);

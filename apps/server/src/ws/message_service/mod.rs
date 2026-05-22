@@ -31,7 +31,8 @@ use routing::{lookup_reply_context, resolve_conversation};
 use storage::store_and_confirm;
 use types::{ParsedRecipientDeviceContents, RecipientDeviceContents};
 use validate::{
-    validate_conversation_security, validate_encrypted_payload, validate_message_length,
+    enforce_group_sender_membership, validate_conversation_security, validate_encrypted_payload,
+    validate_message_length,
 };
 
 // ── External API ─────────────────────────────────────────────────────────────
@@ -92,6 +93,22 @@ pub(super) async fn handle_send_message(
             &content,
             recipient_device_contents.as_ref(),
         )
+    {
+        return;
+    }
+
+    // Phase 1.5 (audit P1-2): encrypted-group sender-membership gate.
+    //
+    // `resolve_conversation` already verifies membership for every send,
+    // but the migration plan in `docs/group-e2e-design/04-migration-plan.md`
+    // calls out the "kicked member tries to send" attack as a distinct
+    // surface that deserves its own structured rejection (`sender-not-member`).
+    // Running this only on the encrypted-group branch keeps the signal
+    // unambiguous in logs/metrics and adds a defence-in-depth re-check
+    // for any future code path that resolves the conversation differently.
+    if conv_security.is_encrypted
+        && conv_kind == Some(ConversationKind::Group)
+        && !enforce_group_sender_membership(state, sender_id, conv_id).await
     {
         return;
     }

@@ -290,6 +290,68 @@ pub(in crate::ws::message_service) fn validate_encrypted_payload(
     }
 }
 
+// ── Encrypted-group sender membership (Phase 1.5, audit P1-2) ───────────────
+
+/// Structured rejection code used by the encrypted-group sender-membership
+/// check. Kept as a const so test assertions and log greps can match a
+/// single literal regardless of any surrounding human-readable wording.
+///
+/// Surfaced verbatim in the WS `error` frame sent back to the sender — see
+/// [`enforce_group_sender_membership`].
+pub(in crate::ws::message_service) const SENDER_NOT_MEMBER_CODE: &str = "sender-not-member";
+
+/// Belt-and-suspenders gate for the encrypted-group send path: re-verify
+/// that the JWT-authenticated sender is currently an active member of the
+/// target conversation before the message is persisted or fanned out.
+///
+/// Why this exists even though [`super::routing::resolve_conversation`]
+/// already calls `is_member`:
+///
+/// - It runs on the **encrypted-group branch only** (other kinds are
+///   either DM contact-gated or plaintext groups, which are out of scope
+///   for the Phase 1.5 design — see
+///   `docs/group-e2e-design/04-migration-plan.md` §"Phase 1.5").
+/// - It emits a **structured `sender-not-member` code** so kicked-member
+///   send attempts are observable as a single signal in logs / metrics
+///   without grepping a free-form error string.
+/// - It defends in depth: any future refactor that bypasses
+///   `resolve_conversation` (e.g. a new entry point that already has the
+///   conversation id resolved) still has to clear this gate before a
+///   ciphertext can be relayed to surviving members.
+///
+/// Returns `true` when the sender is a current member.  On rejection the
+/// helper emits a `tracing::warn!` and sends an error frame to the sender
+/// whose `message` is exactly [`SENDER_NOT_MEMBER_CODE`].
+pub(in crate::ws::message_service) async fn enforce_group_sender_membership(
+    state: &AppState,
+    sender_id: Uuid,
+    conversation_id: Uuid,
+) -> bool {
+    match db::groups::is_member(&state.pool, conversation_id, sender_id).await {
+        Ok(true) => true,
+        Ok(false) => {
+            tracing::warn!(
+                conversation_id = %conversation_id,
+                sender_id = %sender_id,
+                code = SENDER_NOT_MEMBER_CODE,
+                "rejected encrypted-group send: sender is not a current member",
+            );
+            send_error(state, sender_id, SENDER_NOT_MEMBER_CODE);
+            false
+        }
+        Err(e) => {
+            tracing::warn!(
+                conversation_id = %conversation_id,
+                sender_id = %sender_id,
+                error = ?e,
+                "db error checking sender membership on encrypted group send",
+            );
+            send_error(state, sender_id, "Database error");
+            false
+        }
+    }
+}
+
 // ── Conversation security ────────────────────────────────────────────────────
 
 /// Look up conversation security, validate channel usage, and enforce

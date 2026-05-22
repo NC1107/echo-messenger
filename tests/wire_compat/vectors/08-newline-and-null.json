@@ -1,0 +1,13 @@
+{
+  "name": "08-newline-and-null",
+  "description": "plaintext with embedded NUL and newline bytes — guards against any impl accidentally treating plaintext as a C string.",
+  "group_key_b64": "iIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIg=",
+  "conversation_id_b64": "qKioqKioqKioqKioqKioqA==",
+  "message_id_b64": "uLi4uLi4uLi4uLi4uLi4uA==",
+  "nonce_b64": "CAgICAgICAgICAgI",
+  "signing_seed_b64": "mJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJg=",
+  "verify_key_b64": "e+KbmLoJN+rfofwbR5MfBd/OSfru6JbA9Awkp41kn+Y=",
+  "plaintext_utf8": "line1\nline2\u0000trailing",
+  "expected_wire_with_prefix": "GRP2:AQgICAgICAgICAgICJfQEChLp2HARRktqDcabH6dBnsUnqsDuN6GRDjKmR52bygSVmIGtjNU22W0MvNRBsxoLvpCYu6ddXrSnu7SR2RzloFkSgC+mhAr95veALktsi30xUQEeeMl5VI7RXiTa8xQ5Aw=",
+  "expected_signature_b64": "Yga2M1TbZbQy81EGzGgu+kJi7p11etKe7tJHZHOWgWRKAL6aECv3m94AuS2yLfTFRAR54yXlUjtFeJNrzFDkDA=="
+}
