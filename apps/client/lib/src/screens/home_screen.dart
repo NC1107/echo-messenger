@@ -116,7 +116,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   bool _sidebarCollapsed = false;
   double _sidebarWidth = 350;
   static const _sidebarMinWidth = 200.0;
-  static const _sidebarMaxWidth = 500.0;
+  // 640 px gives users on 2560x1440+ displays room to surface long
+  // conversation titles, group names, and last-message previews without
+  // truncation. The previous 500 px cap felt cramped on wide monitors.
+  static const _sidebarMaxWidth = 640.0;
 
   /// Lower clamp during a resize drag — below `_sidebarMinWidth` so the
   /// drag-end handler can detect a pull-through and snap into compact mode
