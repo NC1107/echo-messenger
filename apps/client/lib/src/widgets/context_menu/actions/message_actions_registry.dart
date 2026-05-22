@@ -55,6 +55,21 @@ ContextMenuSection _primarySection(MessageTarget t) {
         icon: Icons.forward_outlined,
         onTap: t.onForward,
       ),
+    // Discoverable "Add reaction" entry for right-click. The four-emoji
+    // inline header is fast for power users but isn't labeled, so casual
+    // users miss it entirely (validated on prod). Keeping the inline
+    // header *and* this row gives both audiences a path:
+    //   - inline header: one-click pick of the four most-recent emojis
+    //   - this row:      jumps straight into the full picker
+    // Hidden when the message is encrypted-unreadable (no reactions on
+    // a "[Could not decrypt…]" bubble) or when the parent didn't wire
+    // a reactions callback.
+    if (!t.isEncryptedUnreadable && t.onOpenFullPicker != null)
+      ContextMenuAction(
+        label: 'Add reaction',
+        icon: Icons.add_reaction_outlined,
+        onTap: t.onOpenFullPicker,
+      ),
   ];
   return ContextMenuSection(actions: actions);
 }
