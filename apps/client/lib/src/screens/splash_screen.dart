@@ -666,6 +666,30 @@ class _UpdatePromptBody extends ConsumerWidget {
             'Downloading… ${(update.downloadProgress * 100).toInt()}%',
             style: TextStyle(fontSize: 12, color: context.textMuted),
           ),
+          const SizedBox(height: 6),
+          // Escape hatch for the user who tapped "Download" by accident
+          // on a 200 MB update — Skip is disabled while busy, so without
+          // this they're stuck waiting out the whole transfer.
+          Semantics(
+            button: true,
+            label: 'Cancel update download',
+            child: TextButton.icon(
+              onPressed: () =>
+                  ref.read(updateProvider.notifier).cancelDownload(),
+              icon: const Icon(Icons.close, size: 14),
+              label: const Text('Cancel download'),
+              style: TextButton.styleFrom(
+                foregroundColor: context.textSecondary,
+                textStyle: const TextStyle(fontSize: 12),
+                minimumSize: Size.zero,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 4,
+                ),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+          ),
         ],
       );
     }
