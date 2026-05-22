@@ -28,9 +28,14 @@ class _KeyboardShortcutsOverlayState extends State<KeyboardShortcutsOverlay> {
     super.dispose();
   }
 
+  // Keep this list in sync with the actual `CallbackShortcuts` bindings in
+  // `home_screen.dart` and the message-composer key handlers. Listing keys
+  // here that aren't really bound is worse than listing fewer — users try
+  // them, nothing happens, and the whole overlay loses trust.
   static const _sections = <_ShortcutSection>[
     _ShortcutSection('Navigation', [
       _Shortcut('Ctrl+K', 'Quick-switch conversations'),
+      _Shortcut('Ctrl+Shift+F', 'Search across all conversations'),
       _Shortcut('Ctrl+/', 'Show keyboard shortcuts'),
       _Shortcut('Esc', 'Close overlay / cancel action'),
     ]),
@@ -38,18 +43,12 @@ class _KeyboardShortcutsOverlayState extends State<KeyboardShortcutsOverlay> {
       _Shortcut('Enter', 'Send message'),
       _Shortcut('Shift+Enter', 'New line in message'),
       _Shortcut('↑', 'Edit last sent message (when input is empty)'),
-      _Shortcut('Ctrl+V', 'Paste text or image'),
+      _Shortcut('Esc', 'Cancel message edit (while editing)'),
     ]),
     _ShortcutSection('Messages', [
-      _Shortcut('Long press', 'React to message (mobile)'),
-      _Shortcut('Hover + ❤', 'React to message (desktop)'),
+      _Shortcut('Long press', 'React or open actions (mobile)'),
       _Shortcut('Swipe →', 'Reply to message (mobile)'),
-      _Shortcut('Hover + ↩', 'Reply to message (desktop)'),
-    ]),
-    _ShortcutSection('Editing', [
-      _Shortcut('Ctrl+C', 'Copy selected text'),
-      _Shortcut('Ctrl+X', 'Cut selected text'),
-      _Shortcut('Esc', 'Cancel message edit (while editing)'),
+      _Shortcut('Right-click', 'Open message actions (desktop)'),
     ]),
   ];
 
