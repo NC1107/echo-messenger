@@ -17,8 +17,11 @@ class EmptyState extends StatelessWidget {
   /// Primary headline above the body copy.
   final String title;
 
-  /// Supporting copy describing what the user can do next.
-  final String body;
+  /// Supporting copy describing what the user can do next. When null the
+  /// body line and its 8 px gap are dropped so the title sits closer to the
+  /// badge — useful for compact contexts (autocomplete dropdowns, etc.)
+  /// where the title alone is enough.
+  final String? body;
 
   /// Optional CTA button label. When null, no button is rendered.
   final String? ctaLabel;
@@ -42,7 +45,7 @@ class EmptyState extends StatelessWidget {
     super.key,
     required this.icon,
     required this.title,
-    required this.body,
+    this.body,
     this.ctaLabel,
     this.onCta,
     this.secondaryCtaLabel,
@@ -78,18 +81,20 @@ class EmptyState extends StatelessWidget {
                 color: context.textPrimary,
               ),
             ),
-            const SizedBox(height: 8),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 320),
-              child: Text(
-                body,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: context.textSecondary,
-                  height: 1.4,
+            if (body != null) ...[
+              const SizedBox(height: 8),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 320),
+                child: Text(
+                  body!,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: context.textSecondary,
+                    height: 1.4,
+                  ),
                 ),
               ),
-            ),
+            ],
             if (ctaLabel != null) ...[
               const SizedBox(height: 16),
               // Wrap so the secondary CTA tucks under the primary on narrow
