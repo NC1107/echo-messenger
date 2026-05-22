@@ -29,8 +29,8 @@ import 'package:echo_app/src/theme/echo_theme.dart';
 // fields the classification logic actually reads.
 // ---------------------------------------------------------------------------
 
-class _FakeDevice {
-  const _FakeDevice({
+class _TestMediaDeviceInfo {
+  const _TestMediaDeviceInfo({
     required this.kind,
     required this.deviceId,
     this.label = '',
@@ -44,6 +44,13 @@ class _FakeDevice {
 // ---------------------------------------------------------------------------
 // Pure re-implementation of the fixed classification logic used by
 // _loadAudioDevices so we can unit-test it without native plugins.
+//
+// This intentionally mirrors the production code in voice_section.dart rather
+// than calling it directly: _loadAudioDevices is a private async method that
+// calls flutter_webrtc native channels. Extracting it would require a
+// production refactor beyond the scope of this bug fix. The duplication is
+// small (< 30 lines) and any divergence will be caught by the manual repro
+// test above.
 // ---------------------------------------------------------------------------
 
 typedef _DeviceLists = ({
@@ -52,7 +59,7 @@ typedef _DeviceLists = ({
   List<Map<String, String>> cameras,
 });
 
-_DeviceLists _classify(List<_FakeDevice> devices) {
+_DeviceLists _classify(List<_TestMediaDeviceInfo> devices) {
   final inputs = <Map<String, String>>[];
   final outputs = <Map<String, String>>[];
   final cameras = <Map<String, String>>[];
@@ -148,8 +155,8 @@ void main() {
   group('_classify (device list logic)', () {
     test('Linux: device with deviceId=default is NOT filtered out', () {
       final result = _classify([
-        const _FakeDevice(kind: 'audioinput', deviceId: 'default'),
-        const _FakeDevice(kind: 'audiooutput', deviceId: 'default'),
+        const _TestMediaDeviceInfo(kind: 'audioinput', deviceId: 'default'),
+        const _TestMediaDeviceInfo(kind: 'audiooutput', deviceId: 'default'),
       ]);
 
       // Before the fix: inputs/outputs only contained the pre-populated
@@ -164,13 +171,13 @@ void main() {
       'Linux: device with deviceId=default and empty label gets friendly name',
       () {
         final result = _classify([
-          const _FakeDevice(kind: 'audioinput', deviceId: 'default', label: ''),
-          const _FakeDevice(
+          const _TestMediaDeviceInfo(kind: 'audioinput', deviceId: 'default', label: ''),
+          const _TestMediaDeviceInfo(
             kind: 'audiooutput',
             deviceId: 'default',
             label: '',
           ),
-          const _FakeDevice(kind: 'videoinput', deviceId: 'default', label: ''),
+          const _TestMediaDeviceInfo(kind: 'videoinput', deviceId: 'default', label: ''),
         ]);
 
         expect(result.inputs.first['name'], 'Default Microphone');
@@ -183,7 +190,7 @@ void main() {
       'Linux: device with deviceId=default and non-empty label uses that label',
       () {
         final result = _classify([
-          const _FakeDevice(
+          const _TestMediaDeviceInfo(
             kind: 'audioinput',
             deviceId: 'default',
             label: 'PulseAudio Microphone',
@@ -196,17 +203,17 @@ void main() {
 
     test('non-default device IDs are accepted unchanged', () {
       final result = _classify([
-        const _FakeDevice(
+        const _TestMediaDeviceInfo(
           kind: 'audioinput',
           deviceId: 'hw:1,0',
           label: 'USB Headset',
         ),
-        const _FakeDevice(
+        const _TestMediaDeviceInfo(
           kind: 'audiooutput',
           deviceId: 'hw:0,0',
           label: 'Built-in Analog Stereo',
         ),
-        const _FakeDevice(kind: 'videoinput', deviceId: 'cam-1', label: 'Webcam'),
+        const _TestMediaDeviceInfo(kind: 'videoinput', deviceId: 'cam-1', label: 'Webcam'),
       ]);
 
       expect(result.inputs, hasLength(1));
@@ -242,7 +249,7 @@ void main() {
 
     test('device with empty deviceId is skipped', () {
       final result = _classify([
-        const _FakeDevice(kind: 'audioinput', deviceId: ''),
+        const _TestMediaDeviceInfo(kind: 'audioinput', deviceId: ''),
       ]);
 
       // Empty deviceId must be dropped; fallback sentinel is added instead.
@@ -252,12 +259,12 @@ void main() {
 
     test('multiple devices of same kind all appear', () {
       final result = _classify([
-        const _FakeDevice(
+        const _TestMediaDeviceInfo(
           kind: 'audioinput',
           deviceId: 'mic-1',
           label: 'Mic 1',
         ),
-        const _FakeDevice(
+        const _TestMediaDeviceInfo(
           kind: 'audioinput',
           deviceId: 'mic-2',
           label: 'Mic 2',

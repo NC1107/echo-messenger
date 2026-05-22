@@ -284,6 +284,7 @@ class _VoiceVideoSectionState extends ConsumerState<VoiceVideoSection> {
         inputs.add({
           'id': 'default',
           'name': noEnum
+              // \u2014 = em dash
               ? 'Using system default \u2014 no enumeration available'
               : 'Default Microphone',
         });
@@ -292,6 +293,7 @@ class _VoiceVideoSectionState extends ConsumerState<VoiceVideoSection> {
         outputs.add({
           'id': 'default',
           'name': noEnum
+              // \u2014 = em dash
               ? 'Using system default \u2014 no enumeration available'
               : 'Default Output',
         });
