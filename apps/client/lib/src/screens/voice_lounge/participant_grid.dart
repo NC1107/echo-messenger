@@ -223,9 +223,17 @@ class ParticipantGrid extends StatelessWidget {
         ),
       );
     }
-    return OrientationBuilder(
-      builder: (context, orientation) {
-        final crossAxisCount = orientation == Orientation.portrait ? 2 : 3;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Aim for a tile that's a comfortable ~220 px wide on desktop; the
+        // grid then naturally widens to fill ultrawide viewports rather than
+        // capping at 3 columns the way the old portrait/landscape heuristic
+        // did. Clamped to [2, 6] so tiny widths still get a 2-up layout and
+        // we never shrink avatars into illegibility on 4K monitors.
+        const targetTileWidth = 220.0;
+        final crossAxisCount = (constraints.maxWidth / targetTileWidth)
+            .floor()
+            .clamp(2, 6);
         return Center(
           child: GridView.count(
             crossAxisCount: crossAxisCount,

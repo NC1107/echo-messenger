@@ -21,7 +21,23 @@ class MembersPanel extends ConsumerWidget {
   /// Called after a leave or delete operation to clear the selected conversation.
   final VoidCallback? onGroupLeft;
 
-  const MembersPanel({super.key, this.conversation, this.onGroupLeft});
+  /// Panel width in logical pixels. Defaults to [defaultWidth] (280) to match
+  /// the pre-resize behaviour; the home-screen scaffold passes the value the
+  /// user has dragged the resize handle to.
+  final double width;
+
+  /// Default and bound constants used by the home-screen resize handle so
+  /// the width state and the panel render stay in sync.
+  static const double defaultWidth = 280;
+  static const double minWidth = 220;
+  static const double maxWidth = 480;
+
+  const MembersPanel({
+    super.key,
+    this.conversation,
+    this.onGroupLeft,
+    this.width = defaultWidth,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -69,7 +85,7 @@ class MembersPanel extends ConsumerWidget {
     addGroup('Members · ${regulars.length}', regulars);
 
     return Container(
-      width: 280,
+      width: width,
       color: context.sidebarBg,
       child: Column(
         children: [

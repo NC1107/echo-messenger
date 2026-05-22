@@ -141,45 +141,52 @@ class AppTitleBar extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    return Container(
-      height: 36,
-      decoration: BoxDecoration(
-        color: context.sidebarBg,
-        border: Border(bottom: BorderSide(color: context.border, width: 1)),
-      ),
-      child: Stack(
-        children: [
-          // Full-width drag area underneath everything.
-          const Positioned.fill(child: AppDragArea(child: SizedBox.expand())),
-          // Centered name — IgnorePointer so clicks fall through to drag area.
-          // Reserve room on macOS so the title can't slide under the
-          // red/yellow/green traffic-light cluster anchored to the left.
-          if (title != null && title!.isNotEmpty)
-            Padding(
-              padding: EdgeInsets.only(left: Platform.isMacOS ? 72.0 : 0.0),
-              child: Center(
-                child: IgnorePointer(
-                  child: Text(
-                    title!,
-                    style: TextStyle(
-                      color: context.textSecondary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
+    // Clamp the OS text scaler inside the 36-px title bar. At 1.5x system
+    // scaling the title would overflow the fixed-height bar and clip into the
+    // window controls; clamping to 1.2x keeps a11y while preserving the
+    // chrome's geometry. Buttons are icon-only so they're unaffected.
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.2,
+      child: Container(
+        height: 36,
+        decoration: BoxDecoration(
+          color: context.sidebarBg,
+          border: Border(bottom: BorderSide(color: context.border, width: 1)),
+        ),
+        child: Stack(
+          children: [
+            // Full-width drag area underneath everything.
+            const Positioned.fill(child: AppDragArea(child: SizedBox.expand())),
+            // Centered name — IgnorePointer so clicks fall through to drag
+            // area. Reserve room on macOS so the title can't slide under the
+            // red/yellow/green traffic-light cluster anchored to the left.
+            if (title != null && title!.isNotEmpty)
+              Padding(
+                padding: EdgeInsets.only(left: Platform.isMacOS ? 72.0 : 0.0),
+                child: Center(
+                  child: IgnorePointer(
+                    child: Text(
+                      title!,
+                      style: TextStyle(
+                        color: context.textSecondary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ),
+            // Window controls on top — rendered above drag area so they
+            // receive pointer events before the GestureDetector beneath.
+            const Positioned(
+              right: 0,
+              top: 0,
+              bottom: 0,
+              child: AppWindowButtons(),
             ),
-          // Window controls on top — rendered above drag area so they
-          // receive pointer events before the GestureDetector beneath.
-          const Positioned(
-            right: 0,
-            top: 0,
-            bottom: 0,
-            child: AppWindowButtons(),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -61,7 +61,11 @@ class FloatingDock extends ConsumerWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: const Color(0xE01C1C1E),
+              // Was hard-coded `Color(0xE01C1C1E)` — the same RGB as
+              // `EchoTheme.surface` with an 0xE0 (≈88%) alpha for the
+              // backdrop-blurred glass effect. Pull from the token so light
+              // theme and any future surface re-skin pick this up.
+              color: context.surface.withValues(alpha: 0.88),
               borderRadius: BorderRadius.circular(32),
               border: Border.all(color: context.border),
               boxShadow: [
