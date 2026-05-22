@@ -1,0 +1,13 @@
+{
+  "name": "06-multi-block",
+  "description": "multi-block plaintext (~5 AES blocks) catches CTR mode bugs that only fire after the first counter increment.",
+  "group_key_b64": "ZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmY=",
+  "conversation_id_b64": "pqampqampqampqampqampg==",
+  "message_id_b64": "tra2tra2tra2tra2tra2tg==",
+  "nonce_b64": "BgYGBgYGBgYGBgYG",
+  "signing_seed_b64": "dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnY=",
+  "verify_key_b64": "tfkAlTGPPwRM2OQLWEJT2Gd3vmK/ByITNOX9IZnPp/c=",
+  "plaintext_utf8": "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
+  "expected_wire_with_prefix": "GRP2:AQYGBgYGBgYGBgYGBmQe2QXFUquCocLTIjQCMHWZ8gAIZ8lBONxCT6HKaswRas48bXM9PDpVXxIOTRE1hOGSVfMOjMqpL2jb0Iju+KPVHxFByQReb6a3VeUCxWyITf6xYoddPUCgxwjSc8U8u8cDBdQY6E4gWdJd9Sc3XBfPXUGyOn76E5R4BHxLgWF+2EuxJxQCajFrYvwzYP3d3g8yGakDRKU9GfzFgaVPswQ=",
+  "expected_signature_b64": "xwMF1BjoTiBZ0l31JzdcF89dQbI6fvoTlHgEfEuBYX7YS7EnFAJqMWti/DNg/d3eDzIZqQNEpT0Z/MWBpU+zBA=="
+}

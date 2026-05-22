@@ -1,0 +1,13 @@
+{
+  "name": "04-utf8-emoji",
+  "description": "multi-byte UTF-8 (emoji + non-ASCII) exercises that the Dart utf8.encode path matches Rust's str::as_bytes.",
+  "group_key_b64": "REREREREREREREREREREREREREREREREREREREREREQ=",
+  "conversation_id_b64": "pKSkpKSkpKSkpKSkpKSkpA==",
+  "message_id_b64": "tLS0tLS0tLS0tLS0tLS0tA==",
+  "nonce_b64": "BAQEBAQEBAQEBAQE",
+  "signing_seed_b64": "VFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFQ=",
+  "verify_key_b64": "n0lDnp2wlbxBEe0l01eV2DG8VaBH9LHX9q7jd3u0EiA=",
+  "plaintext_utf8": "héllo 🙂 群组 GRP2",
+  "expected_wire_with_prefix": "GRP2:AQQEBAQEBAQEBAQEBNsCwdeMJEHdbWAxZBrdW8SIKLmKdyB0i3FM9gQVQRq4Ac13A0WAetWi/XWGvCXbDi4B1VzA547NLoKjZCzsjhHrrz3vOVZLvBDro0JCFCdeTJbY0Snlxv5vL8nCv+xrbK+chlnC/AE=",
+  "expected_signature_b64": "1aL9dYa8JdsOLgHVXMDnjs0ugqNkLOyOEeuvPe85Vku8EOujQkIUJ15MltjRKeXG/m8vycK/7Gtsr5yGWcL8AQ=="
+}

@@ -1,0 +1,13 @@
+{
+  "name": "03-short-ascii",
+  "description": "short ASCII plaintext, the common chat case.",
+  "group_key_b64": "MzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzM=",
+  "conversation_id_b64": "o6Ojo6Ojo6Ojo6Ojo6Ojow==",
+  "message_id_b64": "s7Ozs7Ozs7Ozs7Ozs7Ozsw==",
+  "nonce_b64": "AwMDAwMDAwMDAwMD",
+  "signing_seed_b64": "Q0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0M=",
+  "verify_key_b64": "Ivwpd5Lwtv/Av8/bftsMCqFOAlo2XsDjQuhuOCnLdLY=",
+  "plaintext_utf8": "hello signed group",
+  "expected_wire_with_prefix": "GRP2:AQMDAwMDAwMDAwMDA3BITOnucUnD2u3fug/4luO5zFaDcVvr+78Lmzmytc79f3dcJlZBH79qFzKyXycIaHQ8jZ1uOhZokDs2EMfx0k9MgzurFGwmENOBkrdQddUv/EPkObnjG1qwoj5UjyyFM6wA",
+  "expected_signature_b64": "XCZWQR+/ahcysl8nCGh0PI2dbjoWaJA7NhDH8dJPTIM7qxRsJhDTgZK3UHXVL/xD5Dm54xtasKI+VI8shTOsAA=="
+}
