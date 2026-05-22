@@ -23,6 +23,7 @@ import '../../theme/echo_theme.dart';
 import '../../version.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/feedback_dialog.dart';
+import '../../widgets/settings/settings_list_tile.dart';
 import '../../widgets/input_dialog.dart';
 
 class AboutSection extends ConsumerStatefulWidget {
@@ -554,52 +555,20 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
             const SizedBox(height: 12),
             _buildServersList(),
             const SizedBox(height: 8),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(
-                Icons.add_circle_outline,
-                color: context.textSecondary,
-                size: 22,
-              ),
-              title: Text(
-                'Add server',
-                style: TextStyle(color: context.textPrimary, fontSize: 15),
-              ),
-              subtitle: Text(
-                'Verifies the URL before adding it to your list.',
-                style: TextStyle(color: context.textMuted, fontSize: 12),
-              ),
-              trailing: Icon(
-                Icons.chevron_right,
-                color: context.textMuted,
-                size: 20,
-              ),
+            SettingsListTile(
+              icon: Icons.add_circle_outline,
+              title: 'Add server',
+              subtitle: 'Verifies the URL before adding it to your list.',
               onTap: _showAddServerDialog,
             ),
             const SizedBox(height: 16),
             Divider(color: context.border),
             const SizedBox(height: 16),
             // Debug logs entry (absorbed from former Debug section).
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(
-                Icons.bug_report_outlined,
-                color: context.textSecondary,
-                size: 22,
-              ),
-              title: Text(
-                'Debug Logs',
-                style: TextStyle(color: context.textPrimary, fontSize: 15),
-              ),
-              subtitle: Text(
-                'View recent in-app log entries.',
-                style: TextStyle(color: context.textMuted, fontSize: 12),
-              ),
-              trailing: Icon(
-                Icons.chevron_right,
-                color: context.textMuted,
-                size: 20,
-              ),
+            SettingsListTile(
+              icon: Icons.bug_report_outlined,
+              title: 'Debug Logs',
+              subtitle: 'View recent in-app log entries.',
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(
@@ -611,47 +580,21 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
             const SizedBox(height: 8),
             // Beta-prep #4c: surface the feedback dialog from About so testers
             // have a one-tap path to report issues without leaving the app.
-            ListTile(
+            SettingsListTile(
               key: const Key('about-send-feedback'),
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(
-                Icons.feedback_outlined,
-                color: context.textSecondary,
-                size: 22,
-              ),
-              title: Text(
-                'Send feedback',
-                style: TextStyle(color: context.textPrimary, fontSize: 15),
-              ),
-              subtitle: Text(
-                'Report a bug or share a suggestion.',
-                style: TextStyle(color: context.textMuted, fontSize: 12),
-              ),
-              trailing: Icon(
-                Icons.chevron_right,
-                color: context.textMuted,
-                size: 20,
-              ),
+              icon: Icons.feedback_outlined,
+              title: 'Send feedback',
+              subtitle: 'Report a bug or share a suggestion.',
               onTap: () => showFeedbackDialog(context),
             ),
             // Privacy link — opens the GitHub-rendered docs/PRIVACY.md so the
             // canonical text isn't bundled in every app build.
-            ListTile(
+            SettingsListTile(
               key: const Key('about-privacy-link'),
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(
-                Icons.privacy_tip_outlined,
-                color: context.textSecondary,
-                size: 22,
-              ),
-              title: Text(
-                'Privacy',
-                style: TextStyle(color: context.textPrimary, fontSize: 15),
-              ),
-              subtitle: Text(
-                'What Echo stores, what it does not, and where the data lives.',
-                style: TextStyle(color: context.textMuted, fontSize: 12),
-              ),
+              icon: Icons.privacy_tip_outlined,
+              title: 'Privacy',
+              subtitle:
+                  'What Echo stores, what it does not, and where the data lives.',
               trailing: Icon(
                 Icons.open_in_new,
                 color: context.textMuted,
