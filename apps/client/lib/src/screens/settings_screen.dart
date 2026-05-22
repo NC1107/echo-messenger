@@ -25,6 +25,7 @@ import 'settings/language_section.dart';
 import 'settings/notification_section.dart';
 import 'settings/privacy_section.dart';
 import 'settings/status_section.dart';
+import 'settings/voice_section.dart';
 
 /// Section identifiers for the redesigned settings layout.
 ///
