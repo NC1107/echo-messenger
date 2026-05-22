@@ -112,14 +112,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// 0 = Chats, 1 = Discover, 2 = Contacts, 3 = Settings.
   int _mobileTabIndex = 0;
 
+  // Members panel resize state. Mirrors the sidebar's drag-resize handle so
+  // ultrawide users can grow the right rail without code changes.
+  double _membersPanelWidth = MembersPanel.defaultWidth;
+
   // Collapsible sidebar state
   bool _sidebarCollapsed = false;
   double _sidebarWidth = 350;
   static const _sidebarMinWidth = 200.0;
-  // 640 px gives users on 2560x1440+ displays room to surface long
-  // conversation titles, group names, and last-message previews without
-  // truncation. The previous 500 px cap felt cramped on wide monitors.
-  static const _sidebarMaxWidth = 640.0;
+
+  /// Base sidebar ceiling on a typical 1280-1600 px laptop. The actual max
+  /// used by the drag handle scales with viewport width via
+  /// [_sidebarMaxWidthFor] so ultrawide users (3440 px etc.) can grow the
+  /// sidebar past 500 px. The 640 px ceiling that batch D landed earlier
+  /// is now superseded by the scaling function — see `_sidebarMaxWidthFor`.
+  static const _sidebarMaxWidthBase = 500.0;
+  static const _sidebarMaxWidthCeiling = 720.0;
+
+  /// Computes the sidebar's drag-resize ceiling for a given viewport width.
+  /// 28% of the viewport, clamped to `[500, 720]`. On a 1280 px screen this
+  /// returns 500 (base); on a 3440 px ultrawide it returns 720 (ceiling).
+  static double _sidebarMaxWidthFor(double viewportWidth) {
+    final scaled = viewportWidth * 0.28;
+    if (scaled < _sidebarMaxWidthBase) return _sidebarMaxWidthBase;
+    if (scaled > _sidebarMaxWidthCeiling) return _sidebarMaxWidthCeiling;
+    return scaled;
+  }
 
   /// Lower clamp during a resize drag — below `_sidebarMinWidth` so the
   /// drag-end handler can detect a pull-through and snap into compact mode
@@ -150,6 +168,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   // Snap-back animation: plays from current _swipeProgress down to 0.0 when
   // the drag ends without crossing the threshold.  Initialized in initState.
   late final AnimationController _swipeSnapController;
+
+  /// Layout-tier picker with hysteresis. Lives on the State so the previous
+  /// decision survives across rebuilds. Without this, dragging the window
+  /// across 600 px or 900 px would swap top-level scaffolds every frame,
+  /// dropping scroll positions, open popovers and in-flight overlays.
+  final StableLayoutDecision _layoutDecision = StableLayoutDecision();
 
   @override
   void initState() {
@@ -208,20 +232,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
-    final isNarrow = width < 600;
-    final isDesktop = width >= 900;
+    final tier = _layoutDecision.next(width);
 
     _listenForErrors();
     _syncSelectedConversation();
 
-    Widget layout;
-    if (isNarrow) {
-      layout = _buildNarrowLayout();
-    } else if (isDesktop) {
-      layout = _buildDesktopLayout();
-    } else {
-      layout = _buildWideLayout();
-    }
+    final Widget layout = switch (tier) {
+      LayoutTier.narrow => _buildNarrowLayout(),
+      LayoutTier.desktop => _buildDesktopLayout(),
+      LayoutTier.wide => _buildWideLayout(),
+    };
 
     return EchoSystemChrome(
       child: CallbackShortcuts(
