@@ -123,6 +123,21 @@ void main() {
       expect(_allLabels(m), isNot(contains('Copy Message ID')));
     });
 
+    test('right-click menu exposes a labeled "Add reaction" row', () {
+      final m = buildMessageMenu(_baseTarget());
+      expect(_allLabels(m), contains('Add reaction'));
+    });
+
+    test('"Add reaction" is hidden on encrypted-unreadable messages', () {
+      final m = buildMessageMenu(_baseTarget(isEncryptedUnreadable: true));
+      expect(_allLabels(m), isNot(contains('Add reaction')));
+    });
+
+    test('"Add reaction" is hidden when reactions are not wired', () {
+      final m = buildMessageMenu(_baseTarget(wireReact: false));
+      expect(_allLabels(m), isNot(contains('Add reaction')));
+    });
+
     test('media messages show "Copy link" instead of "Copy text"', () {
       final m = buildMessageMenu(
         _baseTarget(mediaUrl: 'https://x/y.bin', isImageMedia: false),

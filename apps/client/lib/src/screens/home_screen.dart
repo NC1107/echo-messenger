@@ -37,6 +37,7 @@ import '../widgets/keyboard_shortcuts_overlay.dart';
 import '../widgets/global_search_overlay.dart';
 import '../widgets/whats_new_modal.dart';
 import '../widgets/quick_switcher_overlay.dart';
+import '../widgets/system_chrome.dart';
 import '../widgets/voice_footer.dart';
 import '../widgets/window_chrome.dart';
 import 'contacts_screen.dart';
@@ -219,23 +220,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       layout = _buildWideLayout();
     }
 
-    return CallbackShortcuts(
-      bindings: <ShortcutActivator, VoidCallback>{
-        const SingleActivator(LogicalKeyboardKey.keyK, control: true): () {
-          _showQuickSwitcher();
+    return EchoSystemChrome(
+      child: CallbackShortcuts(
+        bindings: <ShortcutActivator, VoidCallback>{
+          const SingleActivator(LogicalKeyboardKey.keyK, control: true): () {
+            _showQuickSwitcher();
+          },
+          const SingleActivator(
+            LogicalKeyboardKey.keyF,
+            control: true,
+            shift: true,
+          ): () {
+            _showGlobalSearch();
+          },
+          const SingleActivator(LogicalKeyboardKey.slash, control: true): () {
+            _showKeyboardShortcuts();
+          },
         },
-        const SingleActivator(
-          LogicalKeyboardKey.keyF,
-          control: true,
-          shift: true,
-        ): () {
-          _showGlobalSearch();
-        },
-        const SingleActivator(LogicalKeyboardKey.slash, control: true): () {
-          _showKeyboardShortcuts();
-        },
-      },
-      child: Focus(autofocus: true, child: layout),
+        child: Focus(autofocus: true, child: layout),
+      ),
     );
   }
 

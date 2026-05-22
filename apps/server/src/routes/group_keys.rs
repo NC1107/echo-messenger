@@ -374,11 +374,33 @@ pub async fn get_latest_group_key(
         return Ok(Json(GroupKeyEnvelopeResponse::from_row(env)).into_response());
     }
 
-    // Fallback: legacy group_keys table (for groups that haven't rotated yet)
+    // No envelope for this caller — figure out which sub-case we're in.
+    // - If the group has NO key version at all -> 400 "no group key" (legacy
+    //   shape; pre-encryption groups and tests rely on this).
+    // - If the group HAS a key version but the caller's envelope is missing
+    //   at that version -> 410 Gone. Previously we fell back to serving the
+    //   sentinel `"__envelope__"` placeholder string out of `group_keys`,
+    //   which the client tried to decrypt as if it were a wrapped AES key
+    //   and exploded with `candidate key has wrong length: 9 bytes`. The
+    //   410 lets the client mark the group as "needs rotation" and surface
+    //   the recovery banner instead.
     let row = db::keys::get_latest_group_key(&state.pool, group_id)
         .await
         .db_ctx("get_latest_group_key/fetch")?
         .ok_or_else(|| AppError::bad_request("No group key found for this conversation"))?;
+
+    // A sentinel row means envelope-based distribution is in effect for this
+    // group AND we already confirmed (above) that no envelope exists for the
+    // caller. Anything else is a legacy plaintext key — preserve the old
+    // behaviour so groups created before the envelope scheme keep working.
+    if row.encrypted_key == "__envelope__" {
+        let body = serde_json::json!({
+            "error": "No group-key envelope exists for this user at the latest version",
+            "code": "no-envelope-for-user",
+            "key_version": row.key_version,
+        });
+        return Ok((StatusCode::GONE, Json(body)).into_response());
+    }
 
     Ok(Json(GroupKeyResponse::from_row(row)).into_response())
 }

@@ -319,7 +319,7 @@ void main() {
 
       expect(notifier.state.conversations, hasLength(1));
       final conv = notifier.state.conversations.first;
-      expect(conv.lastMessage, 'Encrypted message');
+      expect(conv.lastMessage, '[Encrypted]');
     });
 
     test('sorts conversations by most recent activity first', () async {

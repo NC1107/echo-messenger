@@ -326,6 +326,7 @@ mixin _HomeScreenNarrowLayoutMixin
         child: InkWell(
           onTap: () {
             if (index == _self._mobileTabIndex) return;
+            HapticFeedback.selectionClick();
             setState(() {
               _self._mobileTabIndex = index;
               if (index != 0) {

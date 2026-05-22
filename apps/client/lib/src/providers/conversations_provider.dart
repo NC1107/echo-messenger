@@ -197,9 +197,11 @@ class ConversationsNotifier extends _$ConversationsNotifier
           cached = await MessageCache.getLatestCachedPreview(conv.id);
           if (cached != null) _decryptedPreviews[conv.id] = cached;
         }
-        conversations[i] = conv.copyWith(
-          lastMessage: cached ?? 'Encrypted message',
-        );
+        // Use the same bracketed `[Encrypted]` placeholder the sidebar
+        // widget renders for ciphertext snippets, so cold-start HTTP loads
+        // and live WS updates show the same string instead of diverging
+        // between "Encrypted message" and "[Encrypted]".
+        conversations[i] = conv.copyWith(lastMessage: cached ?? '[Encrypted]');
       }
     }
   }

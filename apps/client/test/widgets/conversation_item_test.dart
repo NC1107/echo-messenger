@@ -254,6 +254,149 @@ void main() {
       expect(find.textContaining('`'), findsNothing);
     });
 
+    testWidgets('replaces GRP1 ciphertext snippet with [Encrypted]', (
+      tester,
+    ) async {
+      final conv = _makeConversation(
+        lastMessage: 'GRP1:OJOu60GsqeDgNNTgqM8hyp+RawCiphertextBlobHere==',
+        lastMessageSender: 'alice',
+        members: const [
+          ConversationMember(userId: 'peer-id', username: 'alice'),
+          ConversationMember(userId: 'my-id', username: 'me'),
+        ],
+      );
+      await tester.pumpApp(
+        ConversationItem(
+          conversation: conv,
+          myUserId: 'my-id',
+          isSelected: false,
+          isPinned: false,
+          isPeerOnline: false,
+          timestamp: '10:30',
+          onTap: () {},
+        ),
+      );
+      await tester.pump();
+
+      expect(find.textContaining('[Encrypted]'), findsOneWidget);
+      expect(find.textContaining('GRP1:'), findsNothing);
+    });
+
+    testWidgets('replaces GRP2 ciphertext snippet with [Encrypted]', (
+      tester,
+    ) async {
+      final conv = _makeConversation(
+        lastMessage: 'GRP2:BAse64DataHereLooksLikeCipherText==',
+        lastMessageSender: 'alice',
+        members: const [
+          ConversationMember(userId: 'peer-id', username: 'alice'),
+          ConversationMember(userId: 'my-id', username: 'me'),
+        ],
+      );
+      await tester.pumpApp(
+        ConversationItem(
+          conversation: conv,
+          myUserId: 'my-id',
+          isSelected: false,
+          isPinned: false,
+          isPeerOnline: false,
+          timestamp: '10:30',
+          onTap: () {},
+        ),
+      );
+      await tester.pump();
+
+      expect(find.textContaining('[Encrypted]'), findsOneWidget);
+      expect(find.textContaining('GRP2:'), findsNothing);
+    });
+
+    testWidgets(
+      'replaces "[Could not decrypt..." placeholder with [Encrypted]',
+      (tester) async {
+        final conv = _makeConversation(
+          lastMessage: '[Could not decrypt - waiting for group key]',
+          lastMessageSender: 'alice',
+          members: const [
+            ConversationMember(userId: 'peer-id', username: 'alice'),
+            ConversationMember(userId: 'my-id', username: 'me'),
+          ],
+        );
+        await tester.pumpApp(
+          ConversationItem(
+            conversation: conv,
+            myUserId: 'my-id',
+            isSelected: false,
+            isPinned: false,
+            isPeerOnline: false,
+            timestamp: '10:30',
+            onTap: () {},
+          ),
+        );
+        await tester.pump();
+
+        expect(find.textContaining('[Encrypted]'), findsOneWidget);
+        expect(find.textContaining('Could not decrypt'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'replaces "[Could not verify sender]" placeholder with [Encrypted]',
+      (tester) async {
+        final conv = _makeConversation(
+          lastMessage: '[Could not verify sender]',
+          lastMessageSender: 'alice',
+          members: const [
+            ConversationMember(userId: 'peer-id', username: 'alice'),
+            ConversationMember(userId: 'my-id', username: 'me'),
+          ],
+        );
+        await tester.pumpApp(
+          ConversationItem(
+            conversation: conv,
+            myUserId: 'my-id',
+            isSelected: false,
+            isPinned: false,
+            isPeerOnline: false,
+            timestamp: '10:30',
+            onTap: () {},
+          ),
+        );
+        await tester.pump();
+
+        expect(find.textContaining('[Encrypted]'), findsOneWidget);
+        expect(find.textContaining('verify sender'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'replaces legacy "[E2E] Message" placeholder with [Encrypted]',
+      (tester) async {
+        final conv = _makeConversation(
+          lastMessage: '[E2E] Message',
+          lastMessageSender: 'alice',
+          members: const [
+            ConversationMember(userId: 'peer-id', username: 'alice'),
+            ConversationMember(userId: 'my-id', username: 'me'),
+          ],
+        );
+        await tester.pumpApp(
+          ConversationItem(
+            conversation: conv,
+            myUserId: 'my-id',
+            isSelected: false,
+            isPinned: false,
+            isPeerOnline: false,
+            timestamp: '10:30',
+            onTap: () {},
+          ),
+        );
+        await tester.pump();
+
+        expect(find.textContaining('[Encrypted]'), findsOneWidget);
+        expect(find.textContaining('[E2E]'), findsNothing);
+      },
+    );
+
     testWidgets('renders timestamp string', (tester) async {
       final conv = _makeConversation(
         members: const [

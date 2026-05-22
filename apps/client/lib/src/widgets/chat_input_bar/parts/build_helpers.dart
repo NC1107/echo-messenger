@@ -9,9 +9,14 @@ part of '../../chat_input_bar.dart';
 extension _BuildHelpers on ChatInputBarState {
   Widget _buildTextField({
     required bool showMediaPicker,
+    required bool isMobileLayout,
     required VoiceSettingsState voiceSettings,
     required String? effectiveActiveVoiceChannelId,
   }) {
+    // Clamp the composer to 6 lines on mobile so a long draft with the
+    // keyboard up doesn't eat more than ~half the available height. Desktop
+    // keeps the original 10-line allowance.
+    final composerMaxLines = isMobileLayout ? 6 : 10;
     return Expanded(
       child: Focus(
         onKeyEvent: (node, event) => _onKeyEvent(
@@ -23,7 +28,7 @@ extension _BuildHelpers on ChatInputBarState {
         child: TextField(
           controller: _messageController,
           focusNode: _inputFocusNode,
-          maxLines: 10,
+          maxLines: composerMaxLines,
           minLines: 1,
           maxLength: 4000,
           buildCounter:
@@ -162,6 +167,7 @@ extension _BuildHelpers on ChatInputBarState {
               children: [
                 _buildTextField(
                   showMediaPicker: showMediaPicker,
+                  isMobileLayout: isMobileLayout,
                   voiceSettings: voiceSettings,
                   effectiveActiveVoiceChannelId: effectiveActiveVoiceChannelId,
                 ),
