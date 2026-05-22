@@ -5,6 +5,7 @@ import '../models/conversation.dart';
 import '../providers/chat_provider.dart';
 import '../providers/crypto_provider.dart';
 import '../theme/echo_theme.dart';
+import 'echo_banner.dart';
 
 /// Top-of-conversation banner that surfaces transient encryption failure
 /// states. Five flavours, in priority order (highest priority shown):
@@ -47,21 +48,25 @@ class EncryptionStatusBanner extends ConsumerWidget {
     );
 
     if (secureStorageDown) {
-      return _Banner(
+      return EchoBanner(
         icon: Icons.lock_outline,
-        color: context.accent,
+        severity: EchoBannerSeverity.info,
         message:
             "Echo can't read its encryption keys. Unlock your system keyring "
             'and tap Retry.',
-        actionLabel: 'Retry',
-        onAction: () => ref.read(cryptoProvider.notifier).retryStorageUnlock(),
+        action: _action(
+          context,
+          'Retry',
+          () => ref.read(cryptoProvider.notifier).retryStorageUnlock(),
+          EchoBannerSeverity.info,
+        ),
       );
     }
 
     if (keyUploadFailed) {
-      return const _Banner(
+      return const EchoBanner(
         icon: Icons.cloud_off_outlined,
-        color: EchoTheme.warning,
+        severity: EchoBannerSeverity.warning,
         message:
             'Key sync to server is failing. Recent messages from new peers '
             'may not decrypt. Check connection and reopen Settings → Privacy.',
@@ -75,16 +80,20 @@ class EncryptionStatusBanner extends ConsumerWidget {
       // but it could also be forgery. We don't auto-recover; the user
       // explicitly dismisses after they've contacted an admin / the
       // sender out-of-band.
-      return _Banner(
+      return EchoBanner(
         icon: Icons.gpp_bad_outlined,
-        color: EchoTheme.danger,
+        severity: EchoBannerSeverity.danger,
         message:
             "Couldn't verify the sender of a message in this group. "
             'Contact an admin before treating recent messages as authentic.',
-        actionLabel: 'Dismiss',
-        onAction: () => ref
-            .read(chatProvider.notifier)
-            .dismissSignatureFailure(conversation.id),
+        action: _action(
+          context,
+          'Dismiss',
+          () => ref
+              .read(chatProvider.notifier)
+              .dismissSignatureFailure(conversation.id),
+          EchoBannerSeverity.danger,
+        ),
       );
     }
 
@@ -93,37 +102,67 @@ class EncryptionStatusBanner extends ConsumerWidget {
       // rotation — the local cached key is stale and the new envelope
       // is sitting on the server. "Refresh key" drops our cache + a
       // GET /api/groups/:id/keys/latest pulls the current envelope.
-      return _Banner(
+      return EchoBanner(
         icon: Icons.refresh,
-        color: EchoTheme.warning,
+        severity: EchoBannerSeverity.warning,
         message:
             "Can't decrypt this group's recent messages. The encryption key "
             'may have rotated — refresh to fetch the latest.',
-        actionLabel: 'Refresh key',
-        onAction: () =>
-            ref.read(chatProvider.notifier).refreshGroupKey(conversation.id),
+        action: _action(
+          context,
+          'Refresh key',
+          () =>
+              ref.read(chatProvider.notifier).refreshGroupKey(conversation.id),
+          EchoBannerSeverity.warning,
+        ),
       );
     }
 
     if (outOfSync && !conversation.isGroup) {
       final peerId = _peerUserIdFor(conversation, ref);
-      return _Banner(
+      return EchoBanner(
         icon: Icons.sync_problem,
-        color: EchoTheme.warning,
+        severity: EchoBannerSeverity.warning,
         message:
             'Encryption is out of sync with this contact. Resetting will '
             'recover the conversation, but messages from before now may '
             'not decrypt.',
-        actionLabel: 'Reset Session',
-        onAction: peerId == null
-            ? null
-            : () => ref
-                  .read(chatProvider.notifier)
-                  .resetWedgedSession(conversation.id, peerId),
+        action: _action(
+          context,
+          'Reset Session',
+          peerId == null
+              ? null
+              : () => ref
+                    .read(chatProvider.notifier)
+                    .resetWedgedSession(conversation.id, peerId),
+          EchoBannerSeverity.warning,
+        ),
       );
     }
 
     return const SizedBox.shrink();
+  }
+
+  Widget _action(
+    BuildContext context,
+    String label,
+    VoidCallback? onPressed,
+    EchoBannerSeverity severity,
+  ) {
+    final color = switch (severity) {
+      EchoBannerSeverity.info => context.accent,
+      EchoBannerSeverity.warning => EchoTheme.warning,
+      EchoBannerSeverity.danger => EchoTheme.danger,
+    };
+    return TextButton(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        foregroundColor: color,
+        minimumSize: const Size(0, 32),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+      ),
+      child: Text(label),
+    );
   }
 
   String? _peerUserIdFor(Conversation conv, WidgetRef ref) {
@@ -136,59 +175,5 @@ class EncryptionStatusBanner extends ConsumerWidget {
     // upstream, so members[0] is a safe heuristic here. For non-1:1 the
     // banner is suppressed above.
     return conv.members.first.userId;
-  }
-}
-
-class _Banner extends StatelessWidget {
-  const _Banner({
-    required this.icon,
-    required this.color,
-    required this.message,
-    this.actionLabel,
-    this.onAction,
-  });
-
-  final IconData icon;
-  final Color color;
-  final String message;
-  final String? actionLabel;
-  final VoidCallback? onAction;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: color.withValues(alpha: 0.1),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Row(
-          children: [
-            Icon(icon, size: 18, color: color),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  color: context.textPrimary,
-                  height: 1.35,
-                ),
-              ),
-            ),
-            if (actionLabel != null) ...[
-              const SizedBox(width: 8),
-              TextButton(
-                onPressed: onAction,
-                style: TextButton.styleFrom(
-                  foregroundColor: color,
-                  minimumSize: const Size(0, 32),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                ),
-                child: Text(actionLabel!),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
   }
 }
