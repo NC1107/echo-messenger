@@ -12,6 +12,7 @@ import 'package:photo_manager/photo_manager.dart' show PhotoManager;
 
 import '../models/chat_message.dart';
 import '../providers/theme_provider.dart' show MessageLayout, UIDensity;
+import '../services/clipboard_service.dart';
 import '../services/message_cache.dart' show MessageCache;
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
@@ -1438,19 +1439,15 @@ class _MessageItemState extends State<MessageItem>
 
   void _copyMessageText(ChatMessage msg, String? mediaUrl) {
     final copyText = mediaUrl != null ? _resolveUrl(mediaUrl) : msg.content;
-    Clipboard.setData(ClipboardData(text: copyText));
-    if (!mounted) return;
-    ToastService.show(
+    copyToClipboard(
       context,
-      mediaUrl != null ? 'Link copied' : 'Copied to clipboard',
-      type: ToastType.success,
+      copyText,
+      successMessage: mediaUrl != null ? 'Link copied' : 'Copied to clipboard',
     );
   }
 
   void _copyMessageId(ChatMessage msg) {
-    Clipboard.setData(ClipboardData(text: msg.id));
-    if (!mounted) return;
-    ToastService.show(context, 'Message ID copied', type: ToastType.success);
+    copyToClipboard(context, msg.id, successMessage: 'Message ID copied');
   }
 
   /// Compose a single composite semantic label for the message bubble so
