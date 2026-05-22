@@ -200,8 +200,13 @@ mixin _HomeScreenDesktopLayoutMixin
                         Positioned(
                           top: 10,
                           right: 10,
+                          // Ring needs to contrast with the surrounding chip,
+                          // not blend into it. The footer chip uses `mainBg`,
+                          // so a `mainBg` ring is invisible. `sidebarBg`
+                          // matches the surrounding rail and keeps the dot
+                          // legible regardless of theme.
                           child: _DotBadge(
-                            ringColor: context.mainBg,
+                            ringColor: context.sidebarBg,
                             bgColor: context.accent,
                           ),
                         ),
@@ -409,44 +414,105 @@ mixin _HomeScreenDesktopLayoutMixin
   }
 
   /// Draggable resize handle between sidebar and content area.
+  ///
+  /// The hit area stays at 12 px (forgiving for the mouse) but the visible
+  /// seam was previously a 1 px border with no hover state — users would
+  /// hunt-and-peck for the handle. Hovering now brightens the seam to the
+  /// accent colour so the affordance is obvious, while the underlying drag /
+  /// double-click / pull-through behaviour is unchanged.
   Widget _buildResizeHandle() {
+    return _ResizeHandle(
+      isCollapsed: _self._sidebarCollapsed,
+      onHorizontalDragUpdate: (details) {
+        if (_self._sidebarCollapsed) return;
+        // Allow dragging below `_sidebarMinWidth` so users can pull the
+        // handle through to compact mode and the drag-end handler can
+        // snap to collapsed. The lower clamp keeps the sidebar from
+        // disappearing entirely mid-drag (#739). The upper clamp now
+        // scales with viewport width via `_sidebarMaxWidthFor` so ultra-
+        // wide displays can grow the sidebar past 500 px (up to 720).
+        final maxWidth = _HomeScreenState._sidebarMaxWidthFor(
+          MediaQuery.of(context).size.width,
+        );
+        setState(() {
+          _self._sidebarWidth = (_self._sidebarWidth + details.delta.dx).clamp(
+            _HomeScreenState._sidebarPullThroughWidth,
+            maxWidth,
+          );
+        });
+      },
+      onHorizontalDragEnd: (details) {
+        setState(() {
+          if (_self._sidebarWidth < _HomeScreenState._sidebarMinWidth) {
+            // User pulled past the min — snap to compact and restore the
+            // expanded default for the next expand-from-compact toggle.
+            _self._sidebarCollapsed = true;
+            _self._sidebarWidth = _HomeScreenState._sidebarDefaultWidth;
+          }
+        });
+      },
+      onDoubleTap: () {
+        setState(() {
+          if (_self._sidebarCollapsed) {
+            _self._sidebarCollapsed = false;
+            _self._sidebarWidth = _HomeScreenState._sidebarDefaultWidth;
+          } else {
+            _self._sidebarCollapsed = true;
+          }
+        });
+      },
+    );
+  }
+
+  /// Members panel on the right side. Width is user-resizable via a drag
+  /// handle (mirrors the left sidebar) and persisted in
+  /// `_HomeScreenState._membersPanelWidth` for the lifetime of the screen.
+  List<Widget> _buildMembersPanel() {
+    if (_self._showSettings ||
+        !_self._showMembers ||
+        _self._selectedConversation == null ||
+        !_self._selectedConversation!.isGroup) {
+      return const [];
+    }
+    return [
+      _buildMembersResizeHandle(),
+      MembersPanel(
+        conversation: _self._selectedConversation,
+        width: _self._membersPanelWidth,
+        onGroupLeft: () {
+          setState(() {
+            _self._selectedConversation = null;
+            _self._showMembers = false;
+            _self._narrowPanelIndex = 0;
+          });
+        },
+      ),
+    ];
+  }
+
+  /// Drag handle that lets the user resize the members panel. Visually
+  /// identical to [_buildResizeHandle] (the sidebar's handle); horizontal
+  /// drag updates clamp to [MembersPanel.minWidth] .. [MembersPanel.maxWidth].
+  Widget _buildMembersResizeHandle() {
     return MouseRegion(
       cursor: SystemMouseCursors.resizeColumn,
       child: Semantics(
-        label: 'Resize sidebar',
+        label: 'Resize members panel',
         child: GestureDetector(
           onHorizontalDragUpdate: (details) {
-            if (_self._sidebarCollapsed) return;
-            // Allow dragging below `_sidebarMinWidth` so users can pull the
-            // handle through to compact mode and the drag-end handler can
-            // snap to collapsed. The lower clamp keeps the sidebar from
-            // disappearing entirely mid-drag (#739).
+            // Dragging the handle LEFT widens the panel (the handle sits on
+            // its left edge), so subtract the delta.
             setState(() {
-              _self._sidebarWidth = (_self._sidebarWidth + details.delta.dx)
-                  .clamp(
-                    _HomeScreenState._sidebarPullThroughWidth,
-                    _HomeScreenState._sidebarMaxWidth,
+              _self._membersPanelWidth =
+                  (_self._membersPanelWidth - details.delta.dx).clamp(
+                    MembersPanel.minWidth,
+                    MembersPanel.maxWidth,
                   );
-            });
-          },
-          onHorizontalDragEnd: (details) {
-            setState(() {
-              if (_self._sidebarWidth < _HomeScreenState._sidebarMinWidth) {
-                // User pulled past the min — snap to compact and restore the
-                // expanded default for the next expand-from-compact toggle.
-                _self._sidebarCollapsed = true;
-                _self._sidebarWidth = _HomeScreenState._sidebarDefaultWidth;
-              }
             });
           },
           onDoubleTap: () {
             setState(() {
-              if (_self._sidebarCollapsed) {
-                _self._sidebarCollapsed = false;
-                _self._sidebarWidth = _HomeScreenState._sidebarDefaultWidth;
-              } else {
-                _self._sidebarCollapsed = true;
-              }
+              _self._membersPanelWidth = MembersPanel.defaultWidth;
             });
           },
           child: Container(
@@ -458,27 +524,71 @@ mixin _HomeScreenDesktopLayoutMixin
       ),
     );
   }
+}
 
-  /// Optional 280px members panel on the right side.
-  List<Widget> _buildMembersPanel() {
-    if (_self._showSettings ||
-        !_self._showMembers ||
-        _self._selectedConversation == null ||
-        !_self._selectedConversation!.isGroup) {
-      return const [];
-    }
-    return [
-      Container(width: 1, color: context.border),
-      MembersPanel(
-        conversation: _self._selectedConversation,
-        onGroupLeft: () {
-          setState(() {
-            _self._selectedConversation = null;
-            _self._showMembers = false;
-            _self._narrowPanelIndex = 0;
-          });
-        },
+/// Sidebar resize handle. Stateful so the seam can highlight on hover and
+/// while a drag is in flight, without forcing a rebuild of the whole
+/// HomeScreen on every pointer enter/exit.
+class _ResizeHandle extends StatefulWidget {
+  final bool isCollapsed;
+  final GestureDragUpdateCallback onHorizontalDragUpdate;
+  final GestureDragEndCallback onHorizontalDragEnd;
+  final VoidCallback onDoubleTap;
+
+  const _ResizeHandle({
+    required this.isCollapsed,
+    required this.onHorizontalDragUpdate,
+    required this.onHorizontalDragEnd,
+    required this.onDoubleTap,
+  });
+
+  @override
+  State<_ResizeHandle> createState() => _ResizeHandleState();
+}
+
+class _ResizeHandleState extends State<_ResizeHandle> {
+  bool _hovering = false;
+  bool _dragging = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final highlighted = _hovering || _dragging;
+    final seamColor = highlighted ? context.accent : context.border;
+    final seamWidth = highlighted ? 2.0 : 1.0;
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeColumn,
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: Tooltip(
+        message: 'Drag to resize, double-click to collapse',
+        waitDuration: const Duration(milliseconds: 500),
+        child: Semantics(
+          label: 'Resize sidebar',
+          child: GestureDetector(
+            onHorizontalDragStart: (_) => setState(() => _dragging = true),
+            onHorizontalDragUpdate: widget.onHorizontalDragUpdate,
+            onHorizontalDragEnd: (details) {
+              setState(() => _dragging = false);
+              widget.onHorizontalDragEnd(details);
+            },
+            onHorizontalDragCancel: () => setState(() => _dragging = false),
+            onDoubleTap: widget.onDoubleTap,
+            // Container is `double.infinity` tall via Row's cross-axis
+            // stretch, transparent fill keeps the full 12 px as hit area.
+            child: Container(
+              width: 12,
+              color: Colors.transparent,
+              alignment: Alignment.center,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 120),
+                curve: Curves.easeOut,
+                width: seamWidth,
+                color: seamColor,
+              ),
+            ),
+          ),
+        ),
       ),
-    ];
+    );
   }
 }
