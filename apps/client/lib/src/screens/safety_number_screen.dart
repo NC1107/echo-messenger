@@ -20,7 +20,6 @@ import '../services/safety_number_service.dart';
 import '../services/secure_key_store.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
-import '../theme/responsive.dart';
 
 /// Displays and manages safety number verification for a DM conversation.
 ///
@@ -47,8 +46,10 @@ class SafetyNumberScreen extends ConsumerStatefulWidget {
     required String peerUsername,
     required String myUsername,
   }) {
-    final width = MediaQuery.of(context).size.width;
-    if (width >= 900) {
+    final mq = MediaQuery.of(context).size;
+    if (mq.width >= 700) {
+      final dialogWidth = mq.width.clamp(360.0, 480.0);
+      final dialogHeight = (mq.height * 0.9).clamp(420.0, 620.0);
       showDialog(
         context: context,
         builder: (_) => Dialog(
@@ -58,8 +59,8 @@ class SafetyNumberScreen extends ConsumerStatefulWidget {
             side: BorderSide(color: context.border),
           ),
           child: SizedBox(
-            width: 440,
-            height: 580,
+            width: dialogWidth,
+            height: dialogHeight,
             child: SafetyNumberScreen(
               peerUserId: peerUserId,
               peerUsername: peerUsername,
@@ -243,7 +244,9 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDialog = Responsive.isDesktop(context);
+    // Mirror the threshold used by [SafetyNumberScreen.show] so the body
+    // chrome (AppBar vs transparent header) matches the wrapper shape.
+    final isDialog = MediaQuery.of(context).size.width >= 700;
 
     return Scaffold(
       backgroundColor: isDialog ? Colors.transparent : context.mainBg,
