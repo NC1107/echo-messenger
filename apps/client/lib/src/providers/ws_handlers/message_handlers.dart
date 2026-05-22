@@ -234,7 +234,7 @@ extension MessageHandlersOn on WsMessageHandler {
         .read(conversationsProvider.notifier)
         .onNewMessage(
           conversationId: conversationId,
-          content: 'Encrypted message',
+          content: '[Encrypted]',
           timestamp: timestamp,
           senderUsername: senderUsername,
         );
@@ -322,7 +322,7 @@ extension MessageHandlersOn on WsMessageHandler {
         .read(conversationsProvider.notifier)
         .onNewMessage(
           conversationId: conversationId,
-          content: 'Encrypted message',
+          content: '[Encrypted]',
           timestamp: timestamp,
           senderUsername: senderUsername,
         );

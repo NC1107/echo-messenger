@@ -40,5 +40,15 @@ void main() {
     test('returns false for URLs', () {
       expect(looksEncrypted('https://example.com/path'), isFalse);
     });
+
+    test('returns true for GRP1: ciphertext prefix', () {
+      expect(looksEncrypted('GRP1:abc'), isTrue);
+      expect(looksEncrypted('GRP1:OJOu60GsqeDgNNTgqM8hyp+xKLM=='), isTrue);
+    });
+
+    test('returns true for GRP2: ciphertext prefix', () {
+      expect(looksEncrypted('GRP2:abc'), isTrue);
+      expect(looksEncrypted('GRP2:AQEBBaSE64dAtahErE=='), isTrue);
+    });
   });
 }

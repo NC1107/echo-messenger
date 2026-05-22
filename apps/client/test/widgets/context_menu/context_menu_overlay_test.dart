@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:echo_app/src/theme/echo_theme.dart';
+import 'package:echo_app/src/widgets/context_menu/actions/message_actions_registry.dart';
 import 'package:echo_app/src/widgets/context_menu/context_menu_overlay.dart';
 import 'package:echo_app/src/widgets/context_menu/echo_context_menu.dart';
 
@@ -125,6 +126,41 @@ void main() {
       expect(find.byIcon(Icons.chevron_left), findsOneWidget);
     });
 
+    testWidgets(
+      'right-click message menu surfaces "Add reaction" labeled row',
+      (tester) async {
+        // Drive the menu through the same registry the real chat panel
+        // uses so this test catches regressions where the row drops out
+        // of the rendered tree.
+        var pickerOpened = 0;
+        final target = MessageTarget(
+          message: const _StubMessage(),
+          isMine: false,
+          isSaved: false,
+          isEncryptedUnreadable: false,
+          mediaUrl: null,
+          isImageMedia: false,
+          onReply: () {},
+          onForward: () {},
+          onCopyText: () {},
+          onDelete: () {},
+          onCopyId: () {},
+          onPickReaction: (_) {},
+          onOpenFullPicker: () => pickerOpened++,
+        );
+        final model = buildMessageMenu(target);
+        await _openOverlay(tester, model);
+
+        expect(find.text('Add reaction'), findsOneWidget);
+
+        await tester.tap(find.text('Add reaction'));
+        await tester.pumpAndSettle();
+        await tester.pump();
+
+        expect(pickerOpened, 1);
+      },
+    );
+
     testWidgets('inline reactions header renders four emojis', (tester) async {
       final model = ContextMenuModel(
         header: InlineReactionsHeader(
@@ -145,4 +181,10 @@ void main() {
       expect(find.byIcon(Icons.add_reaction_outlined), findsOneWidget);
     });
   });
+}
+
+/// Stand-in for ChatMessage so the registry tests don't pull the whole
+/// chat-provider import graph in.
+class _StubMessage {
+  const _StubMessage();
 }
