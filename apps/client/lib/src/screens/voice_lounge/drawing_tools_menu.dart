@@ -12,6 +12,7 @@ import '../../models/canvas_models.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/canvas_provider.dart';
 import '../../providers/server_url_provider.dart';
+import '../../services/chunked_upload_client.dart';
 import '../../services/toast_service.dart';
 import '../../services/upload_client.dart';
 import '../../theme/echo_theme.dart';
@@ -333,15 +334,41 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
   }) async {
     final ext = file.extension?.toLowerCase() ?? 'png';
     final mimeType = _mimeForExtension(ext);
-    final uploader = UploadClient(ref.read(authProvider.notifier));
-    final uploadResult = await uploader.uploadFile(
-      serverUrl: serverUrl,
-      path: '/api/media/upload',
-      bytes: file.bytes!,
-      fileName: file.name,
-      mimeType: mimeType,
-      extraFields: {'conversation_id': conversationId},
-    );
+    final bytes = file.bytes!;
+
+    Future<UploadResult> uploadChunked() async {
+      final auth = ref.read(authProvider.notifier);
+      final chunked = ChunkedUploadClient(
+        tokenGetter: () => auth.currentToken,
+        refresher: auth.refreshAccessToken,
+      );
+      final result = await chunked.uploadBytes(
+        bytes: bytes,
+        serverUrl: serverUrl,
+        mimeType: mimeType,
+        filename: file.name,
+        conversationId: conversationId,
+      );
+      return result.toUploadResult();
+    }
+
+    final UploadResult uploadResult;
+    if (shouldUseChunkedUpload(bytes.length)) {
+      uploadResult = await uploadChunked();
+    } else {
+      final uploader = UploadClient(ref.read(authProvider.notifier));
+      final singleShot = await uploader.uploadFile(
+        serverUrl: serverUrl,
+        path: '/api/media/upload',
+        bytes: bytes,
+        fileName: file.name,
+        mimeType: mimeType,
+        extraFields: {'conversation_id': conversationId},
+      );
+      uploadResult = (!singleShot.ok && singleShot.statusCode == 413)
+          ? await uploadChunked()
+          : singleShot;
+    }
     if (!mounted) return null;
 
     if (uploadResult.ok) {
