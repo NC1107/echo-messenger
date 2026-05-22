@@ -81,7 +81,7 @@ class MessageCache {
     List<ChatMessage> messages,
   ) async {
     final box = await _boxForConv(conversationId);
-    if (box == null) return;
+    if (box == null || !box.isOpen) return;
     final entries = <String, Map<dynamic, dynamic>>{};
     for (final msg in messages) {
       if (msg.id.startsWith('pending_')) continue;
@@ -89,12 +89,21 @@ class MessageCache {
       entries[msg.id] = msg.toJson();
     }
     if (entries.isEmpty) return;
-    await box.putAll(entries);
-    // Evict oldest entries when the box exceeds _maxPerConv.
-    if (box.length > _maxPerConv) {
-      final excess = box.length - _maxPerConv;
-      final keysToDelete = box.keys.take(excess).toList();
-      await box.deleteAll(keysToDelete);
+    // Tests tear down Hive between cases and a stray cacheMessages future
+    // can fire after tearDown; bail out instead of throwing
+    // "Box has already been closed" which surfaces as a flaky
+    // failed-after-completion error in CI (#prod-2026-05-22).
+    if (!box.isOpen) return;
+    try {
+      await box.putAll(entries);
+      // Evict oldest entries when the box exceeds _maxPerConv.
+      if (box.isOpen && box.length > _maxPerConv) {
+        final excess = box.length - _maxPerConv;
+        final keysToDelete = box.keys.take(excess).toList();
+        await box.deleteAll(keysToDelete);
+      }
+    } on HiveError {
+      // Box closed mid-write — same scenario as above; ignore.
     }
   }
 
