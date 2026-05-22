@@ -63,4 +63,48 @@ void main() {
       expect(find.text('Delete Group'), findsNothing);
     });
   });
+
+  group('MembersPanel width', () {
+    const conv = Conversation(
+      id: 'g',
+      name: 'G',
+      isGroup: true,
+      members: [
+        ConversationMember(
+          userId: 'test-user-id',
+          username: 'testuser',
+          role: 'owner',
+        ),
+      ],
+    );
+
+    testWidgets('honors the explicit width parameter', (tester) async {
+      await tester.pumpApp(
+        const MembersPanel(conversation: conv, width: 360),
+        overrides: standardOverrides(),
+      );
+      await tester.pumpAndSettle();
+
+      final size = tester.getSize(find.byType(MembersPanel));
+      expect(size.width, 360);
+    });
+
+    testWidgets('falls back to defaultWidth when no width is passed', (
+      tester,
+    ) async {
+      await tester.pumpApp(
+        const MembersPanel(conversation: conv),
+        overrides: standardOverrides(),
+      );
+      await tester.pumpAndSettle();
+
+      final size = tester.getSize(find.byType(MembersPanel));
+      expect(size.width, MembersPanel.defaultWidth);
+    });
+
+    test('width bounds are sane', () {
+      expect(MembersPanel.minWidth, lessThan(MembersPanel.defaultWidth));
+      expect(MembersPanel.defaultWidth, lessThan(MembersPanel.maxWidth));
+    });
+  });
 }

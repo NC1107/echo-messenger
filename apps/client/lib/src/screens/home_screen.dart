@@ -112,6 +112,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// 0 = Chats, 1 = Discover, 2 = Contacts, 3 = Settings.
   int _mobileTabIndex = 0;
 
+  // Members panel resize state. Mirrors the sidebar's drag-resize handle so
+  // ultrawide users can grow the right rail without code changes.
+  double _membersPanelWidth = MembersPanel.defaultWidth;
+
   // Collapsible sidebar state
   bool _sidebarCollapsed = false;
   double _sidebarWidth = 350;

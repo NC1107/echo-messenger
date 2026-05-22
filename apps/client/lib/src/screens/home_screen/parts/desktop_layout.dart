@@ -462,7 +462,9 @@ mixin _HomeScreenDesktopLayoutMixin
     );
   }
 
-  /// Optional 280px members panel on the right side.
+  /// Members panel on the right side. Width is user-resizable via a drag
+  /// handle (mirrors the left sidebar) and persisted in
+  /// `_HomeScreenState._membersPanelWidth` for the lifetime of the screen.
   List<Widget> _buildMembersPanel() {
     if (_self._showSettings ||
         !_self._showMembers ||
@@ -471,9 +473,10 @@ mixin _HomeScreenDesktopLayoutMixin
       return const [];
     }
     return [
-      Container(width: 1, color: context.border),
+      _buildMembersResizeHandle(),
       MembersPanel(
         conversation: _self._selectedConversation,
+        width: _self._membersPanelWidth,
         onGroupLeft: () {
           setState(() {
             _self._selectedConversation = null;
@@ -483,5 +486,40 @@ mixin _HomeScreenDesktopLayoutMixin
         },
       ),
     ];
+  }
+
+  /// Drag handle that lets the user resize the members panel. Visually
+  /// identical to [_buildResizeHandle] (the sidebar's handle); horizontal
+  /// drag updates clamp to [MembersPanel.minWidth] .. [MembersPanel.maxWidth].
+  Widget _buildMembersResizeHandle() {
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeColumn,
+      child: Semantics(
+        label: 'Resize members panel',
+        child: GestureDetector(
+          onHorizontalDragUpdate: (details) {
+            // Dragging the handle LEFT widens the panel (the handle sits on
+            // its left edge), so subtract the delta.
+            setState(() {
+              _self._membersPanelWidth =
+                  (_self._membersPanelWidth - details.delta.dx).clamp(
+                    MembersPanel.minWidth,
+                    MembersPanel.maxWidth,
+                  );
+            });
+          },
+          onDoubleTap: () {
+            setState(() {
+              _self._membersPanelWidth = MembersPanel.defaultWidth;
+            });
+          },
+          child: Container(
+            width: 12,
+            color: Colors.transparent,
+            child: Center(child: Container(width: 1, color: context.border)),
+          ),
+        ),
+      ),
+    );
   }
 }
