@@ -95,9 +95,21 @@ class ImageAttachment extends StatelessWidget {
     final resolvedWidth = imageWidth ?? cached?.width.toInt();
     final resolvedHeight = imageHeight ?? cached?.height.toInt();
 
+    // Cache-key keying: stripping the entire query string is too aggressive
+    // because the media-ticket on web flips between two states (null → fresh
+    // ticket) over the lifetime of a single chat session. A first render
+    // before the ticket arrives produces a no-ticket URL that 401s; once the
+    // ticket lands and the widget rebuilds with a ?ticket=… URL the
+    // image lookup HIT against the poisoned cache slot and the user sees
+    // [Image failed to load] permanently (#1094). Include a coarse
+    // ticket-bucket in the cache key so the failed-without-auth attempt
+    // doesn't poison the with-auth fetch.
+    final hasTicketSuffix =
+        Uri.tryParse(imageUrl)?.queryParameters.containsKey('ticket') == true;
     final cachedImage = CachedNetworkImage(
       imageUrl: imageUrl,
-      cacheKey: stableMediaCacheKey(imageUrl),
+      cacheKey:
+          '${stableMediaCacheKey(imageUrl)}#${hasTicketSuffix ? 'auth' : 'noauth'}',
       cacheManager: chatMediaCacheManager,
       width: kImageBubbleMaxWidth,
       fit: BoxFit.cover,
