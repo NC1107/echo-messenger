@@ -35,13 +35,19 @@ class _InvitePreview {
   });
 
   factory _InvitePreview.fromJson(Map<String, dynamic> json) {
+    // Server returns `{token, group: {id, title, description, icon_url,
+    // member_count, is_member, members}}`. Read the nested object — the
+    // earlier flat-key read produced "Unknown Group" + 0 members in the UI
+    // because none of the top-level keys existed.
+    final group =
+        (json['group'] as Map<String, dynamic>?) ?? const <String, dynamic>{};
     return _InvitePreview(
-      conversationId: json['conversation_id'] as String,
-      name: json['name'] as String? ?? 'Unknown Group',
-      description: json['description'] as String?,
-      iconUrl: json['icon_url'] as String?,
-      memberCount: (json['member_count'] as num?)?.toInt() ?? 0,
-      isMember: json['is_member'] as bool? ?? false,
+      conversationId: group['id'] as String? ?? '',
+      name: group['title'] as String? ?? 'Unknown Group',
+      description: group['description'] as String?,
+      iconUrl: group['icon_url'] as String?,
+      memberCount: (group['member_count'] as num?)?.toInt() ?? 0,
+      isMember: group['is_member'] as bool? ?? false,
     );
   }
 
@@ -195,7 +201,11 @@ class _TokenJoinScreenState extends ConsumerState<TokenJoinScreen>
 
   Future<void> _handleAcceptInviteSuccess(http.Response response) async {
     final data = jsonDecode(response.body) as Map<String, dynamic>;
-    final alreadyMember = data['already_member'] as bool? ?? false;
+    // Server returns `{status: "already_member"|"joined", conversation_id}`.
+    // The earlier read of `data['already_member']` was a phantom — that key
+    // never appears in the response, so the toast always said "joined" even
+    // when the user was already a member.
+    final alreadyMember = (data['status'] as String?) == 'already_member';
     await ref.read(conversationsProvider.notifier).loadConversations();
     if (mounted) {
       final toastMsg = _buildSuccessToastMessage(alreadyMember);
