@@ -2,15 +2,20 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/echo_theme.dart';
+import '../user_avatar.dart';
 
 class EmptyMessagePlaceholder extends StatelessWidget {
+  final String userId;
   final String displayName;
+  final String? avatarUrl;
   final VoidCallback onSayHi;
 
   const EmptyMessagePlaceholder({
     super.key,
+    required this.userId,
     required this.displayName,
     required this.onSayHi,
+    this.avatarUrl,
   });
 
   @override
@@ -19,13 +24,13 @@ class EmptyMessagePlaceholder extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          CircleAvatar(
+          UserAvatar(
+            userId: userId,
+            username: displayName,
+            avatarUrl: avatarUrl,
             radius: 28,
-            backgroundColor: context.accent,
-            child: Text(
-              displayName.isNotEmpty ? displayName[0].toUpperCase() : '?',
-              style: TextStyle(fontSize: 22, color: context.onAccent),
-            ),
+            bgColor: context.accent,
+            openProfileOnTap: false,
           ),
           const SizedBox(height: 12),
           Text(
