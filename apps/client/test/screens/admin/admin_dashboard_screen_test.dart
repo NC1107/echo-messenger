@@ -76,7 +76,9 @@ void main() {
   ) async {
     await pump(tester, override: _EmptyFeedbackNotifier.new);
     await tester.pumpAndSettle();
-    expect(find.text('No open feedback.'), findsOneWidget);
+    expect(find.text('No open feedback'), findsOneWidget);
+    // EmptyState body copy points the operator at where users file feedback.
+    expect(find.textContaining('Settings → About'), findsOneWidget);
   });
 
   // ------------------------------------------------------------------
