@@ -27,11 +27,31 @@ async fn promote_via_db(user_id: &str) {
         .expect("promote to admin");
 }
 
+/// Force a user OFF the admin role. Necessary for tests that depend on a
+/// non-admin caller: on a fresh / cleanly-truncated DB the very first
+/// registered user gets `is_admin=TRUE` via the bootstrap rule shipped
+/// in #1066. If the test happens to register that first user it would
+/// accidentally land as admin and the "rejects non-admin" assertion
+/// would fail under integer-200 instead of the expected 403.
+async fn demote_via_db(user_id: &str) {
+    let pool = test_pool().await;
+    let id = Uuid::parse_str(user_id).expect("valid user_id");
+    sqlx::query("UPDATE users SET is_admin = FALSE WHERE id = $1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .expect("demote from admin");
+}
+
 #[tokio::test]
 async fn realtime_stats_rejects_non_admin() {
     let base = spawn_server().await;
     let client = Client::new();
-    let (token, _, _) = register_and_login(&client, &base, "rt_plain").await;
+    let (token, user_id, _) = register_and_login(&client, &base, "rt_plain").await;
+    // Guard against the first-user-becomes-admin bootstrap when this
+    // test happens to register the first user in a fresh DB. We want a
+    // genuine non-admin caller here.
+    demote_via_db(&user_id).await;
 
     let resp = client
         .get(format!("{base}/api/admin/stats/realtime"))
