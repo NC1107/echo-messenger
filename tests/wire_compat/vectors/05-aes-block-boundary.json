@@ -1,0 +1,13 @@
+{
+  "name": "05-aes-block-boundary",
+  "description": "plaintext exactly 16 bytes — the AES-128 block size. Catches off-by-one bugs in either impl's CTR-mode padding boundary handling.",
+  "group_key_b64": "VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU=",
+  "conversation_id_b64": "paWlpaWlpaWlpaWlpaWlpQ==",
+  "message_id_b64": "tbW1tbW1tbW1tbW1tbW1tQ==",
+  "nonce_b64": "BQUFBQUFBQUFBQUF",
+  "signing_seed_b64": "ZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWU=",
+  "verify_key_b64": "1i8Bah79Hk/feT60LNhEceG6nwzwTRKHtcxx9hYofLg=",
+  "plaintext_utf8": "0123456789ABCDEF",
+  "expected_wire_with_prefix": "GRP2:AQUFBQUFBQUFBQUFBQ53SdKTIHAN68wNB1TQE+GJD7rQUqAXQN7v0UdYUmlKnWeTuF7vX+IENeZ0DYL5UkxuU+GiPptmm+xDLSJNm6b6HrkvAGF10KYAVS5yL3j5XgLiR41JVDk53qbRFnE6Cg==",
+  "expected_signature_b64": "nWeTuF7vX+IENeZ0DYL5UkxuU+GiPptmm+xDLSJNm6b6HrkvAGF10KYAVS5yL3j5XgLiR41JVDk53qbRFnE6Cg=="
+}

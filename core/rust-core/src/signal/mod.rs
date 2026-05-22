@@ -7,6 +7,7 @@
 //! - **ratchet**: Double Ratchet for per-message forward secrecy
 //! - **session**: High-level session management API
 
+pub mod grp2;
 pub mod keys;
 pub mod protocol;
 pub mod ratchet;

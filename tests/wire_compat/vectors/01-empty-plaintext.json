@@ -1,0 +1,13 @@
+{
+  "name": "01-empty-plaintext",
+  "description": "zero-byte plaintext exercises the minimum wire length (version+nonce+tag+sig with no ciphertext).",
+  "group_key_b64": "ERERERERERERERERERERERERERERERERERERERERERE=",
+  "conversation_id_b64": "oaGhoaGhoaGhoaGhoaGhoQ==",
+  "message_id_b64": "sbGxsbGxsbGxsbGxsbGxsQ==",
+  "nonce_b64": "AQEBAQEBAQEBAQEB",
+  "signing_seed_b64": "ISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISE=",
+  "verify_key_b64": "iEuIV/TqoWE8YVBNs01L6vNGUXoOMd483dTZtCAdnQs=",
+  "plaintext_utf8": "",
+  "expected_wire_with_prefix": "GRP2:AQEBAQEBAQEBAQEBAYP8pejJq+ZI1BwOsNC3M9rdrJ1kA92VL8L7PxM88ABHNkwXHIk5JLkZG26V4VuOUox8D68sVPim3qPUs2qJMfgpWcZT/+DjT4Iiimt92YcL",
+  "expected_signature_b64": "3aydZAPdlS/C+z8TPPAARzZMFxyJOSS5GRtuleFbjlKMfA+vLFT4pt6j1LNqiTH4KVnGU//g40+CIoprfdmHCw=="
+}

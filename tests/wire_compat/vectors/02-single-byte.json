@@ -1,0 +1,13 @@
+{
+  "name": "02-single-byte",
+  "description": "single-byte plaintext (smallest non-empty payload).",
+  "group_key_b64": "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI=",
+  "conversation_id_b64": "oqKioqKioqKioqKioqKiog==",
+  "message_id_b64": "srKysrKysrKysrKysrKysg==",
+  "nonce_b64": "AgICAgICAgICAgIC",
+  "signing_seed_b64": "MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjI=",
+  "verify_key_b64": "XiEsCYDks5/AlyETSqAhCTdO39JgwNPQPLUByNZUV6k=",
+  "plaintext_utf8": "x",
+  "expected_wire_with_prefix": "GRP2:AQICAgICAgICAgICAg5z9iV0t8CS3QpUGs4UUKFyUtaOjyEqVfQAP8jMGlln1C6+K2D5cBwQIna/jGcZl46N4wtp+rQS7J3qd03D5azIVDp9naWqqhjwbyYtNkDADg==",
+  "expected_signature_b64": "UtaOjyEqVfQAP8jMGlln1C6+K2D5cBwQIna/jGcZl46N4wtp+rQS7J3qd03D5azIVDp9naWqqhjwbyYtNkDADg=="
+}
