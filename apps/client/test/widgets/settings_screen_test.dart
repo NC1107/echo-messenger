@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:echo_app/src/providers/auth_provider.dart';
 import 'package:echo_app/src/screens/settings_screen.dart';
@@ -199,4 +200,82 @@ void main() {
       expect(find.text('Admin dashboard'), findsOneWidget);
     });
   });
+
+  group('SettingsScreen mobile layout', () {
+    setUp(() {
+      TestWidgetsFlutterBinding.ensureInitialized();
+    });
+
+    testWidgets(
+      'at 360x640 shows the section list and not the desktop right pane',
+      (tester) async {
+        tester.view.physicalSize = const Size(360, 640);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(_settingsScreenApp());
+        await tester.pumpAndSettle();
+
+        // Section list is visible -- mobile root page.
+        expect(find.text('Account preferences'), findsOneWidget);
+        expect(find.text('Privacy'), findsOneWidget);
+        expect(find.text('Log out'), findsOneWidget);
+
+        // Desktop sidebar has a fixed 320 px width Container with the
+        // sidebar background. The mobile layout must not render that --
+        // there's nowhere near enough room on a 360 px screen for both a
+        // 320 px nav rail AND a content pane.
+        final sidebarFinder = find.byWidgetPredicate(
+          (w) => w is Container && w.constraints?.maxWidth == 320,
+        );
+        expect(sidebarFinder, findsNothing);
+      },
+    );
+
+    testWidgets('tapping a section on mobile pushes into the detail page', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(_settingsScreenApp());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Privacy'));
+      await tester.pumpAndSettle();
+
+      // Detail page has an AppBar with the section title. The root list's
+      // "Account preferences" group header should no longer be in the tree.
+      expect(find.text('Account preferences'), findsNothing);
+      // The AppBar title surfaces the section name.
+      expect(find.text('Privacy'), findsWidgets);
+    });
+  });
+}
+
+/// Pumps the full [SettingsScreen] (not just [SettingsRootView]) so the
+/// mobile/desktop branch is exercised. GoRouter is required because the
+/// screen calls `context.pop()` / `context.push()`.
+Widget _settingsScreenApp() {
+  final router = GoRouter(
+    initialLocation: '/settings',
+    routes: [
+      GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
+      GoRoute(path: '/saved', builder: (_, _) => const SizedBox.shrink()),
+      GoRoute(path: '/login', builder: (_, _) => const SizedBox.shrink()),
+      GoRoute(path: '/admin', builder: (_, _) => const SizedBox.shrink()),
+    ],
+  );
+  return ProviderScope(
+    overrides: [authOverride(loggedInAuthState), serverUrlOverride()],
+    child: MaterialApp.router(
+      theme: EchoTheme.darkTheme,
+      darkTheme: EchoTheme.darkTheme,
+      themeMode: ThemeMode.dark,
+      routerConfig: router,
+    ),
+  );
 }
