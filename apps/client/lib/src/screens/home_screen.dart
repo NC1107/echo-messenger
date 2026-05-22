@@ -148,6 +148,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   // the drag ends without crossing the threshold.  Initialized in initState.
   late final AnimationController _swipeSnapController;
 
+  /// Layout-tier picker with hysteresis. Lives on the State so the previous
+  /// decision survives across rebuilds. Without this, dragging the window
+  /// across 600 px or 900 px would swap top-level scaffolds every frame,
+  /// dropping scroll positions, open popovers and in-flight overlays.
+  final StableLayoutDecision _layoutDecision = StableLayoutDecision();
+
   @override
   void initState() {
     super.initState();
@@ -205,20 +211,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
-    final isNarrow = width < 600;
-    final isDesktop = width >= 900;
+    final tier = _layoutDecision.next(width);
 
     _listenForErrors();
     _syncSelectedConversation();
 
-    Widget layout;
-    if (isNarrow) {
-      layout = _buildNarrowLayout();
-    } else if (isDesktop) {
-      layout = _buildDesktopLayout();
-    } else {
-      layout = _buildWideLayout();
-    }
+    final Widget layout = switch (tier) {
+      LayoutTier.narrow => _buildNarrowLayout(),
+      LayoutTier.desktop => _buildDesktopLayout(),
+      LayoutTier.wide => _buildWideLayout(),
+    };
 
     return EchoSystemChrome(
       child: CallbackShortcuts(
