@@ -194,10 +194,10 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
     );
   }
 
-  /// "End-to-end encryption (Experimental)" toggle. Defaults to off
-  /// because the group-key envelope path has known stability issues
-  /// under identity-key drift — a plaintext group is the safe default
-  /// until the wedged-envelope recovery story stabilises.
+  /// End-to-end encryption toggle. Default stays off so a brand-new
+  /// invitee — who hasn't published prekeys yet — doesn't see a
+  /// "waiting for keys" failure on the sender's first send. Flipping
+  /// the default is gated on the event-driven bootstrap retry (#1131).
   Widget _buildEncryptionToggle() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -207,33 +207,12 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
           value: _isEncrypted,
           onChanged: (v) => setState(() => _isEncrypted = v),
           contentPadding: EdgeInsets.zero,
-          title: Row(
-            children: [
-              const Text('End-to-end encryption'),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: EchoTheme.warning.withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Text(
-                  'Experimental',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    color: EchoTheme.warning,
-                    letterSpacing: 0.4,
-                  ),
-                ),
-              ),
-            ],
-          ),
+          title: const Text('End-to-end encryption'),
           subtitle: Text(
             _isEncrypted
-                ? 'On (beta): end-to-end encrypted with a per-member group '
-                      'key. No server-side search; new joiners may need a '
-                      'key refresh.'
+                ? 'On: end-to-end encrypted with a per-member group key. '
+                      'No server-side search; new joiners get a key '
+                      'refresh when they connect.'
                 : 'Off: server can read messages, supports search and '
                       'moderation. Your account auth still protects access.',
             style: TextStyle(color: context.textMuted, fontSize: 12),
