@@ -1,26 +1,15 @@
-import 'dart:async';
-
-import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, kIsWeb, TargetPlatform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../providers/voice_settings_provider.dart';
-import '../../services/debug_log_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/sound_service.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
-import '../../utils/audio_level_analyzer.dart';
 
 part 'notification_section/parts/time_tile.dart';
 part 'notification_section/parts/sound_picker.dart';
 part 'notification_section/parts/prefs_helpers.dart';
-part 'notification_section/parts/voice_video_section.dart';
-part 'notification_section/parts/camera_preview.dart';
 
 /// SharedPreferences keys for notification settings.
 const _kNotificationsEnabled = 'notifications_enabled';

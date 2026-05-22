@@ -23,3 +23,33 @@ String friendlyError(Object e) {
   }
   return 'Something went wrong. Try again.';
 }
+
+/// Specialized variant for the login screen. The generic [friendlyError]
+/// fallback ("Something went wrong. Try again.") leaves the user with no
+/// signal about *why* the sign-in failed — wrong credentials, server down,
+/// or the laptop being offline all read identically. This variant returns:
+///
+/// - 401 / 403  → "Invalid username or password." (the credential path)
+/// - SocketException / TimeoutException → "Can't reach the server. Check
+///   your connection or server URL."
+/// - 5xx → "Server error — please try again in a moment."
+/// - Anything else → falls back to [friendlyError].
+///
+/// Pass [statusCode] when you have one (the HTTP layer parsed a non-2xx
+/// response); pass [exception] when the request blew up before getting a
+/// response. Exactly one is expected.
+String friendlyLoginError({int? statusCode, Object? exception}) {
+  if (statusCode != null) {
+    if (statusCode == 401 || statusCode == 403) {
+      return 'Invalid username or password.';
+    }
+    if (statusCode >= 500 && statusCode < 600) {
+      return 'Server error — please try again in a moment.';
+    }
+  }
+  if (exception is SocketException || exception is TimeoutException) {
+    return "Can't reach the server. Check your connection or server URL.";
+  }
+  if (exception != null) return friendlyError(exception);
+  return 'Invalid username or password.';
+}

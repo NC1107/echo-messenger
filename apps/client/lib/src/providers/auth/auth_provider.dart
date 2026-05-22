@@ -269,20 +269,28 @@ class AuthNotifier extends _$AuthNotifier
         // Start background service to keep WebSocket alive on mobile
         BackgroundService.instance.start();
       } else {
-        String errorMsg = 'Invalid username or password';
-        try {
-          final data = jsonDecode(response.body) as Map<String, dynamic>;
-          errorMsg = data['error'] as String? ?? errorMsg;
-        } catch (e) {
-          debugPrint('[Auth] login response parse failed: $e');
-          errorMsg = friendlyError(
-            Exception('Server error ${response.statusCode}'),
-          );
+        // Default to the status-code-driven copy so a 5xx never reads as a
+        // credentials problem. If the server returned a JSON `error` field
+        // AND we're in the credentials range (401/403), prefer the server
+        // copy (e.g. "Account locked"); otherwise the user-friendly status
+        // string wins.
+        String errorMsg = friendlyLoginError(statusCode: response.statusCode);
+        if (response.statusCode == 401 || response.statusCode == 403) {
+          try {
+            final data = jsonDecode(response.body) as Map<String, dynamic>;
+            final serverMsg = data['error'] as String?;
+            if (serverMsg != null && serverMsg.isNotEmpty) errorMsg = serverMsg;
+          } catch (e) {
+            debugPrint('[Auth] login response parse failed: $e');
+          }
         }
         state = state.copyWith(isLoading: false, error: errorMsg);
       }
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: friendlyError(e));
+      state = state.copyWith(
+        isLoading: false,
+        error: friendlyLoginError(exception: e),
+      );
     }
   }
 
