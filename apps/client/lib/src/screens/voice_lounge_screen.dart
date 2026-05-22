@@ -580,7 +580,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
             ],
           ),
           content: SizedBox(
-            width: 400,
+            width: MediaQuery.sizeOf(dialogCtx).width.clamp(320.0, 440.0),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [

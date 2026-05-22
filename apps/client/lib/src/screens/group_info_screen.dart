@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
@@ -200,39 +199,42 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     required String myRole,
     required bool isOwnerOrAdmin,
   }) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 600),
-        child: ListView(
-          children: [
-            const SizedBox(height: 24),
-            _buildGroupAvatar(
-              isOwnerOrAdmin: isOwnerOrAdmin,
-              iconUrl: conv.iconUrl,
-            ),
-            const SizedBox(height: 16),
-            _buildGroupNameSection(
-              displayName: displayName,
-              isOwnerOrAdmin: isOwnerOrAdmin,
-            ),
-            _buildMemberCount(conv.members.length),
-            const SizedBox(height: 16),
-            const Divider(),
-            _buildDescriptionSection(
-              conv: conv,
-              isOwnerOrAdmin: isOwnerOrAdmin,
-            ),
-            const SizedBox(height: 8),
-            const Divider(),
-            ..._buildMembersSection(
-              conv: conv,
-              myUserId: myUserId,
-              isOwnerOrAdmin: isOwnerOrAdmin,
-            ),
-            if (isOwnerOrAdmin) ..._buildChannelsSection(),
-            if (isOwnerOrAdmin) _buildDisappearingSection(),
-            ..._buildActionButtons(myRole: myRole),
-          ],
+    return SafeArea(
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 600),
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            children: [
+              const SizedBox(height: 24),
+              _buildGroupAvatar(
+                isOwnerOrAdmin: isOwnerOrAdmin,
+                iconUrl: conv.iconUrl,
+              ),
+              const SizedBox(height: 16),
+              _buildGroupNameSection(
+                displayName: displayName,
+                isOwnerOrAdmin: isOwnerOrAdmin,
+              ),
+              _buildMemberCount(conv.members.length),
+              const SizedBox(height: 16),
+              const Divider(),
+              _buildDescriptionSection(
+                conv: conv,
+                isOwnerOrAdmin: isOwnerOrAdmin,
+              ),
+              const SizedBox(height: 8),
+              const Divider(),
+              ..._buildMembersSection(
+                conv: conv,
+                myUserId: myUserId,
+                isOwnerOrAdmin: isOwnerOrAdmin,
+              ),
+              if (isOwnerOrAdmin) ..._buildChannelsSection(),
+              if (isOwnerOrAdmin) _buildDisappearingSection(),
+              ..._buildActionButtons(myRole: myRole),
+            ],
+          ),
         ),
       ),
     );

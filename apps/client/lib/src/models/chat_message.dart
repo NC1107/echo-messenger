@@ -162,59 +162,118 @@ class ChatMessage {
   ///
   /// Pass [myUserId] to get first-person phrasing ("You joined") when the
   /// acting user is the current user.
+  ///
+  /// Implementation is a dispatch over the known event tags; each branch
+  /// delegates to a small typed helper to keep cognitive complexity below
+  /// the SonarQube S3776 budget of 15.
   static String? translateSystemSentinel(String sentinel, {String? myUserId}) {
-    // Parse `<uuid>:<username>` tail that follows [tag] in [sentinel].
-    // Returns null when the sentinel is malformed.
-    (String, String)? parseUuidUsername(String tag) {
-      final rest = sentinel.substring(tag.length);
-      final colonIdx = rest.indexOf(':');
-      if (colonIdx < 0) return null;
-      final uuid = rest.substring(0, colonIdx);
-      final username = rest.substring(colonIdx + 1);
-      if (username.isEmpty) return null;
-      return (uuid, username);
-    }
-
-    // Helper to format a system event message with first-person handling.
-    String formatEvent(String tag, String verbPhrase) {
-      final parts = parseUuidUsername(tag);
-      if (parts == null) return '';
-      final (uuid, username) = parts;
-      final isMe = myUserId != null && uuid == myUserId;
-      return '${isMe ? 'You' : username} $verbPhrase';
-    }
-
     const joinedTag = '__system__:member_joined:';
     if (sentinel.startsWith(joinedTag)) {
-      final result = formatEvent(joinedTag, 'joined the group');
-      return result.isNotEmpty ? result : null;
+      return _formatActiveEvent(
+        sentinel,
+        joinedTag,
+        myUserId,
+        verbPhrase: 'joined the group',
+      );
     }
 
     const leftTag = '__system__:member_left:';
     if (sentinel.startsWith(leftTag)) {
-      final result = formatEvent(leftTag, 'left the group');
-      return result.isNotEmpty ? result : null;
+      return _formatActiveEvent(
+        sentinel,
+        leftTag,
+        myUserId,
+        verbPhrase: 'left the group',
+      );
     }
 
     const removedTag = '__system__:member_removed:';
     if (sentinel.startsWith(removedTag)) {
-      final parts = parseUuidUsername(removedTag);
-      if (parts == null) return null;
-      final (uuid, username) = parts;
-      final isMe = myUserId != null && uuid == myUserId;
-      return '${isMe ? 'You were' : '$username was'} removed from the group';
+      return _formatPassiveEvent(
+        sentinel,
+        removedTag,
+        myUserId,
+        verbPhrase: 'removed from the group',
+      );
     }
 
     const bannedTag = '__system__:member_banned:';
     if (sentinel.startsWith(bannedTag)) {
-      final parts = parseUuidUsername(bannedTag);
-      if (parts == null) return null;
-      final (uuid, username) = parts;
-      final isMe = myUserId != null && uuid == myUserId;
-      return '${isMe ? 'You were' : '$username was'} banned from the group';
+      return _formatPassiveEvent(
+        sentinel,
+        bannedTag,
+        myUserId,
+        verbPhrase: 'banned from the group',
+      );
     }
 
     return null;
+  }
+
+  /// Parse the `<uuid>:<username>` tail that follows [tag] in [sentinel].
+  /// Returns null when the sentinel is malformed (missing colon or empty
+  /// username).
+  static (String, String)? _parseUuidUsername(String sentinel, String tag) {
+    final rest = sentinel.substring(tag.length);
+    final colonIdx = rest.indexOf(':');
+    if (colonIdx < 0) return null;
+    final uuid = rest.substring(0, colonIdx);
+    final username = rest.substring(colonIdx + 1);
+    if (username.isEmpty) return null;
+    return (uuid, username);
+  }
+
+  /// Format an "active-voice" event ("X joined the group", "You left the
+  /// group"). Returns null when the sentinel payload is malformed.
+  static String? _formatActiveEvent(
+    String sentinel,
+    String tag,
+    String? myUserId, {
+    required String verbPhrase,
+  }) {
+    final parts = _parseUuidUsername(sentinel, tag);
+    if (parts == null) return null;
+    final (uuid, username) = parts;
+    final subject = _subjectFor(uuid, username, myUserId, selfPronoun: 'You');
+    return '$subject $verbPhrase';
+  }
+
+  /// Format a "passive-voice" event ("X was removed from the group", "You
+  /// were banned from the group"). Returns null when the sentinel payload
+  /// is malformed.
+  static String? _formatPassiveEvent(
+    String sentinel,
+    String tag,
+    String? myUserId, {
+    required String verbPhrase,
+  }) {
+    final parts = _parseUuidUsername(sentinel, tag);
+    if (parts == null) return null;
+    final (uuid, username) = parts;
+    final subject = _subjectFor(
+      uuid,
+      username,
+      myUserId,
+      selfPronoun: 'You were',
+      peerSuffix: 'was',
+    );
+    return '$subject $verbPhrase';
+  }
+
+  /// Build the subject phrase for a system event. When [uuid] matches
+  /// [myUserId] the [selfPronoun] is used verbatim; otherwise the
+  /// [username] is rendered, optionally followed by [peerSuffix] (e.g.
+  /// "alice was").
+  static String _subjectFor(
+    String uuid,
+    String username,
+    String? myUserId, {
+    required String selfPronoun,
+    String? peerSuffix,
+  }) {
+    final isMe = myUserId != null && uuid == myUserId;
+    if (isMe) return selfPronoun;
+    return peerSuffix == null ? username : '$username $peerSuffix';
   }
 
   Map<String, dynamic> toJson() {

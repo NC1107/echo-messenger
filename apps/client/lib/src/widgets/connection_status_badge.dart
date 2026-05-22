@@ -1,12 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/server_url_provider.dart';
 import '../providers/websocket_provider.dart';
-import '../services/toast_service.dart';
+import '../services/clipboard_service.dart';
 import '../theme/echo_theme.dart';
 import '../version.dart';
 import 'echo_bottom_sheet.dart';
@@ -461,12 +460,10 @@ class _ConnectionStatusPopoverState
                           serverUrl: serverUrl,
                           platform: Theme.of(context).platform,
                         );
-                        await Clipboard.setData(ClipboardData(text: text));
-                        if (!context.mounted) return;
-                        ToastService.show(
+                        await copyToClipboard(
                           context,
-                          'Diagnostics copied',
-                          type: ToastType.success,
+                          text,
+                          successMessage: 'Diagnostics copied',
                         );
                       },
                     )

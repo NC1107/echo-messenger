@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -15,6 +14,7 @@ import '../../providers/crypto_provider.dart';
 import '../../providers/server_url_provider.dart';
 import '../../providers/update_provider.dart';
 import '../../providers/websocket_provider.dart';
+import '../../services/clipboard_service.dart';
 import '../../services/debug_log_service.dart';
 import '../../services/message_cache.dart';
 import '../../services/secure_key_store.dart';
@@ -23,6 +23,7 @@ import '../../theme/echo_theme.dart';
 import '../../version.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/feedback_dialog.dart';
+import '../../widgets/settings/settings_list_tile.dart';
 import '../../widgets/input_dialog.dart';
 
 class AboutSection extends ConsumerStatefulWidget {
@@ -554,52 +555,20 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
             const SizedBox(height: 12),
             _buildServersList(),
             const SizedBox(height: 8),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(
-                Icons.add_circle_outline,
-                color: context.textSecondary,
-                size: 22,
-              ),
-              title: Text(
-                'Add server',
-                style: TextStyle(color: context.textPrimary, fontSize: 15),
-              ),
-              subtitle: Text(
-                'Verifies the URL before adding it to your list.',
-                style: TextStyle(color: context.textMuted, fontSize: 12),
-              ),
-              trailing: Icon(
-                Icons.chevron_right,
-                color: context.textMuted,
-                size: 20,
-              ),
+            SettingsListTile(
+              icon: Icons.add_circle_outline,
+              title: 'Add server',
+              subtitle: 'Verifies the URL before adding it to your list.',
               onTap: _showAddServerDialog,
             ),
             const SizedBox(height: 16),
             Divider(color: context.border),
             const SizedBox(height: 16),
             // Debug logs entry (absorbed from former Debug section).
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(
-                Icons.bug_report_outlined,
-                color: context.textSecondary,
-                size: 22,
-              ),
-              title: Text(
-                'Debug Logs',
-                style: TextStyle(color: context.textPrimary, fontSize: 15),
-              ),
-              subtitle: Text(
-                'View recent in-app log entries.',
-                style: TextStyle(color: context.textMuted, fontSize: 12),
-              ),
-              trailing: Icon(
-                Icons.chevron_right,
-                color: context.textMuted,
-                size: 20,
-              ),
+            SettingsListTile(
+              icon: Icons.bug_report_outlined,
+              title: 'Debug Logs',
+              subtitle: 'View recent in-app log entries.',
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(
@@ -611,47 +580,21 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
             const SizedBox(height: 8),
             // Beta-prep #4c: surface the feedback dialog from About so testers
             // have a one-tap path to report issues without leaving the app.
-            ListTile(
+            SettingsListTile(
               key: const Key('about-send-feedback'),
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(
-                Icons.feedback_outlined,
-                color: context.textSecondary,
-                size: 22,
-              ),
-              title: Text(
-                'Send feedback',
-                style: TextStyle(color: context.textPrimary, fontSize: 15),
-              ),
-              subtitle: Text(
-                'Report a bug or share a suggestion.',
-                style: TextStyle(color: context.textMuted, fontSize: 12),
-              ),
-              trailing: Icon(
-                Icons.chevron_right,
-                color: context.textMuted,
-                size: 20,
-              ),
+              icon: Icons.feedback_outlined,
+              title: 'Send feedback',
+              subtitle: 'Report a bug or share a suggestion.',
               onTap: () => showFeedbackDialog(context),
             ),
             // Privacy link — opens the GitHub-rendered docs/PRIVACY.md so the
             // canonical text isn't bundled in every app build.
-            ListTile(
+            SettingsListTile(
               key: const Key('about-privacy-link'),
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(
-                Icons.privacy_tip_outlined,
-                color: context.textSecondary,
-                size: 22,
-              ),
-              title: Text(
-                'Privacy',
-                style: TextStyle(color: context.textPrimary, fontSize: 15),
-              ),
-              subtitle: Text(
-                'What Echo stores, what it does not, and where the data lives.',
-                style: TextStyle(color: context.textMuted, fontSize: 12),
-              ),
+              icon: Icons.privacy_tip_outlined,
+              title: 'Privacy',
+              subtitle:
+                  'What Echo stores, what it does not, and where the data lives.',
               trailing: Icon(
                 Icons.open_in_new,
                 color: context.textMuted,
@@ -765,14 +708,12 @@ class _DebugLogsSubpageState extends State<_DebugLogsSubpage> {
       };
       buffer.writeln('$h:$m:$s [$level] ${e.source}: ${e.message}');
     }
-    Clipboard.setData(ClipboardData(text: buffer.toString()));
-    if (mounted) {
-      ToastService.show(
-        context,
-        '${entries.length} log entries copied to clipboard',
-        type: ToastType.success,
-      );
-    }
+    if (!mounted) return;
+    copyToClipboard(
+      context,
+      buffer.toString(),
+      successMessage: '${entries.length} log entries copied to clipboard',
+    );
   }
 
   void _onLogsChanged() {
@@ -916,11 +857,10 @@ class _DebugLogEntryTileState extends State<_DebugLogEntryTile> {
       LogLevel.fatal => 'FTL',
     };
     final text = '$h:$m:$s [$level] ${entry.source}: ${entry.message}';
-    Clipboard.setData(ClipboardData(text: text));
-    ToastService.show(
+    copyToClipboard(
       context,
-      'Log entry copied to clipboard',
-      type: ToastType.success,
+      text,
+      successMessage: 'Log entry copied to clipboard',
     );
   }
 

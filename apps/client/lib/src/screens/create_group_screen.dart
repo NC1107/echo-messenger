@@ -9,6 +9,7 @@ import '../providers/server_url_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
+import '../widgets/empty_state.dart';
 
 class CreateGroupScreen extends ConsumerStatefulWidget {
   const CreateGroupScreen({super.key});
@@ -270,12 +271,10 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
       return const Center(child: CircularProgressIndicator());
     }
     if (contactsState.contacts.isEmpty) {
-      return Center(
-        child: Text(
-          'No contacts available.\nAdd contacts first.',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: context.textMuted),
-        ),
+      return const EmptyState(
+        icon: Icons.person_outline,
+        title: 'No contacts available.',
+        body: 'Add contacts first.',
       );
     }
     return ListView.builder(

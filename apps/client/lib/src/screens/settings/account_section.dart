@@ -9,6 +9,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/server_url_provider.dart';
+import '../../services/clipboard_service.dart';
 import '../../services/toast_service.dart';
 import '../../services/upload_client.dart';
 import '../../theme/echo_theme.dart';
@@ -340,11 +341,10 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     if (username.isEmpty) return;
     final link =
         'https://echo-messenger.us/#/u/${Uri.encodeComponent(username)}';
-    Clipboard.setData(ClipboardData(text: link));
-    ToastService.show(
+    copyToClipboard(
       context,
-      'Invite link copied to clipboard',
-      type: ToastType.success,
+      link,
+      successMessage: 'Invite link copied to clipboard',
     );
   }
 
@@ -409,11 +409,10 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
             const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: () {
-                Clipboard.setData(ClipboardData(text: inviteLink));
-                ToastService.show(
+                copyToClipboard(
                   dialogContext,
-                  'Invite link copied to clipboard',
-                  type: ToastType.success,
+                  inviteLink,
+                  successMessage: 'Invite link copied to clipboard',
                 );
               },
               icon: const Icon(Icons.copy, size: 16),

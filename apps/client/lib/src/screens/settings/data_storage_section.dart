@@ -10,6 +10,7 @@ import '../../services/message_cache.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
 import '../../widgets/confirm_dialog.dart';
+import '../../widgets/settings/settings_list_tile.dart';
 
 class DataStorageSection extends ConsumerStatefulWidget {
   const DataStorageSection({super.key});
@@ -155,17 +156,10 @@ class _DataStorageSectionState extends ConsumerState<DataStorageSection> {
             ),
             const Divider(height: 24),
             // Cache size
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.storage, color: context.textSecondary),
-              title: Text(
-                'Message Cache',
-                style: TextStyle(color: context.textPrimary, fontSize: 14),
-              ),
-              subtitle: Text(
-                'Estimated size: $_cacheSize',
-                style: TextStyle(color: context.textMuted, fontSize: 12),
-              ),
+            SettingsListTile(
+              icon: Icons.storage,
+              title: 'Message Cache',
+              subtitle: 'Estimated size: $_cacheSize',
               trailing: OutlinedButton(
                 onPressed: _clearMessageCache,
                 child: const Text('Clear'),

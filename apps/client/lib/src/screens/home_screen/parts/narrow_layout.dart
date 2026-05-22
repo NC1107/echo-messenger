@@ -24,30 +24,60 @@ mixin _HomeScreenNarrowLayoutMixin
 
   /// Build the narrow chat panel with voice banner and edge-swipe support.
   Widget _buildNarrowChatPanel(LiveKitVoiceState voiceRtc, bool voiceActive) {
-    // Show voice lounge when voice is active and user hasn't dismissed it
     if (voiceActive && _self._showingLounge) {
-      return Scaffold(
-        body: SafeArea(
-          child: VoiceLoungeScreen(
-            onBackToChat: () => setState(() {
-              _self._showingLounge = false;
-              _self._userDismissedLounge = true;
-            }),
-          ),
-        ),
-      );
+      return _buildLoungeShell();
     }
 
     final layout = ref.watch(channelLayoutProvider);
     // Discord-style channel drawer: kicks in on the same path the outer
     // edge-swipe-back uses, but only when the user has opted into the
     // column layout AND the open conversation is a group with channels.
-    // Otherwise we keep the existing swipe-to-conversations behaviour.
     final useColumnDrawer =
         layout == ChannelLayout.column &&
         (_self._selectedConversation?.isGroup ?? false);
 
-    Widget chatContent = ChatPanel(
+    final chatContent = _buildNarrowChatContent(
+      useColumnDrawer: useColumnDrawer,
+    );
+
+    return Scaffold(
+      body: SafeArea(
+        child: PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) setState(() => _self._narrowPanelIndex = 0);
+          },
+          child: _buildEdgeSwipeGestureWrapper(
+            useColumnDrawer: useColumnDrawer,
+            child: Stack(
+              children: [
+                chatContent,
+                if (_self._swipeProgress > 0.0) _buildEdgeSwipePeek(),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The Scaffold shown when the lounge takes over the narrow viewport.
+  Widget _buildLoungeShell() {
+    return Scaffold(
+      body: SafeArea(
+        child: VoiceLoungeScreen(
+          onBackToChat: () => setState(() {
+            _self._showingLounge = false;
+            _self._userDismissedLounge = true;
+          }),
+        ),
+      ),
+    );
+  }
+
+  /// Compose the ChatPanel with the right callbacks for narrow mode.
+  Widget _buildNarrowChatContent({required bool useColumnDrawer}) {
+    return ChatPanel(
       conversation: _self._selectedConversation,
       onGroupInfo: _showGroupInfo,
       onBack: () => setState(() => _self._narrowPanelIndex = 0),
@@ -57,130 +87,110 @@ mixin _HomeScreenNarrowLayoutMixin
         _self._userDismissedLounge = false;
       }),
       onConversationSelected: useColumnDrawer
-          ? (id) {
-              final next = ref
-                  .read(conversationsProvider)
-                  .conversations
-                  .where((c) => c.id == id)
-                  .firstOrNull;
-              if (next != null) {
-                setState(() => _self._selectedConversation = next);
-              }
-            }
+          ? _selectConversationFromDrawer
           : null,
     );
+  }
 
-    // Note: a "● <channel> — Tap to view voice" rejoin banner used to sit
-    // between the chat and a dismissed lounge.  It has been removed because
-    // the persistent VoiceDock at the bottom of the sidebar already shows
-    // the active voice channel name + status indicator + controls and is
-    // tappable to reopen the lounge -- the banner duplicated that affordance.
+  /// Select a conversation from the column-mode channel drawer.
+  void _selectConversationFromDrawer(String id) {
+    final next = ref
+        .read(conversationsProvider)
+        .conversations
+        .where((c) => c.id == id)
+        .firstOrNull;
+    if (next != null) {
+      setState(() => _self._selectedConversation = next);
+    }
+  }
 
-    return Scaffold(
-      body: SafeArea(
-        child: PopScope(
-          canPop: false,
-          onPopInvokedWithResult: (didPop, _) {
-            if (!didPop) setState(() => _self._narrowPanelIndex = 0);
-          },
-          child: GestureDetector(
-            // Suppressed in column mode so the channel-drawer's own
-            // edge-swipe wins. The drawer covers the same "go back to
-            // navigation" affordance for column users.
-            onHorizontalDragStart: useColumnDrawer
-                ? null
-                : (startDetails) {
-                    _self._swipeStartX = startDetails.globalPosition.dx;
-                    _self._swipeSnapController.stop();
-                  },
-            onHorizontalDragUpdate: useColumnDrawer
-                ? null
-                : (details) {
-                    if (_self._swipeStartX == null) return;
-                    if (_self._swipeStartX! >=
-                        _HomeScreenState._edgeSwipeZone) {
-                      return;
-                    }
+  /// Wrap [child] with a GestureDetector that handles the edge-swipe-back
+  /// gesture. When [useColumnDrawer] is true, all gesture callbacks return
+  /// null so the channel drawer's own edge-swipe wins.
+  Widget _buildEdgeSwipeGestureWrapper({
+    required bool useColumnDrawer,
+    required Widget child,
+  }) {
+    if (useColumnDrawer) {
+      return child;
+    }
+    return GestureDetector(
+      onHorizontalDragStart: _handleSwipeStart,
+      onHorizontalDragUpdate: _handleSwipeUpdate,
+      onHorizontalDragEnd: _handleSwipeEnd,
+      child: child,
+    );
+  }
 
-                    final deltaX =
-                        details.globalPosition.dx - _self._swipeStartX!;
+  void _handleSwipeStart(DragStartDetails details) {
+    _self._swipeStartX = details.globalPosition.dx;
+    _self._swipeSnapController.stop();
+  }
 
-                    if (deltaX > _HomeScreenState._edgeSwipeThreshold) {
-                      // Threshold crossed — complete navigation and reset.
-                      _self._swipeStartX = null;
-                      setState(() {
-                        _self._swipeProgress = 0.0;
-                        _self._narrowPanelIndex = 0;
-                      });
-                      return;
-                    }
+  void _handleSwipeUpdate(DragUpdateDetails details) {
+    final startX = _self._swipeStartX;
+    if (startX == null) return;
+    if (startX >= _HomeScreenState._edgeSwipeZone) return;
 
-                    // Update in-progress feedback.
-                    final progress =
-                        (deltaX.clamp(
-                          0.0,
-                          _HomeScreenState._edgeSwipeThreshold,
-                        ) /
-                        _HomeScreenState._edgeSwipeThreshold);
-                    setState(() => _self._swipeProgress = progress);
-                  },
-            onHorizontalDragEnd: useColumnDrawer
-                ? null
-                : (_) {
-                    if (_self._swipeProgress > 0.0) {
-                      // Snap back from current progress to 0 over 150 ms.
-                      _self._swipeSnapController.value = _self._swipeProgress;
-                      _self._swipeSnapController.animateBack(
-                        0.0,
-                        curve: Curves.easeOut,
-                      );
-                    }
-                    _self._swipeStartX = null;
-                  },
-            child: Stack(
-              children: [
-                chatContent,
-                // Left-edge peek panel: a narrow strip that slides in from the
-                // left proportionally to swipe progress.  At progress=1 it is
-                // 80 px wide and fully visible; it fades out as progress falls.
-                if (_self._swipeProgress > 0.0)
-                  Positioned(
-                    left: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: 80,
-                    child: Transform.translate(
-                      offset: Offset((1.0 - _self._swipeProgress) * -80.0, 0),
-                      child: Opacity(
-                        opacity: _self._swipeProgress,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.surface,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(
-                                  alpha: 0.18 * _self._swipeProgress,
-                                ),
-                                blurRadius: 12,
-                                offset: const Offset(4, 0),
-                              ),
-                            ],
-                          ),
-                          child: Center(
-                            child: Icon(
-                              Icons.chevron_right_rounded,
-                              color: Theme.of(context).colorScheme.onSurface
-                                  .withValues(
-                                    alpha: 0.6 * _self._swipeProgress,
-                                  ),
-                              size: 28,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+    final deltaX = details.globalPosition.dx - startX;
+    if (deltaX > _HomeScreenState._edgeSwipeThreshold) {
+      // Threshold crossed — complete navigation and reset.
+      _self._swipeStartX = null;
+      setState(() {
+        _self._swipeProgress = 0.0;
+        _self._narrowPanelIndex = 0;
+      });
+      return;
+    }
+
+    final progress =
+        deltaX.clamp(0.0, _HomeScreenState._edgeSwipeThreshold) /
+        _HomeScreenState._edgeSwipeThreshold;
+    setState(() => _self._swipeProgress = progress);
+  }
+
+  void _handleSwipeEnd(DragEndDetails _) {
+    if (_self._swipeProgress > 0.0) {
+      // Snap back from current progress to 0 over 150 ms.
+      _self._swipeSnapController.value = _self._swipeProgress;
+      _self._swipeSnapController.animateBack(0.0, curve: Curves.easeOut);
+    }
+    _self._swipeStartX = null;
+  }
+
+  /// Left-edge peek panel: a narrow strip that slides in from the left
+  /// proportionally to swipe progress. At progress=1 it is 80px wide and
+  /// fully visible; it fades out as progress falls.
+  Widget _buildEdgeSwipePeek() {
+    final progress = _self._swipeProgress;
+    return Positioned(
+      left: 0,
+      top: 0,
+      bottom: 0,
+      width: 80,
+      child: Transform.translate(
+        offset: Offset((1.0 - progress) * -80.0, 0),
+        child: Opacity(
+          opacity: progress,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18 * progress),
+                  blurRadius: 12,
+                  offset: const Offset(4, 0),
+                ),
               ],
+            ),
+            child: Center(
+              child: Icon(
+                Icons.chevron_right_rounded,
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.6 * progress),
+                size: 28,
+              ),
             ),
           ),
         ),
@@ -198,16 +208,7 @@ mixin _HomeScreenNarrowLayoutMixin
     // this gate, joining voice from Discover/Contacts/Settings left the user
     // staring at that tab while the lounge state was already true.
     if (voiceActive && _self._showingLounge) {
-      return Scaffold(
-        body: SafeArea(
-          child: VoiceLoungeScreen(
-            onBackToChat: () => setState(() {
-              _self._showingLounge = false;
-              _self._userDismissedLounge = true;
-            }),
-          ),
-        ),
-      );
+      return _buildLoungeShell();
     }
 
     // When on the Chats tab AND a conversation is open, render the chat

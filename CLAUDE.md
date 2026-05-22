@@ -41,7 +41,7 @@ flutter build web --release --pwa-strategy=none --dart-define=APP_VERSION=X.Y.Z
 
 **run.sh** accepts optional `[username] [password]` args. Default is `dev/devpass123`, which also auto-creates demo contacts (alice, bob, charlie).
 
-**Other scripts**: `scripts/demo_two_apps.sh` (launch two client instances for testing), `scripts/seed_demo_data.sh` (populate test data).
+**Other scripts**: `scripts/demo_two_apps.sh` (launch two client instances for testing), `scripts/seed_demo_data.sh` (populate test data). For richer fixtures see `scripts/seed_v2_lib.sh` (sourceable helpers — `seed_user`, `seed_group`, `seed_dm_message`, etc.) and the two scenarios it powers: `scripts/seed_realistic_day.sh` (6 users, plaintext + encrypted groups, pairwise DMs, standup→EOD message rhythm with branching reply threads) and `scripts/seed_dms_only.sh` (DM-focused fixture, no groups). Usernames are timestamp-prefixed so reruns don't collide.
 
 ## Tests
 

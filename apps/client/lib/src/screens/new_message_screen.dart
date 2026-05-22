@@ -8,6 +8,7 @@ import '../providers/conversations_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/fuzzy_score.dart';
+import '../widgets/empty_state.dart';
 import '../widgets/settings/section_header.dart';
 import '../widgets/user_avatar.dart';
 
@@ -561,28 +562,9 @@ class _NewMessageScreenState extends ConsumerState<NewMessageScreen> {
         child: CircularProgressIndicator(color: context.accent, strokeWidth: 2),
       );
     }
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.person_search_outlined,
-              size: 48,
-              color: context.textMuted.withValues(alpha: 0.5),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              _query.isEmpty
-                  ? 'No contacts yet'
-                  : 'No contacts match "$_query"',
-              style: TextStyle(color: context.textSecondary, fontSize: 14),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
+    return EmptyState(
+      icon: Icons.person_search_outlined,
+      title: _query.isEmpty ? 'No contacts yet' : 'No contacts match "$_query"',
     );
   }
 }
