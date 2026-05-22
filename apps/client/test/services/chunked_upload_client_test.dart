@@ -36,6 +36,11 @@ void main() {
       expect(kChunkedUploadThresholdBytes, 5 * 1024 * 1024);
     });
 
+    test('shouldUseChunkedUpload includes exact threshold boundary', () {
+      expect(shouldUseChunkedUpload(kChunkedUploadThresholdBytes - 1), isFalse);
+      expect(shouldUseChunkedUpload(kChunkedUploadThresholdBytes), isTrue);
+    });
+
     test(
       'happy path issues init + chunk(s) + finalize and returns url',
       () async {

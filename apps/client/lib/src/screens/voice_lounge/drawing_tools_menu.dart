@@ -353,7 +353,7 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
     }
 
     final UploadResult uploadResult;
-    if (bytes.length >= kChunkedUploadThresholdBytes) {
+    if (shouldUseChunkedUpload(bytes.length)) {
       uploadResult = await uploadChunked();
     } else {
       final uploader = UploadClient(ref.read(authProvider.notifier));

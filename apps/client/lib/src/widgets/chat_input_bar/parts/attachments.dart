@@ -189,7 +189,7 @@ extension _Attachments on ChatInputBarState {
     }
 
     final UploadResult result;
-    if (bytes.length >= kChunkedUploadThresholdBytes) {
+    if (shouldUseChunkedUpload(bytes.length)) {
       result = await uploadChunked();
     } else {
       final uploader = UploadClient(ref.read(authProvider.notifier));

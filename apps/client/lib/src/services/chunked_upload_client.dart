@@ -40,6 +40,9 @@ const List<Duration> _kRetryBackoffs = [
 /// Keep this low so most attachments use the resumable pipeline by default.
 const int kChunkedUploadThresholdBytes = 5 * 1024 * 1024;
 
+bool shouldUseChunkedUpload(int byteLength) =>
+    byteLength >= kChunkedUploadThresholdBytes;
+
 const String _kOctetStream = 'application/octet-stream';
 const String _kJsonMime = 'application/json';
 const String _kContentType = 'Content-Type';
