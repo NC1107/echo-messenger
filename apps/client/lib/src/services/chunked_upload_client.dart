@@ -40,6 +40,10 @@ const List<Duration> _kRetryBackoffs = [
 /// edge limit even after multipart framing overhead.
 const int kChunkedUploadThresholdBytes = 95 * 1024 * 1024;
 
+const String _kOctetStream = 'application/octet-stream';
+const String _kJsonMime = 'application/json';
+const String _kContentType = 'Content-Type';
+
 /// Token getter callback shape.  Mirrors [UploadClient]'s tokenGetter so
 /// the production wiring stays single-source-of-truth.
 typedef ChunkedTokenGetter = String? Function();
@@ -122,7 +126,7 @@ class ChunkedUploadClient {
   }) async {
     final total = bytes.length;
     final declaredName = filename ?? 'upload.bin';
-    final declaredMime = mimeType ?? 'application/octet-stream';
+    final declaredMime = mimeType ?? _kOctetStream;
 
     final client = _transport();
     try {
@@ -193,7 +197,7 @@ class ChunkedUploadClient {
   }) async {
     final total = await file.length();
     final declaredName = filename ?? file.uri.pathSegments.last;
-    final declaredMime = mimeType ?? 'application/octet-stream';
+    final declaredMime = mimeType ?? _kOctetStream;
 
     final client = _transport();
     try {
@@ -270,7 +274,7 @@ class ChunkedUploadClient {
       build: (token) =>
           http.Request('POST', Uri.parse('$serverUrl/api/media/upload/init'))
             ..headers['Authorization'] = 'Bearer $token'
-            ..headers['Content-Type'] = 'application/json'
+            ..headers[_kContentType] = _kJsonMime
             ..body = jsonEncode(body),
       client: client,
     );
@@ -367,7 +371,7 @@ class ChunkedUploadClient {
               Uri.parse('$serverUrl/api/media/upload/$uploadId/chunk'),
             )
             ..headers['Authorization'] = 'Bearer $token'
-            ..headers['Content-Type'] = 'application/octet-stream'
+            ..headers[_kContentType] = _kOctetStream
             ..headers['Content-Range'] = 'bytes $start-$end/$total'
             ..bodyBytes = chunk,
       client: client,
@@ -455,7 +459,7 @@ class ChunkedUploadClient {
               Uri.parse('$serverUrl/api/media/upload/$uploadId/finalize'),
             )
             ..headers['Authorization'] = 'Bearer $token'
-            ..headers['Content-Type'] = 'application/json'
+            ..headers[_kContentType] = _kJsonMime
             ..body = '{}',
       client: client,
     );
