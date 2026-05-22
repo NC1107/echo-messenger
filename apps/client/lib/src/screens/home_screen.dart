@@ -236,10 +236,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           const SingleActivator(LogicalKeyboardKey.slash, control: true): () {
             _showKeyboardShortcuts();
           },
+          // Power-user shortcuts: open settings (matches the Discord /
+          // browser convention) and close settings with Esc so the panel
+          // never strands the user without a mouse.
+          const SingleActivator(LogicalKeyboardKey.comma, control: true): () {
+            _openSettings();
+          },
+          const SingleActivator(LogicalKeyboardKey.escape): _onEscape,
         },
         child: Focus(autofocus: true, child: layout),
       ),
     );
+  }
+
+  /// Esc closes the inline settings panel on desktop. On narrow viewports
+  /// the settings screen is a real route and its own back button handles
+  /// dismissal, so we only intercept Esc when the inline panel is open.
+  void _onEscape() {
+    if (_showSettings) {
+      setState(() => _showSettings = false);
+    }
   }
 
   bool get _isDesktop => Responsive.isDesktop(context);

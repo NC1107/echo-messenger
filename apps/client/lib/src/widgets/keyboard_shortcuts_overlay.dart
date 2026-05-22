@@ -36,8 +36,9 @@ class _KeyboardShortcutsOverlayState extends State<KeyboardShortcutsOverlay> {
     _ShortcutSection('Navigation', [
       _Shortcut('Ctrl+K', 'Quick-switch conversations'),
       _Shortcut('Ctrl+Shift+F', 'Search across all conversations'),
+      _Shortcut('Ctrl+,', 'Open settings'),
       _Shortcut('Ctrl+/', 'Show keyboard shortcuts'),
-      _Shortcut('Esc', 'Close overlay / cancel action'),
+      _Shortcut('Esc', 'Close overlay or settings'),
     ]),
     _ShortcutSection('Messaging', [
       _Shortcut('Enter', 'Send message'),
