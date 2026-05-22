@@ -62,4 +62,56 @@ void main() {
       );
     });
   });
+
+  group('friendlyLoginError', () {
+    test('401 maps to credentials message', () {
+      expect(
+        friendlyLoginError(statusCode: 401),
+        'Invalid username or password.',
+      );
+    });
+
+    test('403 maps to credentials message', () {
+      expect(
+        friendlyLoginError(statusCode: 403),
+        'Invalid username or password.',
+      );
+    });
+
+    test('5xx maps to server-error message', () {
+      expect(
+        friendlyLoginError(statusCode: 500),
+        'Server error — please try again in a moment.',
+      );
+      expect(
+        friendlyLoginError(statusCode: 503),
+        'Server error — please try again in a moment.',
+      );
+    });
+
+    test('SocketException maps to reachability message', () {
+      expect(
+        friendlyLoginError(exception: const SocketException('no route')),
+        "Can't reach the server. Check your connection or server URL.",
+      );
+    });
+
+    test('TimeoutException maps to reachability message', () {
+      expect(
+        friendlyLoginError(exception: TimeoutException('slow')),
+        "Can't reach the server. Check your connection or server URL.",
+      );
+    });
+
+    test('unknown exception falls back to friendlyError', () {
+      expect(
+        friendlyLoginError(exception: Exception('weird')),
+        'Something went wrong. Try again.',
+      );
+    });
+
+    test('no inputs falls back to credentials copy', () {
+      expect(friendlyLoginError(), 'Invalid username or password.');
+    });
+  });
 }
