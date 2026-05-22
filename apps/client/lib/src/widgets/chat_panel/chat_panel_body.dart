@@ -146,26 +146,83 @@ class ChatPanelBodyParams {
   final ValueChanged<String>? onConversationSelected;
 }
 
+/// Column-mode visibility branches on viewport width:
+///
+///   • >= 900 px → desktop side-rail beside the chat (`useColumn`).
+///   • <  900 px → Discord-style edge-swipe drawer (`useColumnDrawer`).
+///
+/// Both surfaces feed off the same channel state and the same join /
+/// text-channel callbacks, so behaviour is consistent between layouts
+/// (#prod-column-layout-2026-05-20).
+class _ColumnLayoutDecision {
+  final bool useColumn;
+  final bool useColumnDrawer;
+
+  const _ColumnLayoutDecision({
+    required this.useColumn,
+    required this.useColumnDrawer,
+  });
+}
+
+_ColumnLayoutDecision _resolveColumnLayout(
+  BuildContext context,
+  WidgetRef ref,
+  ChatPanelBodyParams p,
+) {
+  final layout = ref.watch(channelLayoutProvider);
+  final width = MediaQuery.of(context).size.width;
+  final columnRequested = layout == ChannelLayout.column && p.conv.isGroup;
+  return _ColumnLayoutDecision(
+    useColumn: columnRequested && width >= 900,
+    useColumnDrawer: columnRequested && width < 900,
+  );
+}
+
+Widget _wrapForColumnLayout(
+  Widget chatArea,
+  ChatPanelBodyParams p,
+  _ColumnLayoutDecision dec,
+) {
+  if (dec.useColumn) {
+    return Row(
+      children: [
+        ChannelColumn(
+          conversation: p.conv,
+          selectedTextChannelId: p.selectedTextChannelId,
+          onTextChannelChanged: p.onTextChannelChanged,
+          onShowLounge: p.onShowLounge,
+        ),
+        Expanded(child: chatArea),
+      ],
+    );
+  }
+  if (dec.useColumnDrawer && p.onConversationSelected != null) {
+    // Inner Scaffold so the Drawer's built-in edge-swipe gesture works
+    // without colliding with the outer narrow-layout Scaffold.
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      drawer: MobileChannelDrawer(
+        conversation: p.conv,
+        selectedTextChannelId: p.selectedTextChannelId,
+        onTextChannelChanged: p.onTextChannelChanged,
+        onConversationSelected: p.onConversationSelected!,
+        onShowLounge: p.onShowLounge,
+      ),
+      body: chatArea,
+    );
+  }
+  return chatArea;
+}
+
 Widget buildChatContentBox(
   BuildContext context,
   WidgetRef ref,
   ChatPanelBodyParams p,
 ) {
   final chatGradient = context.chatBgGradient;
-  // Column-mode visibility branches on viewport width:
-  //
-  //   • >= 900 px → desktop side-rail beside the chat (`useColumn`).
-  //   • <  900 px → Discord-style edge-swipe drawer
-  //                 (`useColumnDrawer`).
-  //
-  // Both surfaces feed off the same channel state and the same join /
-  // text-channel callbacks, so behaviour is consistent between layouts
-  // (#prod-column-layout-2026-05-20).
-  final layout = ref.watch(channelLayoutProvider);
-  final width = MediaQuery.of(context).size.width;
-  final columnRequested = layout == ChannelLayout.column && p.conv.isGroup;
-  final useColumn = columnRequested && width >= 900;
-  final useColumnDrawer = columnRequested && width < 900;
+  final dec = _resolveColumnLayout(context, ref, p);
+  final useColumn = dec.useColumn;
+  final useColumnDrawer = dec.useColumnDrawer;
   final chatArea = DecoratedBox(
     decoration: chatGradient != null
         ? BoxDecoration(gradient: chatGradient)
@@ -337,36 +394,5 @@ Widget buildChatContentBox(
     ),
   );
 
-  if (useColumn) {
-    return Row(
-      children: [
-        ChannelColumn(
-          conversation: p.conv,
-          selectedTextChannelId: p.selectedTextChannelId,
-          onTextChannelChanged: p.onTextChannelChanged,
-          onShowLounge: p.onShowLounge,
-        ),
-        Expanded(child: chatArea),
-      ],
-    );
-  }
-  if (useColumnDrawer && p.onConversationSelected != null) {
-    // Inner Scaffold so the Drawer's built-in edge-swipe gesture works
-    // without colliding with the outer narrow-layout Scaffold. The
-    // outer one already handles the back-to-conversations swipe; in
-    // column mode that gesture is suppressed by the home screen so
-    // this one wins.
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      drawer: MobileChannelDrawer(
-        conversation: p.conv,
-        selectedTextChannelId: p.selectedTextChannelId,
-        onTextChannelChanged: p.onTextChannelChanged,
-        onConversationSelected: p.onConversationSelected!,
-        onShowLounge: p.onShowLounge,
-      ),
-      body: chatArea,
-    );
-  }
-  return chatArea;
+  return _wrapForColumnLayout(chatArea, p, dec);
 }
