@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -15,6 +14,7 @@ import '../../providers/crypto_provider.dart';
 import '../../providers/server_url_provider.dart';
 import '../../providers/update_provider.dart';
 import '../../providers/websocket_provider.dart';
+import '../../services/clipboard_service.dart';
 import '../../services/debug_log_service.dart';
 import '../../services/message_cache.dart';
 import '../../services/secure_key_store.dart';
@@ -708,14 +708,12 @@ class _DebugLogsSubpageState extends State<_DebugLogsSubpage> {
       };
       buffer.writeln('$h:$m:$s [$level] ${e.source}: ${e.message}');
     }
-    Clipboard.setData(ClipboardData(text: buffer.toString()));
-    if (mounted) {
-      ToastService.show(
-        context,
-        '${entries.length} log entries copied to clipboard',
-        type: ToastType.success,
-      );
-    }
+    if (!mounted) return;
+    copyToClipboard(
+      context,
+      buffer.toString(),
+      successMessage: '${entries.length} log entries copied to clipboard',
+    );
   }
 
   void _onLogsChanged() {
@@ -859,11 +857,10 @@ class _DebugLogEntryTileState extends State<_DebugLogEntryTile> {
       LogLevel.fatal => 'FTL',
     };
     final text = '$h:$m:$s [$level] ${entry.source}: ${entry.message}';
-    Clipboard.setData(ClipboardData(text: text));
-    ToastService.show(
+    copyToClipboard(
       context,
-      'Log entry copied to clipboard',
-      type: ToastType.success,
+      text,
+      successMessage: 'Log entry copied to clipboard',
     );
   }
 

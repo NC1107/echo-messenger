@@ -28,12 +28,11 @@ extension _InviteSection on _GroupInfoScreenState {
       if (response.statusCode == 201) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final url = data['url'] as String? ?? '';
-        await Clipboard.setData(ClipboardData(text: url));
         if (mounted) {
-          ToastService.show(
+          await copyToClipboard(
             context,
-            'Invite link copied to clipboard',
-            type: ToastType.success,
+            url,
+            successMessage: 'Invite link copied to clipboard',
           );
         }
       } else {
