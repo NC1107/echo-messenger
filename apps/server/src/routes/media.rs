@@ -41,6 +41,15 @@ use super::AppState;
 /// in `routes/mod.rs` cap the multipart payload at this value.
 pub const MAX_FILE_SIZE: usize = 100 * 1024 * 1024;
 
+fn legacy_upload_too_large_message(actual_bytes: usize) -> String {
+    let actual_mb = actual_bytes as f64 / (1024.0 * 1024.0);
+    let max_mb = MAX_FILE_SIZE as f64 / (1024.0 * 1024.0);
+    format!(
+        "This file is {actual_mb:.1} MB. Legacy /api/media/upload is limited to \
+         {max_mb:.0} MB. Please retry with chunked upload via /api/media/upload/init."
+    )
+}
+
 /// Allowed MIME types for upload.
 const ALLOWED_MIME_TYPES: &[&str] = &[
     // Images
@@ -123,8 +132,8 @@ pub(super) fn extension_for_mime(mime: &str) -> &str {
 #[cfg(test)]
 fn validate_bytes(data: &[u8], declared_mime: &str) -> Result<String, AppError> {
     if data.len() > MAX_FILE_SIZE {
-        return Err(AppError::bad_request(format!(
-            "File too large. Maximum size is {MAX_FILE_SIZE} bytes"
+        return Err(AppError::bad_request(legacy_upload_too_large_message(
+            data.len(),
         )));
     }
 
@@ -211,8 +220,8 @@ async fn stream_field_to_temp(
             // Clean up the partial temp file before returning.
             drop(tmp_file);
             let _ = fs::remove_file(&temp_name).await;
-            return Err(AppError::bad_request(format!(
-                "File too large. Maximum size is {MAX_FILE_SIZE} bytes"
+            return Err(AppError::bad_request(legacy_upload_too_large_message(
+                total_bytes,
             )));
         }
 
@@ -978,7 +987,8 @@ mod tests {
         let data = vec![0u8; MAX_FILE_SIZE + 1];
         let err =
             validate_bytes(&data, "application/pdf").expect_err("oversize file should be rejected");
-        assert!(err.message.contains("too large"));
+        assert!(err.message.contains("Legacy /api/media/upload is limited"));
+        assert!(err.message.contains("/api/media/upload/init"));
     }
 
     #[test]

@@ -4,7 +4,7 @@
 //! single-shot multipart upload capped at 100 MB.  This module adds a
 //! parallel pipeline -- init / PATCH chunks / finalize -- that streams
 //! every chunk to disk without buffering the body in RAM, so files up to
-//! `MAX_CHUNKED_UPLOAD_BYTES` (2 GB by default) can be uploaded over
+//! `MAX_CHUNKED_UPLOAD_BYTES` (1 GB by default) can be uploaded over
 //! flaky cellular links with per-chunk retries.
 //!
 //! ## Why chunked instead of bumping the single-shot cap
@@ -72,9 +72,9 @@ const MAX_CHUNK_BYTES: i64 = 16 * 1024 * 1024;
 const TMP_DIR: &str = "./uploads/.tmp";
 
 /// Default ceiling on the total size of a chunked upload, when the
-/// `MAX_CHUNKED_UPLOAD_BYTES` env var is unset.  2 GB is enough for
-/// modern phone video and well below typical disk-quota concerns.
-pub const DEFAULT_MAX_CHUNKED_UPLOAD_BYTES: i64 = 2 * 1024 * 1024 * 1024;
+/// `MAX_CHUNKED_UPLOAD_BYTES` env var is unset.  1 GB covers long
+/// phone videos while staying conservative on disk quotas.
+pub const DEFAULT_MAX_CHUNKED_UPLOAD_BYTES: i64 = 1024 * 1024 * 1024;
 
 /// Read the configured upper bound on a chunked upload.  Re-read each
 /// time so operators can rotate the value at runtime without a restart.
@@ -685,5 +685,10 @@ mod tests {
     fn sanitize_filename_falls_back_on_empty() {
         assert_eq!(sanitize_filename(""), "upload");
         assert_eq!(sanitize_filename("\n\r/\""), "upload");
+    }
+
+    #[test]
+    fn default_max_chunked_upload_bytes_is_one_gib() {
+        assert_eq!(DEFAULT_MAX_CHUNKED_UPLOAD_BYTES, 1024 * 1024 * 1024);
     }
 }

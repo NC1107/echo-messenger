@@ -32,6 +32,10 @@ ChunkedUploadClient _client({
 
 void main() {
   group('ChunkedUploadClient.uploadBytes', () {
+    test('chunked threshold defaults to 5 MB', () {
+      expect(kChunkedUploadThresholdBytes, 5 * 1024 * 1024);
+    });
+
     test(
       'happy path issues init + chunk(s) + finalize and returns url',
       () async {
