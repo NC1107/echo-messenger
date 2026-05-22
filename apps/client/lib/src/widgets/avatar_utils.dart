@@ -41,6 +41,11 @@ Widget buildAvatar({
   );
 
   if (imageUrl != null && imageUrl.isNotEmpty) {
+    // Decode at ~3x the display size so the image cache holds a small
+    // bitmap instead of the source resolution. A 1024×1024 source decoded
+    // at 64dp display becomes a ~192×192 bitmap — roughly 28× less memory.
+    // 3× covers retina DPR; oversized sources never decode larger than this.
+    final memCacheWidth = (radius * 2 * 3).ceil();
     return ClipOval(
       key: ValueKey(imageUrl),
       child: SizedBox(
@@ -50,6 +55,7 @@ Widget buildAvatar({
           imageUrl: imageUrl,
           cacheKey: stableMediaCacheKey(imageUrl),
           cacheManager: chatMediaCacheManager,
+          memCacheWidth: memCacheWidth,
           fit: BoxFit.cover,
           fadeInDuration: Duration.zero,
           fadeOutDuration: Duration.zero,
