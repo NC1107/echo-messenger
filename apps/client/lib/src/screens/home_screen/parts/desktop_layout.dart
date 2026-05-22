@@ -200,8 +200,13 @@ mixin _HomeScreenDesktopLayoutMixin
                         Positioned(
                           top: 10,
                           right: 10,
+                          // Ring needs to contrast with the surrounding chip,
+                          // not blend into it. The footer chip uses `mainBg`,
+                          // so a `mainBg` ring is invisible. `sidebarBg`
+                          // matches the surrounding rail and keeps the dot
+                          // legible regardless of theme.
                           child: _DotBadge(
-                            ringColor: context.mainBg,
+                            ringColor: context.sidebarBg,
                             bgColor: context.accent,
                           ),
                         ),
