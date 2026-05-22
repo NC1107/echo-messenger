@@ -35,10 +35,13 @@ const List<Duration> _kRetryBackoffs = [
 ];
 
 /// Threshold (in bytes) at which a caller should prefer the chunked path
-/// over the legacy single-shot multipart endpoint.  Kept 5 MB below
-/// Cloudflare's 100 MB edge cap so a borderline file never reaches the
-/// edge limit even after multipart framing overhead.
-const int kChunkedUploadThresholdBytes = 95 * 1024 * 1024;
+/// over the legacy single-shot multipart endpoint.
+///
+/// Keep this low so most attachments use the resumable pipeline by default.
+const int kChunkedUploadThresholdBytes = 5 * 1024 * 1024;
+
+bool shouldUseChunkedUpload(int byteLength) =>
+    byteLength >= kChunkedUploadThresholdBytes;
 
 const String _kOctetStream = 'application/octet-stream';
 const String _kJsonMime = 'application/json';

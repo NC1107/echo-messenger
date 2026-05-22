@@ -171,8 +171,7 @@ extension _Attachments on ChatInputBarState {
     // PATCH pipeline (#556).  Cloudflare's edge cap is 100 MB; the chunked
     // path streams 5 MB chunks server-side so it can ferry files multiples
     // of that without ever pinning the whole payload in server RAM.
-    final UploadResult result;
-    if (bytes.length > kChunkedUploadThresholdBytes) {
+    Future<UploadResult> uploadChunked() async {
       final auth = ref.read(authProvider.notifier);
       final chunked = ChunkedUploadClient(
         tokenGetter: () => auth.currentToken,
@@ -186,10 +185,15 @@ extension _Attachments on ChatInputBarState {
         conversationId: widget.conversation.id,
         onProgress: onProgress,
       );
-      result = chunkedResult.toUploadResult();
+      return chunkedResult.toUploadResult();
+    }
+
+    final UploadResult result;
+    if (shouldUseChunkedUpload(bytes.length)) {
+      result = await uploadChunked();
     } else {
       final uploader = UploadClient(ref.read(authProvider.notifier));
-      result = await uploader.uploadFile(
+      final singleShotResult = await uploader.uploadFile(
         serverUrl: serverUrl,
         path: '/api/media/upload',
         bytes: bytes,
@@ -198,6 +202,11 @@ extension _Attachments on ChatInputBarState {
         extraFields: {'conversation_id': widget.conversation.id},
         onProgress: onProgress,
       );
+      if (!singleShotResult.ok && singleShotResult.statusCode == 413) {
+        result = await uploadChunked();
+      } else {
+        result = singleShotResult;
+      }
     }
 
     if (result.ok) {
@@ -213,9 +222,12 @@ extension _Attachments on ChatInputBarState {
     }
 
     if (mounted && !result.ok) {
+      final error = result.errorMessage?.trim();
       ToastService.show(
         context,
-        'Upload failed (${result.statusCode})',
+        (error != null && error.isNotEmpty)
+            ? 'Upload failed: $error'
+            : 'Upload failed (${result.statusCode})',
         type: ToastType.error,
       );
     }
