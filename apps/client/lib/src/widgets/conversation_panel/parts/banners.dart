@@ -15,41 +15,31 @@ mixin _ConversationPanelBannersMixin on ConsumerState<ConversationPanel> {
   Widget _buildPendingBanner(int pendingCount) {
     return GestureDetector(
       onTap: widget.onShowContacts,
-      child: Container(
+      child: EchoBanner(
+        icon: Icons.person_add,
+        severity: EchoBannerSeverity.info,
+        message:
+            '$pendingCount pending contact ${pendingCount == 1 ? 'request' : 'requests'}',
         margin: const EdgeInsets.symmetric(
           horizontal: EchoSpacing.lg,
           vertical: EchoSpacing.xs,
         ),
-        padding: const EdgeInsets.symmetric(
-          horizontal: EchoSpacing.md,
-          vertical: EchoSpacing.sm,
-        ),
-        decoration: BoxDecoration(
-          color: context.accent.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(EchoRadii.md),
-          border: Border.all(color: context.accent.withValues(alpha: 0.3)),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.person_add, size: 16, color: context.accent),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                '$pendingCount pending contact ${pendingCount == 1 ? 'request' : 'requests'}',
-                style: TextStyle(
-                  color: context.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-            Icon(Icons.chevron_right, size: 16, color: context.textSecondary),
-          ],
+        borderRadius: BorderRadius.circular(EchoRadii.md),
+        showBorder: true,
+        action: Icon(
+          Icons.chevron_right,
+          size: 16,
+          color: context.textSecondary,
         ),
       ),
     );
   }
 
+  // NOTE: This banner stays hand-rolled (not EchoBanner) because the whole
+  // surface is a tap target that triggers reconnect, while the trailing
+  // close button is a *nested* tap target that must NOT bubble up to the
+  // outer GestureDetector. EchoBanner is a one-action shape; mapping this
+  // two-zone behaviour onto it would be more confusing than the duplication.
   Widget _buildReplacedBanner(BuildContext context, bool wsReplaced) {
     if (!wsReplaced || _replacedBannerDismissed) return const SizedBox.shrink();
     return Column(

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/admin_realtime_provider.dart';
 import '../../providers/admin_stats_provider.dart';
+import '../../widgets/empty_state.dart';
 import '../../widgets/skeleton_loader.dart';
 
 /// Operator dashboard for issue #682. Renders the headline metrics from
@@ -97,9 +98,12 @@ class _DashboardBody extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           if (data.feedback.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: Center(child: Text('No open feedback.')),
+            const EmptyState(
+              icon: Icons.inbox_outlined,
+              title: 'No open feedback',
+              body:
+                  'When users submit feedback through Settings → About, it '
+                  'will appear here.',
             )
           else
             ...data.feedback.map(_FeedbackTile.new),
