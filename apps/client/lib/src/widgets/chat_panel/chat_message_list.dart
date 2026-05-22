@@ -292,10 +292,13 @@ class ChatMessageList extends ConsumerWidget {
         child: MessageListSkeleton(),
       );
     } else if (messages.isEmpty && !isLoadingHistory) {
+      final peer = conv.members.where((m) => m.userId != myUserId).firstOrNull;
       child = KeyedSubtree(
         key: const ValueKey('empty'),
         child: EmptyMessagePlaceholder(
+          userId: peer?.userId ?? '',
           displayName: displayName,
+          avatarUrl: peer == null ? null : memberAvatars[peer.userId],
           onSayHi: onSayHi,
         ),
       );
