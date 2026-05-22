@@ -10,6 +10,7 @@ import '../providers/chat_provider.dart';
 import '../providers/theme_provider.dart' show UIDensity, uiDensityProvider;
 import '../theme/echo_theme.dart';
 import '../theme/motion_tokens.dart';
+import '../utils/crypto_utils.dart';
 import '../utils/presence.dart';
 import 'avatar_utils.dart';
 // Stack + Positioned (active edge bar overlay) come from material.dart.
@@ -202,15 +203,20 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
   }
 
   String? _maskEncryptedSnippet(String? snippet) {
-    if (snippet != null &&
-        (snippet.startsWith('[Could not decrypt') ||
-            snippet.startsWith('[Encrypted'))) {
-      // The DM context already implies encryption; saying "encrypted" here
-      // looks like an error state. Match any "[Could not decrypt..." variant
-      // (the WS handler emits at least four: bare, "waiting for group key",
-      // "group message", "encryption keys may be out of sync") so the
-      // protocol-state string never leaks into the sidebar snippet.
-      return '[E2E] Message';
+    if (snippet == null) return null;
+    // Normalise all encrypted-looking previews to a friendly placeholder.
+    // Anything starting with a "[Could not decrypt..." / "[Could not verify
+    // sender]" / "[Encrypted" / "[E2E]" bracketed sentinel is a protocol
+    // status string that should never read like a real message in the
+    // sidebar. We also catch raw GRP1:/GRP2: ciphertext + base64-shaped
+    // blobs that slipped past the WS decrypt path (missing key envelope,
+    // sender device not on file yet).
+    if (snippet.startsWith('[Could not decrypt') ||
+        snippet.startsWith('[Could not verify sender') ||
+        snippet.startsWith('[Encrypted') ||
+        snippet.startsWith('[E2E]') ||
+        looksEncrypted(snippet)) {
+      return '[Encrypted]';
     }
     return snippet;
   }
