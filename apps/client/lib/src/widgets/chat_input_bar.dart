@@ -141,6 +141,11 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   /// Inline picker visible on mobile (replaces keyboard).
   bool _showInlinePicker = false;
 
+  /// On mobile, the markdown formatting toolbar is hidden by default and
+  /// toggled on via the "Aa" entry in the attach (+) sheet. On desktop the
+  /// toolbar is always visible and this flag is ignored.
+  bool _showFormatToolbarOnMobile = false;
+
   /// Last known keyboard height -- used to size the inline picker so it
   /// occupies the same space the keyboard did.
   double _lastKeyboardHeight = 0;
@@ -447,11 +452,14 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                       onAnnotate: _annotatePendingAttachment,
                     ),
                   // Markdown formatting toolbar (bold, italic, strike, code,
-                  // quote, link) — always visible above the input row.
-                  MarkdownToolbar(
-                    controller: _messageController,
-                    onLinkTap: _showLinkDialog,
-                  ),
+                  // quote, link). Always visible on desktop. On mobile it's
+                  // hidden by default and toggled from the "+" attach sheet so
+                  // it doesn't permanently eat ~36 px of vertical real estate.
+                  if (!isMobileLayout || _showFormatToolbarOnMobile)
+                    MarkdownToolbar(
+                      controller: _messageController,
+                      onLinkTap: _showLinkDialog,
+                    ),
                   _buildInputRow(
                     showMediaPicker: showMediaPicker,
                     isMobileLayout: isMobileLayout,
