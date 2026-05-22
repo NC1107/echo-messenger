@@ -91,9 +91,25 @@ extension PresenceHandlersOn on WsMessageHandler {
       role: json['role'] as String? ?? 'member',
       avatarUrl: json['avatar_url'] as String?,
     );
-    ref
-        .read(conversationsProvider.notifier)
-        .addGroupMember(conversationId, member);
+
+    // When the local user is the one being added (e.g. someone invited them
+    // to a brand new group, or they joined via invite link), the
+    // conversation is almost certainly not in local state yet —
+    // `addGroupMember` silently no-ops on unknown conversations, so the
+    // sidebar would stay stale until a hard refresh. Trigger a full
+    // conversations reload so the new group appears in the list right
+    // away. Other members of an existing group still hit the cheaper
+    // in-place `addGroupMember` path.
+    final myUserId = ref.read(authProvider).userId ?? '';
+    final convs = ref.read(conversationsProvider).conversations;
+    final isKnownConv = convs.any((c) => c.id == conversationId);
+    if (userId == myUserId && !isKnownConv) {
+      ref.read(conversationsProvider.notifier).loadConversations();
+    } else {
+      ref
+          .read(conversationsProvider.notifier)
+          .addGroupMember(conversationId, member);
+    }
 
     _maybeRotateOnJoin(conversationId, userId);
   }

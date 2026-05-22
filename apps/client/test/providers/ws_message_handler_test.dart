@@ -80,6 +80,11 @@ class _SeededCryptoNotifier extends CryptoNotifier {
 }
 
 class _FakeConversationsNotifier extends ConversationsNotifier {
+  /// Count of loadConversations() calls. Used by the member_added test
+  /// to assert the sidebar refreshes itself when the local user is the
+  /// new member of an unknown conversation.
+  int loadConversationsCallCount = 0;
+
   @override
   ConversationsState build() => const ConversationsState(
     conversations: [
@@ -112,7 +117,9 @@ class _FakeConversationsNotifier extends ConversationsNotifier {
   );
 
   @override
-  Future<void> loadConversations() async {}
+  Future<void> loadConversations() async {
+    loadConversationsCallCount += 1;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -934,6 +941,52 @@ void main() {
       final group = convs.firstWhere((c) => c.id == 'group-1');
       expect(group.members, hasLength(2)); // unchanged
     });
+
+    test(
+      'local user added to an unknown conversation triggers full reload',
+      () {
+        // Sanity: the fake starts with zero loadConversations calls.
+        final notifier =
+            container.read(conversationsProvider.notifier)
+                as _FakeConversationsNotifier;
+        expect(notifier.loadConversationsCallCount, 0);
+
+        handler.handleServerMessage({
+          'type': 'member_added',
+          'conversation_id': 'brand-new-group',
+          'user_id': _myUserId,
+          'username': 'testuser',
+          'role': 'member',
+        }, _myUserId);
+
+        // The handler should have hit loadConversations() so the sidebar
+        // shows the new group without a hard refresh.
+        expect(notifier.loadConversationsCallCount, 1);
+      },
+    );
+
+    test(
+      'local user added to an already-known group does not trigger reload',
+      () {
+        final notifier =
+            container.read(conversationsProvider.notifier)
+                as _FakeConversationsNotifier;
+        expect(notifier.loadConversationsCallCount, 0);
+
+        // group-1 already exists locally with my-user-id as owner.
+        handler.handleServerMessage({
+          'type': 'member_added',
+          'conversation_id': 'group-1',
+          'user_id': _myUserId,
+          'username': 'testuser',
+          'role': 'member',
+        }, _myUserId);
+
+        // Known conversation, so the in-place addGroupMember path runs and
+        // we do NOT pay the full reload cost.
+        expect(notifier.loadConversationsCallCount, 0);
+      },
+    );
   });
 
   // #663 — system message when member joins group
