@@ -421,12 +421,15 @@ mixin _HomeScreenDesktopLayoutMixin
             // handle through to compact mode and the drag-end handler can
             // snap to collapsed. The lower clamp keeps the sidebar from
             // disappearing entirely mid-drag (#739).
+            //
+            // The upper clamp scales with viewport width so ultrawide users
+            // can grow the sidebar past 500 px (up to 720 px).
+            final maxWidth = _HomeScreenState._sidebarMaxWidthFor(
+              MediaQuery.of(context).size.width,
+            );
             setState(() {
               _self._sidebarWidth = (_self._sidebarWidth + details.delta.dx)
-                  .clamp(
-                    _HomeScreenState._sidebarPullThroughWidth,
-                    _HomeScreenState._sidebarMaxWidth,
-                  );
+                  .clamp(_HomeScreenState._sidebarPullThroughWidth, maxWidth);
             });
           },
           onHorizontalDragEnd: (details) {

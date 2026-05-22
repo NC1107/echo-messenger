@@ -116,7 +116,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   bool _sidebarCollapsed = false;
   double _sidebarWidth = 350;
   static const _sidebarMinWidth = 200.0;
-  static const _sidebarMaxWidth = 500.0;
+
+  /// Base sidebar ceiling on a typical 1280-1600 px laptop. The actual max
+  /// used by the drag handle scales with viewport width via
+  /// [_sidebarMaxWidthFor] so that ultrawide users (3440 px etc.) can grow
+  /// the sidebar past 500 px instead of being squeezed.
+  static const _sidebarMaxWidthBase = 500.0;
+  static const _sidebarMaxWidthCeiling = 720.0;
+
+  /// Computes the sidebar's drag-resize ceiling for a given viewport width.
+  /// 28% of the viewport, clamped to `[500, 720]`. On a 1280 px screen this
+  /// returns 500 (base); on a 3440 px ultrawide it returns 720 (ceiling).
+  static double _sidebarMaxWidthFor(double viewportWidth) {
+    final scaled = viewportWidth * 0.28;
+    if (scaled < _sidebarMaxWidthBase) return _sidebarMaxWidthBase;
+    if (scaled > _sidebarMaxWidthCeiling) return _sidebarMaxWidthCeiling;
+    return scaled;
+  }
 
   /// Lower clamp during a resize drag — below `_sidebarMinWidth` so the
   /// drag-end handler can detect a pull-through and snap into compact mode
