@@ -30,10 +30,11 @@ void main() {
       expect(find.text('Reduce Motion'), findsOneWidget);
     });
 
-    testWidgets('renders Font Size slider', (tester) async {
+    testWidgets('renders GIF autoplay toggle (#1137)', (tester) async {
       await _pump(tester);
-      expect(find.text('Font Size'), findsOneWidget);
-      expect(find.byType(Slider), findsOneWidget);
+      // GIF autoplay moved from Appearance → Accessibility in #1137 because
+      // autoplay is a motion / vestibular / distraction concern.
+      expect(find.text('Auto-play GIFs'), findsOneWidget);
     });
 
     testWidgets('renders High Contrast switch', (tester) async {
@@ -41,12 +42,22 @@ void main() {
       expect(find.text('High Contrast'), findsOneWidget);
     });
 
-    testWidgets('all three controls are present', (tester) async {
+    testWidgets('Font Size slider is NOT here — moved to Appearance (#1137)', (
+      tester,
+    ) async {
       await _pump(tester);
-      // Two SwitchListTile.adaptive widgets (reduce motion + high contrast)
-      expect(find.byType(Slider), findsOneWidget);
+      // Font size is a visual preference; it lives in Appearance now.
+      expect(find.text('Font Size'), findsNothing);
+      expect(find.byType(Slider), findsNothing);
+    });
+
+    testWidgets('Reduce Motion + High Contrast + GIF autoplay all present', (
+      tester,
+    ) async {
+      await _pump(tester);
       expect(find.text('Reduce Motion'), findsOneWidget);
       expect(find.text('High Contrast'), findsOneWidget);
+      expect(find.text('Auto-play GIFs'), findsOneWidget);
     });
   });
 }

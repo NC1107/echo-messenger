@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/accessibility_provider.dart';
+import '../../providers/gif_playback_provider.dart';
 import '../../theme/echo_theme.dart';
 
 /// Dedicated Accessibility settings section.
@@ -172,52 +173,27 @@ class AccessibilitySection extends ConsumerWidget {
 
             const SizedBox(height: 8),
 
-            // ── Font Scale ────────────────────────────────────────────────
-            Text(
-              'Font Size',
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
+            // ── GIF autoplay (#1137) ──────────────────────────────────────
+            // Autoplay is a motion / vestibular / distraction concern; lives
+            // here next to Reduce Motion. Font size moved to Appearance.
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              secondary: const Icon(Icons.gif_outlined),
+              title: Text(
+                'Auto-play GIFs',
+                style: TextStyle(
+                  color: context.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Scale text across the app. Default is 100%.',
-              style: TextStyle(color: context.textMuted, fontSize: 12),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Text(
-                  '85%',
-                  style: TextStyle(color: context.textMuted, fontSize: 12),
-                ),
-                Expanded(
-                  child: Semantics(
-                    label: 'font size',
-                    slider: true,
-                    value: '${(state.fontScale * 100).round()}%',
-                    child: Slider(
-                      value: state.fontScale,
-                      min: 0.85,
-                      max: 1.5,
-                      divisions: 13,
-                      label: '${(state.fontScale * 100).round()}%',
-                      onChanged: notifier.setFontScale,
-                    ),
-                  ),
-                ),
-                Text(
-                  '150%',
-                  style: TextStyle(color: context.textMuted, fontSize: 12),
-                ),
-              ],
-            ),
-            Text(
-              'Current: ${(state.fontScale * 100).round()}%',
-              style: TextStyle(color: context.textSecondary, fontSize: 12),
-              textAlign: TextAlign.center,
+              subtitle: Text(
+                'When off, GIFs show as static thumbnails with a play button.',
+                style: TextStyle(color: context.textMuted, fontSize: 12),
+              ),
+              value: ref.watch(gifPlaybackProvider).autoplayEnabled,
+              onChanged: (v) =>
+                  ref.read(gifPlaybackProvider.notifier).setAutoplay(v),
             ),
 
             const SizedBox(height: 16),

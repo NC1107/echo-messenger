@@ -100,5 +100,21 @@ void main() {
       expect(find.text('Normal'), findsOneWidget);
       expect(find.text('Compact'), findsOneWidget);
     });
+
+    testWidgets('renders Font Size slider — moved from Accessibility (#1137)', (
+      tester,
+    ) async {
+      await _pumpWide(tester);
+      expect(find.text('Font Size'), findsOneWidget);
+      expect(find.byType(Slider), findsOneWidget);
+    });
+
+    testWidgets('no longer renders the GIF autoplay toggle (#1137)', (
+      tester,
+    ) async {
+      await _pumpWide(tester);
+      // GIF autoplay moved to Accessibility because it's a motion concern.
+      expect(find.text('Auto-play GIFs'), findsNothing);
+    });
   });
 }
