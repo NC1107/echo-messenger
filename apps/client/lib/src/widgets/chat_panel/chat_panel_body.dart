@@ -15,7 +15,6 @@ import '../channel_column.dart';
 import '../chat_header_bar.dart';
 import '../chat_input_bar.dart';
 import '../encryption_status_banner.dart';
-import '../message_search_overlay.dart';
 import '../mobile_channel_drawer.dart';
 import 'chat_message_list.dart';
 import 'drop_overlay.dart';
@@ -52,7 +51,6 @@ class ChatPanelBodyParams {
     required this.hasNewMessagesBelow,
     required this.newMessagesBannerText,
     required this.liveRegionAnnouncement,
-    required this.showSearch,
     required this.hideVoiceDock,
     required this.typingUsers,
     required this.isDragOver,
@@ -63,7 +61,6 @@ class ChatPanelBodyParams {
     required this.onShowLounge,
     required this.onTextChannelChanged,
     required this.onVoiceChannelChanged,
-    required this.onSetShowSearch,
     required this.onHighlightMessage,
     required this.onShowReactionPicker,
     required this.onToggleReaction,
@@ -109,7 +106,6 @@ class ChatPanelBodyParams {
   final bool hasNewMessagesBelow;
   final String newMessagesBannerText;
   final String liveRegionAnnouncement;
-  final bool showSearch;
   final bool hideVoiceDock;
   final List<String> typingUsers;
   final bool isDragOver;
@@ -120,7 +116,6 @@ class ChatPanelBodyParams {
   final VoidCallback? onShowLounge;
   final ValueChanged<String?> onTextChannelChanged;
   final ValueChanged<String?> onVoiceChannelChanged;
-  final ValueChanged<bool> onSetShowSearch;
   final ValueChanged<String> onHighlightMessage;
   final void Function(ChatMessage, Offset) onShowReactionPicker;
   final void Function(ChatMessage, String, bool) onToggleReaction;
@@ -246,8 +241,6 @@ Widget buildChatContentBox(
               myUserId: p.myUserId,
               serverUrl: p.serverUrl,
               onBack: p.onBack,
-              showSearch: p.showSearch,
-              onToggleSearch: () => p.onSetShowSearch(!p.showSearch),
               onMembersToggle: p.onMembersToggle,
               onGroupInfo: p.onGroupInfo,
               // Column mode's left rail already shows the group avatar +
@@ -270,15 +263,6 @@ Widget buildChatContentBox(
             // action button where applicable. Renders a SizedBox.shrink()
             // when no flag is active.
             EncryptionStatusBanner(conversation: p.conv),
-            if (p.showSearch)
-              MessageSearchOverlay(
-                conversationId: p.conv.id,
-                onMessageSelected: (messageId) {
-                  p.onSetShowSearch(false);
-                  p.onHighlightMessage(messageId);
-                },
-                onClose: () => p.onSetShowSearch(false),
-              ),
             if (p.isLoadingHistory)
               LinearProgressIndicator(
                 minHeight: 2,

@@ -249,6 +249,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           const SingleActivator(LogicalKeyboardKey.keyK, control: true): () {
             _showQuickSwitcher();
           },
+          // Ctrl+F and Ctrl+Shift+F both open the global search overlay.
+          // Ctrl+F matches the OS-native "find" muscle memory; the older
+          // Ctrl+Shift+F stays bound so existing users don't have to relearn.
+          // The per-chat magnifying glass was retired in #1135.
+          const SingleActivator(LogicalKeyboardKey.keyF, control: true): () {
+            _showGlobalSearch();
+          },
           const SingleActivator(
             LogicalKeyboardKey.keyF,
             control: true,

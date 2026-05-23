@@ -35,7 +35,11 @@ class _KeyboardShortcutsOverlayState extends State<KeyboardShortcutsOverlay> {
   static const _sections = <_ShortcutSection>[
     _ShortcutSection('Navigation', [
       _Shortcut('Ctrl+K', 'Quick-switch conversations'),
-      _Shortcut('Ctrl+Shift+F', 'Search across all conversations'),
+      _Shortcut('Ctrl+F', 'Search across all conversations'),
+      _Shortcut(
+        'Ctrl+Shift+F',
+        'Search across all conversations (legacy alias)',
+      ),
       _Shortcut('Ctrl+,', 'Open settings'),
       _Shortcut('Ctrl+/', 'Show keyboard shortcuts'),
       _Shortcut('Esc', 'Close overlay or settings'),
