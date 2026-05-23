@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../providers/accessibility_provider.dart';
 import '../../providers/channel_layout_provider.dart';
-import '../../providers/gif_playback_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../theme/echo_theme.dart';
 import 'advanced_theme_section.dart';
 
 /// SharedPreferences key for GIF autoplay setting.
+///
+/// The toggle UI moved to Accessibility in #1137, but the storage key
+/// is canonical and used by `gif_playback_provider`. Keep the constant
+/// exported here so the key stays a single source of truth.
 const kGifAutoplayKey = 'gif_autoplay_enabled';
 
 /// Preview color data for rendering a miniature theme thumbnail.
@@ -107,10 +111,6 @@ class AppearanceSection extends ConsumerStatefulWidget {
 }
 
 class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
-  Future<void> _setGifAutoplay(bool value) async {
-    await ref.read(gifPlaybackProvider.notifier).setAutoplay(value);
-  }
-
   @override
   Widget build(BuildContext context) {
     final currentTheme = ref.watch(themeProvider);
@@ -321,20 +321,11 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
                   .setLayout(ChannelLayout.column),
             ),
             const SizedBox(height: 24),
-            // GIF autoplay
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              title: Text(
-                'Auto-play GIFs',
-                style: TextStyle(color: context.textPrimary, fontSize: 14),
-              ),
-              subtitle: Text(
-                'When off, GIFs show as static thumbnails with a play button.',
-                style: TextStyle(color: context.textMuted, fontSize: 12),
-              ),
-              value: ref.watch(gifPlaybackProvider).autoplayEnabled,
-              onChanged: _setGifAutoplay,
-            ),
+            // Font size (#1137 — moved from Accessibility). Pure visual
+            // preference, so it lives in Appearance alongside the theme
+            // picker. State still backs to accessibilityProvider so the
+            // setting roams between sections without a migration.
+            _FontSizeRow(),
             const SizedBox(height: 32),
             // Advanced color overrides (issue #613)
             Text(
@@ -359,6 +350,69 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Font size slider (#1137 — moved from Accessibility)
+// ---------------------------------------------------------------------------
+
+class _FontSizeRow extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(accessibilityProvider);
+    final notifier = ref.read(accessibilityProvider.notifier);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Font Size',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Scale text across the app. Default is 100%.',
+          style: TextStyle(color: context.textMuted, fontSize: 12),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Text(
+              '85%',
+              style: TextStyle(color: context.textMuted, fontSize: 12),
+            ),
+            Expanded(
+              child: Semantics(
+                label: 'font size',
+                slider: true,
+                value: '${(state.fontScale * 100).round()}%',
+                child: Slider(
+                  value: state.fontScale,
+                  min: 0.85,
+                  max: 1.5,
+                  divisions: 13,
+                  label: '${(state.fontScale * 100).round()}%',
+                  onChanged: notifier.setFontScale,
+                ),
+              ),
+            ),
+            Text(
+              '150%',
+              style: TextStyle(color: context.textMuted, fontSize: 12),
+            ),
+          ],
+        ),
+        Text(
+          'Current: ${(state.fontScale * 100).round()}%',
+          style: TextStyle(color: context.textSecondary, fontSize: 12),
+          textAlign: TextAlign.center,
+        ),
+      ],
     );
   }
 }
