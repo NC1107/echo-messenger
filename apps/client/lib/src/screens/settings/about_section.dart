@@ -866,76 +866,72 @@ class _DebugLogEntryTileState extends State<_DebugLogEntryTile> {
 
   @override
   Widget build(BuildContext context) {
-    // Hovering a log entry tints the row so users can track which line
-    // they're pointing at when scanning a dense list. Cursor reverts to
-    // basic so it doesn't read as clickable beyond the Copy button.
-    // RepaintBoundary so hover state on this row doesn't invalidate the
-    // entire log list's paint layer (debug log can hold up to 5000
-    // entries). Plain Container instead of AnimatedContainer — the 80ms
-    // fade is imperceptible and AnimatedContainer allocates an implicit
-    // animation controller per row.
+    // Whole row is clickable; tap copies the formatted entry to the
+    // clipboard. The dedicated trailing IconButton was retired in #1128
+    // because Copy All already lives in the header and the per-row icon
+    // wasted ~44px of vertical reserve, cutting visible rows in half.
+    // RepaintBoundary so hover state on one row doesn't invalidate the
+    // whole list's paint layer (the buffer can hold up to 5000 entries).
     return RepaintBoundary(
       child: MouseRegion(
         onEnter: (_) => setState(() => _hovered = true),
         onExit: (_) => setState(() => _hovered = false),
-        child: Container(
-          decoration: BoxDecoration(
-            color: _hovered ? context.surfaceHover : Colors.transparent,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 4),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: 72,
-                child: Text(
-                  _formatTime(entry.timestamp),
-                  style: GoogleFonts.jetBrainsMono(
-                    color: context.textMuted,
-                    fontSize: 11,
+        child: InkWell(
+          onTap: () => _copySingleEntry(context),
+          borderRadius: BorderRadius.circular(4),
+          child: Container(
+            decoration: BoxDecoration(
+              color: _hovered ? context.surfaceHover : Colors.transparent,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 1, horizontal: 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 72,
+                  child: Text(
+                    _formatTime(entry.timestamp),
+                    style: GoogleFonts.jetBrainsMono(
+                      color: context.textMuted,
+                      fontSize: 11,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 6),
-              _DebugLevelBadge(level: entry.level),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                decoration: BoxDecoration(
-                  color: context.surfaceHover,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  entry.source,
-                  style: GoogleFonts.jetBrainsMono(
-                    color: context.textSecondary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
+                const SizedBox(width: 6),
+                _DebugLevelBadge(level: entry.level),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 1,
+                  ),
+                  decoration: BoxDecoration(
+                    color: context.surfaceHover,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    entry.source,
+                    style: GoogleFonts.jetBrainsMono(
+                      color: context.textSecondary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  entry.message,
-                  style: GoogleFonts.jetBrainsMono(
-                    color: context.textPrimary,
-                    fontSize: 12,
-                    height: 1.4,
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    entry.message,
+                    style: GoogleFonts.jetBrainsMono(
+                      color: context.textPrimary,
+                      fontSize: 12,
+                      height: 1.3,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                icon: const Icon(Icons.copy_outlined, size: 14),
-                color: context.textMuted,
-                tooltip: 'Copy entry',
-                onPressed: () => _copySingleEntry(context),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

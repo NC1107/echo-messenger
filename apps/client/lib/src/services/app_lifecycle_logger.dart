@@ -25,25 +25,24 @@ class AppLifecycleLogger with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    DebugLogService.instance.log(
-      LogLevel.info,
-      'Lifecycle',
-      'state=${state.name}',
-    );
-
-    // Force an immediate disk flush on states that are close to the process
-    // going away: paused (backgrounded on iOS), detached (terminating), and
-    // hidden (multitasking switcher on iOS 17+).  This guarantees the
-    // breadcrumb is on disk even if the OS kills the process in the same
-    // run-loop tick.
+    // Skip resumed/inactive — they fire every time the window loses or
+    // regains focus (clicking outside the app and back), drowning out the
+    // useful entries. Paused / detached / hidden are the breadcrumbs that
+    // actually matter for triage because they mean the OS is about to kill
+    // the process. (#1128)
     final needsImmediateFlush =
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached ||
         state == AppLifecycleState.hidden;
 
-    if (needsImmediateFlush) {
-      DebugLogService.instance.forceFlush().ignore();
-    }
+    if (!needsImmediateFlush) return;
+
+    DebugLogService.instance.log(
+      LogLevel.info,
+      'Lifecycle',
+      'state=${state.name}',
+    );
+    DebugLogService.instance.forceFlush().ignore();
   }
 
   /// Called by the framework when the platform requests the app to exit
