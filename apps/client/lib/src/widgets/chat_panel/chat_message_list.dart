@@ -252,6 +252,18 @@ class ChatMessageList extends ConsumerWidget {
       child: ListView.builder(
         controller: scrollController,
         padding: const EdgeInsets.only(bottom: 16),
+        // Pre-build ~one viewport of off-screen messages on each side so that
+        // momentum scrolling doesn't flash blank space while items mount. The
+        // Flutter default of 250 is too tight for chat where rows include
+        // images, reactions, and reply quotes that each take a frame to lay
+        // out. Tuned conservatively to keep memory in check on long histories.
+        //
+        // Flutter 3.41+ renames this to scrollCacheExtent. We keep the old
+        // name + ignore the deprecation so the build works against both the
+        // pinned SDK (3.41.x) and any local dev SDK that still predates the
+        // rename. Drop the ignore once .flutter-version moves above 3.41.9.
+        // ignore: deprecated_member_use
+        cacheExtent: 600,
         itemCount: messages.length + 1,
         itemBuilder: (context, index) {
           if (index == 0) {
