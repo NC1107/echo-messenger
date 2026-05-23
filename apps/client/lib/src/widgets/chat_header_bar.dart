@@ -33,8 +33,6 @@ class ChatHeaderBar extends ConsumerWidget {
   final String myUserId;
   final String serverUrl;
   final VoidCallback? onBack;
-  final bool showSearch;
-  final VoidCallback onToggleSearch;
   final VoidCallback? onMembersToggle;
   final VoidCallback? onGroupInfo;
 
@@ -42,7 +40,8 @@ class ChatHeaderBar extends ConsumerWidget {
   /// Used by Column mode where the channel rail's own header already
   /// shows the group identity (avatar + name + member count), so this
   /// row would duplicate it. The action buttons on the right
-  /// (pin / search / shared media / members) still render.
+  /// (pin / shared media / members) still render. Search lives on
+  /// Ctrl+F (#1135).
   final bool hideGroupIdentity;
 
   const ChatHeaderBar({
@@ -51,8 +50,6 @@ class ChatHeaderBar extends ConsumerWidget {
     required this.myUserId,
     required this.serverUrl,
     this.onBack,
-    required this.showSearch,
-    required this.onToggleSearch,
     this.onMembersToggle,
     this.onGroupInfo,
     this.hideGroupIdentity = false,
@@ -340,14 +337,6 @@ class ChatHeaderBar extends ConsumerWidget {
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
         ),
-      IconButton(
-        icon: Icon(showSearch ? Icons.search_off : Icons.search, size: 20),
-        color: showSearch ? context.accent : context.textSecondary,
-        tooltip: showSearch ? 'Close search' : 'Search messages',
-        onPressed: onToggleSearch,
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-      ),
       _buildOverflowMenu(context, ref, conv, pinnedCount, isWide: false),
     ];
   }
@@ -472,14 +461,6 @@ class ChatHeaderBar extends ConsumerWidget {
       _PinnedMessagesIconButton(
         pinnedCount: pinnedCount,
         onPressed: () => _showPinnedMessagesDialog(context, ref, conv),
-      ),
-      IconButton(
-        icon: Icon(showSearch ? Icons.search_off : Icons.search, size: 20),
-        color: showSearch ? context.accent : context.textSecondary,
-        tooltip: showSearch ? 'Close search' : 'Search messages',
-        onPressed: onToggleSearch,
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
       ),
       IconButton(
         icon: const Icon(Icons.photo_library_outlined, size: 20),

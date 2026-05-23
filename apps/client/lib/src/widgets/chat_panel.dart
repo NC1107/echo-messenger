@@ -130,7 +130,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   // `_updateFloatingDate` to detect the topmost visible message.
   final _messageKeys = <String, GlobalKey>{};
 
-  bool _showSearch = false;
   ChatMessage? _threadParent;
   String? _highlightedMessageId;
   String? _pendingInitialMessageId;
@@ -230,7 +229,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     _activeVoiceChannelId = null;
     _loadedHistoryKey = null;
     _controller.autoScrollConversationKey = null;
-    _showSearch = false;
     _threadParent = null;
     _highlightedMessageId = null;
     _pendingInitialMessageId = widget.initialMessageId;
@@ -973,7 +971,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         hasNewMessagesBelow: _hasNewMessagesBelow,
         newMessagesBannerText: _newMessagesBannerText(),
         liveRegionAnnouncement: _liveRegionAnnouncement,
-        showSearch: _showSearch,
         hideVoiceDock: widget.hideVoiceDock,
         typingUsers: input.typingUsers,
         isDragOver: _isDragOver,
@@ -987,7 +984,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         onVoiceChannelChanged: (channelId) {
           if (mounted) setState(() => _activeVoiceChannelId = channelId);
         },
-        onSetShowSearch: (v) => setState(() => _showSearch = v),
         onHighlightMessage: _highlightMessage,
         onShowReactionPicker: _showReactionPicker,
         onToggleReaction: _toggleReaction,
