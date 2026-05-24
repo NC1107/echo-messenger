@@ -107,6 +107,15 @@ class SoundService {
             ? NotificationSound.defaultSound
             : NotificationSound.none;
       }
+      // Breadcrumb for #1156: when sounds go silent again, this single line
+      // tells a debugger whether the master flag or the sound choice was the
+      // culprit before they reach for the asset files.
+      assert(() {
+        debugPrint(
+          '[Sound] init: enabled=$_enabled sound=${_notificationSound.name}',
+        );
+        return true;
+      }());
     } catch (e) {
       debugPrint('[Sound] Failed to load preference: $e');
     }
