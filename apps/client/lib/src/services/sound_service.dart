@@ -107,6 +107,12 @@ class SoundService {
             ? NotificationSound.defaultSound
             : NotificationSound.none;
       }
+      assert(() {
+        debugPrint(
+          '[Sound] init: enabled=$_enabled sound=${_notificationSound.name}',
+        );
+        return true;
+      }());
     } catch (e) {
       debugPrint('[Sound] Failed to load preference: $e');
     }
