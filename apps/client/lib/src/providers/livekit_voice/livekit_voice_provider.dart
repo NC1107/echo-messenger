@@ -1110,7 +1110,13 @@ class _LiveKitTokenResult {
 /// Regional Echo subdomains (`us-east.echo-messenger.us`, `eu.echo-messenger.us`, ...)
 /// all share one LiveKit deployment at `livekit.echo-messenger.us`, so any
 /// `*.echo-messenger.us` host normalizes to the apex. Self-hosted (non-Echo)
-/// domains keep verbatim host prefixing so unknown deployments still work.
+/// domains keep verbatim host prefixing — and preserve a non-standard port —
+/// so unknown deployments still work.
+///
+/// Examples:
+///   `https://echo-messenger.us`         → `wss://livekit.echo-messenger.us`
+///   `https://us-east.echo-messenger.us` → `wss://livekit.echo-messenger.us`
+///   `https://chat.example.com:8443`     → `wss://livekit.chat.example.com:8443`
 @visibleForTesting
 String deriveLiveKitUrl(String serverUrl) {
   final uri = Uri.parse(serverUrl);
@@ -1118,8 +1124,9 @@ String deriveLiveKitUrl(String serverUrl) {
   final host = uri.host;
   const echoApex = 'echo-messenger.us';
   final isEchoHost = host == echoApex || host.endsWith('.$echoApex');
-  final livekitHost = isEchoHost ? 'livekit.$echoApex' : 'livekit.$host';
-  return '$scheme://$livekitHost';
+  if (isEchoHost) return '$scheme://livekit.$echoApex';
+  final port = uri.hasPort ? ':${uri.port}' : '';
+  return '$scheme://livekit.$host$port';
 }
 
 // ---------------------------------------------------------------------------

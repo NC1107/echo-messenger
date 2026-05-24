@@ -32,10 +32,17 @@ void main() {
       );
     });
 
-    test('http schemes downgrade to ws', () {
+    test('http schemes downgrade to ws and preserve port', () {
       expect(
         deriveLiveKitUrl('http://localhost:8080'),
-        'ws://livekit.localhost',
+        'ws://livekit.localhost:8080',
+      );
+    });
+
+    test('self-host preserves a non-standard port', () {
+      expect(
+        deriveLiveKitUrl('https://chat.example.com:8443'),
+        'wss://livekit.chat.example.com:8443',
       );
     });
 
@@ -43,6 +50,20 @@ void main() {
       expect(
         deriveLiveKitUrl('https://fakeecho-messenger.us'),
         'wss://livekit.fakeecho-messenger.us',
+      );
+    });
+
+    test('uppercase echo host is normalized (Uri.parse lowercases)', () {
+      expect(
+        deriveLiveKitUrl('HTTPS://US-EAST.Echo-Messenger.US'),
+        'wss://livekit.echo-messenger.us',
+      );
+    });
+
+    test('trailing slash on regional host still normalizes to apex', () {
+      expect(
+        deriveLiveKitUrl('https://us-east.echo-messenger.us/'),
+        'wss://livekit.echo-messenger.us',
       );
     });
   });
