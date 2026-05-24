@@ -9,6 +9,7 @@ import '../../providers/privacy_provider.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
 import '../../widgets/confirm_dialog.dart';
+import '../../widgets/settings_panel_scaffold.dart';
 import '../../widgets/user_avatar.dart';
 
 /// SharedPreferences key + reader for the "preserve original filenames"
@@ -630,161 +631,155 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
     final biometric = ref.watch(biometricProvider);
     final contacts = ref.watch(contactsProvider);
 
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 900),
-        child: ListView(
-          padding: const EdgeInsets.all(24),
+    return SettingsPanelScaffold(
+      children: [
+        if (privacy.error != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(
+              privacy.error!,
+              style: const TextStyle(color: EchoTheme.danger, fontSize: 12),
+            ),
+          ),
+        ..._buildAppLockSection(context, biometric),
+        const SizedBox(height: 24),
+        const Divider(),
+        const SizedBox(height: 8),
+        ..._buildMessagingPrivacySection(context, privacy),
+        const SizedBox(height: 24),
+        ..._buildContactInfoSection(context, privacy),
+        ..._buildDiscoverabilitySection(context, privacy),
+        ..._buildSearchVisibilitySection(context, privacy),
+        const SizedBox(height: 24),
+        Text(
+          'Encryption',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Echo uses end-to-end encryption for encrypted direct messages. '
+          'Your encryption keys are stored locally on this device.',
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 13,
+            height: 1.5,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (privacy.error != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Text(
-                  privacy.error!,
-                  style: const TextStyle(color: EchoTheme.danger, fontSize: 12),
-                ),
-              ),
-            ..._buildAppLockSection(context, biometric),
-            const SizedBox(height: 24),
-            const Divider(),
-            const SizedBox(height: 8),
-            ..._buildMessagingPrivacySection(context, privacy),
-            const SizedBox(height: 24),
-            ..._buildContactInfoSection(context, privacy),
-            ..._buildDiscoverabilitySection(context, privacy),
-            ..._buildSearchVisibilitySection(context, privacy),
-            const SizedBox(height: 24),
-            Text(
-              'Encryption',
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
+            Icon(
+              Icons.verified_user_outlined,
+              size: 16,
+              color: context.textMuted,
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Echo uses end-to-end encryption for encrypted direct messages. '
-              'Your encryption keys are stored locally on this device.',
-              style: TextStyle(
-                color: context.textSecondary,
-                fontSize: 13,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  Icons.verified_user_outlined,
-                  size: 16,
-                  color: context.textMuted,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'You can verify encryption with each contact by comparing '
-                    'safety numbers. Open any DM and tap the shield icon in the '
-                    'header to check.',
-                    style: TextStyle(
-                      color: context.textMuted,
-                      fontSize: 12,
-                      height: 1.5,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            if (crypto.isInitialized && !crypto.keysUploadFailed) ...[
-              const SizedBox(height: 12),
-              const Row(
-                children: [
-                  Icon(Icons.verified_user, color: EchoTheme.online, size: 18),
-                  SizedBox(width: 8),
-                  Text(
-                    'Encryption keys active',
-                    style: TextStyle(
-                      color: EchoTheme.online,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-            if (crypto.keysUploadFailed) ...[
-              const SizedBox(height: 12),
-              const Text(
-                'Encryption key upload failed. New conversations will not be '
-                'encrypted until keys are uploaded.',
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'You can verify encryption with each contact by comparing '
+                'safety numbers. Open any DM and tap the shield icon in the '
+                'header to check.',
                 style: TextStyle(
-                  color: EchoTheme.danger,
+                  color: context.textMuted,
                   fontSize: 12,
                   height: 1.5,
-                ),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: crypto.isUploading ? null : _retryKeyUpload,
-                  icon: crypto.isUploading
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.upload_outlined, size: 18),
-                  label: Text(
-                    crypto.isUploading
-                        ? 'Uploading...'
-                        : 'Re-upload Encryption Keys',
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: context.textPrimary,
-                    side: BorderSide(color: context.border),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                ),
-              ),
-            ],
-            ..._buildBlockedUsersSection(context, contacts),
-            const SizedBox(height: 24),
-            const Divider(),
-            const SizedBox(height: 8),
-            const Text(
-              'Danger Zone',
-              style: TextStyle(
-                color: EchoTheme.danger,
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.5,
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: _resetEncryptionKeys,
-                icon: const Icon(Icons.warning_amber_outlined, size: 18),
-                label: const Text('Reset Encryption Keys'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: EchoTheme.danger,
-                  side: const BorderSide(color: EchoTheme.danger),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
               ),
             ),
           ],
         ),
-      ),
+        if (crypto.isInitialized && !crypto.keysUploadFailed) ...[
+          const SizedBox(height: 12),
+          const Row(
+            children: [
+              Icon(Icons.verified_user, color: EchoTheme.online, size: 18),
+              SizedBox(width: 8),
+              Text(
+                'Encryption keys active',
+                style: TextStyle(
+                  color: EchoTheme.online,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ],
+        if (crypto.keysUploadFailed) ...[
+          const SizedBox(height: 12),
+          const Text(
+            'Encryption key upload failed. New conversations will not be '
+            'encrypted until keys are uploaded.',
+            style: TextStyle(
+              color: EchoTheme.danger,
+              fontSize: 12,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: crypto.isUploading ? null : _retryKeyUpload,
+              icon: crypto.isUploading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.upload_outlined, size: 18),
+              label: Text(
+                crypto.isUploading
+                    ? 'Uploading...'
+                    : 'Re-upload Encryption Keys',
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: context.textPrimary,
+                side: BorderSide(color: context.border),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
+        ],
+        ..._buildBlockedUsersSection(context, contacts),
+        const SizedBox(height: 24),
+        const Divider(),
+        const SizedBox(height: 8),
+        const Text(
+          'Danger Zone',
+          style: TextStyle(
+            color: EchoTheme.danger,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.5,
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _resetEncryptionKeys,
+            icon: const Icon(Icons.warning_amber_outlined, size: 18),
+            label: const Text('Reset Encryption Keys'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: EchoTheme.danger,
+              side: const BorderSide(color: EchoTheme.danger),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -23,8 +23,9 @@ import '../../theme/echo_theme.dart';
 import '../../version.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/feedback_dialog.dart';
-import '../../widgets/settings/settings_list_tile.dart';
 import '../../widgets/input_dialog.dart';
+import '../../widgets/settings/settings_list_tile.dart';
+import '../../widgets/settings_panel_scaffold.dart';
 
 class AboutSection extends ConsumerStatefulWidget {
   const AboutSection({super.key});
@@ -510,156 +511,146 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 900),
-        child: ListView(
-          padding: const EdgeInsets.all(24),
-          children: [
-            Text(
-              'Echo Messenger',
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Client v$appVersion',
-              style: TextStyle(color: context.textMuted, fontSize: 14),
-            ),
-            SelectableText(
-              'Build $appCommit'
-              '${appBuildTime.isEmpty ? '' : ' · $appBuildTime'}',
-              style: TextStyle(
-                color: context.textMuted,
-                fontSize: 12,
-                fontFamily: 'monospace',
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildCheckForUpdates(),
-            const SizedBox(height: 24),
-            Divider(color: context.border),
-            const SizedBox(height: 16),
-            // Server info (merged from former Server section)
-            Text(
-              'Server',
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 12),
-            _buildServersList(),
-            const SizedBox(height: 8),
-            SettingsListTile(
-              icon: Icons.add_circle_outline,
-              title: 'Add server',
-              subtitle: 'Verifies the URL before adding it to your list.',
-              onTap: _showAddServerDialog,
-            ),
-            const SizedBox(height: 16),
-            Divider(color: context.border),
-            const SizedBox(height: 16),
-            // Debug logs entry (absorbed from former Debug section).
-            SettingsListTile(
-              icon: Icons.bug_report_outlined,
-              title: 'Debug Logs',
-              subtitle: 'View recent in-app log entries.',
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const _DebugLogsSubpage(),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 8),
-            // Beta-prep #4c: surface the feedback dialog from About so testers
-            // have a one-tap path to report issues without leaving the app.
-            SettingsListTile(
-              key: const Key('about-send-feedback'),
-              icon: Icons.feedback_outlined,
-              title: 'Send feedback',
-              subtitle: 'Report a bug or share a suggestion.',
-              onTap: () => showFeedbackDialog(context),
-            ),
-            // Privacy link — opens the GitHub-rendered docs/PRIVACY.md so the
-            // canonical text isn't bundled in every app build.
-            SettingsListTile(
-              key: const Key('about-privacy-link'),
-              icon: Icons.privacy_tip_outlined,
-              title: 'Privacy',
-              subtitle:
-                  'What Echo stores, what it does not, and where the data lives.',
-              trailing: Icon(
-                Icons.open_in_new,
-                color: context.textMuted,
-                size: 18,
-              ),
-              onTap: () async {
-                final uri = Uri.parse(
-                  'https://github.com/NC1107/echo-messenger/blob/main/docs/PRIVACY.md',
-                );
-                final ok = await launchUrl(
-                  uri,
-                  mode: LaunchMode.externalApplication,
-                );
-                if (!ok && context.mounted) {
-                  ToastService.show(
-                    context,
-                    'Could not open privacy link.',
-                    type: ToastType.error,
-                  );
-                }
-              },
-            ),
-            const SizedBox(height: 16),
-            Divider(color: context.border),
-            const SizedBox(height: 16),
-            Text(
-              'Open source',
-              style: TextStyle(
-                color: context.accent,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Echo is a decentralized, end-to-end encrypted messenger. '
-              'Contributions and self-hosting are welcome.',
-              style: TextStyle(
-                color: context.textSecondary,
-                fontSize: 13,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 32),
-            Divider(color: context.border),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: _deleteAccount,
-                icon: const Icon(Icons.delete_forever_outlined, size: 18),
-                label: const Text('Delete Account'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: EchoTheme.danger,
-                  side: const BorderSide(color: EchoTheme.danger),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-            ),
-          ],
+    return SettingsPanelScaffold(
+      children: [
+        Text(
+          'Echo Messenger',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
         ),
-      ),
+        const SizedBox(height: 8),
+        Text(
+          'Client v$appVersion',
+          style: TextStyle(color: context.textMuted, fontSize: 14),
+        ),
+        SelectableText(
+          'Build $appCommit'
+          '${appBuildTime.isEmpty ? '' : ' · $appBuildTime'}',
+          style: TextStyle(
+            color: context.textMuted,
+            fontSize: 12,
+            fontFamily: 'monospace',
+          ),
+        ),
+        const SizedBox(height: 16),
+        _buildCheckForUpdates(),
+        const SizedBox(height: 24),
+        Divider(color: context.border),
+        const SizedBox(height: 16),
+        // Server info (merged from former Server section)
+        Text(
+          'Server',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 12),
+        _buildServersList(),
+        const SizedBox(height: 8),
+        SettingsListTile(
+          icon: Icons.add_circle_outline,
+          title: 'Add server',
+          subtitle: 'Verifies the URL before adding it to your list.',
+          onTap: _showAddServerDialog,
+        ),
+        const SizedBox(height: 16),
+        Divider(color: context.border),
+        const SizedBox(height: 16),
+        // Debug logs entry (absorbed from former Debug section).
+        SettingsListTile(
+          icon: Icons.bug_report_outlined,
+          title: 'Debug Logs',
+          subtitle: 'View recent in-app log entries.',
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const _DebugLogsSubpage(),
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 8),
+        // Beta-prep #4c: surface the feedback dialog from About so testers
+        // have a one-tap path to report issues without leaving the app.
+        SettingsListTile(
+          key: const Key('about-send-feedback'),
+          icon: Icons.feedback_outlined,
+          title: 'Send feedback',
+          subtitle: 'Report a bug or share a suggestion.',
+          onTap: () => showFeedbackDialog(context),
+        ),
+        // Privacy link — opens the GitHub-rendered docs/PRIVACY.md so the
+        // canonical text isn't bundled in every app build.
+        SettingsListTile(
+          key: const Key('about-privacy-link'),
+          icon: Icons.privacy_tip_outlined,
+          title: 'Privacy',
+          subtitle:
+              'What Echo stores, what it does not, and where the data lives.',
+          trailing: Icon(Icons.open_in_new, color: context.textMuted, size: 18),
+          onTap: () async {
+            final uri = Uri.parse(
+              'https://github.com/NC1107/echo-messenger/blob/main/docs/PRIVACY.md',
+            );
+            final ok = await launchUrl(
+              uri,
+              mode: LaunchMode.externalApplication,
+            );
+            if (!ok && context.mounted) {
+              ToastService.show(
+                context,
+                'Could not open privacy link.',
+                type: ToastType.error,
+              );
+            }
+          },
+        ),
+        const SizedBox(height: 16),
+        Divider(color: context.border),
+        const SizedBox(height: 16),
+        Text(
+          'Open source',
+          style: TextStyle(
+            color: context.accent,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Echo is a decentralized, end-to-end encrypted messenger. '
+          'Contributions and self-hosting are welcome.',
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 13,
+            height: 1.5,
+          ),
+        ),
+        const SizedBox(height: 32),
+        Divider(color: context.border),
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _deleteAccount,
+            icon: const Icon(Icons.delete_forever_outlined, size: 18),
+            label: const Text('Delete Account'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: EchoTheme.danger,
+              side: const BorderSide(color: EchoTheme.danger),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

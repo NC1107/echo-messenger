@@ -11,6 +11,7 @@ import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/settings/settings_list_tile.dart';
+import '../../widgets/settings_panel_scaffold.dart';
 
 class DataStorageSection extends ConsumerStatefulWidget {
   const DataStorageSection({super.key});
@@ -131,89 +132,80 @@ class _DataStorageSectionState extends ConsumerState<DataStorageSection> {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 900),
-        child: ListView(
-          padding: const EdgeInsets.all(24),
+    return SettingsPanelScaffold(
+      children: [
+        Text(
+          'Data & Storage',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Manage cached data and storage usage.',
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 13,
+            height: 1.5,
+          ),
+        ),
+        const Divider(height: 24),
+        // Cache size
+        SettingsListTile(
+          icon: Icons.storage,
+          title: 'Message Cache',
+          subtitle: 'Estimated size: $_cacheSize',
+          trailing: OutlinedButton(
+            onPressed: _clearMessageCache,
+            child: const Text('Clear'),
+          ),
+        ),
+        const SizedBox(height: 24),
+        // Export section
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(Icons.download_outlined, color: context.textSecondary),
+          title: Text(
+            'Export My Data',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
+          ),
+          subtitle: Text(
+            'Save your locally cached messages as a JSON file. '
+            'Only decrypted message content is included — private keys are never exported.',
+            style: TextStyle(
+              color: context.textSecondary,
+              fontSize: 12,
+              height: 1.4,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
           children: [
-            Text(
-              'Data & Storage',
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
+            OutlinedButton.icon(
+              onPressed: _isExporting ? null : _exportChats,
+              icon: _isExporting
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.download_outlined, size: 16),
+              label: Text(
+                _isExporting ? 'Exporting...' : 'Export chats (JSON)',
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              'Manage cached data and storage usage.',
-              style: TextStyle(
-                color: context.textSecondary,
-                fontSize: 13,
-                height: 1.5,
-              ),
-            ),
-            const Divider(height: 24),
-            // Cache size
-            SettingsListTile(
-              icon: Icons.storage,
-              title: 'Message Cache',
-              subtitle: 'Estimated size: $_cacheSize',
-              trailing: OutlinedButton(
-                onPressed: _clearMessageCache,
-                child: const Text('Clear'),
-              ),
-            ),
-            const SizedBox(height: 24),
-            // Export section
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(
-                Icons.download_outlined,
-                color: context.textSecondary,
-              ),
-              title: Text(
-                'Export My Data',
-                style: TextStyle(color: context.textPrimary, fontSize: 14),
-              ),
-              subtitle: Text(
-                'Save your locally cached messages as a JSON file. '
-                'Only decrypted message content is included — private keys are never exported.',
-                style: TextStyle(
-                  color: context.textSecondary,
-                  fontSize: 12,
-                  height: 1.4,
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: [
-                OutlinedButton.icon(
-                  onPressed: _isExporting ? null : _exportChats,
-                  icon: _isExporting
-                      ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.download_outlined, size: 16),
-                  label: Text(
-                    _isExporting ? 'Exporting...' : 'Export chats (JSON)',
-                  ),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _copyAccountInfo,
-                  icon: const Icon(Icons.copy, size: 16),
-                  label: const Text('Copy Account Info'),
-                ),
-              ],
+            OutlinedButton.icon(
+              onPressed: _copyAccountInfo,
+              icon: const Icon(Icons.copy, size: 16),
+              label: const Text('Copy Account Info'),
             ),
           ],
         ),
-      ),
+      ],
     );
   }
 }

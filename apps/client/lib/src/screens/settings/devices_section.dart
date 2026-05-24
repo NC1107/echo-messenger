@@ -14,6 +14,7 @@ import '../../providers/websocket_provider.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
 import '../../widgets/confirm_dialog.dart';
+import '../../widgets/settings_panel_scaffold.dart';
 
 class DevicesSection extends ConsumerStatefulWidget {
   const DevicesSection({super.key});
@@ -359,73 +360,60 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
         ? ref.watch(cryptoServiceProvider).deviceId
         : null;
 
-    // Layout mirrors the other settings sections (notifications, privacy,
-    // appearance, ...): Center > ConstrainedBox(maxWidth: 900) > ListView
-    // with `padding: EdgeInsets.all(24)` and an 18px header. The previous
-    // mix of `shrinkWrap: true` + child-side LTRB padding caused the column
-    // to read as left-aligned relative to the settings top bar (#916).
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 900),
-        child: ListView(
-          padding: const EdgeInsets.all(24),
+    return SettingsPanelScaffold(
+      children: [
+        Row(
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'My Devices',
-                        style: TextStyle(
-                          color: context.textPrimary,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Manage devices that have access to your account.',
-                        style: TextStyle(
-                          color: context.textSecondary,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(Icons.refresh, color: context.textSecondary),
-                  tooltip: 'Refresh',
-                  onPressed: _loading ? null : _loadDevices,
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            const Divider(height: 1),
-            _buildDeviceListBody(context, myDeviceId),
-            if (!_loading &&
-                _error == null &&
-                myDeviceId != null &&
-                _devices.any((d) => d.deviceId != myDeviceId))
-              Padding(
-                padding: const EdgeInsets.only(top: 16),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: () => _revokeOtherDevices(myDeviceId),
-                    icon: const Icon(Icons.devices_other, size: 18),
-                    label: const Text('Log out all other devices'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: EchoTheme.danger,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'My Devices',
+                    style: TextStyle(
+                      color: context.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Manage devices that have access to your account.',
+                    style: TextStyle(
+                      color: context.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
               ),
+            ),
+            IconButton(
+              icon: Icon(Icons.refresh, color: context.textSecondary),
+              tooltip: 'Refresh',
+              onPressed: _loading ? null : _loadDevices,
+            ),
           ],
         ),
-      ),
+        const SizedBox(height: 12),
+        const Divider(height: 1),
+        _buildDeviceListBody(context, myDeviceId),
+        if (!_loading &&
+            _error == null &&
+            myDeviceId != null &&
+            _devices.any((d) => d.deviceId != myDeviceId))
+          Padding(
+            padding: const EdgeInsets.only(top: 16),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => _revokeOtherDevices(myDeviceId),
+                icon: const Icon(Icons.devices_other, size: 18),
+                label: const Text('Log out all other devices'),
+                style: TextButton.styleFrom(foregroundColor: EchoTheme.danger),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
