@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -278,6 +280,24 @@ Future<void> deleteForEveryone(
   }
 }
 
+/// Pull a user-facing error message out of a JSON response body of shape
+/// `{"error": "..."}`. Falls back to [fallback] when the body is empty,
+/// non-JSON, not a map, missing the `error` field, or `error` is empty.
+/// Visible-for-testing so the pin/unpin failure UX can be pinned (#1162).
+@visibleForTesting
+String parsePinErrorMessage(String body, String fallback) {
+  try {
+    final data = jsonDecode(body);
+    if (data is Map<String, dynamic>) {
+      final msg = data['error'] as String?;
+      if (msg != null && msg.isNotEmpty) return msg;
+    }
+  } catch (_) {
+    // Non-JSON body (HTML error page, empty string) — fall through.
+  }
+  return fallback;
+}
+
 Future<void> pinMessage({
   required BuildContext context,
   required WidgetRef ref,
@@ -314,7 +334,7 @@ Future<void> pinMessage({
           .updateMessagePin(conv.id, message.id, null, null);
       ToastService.show(
         context,
-        'Failed to pin message',
+        parsePinErrorMessage(response.body, 'Failed to pin message'),
         type: ToastType.error,
       );
     }
@@ -366,7 +386,7 @@ Future<void> unpinMessage({
           .updateMessagePin(conv.id, message.id, prevPinnedById, prevPinnedAt);
       ToastService.show(
         context,
-        'Failed to unpin message',
+        parsePinErrorMessage(response.body, 'Failed to unpin message'),
         type: ToastType.error,
       );
     }
