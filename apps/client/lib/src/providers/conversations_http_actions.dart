@@ -366,11 +366,16 @@ mixin _ConversationsHttpActionsMixin on Notifier<ConversationsState> {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final conversationId =
             data['conversation_id'] as String? ?? data['id'] as String? ?? '';
+        if (conversationId.isEmpty) {
+          // Server returned 2xx but no id — treat as failure so the
+          // Future<String> contract holds for every caller.
+          throw const GroupException('Server response missing conversation id');
+        }
         await loadConversations();
         // Only seed the initial group-key envelope when the creator
         // actually opted into encryption. A plaintext group skips this
         // entirely; sends go through the unencrypted path.
-        if (isEncrypted && conversationId.isNotEmpty) {
+        if (isEncrypted) {
           try {
             await ref
                 .read(cryptoProvider.notifier)

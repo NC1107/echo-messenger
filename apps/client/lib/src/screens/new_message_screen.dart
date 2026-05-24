@@ -247,14 +247,6 @@ class _NewMessageScreenState extends ConsumerState<NewMessageScreen> {
         return;
       }
       if (!mounted) return;
-      if (convId.isEmpty) {
-        ToastService.show(
-          context,
-          'Failed to create group',
-          type: ToastType.error,
-        );
-        return;
-      }
       // Find the newly created conversation in state.
       final conv = ref
           .read(conversationsProvider)

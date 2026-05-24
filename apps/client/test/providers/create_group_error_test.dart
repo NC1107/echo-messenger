@@ -89,6 +89,67 @@ void main() {
       },
     );
 
+    test('non-2xx with empty body falls back to the generic message', () async {
+      // Server returns 500 with no JSON body (or a body missing the
+      // `error` field) — the user-facing message should be the
+      // fallback, not an empty string.
+      when(
+        () => mockClient.post(
+          any(that: predicate<Uri>((u) => u.path == '/api/groups')),
+          headers: any(named: 'headers'),
+          body: any(named: 'body'),
+          encoding: any(named: 'encoding'),
+        ),
+      ).thenAnswer((_) async => http.Response('{}', 500));
+
+      final notifier = container.read(conversationsProvider.notifier);
+      await expectLater(
+        http.runWithClient(
+          () => notifier.createGroup('Whatever', ['u1', 'u2']),
+          () => mockClient,
+        ),
+        throwsA(
+          isA<GroupException>().having(
+            (e) => e.message,
+            'message',
+            'Failed to create group',
+          ),
+        ),
+      );
+    });
+
+    test(
+      '2xx response missing conversation id throws GroupException',
+      () async {
+        // The Future<String> contract: a 2xx body with no id field is a
+        // server bug, not a success. Treat as failure so callers don't
+        // navigate into a non-existent conversation.
+        when(
+          () => mockClient.post(
+            any(that: predicate<Uri>((u) => u.path == '/api/groups')),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+            encoding: any(named: 'encoding'),
+          ),
+        ).thenAnswer((_) async => http.Response('{}', 201));
+
+        final notifier = container.read(conversationsProvider.notifier);
+        await expectLater(
+          http.runWithClient(
+            () => notifier.createGroup('Whatever', ['u1', 'u2']),
+            () => mockClient,
+          ),
+          throwsA(
+            isA<GroupException>().having(
+              (e) => e.message,
+              'message',
+              contains('missing conversation id'),
+            ),
+          ),
+        );
+      },
+    );
+
     test(
       'network failure throws GroupException with _friendlyError translation',
       () async {
