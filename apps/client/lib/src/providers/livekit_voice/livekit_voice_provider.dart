@@ -735,7 +735,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
         final lkToken = data['token'] as String?;
         // Server may not return url — derive from serverUrl
-        final lkUrl = data['url'] as String? ?? _deriveLiveKitUrl(serverUrl);
+        final lkUrl = data['url'] as String? ?? deriveLiveKitUrl(serverUrl);
 
         if (lkToken != null) {
           debugPrint('[LiveKitVoice] token obtained, connecting to $lkUrl');
@@ -1106,11 +1106,27 @@ class _LiveKitTokenResult {
 }
 
 /// Derive LiveKit WebSocket URL from the Echo server URL.
-/// https://echo-messenger.us → wss://livekit.echo-messenger.us
-String _deriveLiveKitUrl(String serverUrl) {
+///
+/// Regional Echo subdomains (`us-east.echo-messenger.us`, `eu.echo-messenger.us`, ...)
+/// all share one LiveKit deployment at `livekit.echo-messenger.us`, so any
+/// `*.echo-messenger.us` host normalizes to the apex. Self-hosted (non-Echo)
+/// domains keep verbatim host prefixing — and preserve a non-standard port —
+/// so unknown deployments still work.
+///
+/// Examples:
+///   `https://echo-messenger.us`         → `wss://livekit.echo-messenger.us`
+///   `https://us-east.echo-messenger.us` → `wss://livekit.echo-messenger.us`
+///   `https://chat.example.com:8443`     → `wss://livekit.chat.example.com:8443`
+@visibleForTesting
+String deriveLiveKitUrl(String serverUrl) {
   final uri = Uri.parse(serverUrl);
   final scheme = uri.scheme == 'https' ? 'wss' : 'ws';
-  return '$scheme://livekit.${uri.host}';
+  final host = uri.host;
+  const echoApex = 'echo-messenger.us';
+  final isEchoHost = host == echoApex || host.endsWith('.$echoApex');
+  if (isEchoHost) return '$scheme://livekit.$echoApex';
+  final port = uri.hasPort ? ':${uri.port}' : '';
+  return '$scheme://livekit.$host$port';
 }
 
 // ---------------------------------------------------------------------------
