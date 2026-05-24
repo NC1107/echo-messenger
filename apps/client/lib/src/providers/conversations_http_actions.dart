@@ -337,7 +337,7 @@ mixin _ConversationsHttpActionsMixin on Notifier<ConversationsState> {
   /// server's `is_encrypted` column stays false and no first-key seed
   /// runs. When true, the creator's client uploads the initial per-
   /// member envelope inline so the very first message can encrypt.
-  Future<String?> createGroup(
+  Future<String> createGroup(
     String name,
     List<String> memberIds, {
     String? description,
@@ -388,15 +388,24 @@ mixin _ConversationsHttpActionsMixin on Notifier<ConversationsState> {
         }
         return conversationId;
       } else {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        state = state.copyWith(
-          error: data['error'] as String? ?? 'Failed to create group',
+        final msg = _parseServerError(response.body, 'Failed to create group');
+        DebugLogService.instance.log(
+          LogLevel.error,
+          'Conversations',
+          'createGroup failed (HTTP ${response.statusCode}): $msg',
         );
-        return null;
+        throw GroupException(msg);
       }
+    } on GroupException {
+      rethrow;
     } catch (e) {
-      state = state.copyWith(error: _friendlyError(e));
-      return null;
+      debugPrint('[Conversations] createGroup failed: $e');
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'Conversations',
+        'createGroup error: $e',
+      );
+      throw GroupException(_friendlyError(e));
     }
   }
 }

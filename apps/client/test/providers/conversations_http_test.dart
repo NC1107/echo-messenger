@@ -87,7 +87,7 @@ void main() {
       expect(result, 'new-group-id');
     });
 
-    test('returns null on failure', () async {
+    test('throws GroupException on failure', () async {
       when(
         () => mockClient.post(
           any(that: predicate<Uri>((u) => u.path == '/api/groups')),
@@ -98,12 +98,19 @@ void main() {
       ).thenAnswer((_) async => http.Response('{"error": "forbidden"}', 403));
 
       final notifier = container.read(conversationsProvider.notifier);
-      final result = await http.runWithClient(
-        () => notifier.createGroup('Test', []),
-        () => mockClient,
+      await expectLater(
+        http.runWithClient(
+          () => notifier.createGroup('Test', []),
+          () => mockClient,
+        ),
+        throwsA(
+          isA<GroupException>().having(
+            (e) => e.message,
+            'message',
+            'forbidden',
+          ),
+        ),
       );
-
-      expect(result, isNull);
     });
 
     test('sends correct JSON body', () async {

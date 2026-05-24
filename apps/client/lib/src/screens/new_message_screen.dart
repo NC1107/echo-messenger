@@ -236,11 +236,18 @@ class _NewMessageScreenState extends ConsumerState<NewMessageScreen> {
     setState(() => _isBusy = true);
     try {
       final memberIds = _chips.map((c) => c.userId).toList();
-      final convId = await ref
-          .read(conversationsProvider.notifier)
-          .createGroup(name, memberIds);
+      final String convId;
+      try {
+        convId = await ref
+            .read(conversationsProvider.notifier)
+            .createGroup(name, memberIds);
+      } on GroupException catch (e) {
+        if (!mounted) return;
+        ToastService.show(context, e.message, type: ToastType.error);
+        return;
+      }
       if (!mounted) return;
-      if (convId == null || convId.isEmpty) {
+      if (convId.isEmpty) {
         ToastService.show(
           context,
           'Failed to create group',
