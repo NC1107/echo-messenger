@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/locale_provider.dart';
 import '../../theme/echo_theme.dart';
+import '../../widgets/settings_panel_scaffold.dart';
 
 /// Settings section that lets the user pick an app language.
 ///
@@ -15,59 +16,48 @@ class LanguageSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final currentLocale = ref.watch(localeProvider);
 
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 900),
-        child: ListView(
-          padding: const EdgeInsets.all(24),
-          children: [
-            Text(
-              'Language',
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Choose the language used throughout the app. '
-              'Takes effect immediately.',
-              style: TextStyle(
-                color: context.textSecondary,
-                fontSize: 13,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 16),
-            // Beta banner — translations beyond English are scaffolded but
-            // most labels still fall through to English.  Surfacing this
-            // here (#791) saves testers the "is my install broken?" loop.
-            _ComingSoonBanner(),
-            const Divider(height: 24),
-            ...kSupportedLocales.map(
-              (entry) => _LocaleOption(
-                entry: entry,
-                isSelected: currentLocale.languageCode == entry.tag,
-                isFullyTranslated: entry.tag == 'en',
-                onTap: () => ref
-                    .read(localeProvider.notifier)
-                    .setLocale(Locale(entry.tag)),
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'RTL languages (Arabic, Hebrew, etc.) will be added once '
-              'right-to-left layout testing is complete.',
-              style: TextStyle(
-                color: context.textMuted,
-                fontSize: 12,
-                height: 1.5,
-              ),
-            ),
-          ],
+    return SettingsPanelScaffold(
+      children: [
+        Text(
+          'Language',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
         ),
-      ),
+        const SizedBox(height: 4),
+        Text(
+          'Choose the language used throughout the app. '
+          'Takes effect immediately.',
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 13,
+            height: 1.5,
+          ),
+        ),
+        const SizedBox(height: 16),
+        // Beta banner — translations beyond English are scaffolded but
+        // most labels still fall through to English.  Surfacing this
+        // here (#791) saves testers the "is my install broken?" loop.
+        _ComingSoonBanner(),
+        const Divider(height: 24),
+        ...kSupportedLocales.map(
+          (entry) => _LocaleOption(
+            entry: entry,
+            isSelected: currentLocale.languageCode == entry.tag,
+            isFullyTranslated: entry.tag == 'en',
+            onTap: () =>
+                ref.read(localeProvider.notifier).setLocale(Locale(entry.tag)),
+          ),
+        ),
+        const SizedBox(height: 24),
+        Text(
+          'RTL languages (Arabic, Hebrew, etc.) will be added once '
+          'right-to-left layout testing is complete.',
+          style: TextStyle(color: context.textMuted, fontSize: 12, height: 1.5),
+        ),
+      ],
     );
   }
 }

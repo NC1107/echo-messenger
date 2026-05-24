@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/theme_provider.dart';
 import '../../theme/echo_theme.dart';
+import '../../widgets/settings_panel_scaffold.dart';
 
 /// Settings > Appearance > Advanced — lets the user override the current
 /// theme's primary and accent colors. Persisted via SharedPreferences keys
@@ -19,70 +20,64 @@ class AdvancedThemeSection extends ConsumerWidget {
     final effectivePrimary = custom.primaryColor ?? scheme.primary;
     final effectiveAccent = custom.accentColor ?? scheme.secondary;
 
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 900),
-        child: ListView(
-          padding: const EdgeInsets.all(24),
-          children: [
-            Text(
-              'Advanced',
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Override the active theme\'s primary and accent colors. '
-              'Changes apply immediately and survive restarts.',
-              style: TextStyle(
-                color: context.textSecondary,
-                fontSize: 13,
-                height: 1.5,
-              ),
-            ),
-            const Divider(height: 32),
-            _ColorPickerTile(
-              key: const Key('primary_color_tile'),
-              label: 'Primary color',
-              subtitle: 'Used for text highlights and UI elements',
-              currentColor: effectivePrimary,
-              isOverridden: custom.primaryColor != null,
-              onColorChanged: (c) =>
-                  ref.read(customColorsProvider.notifier).setPrimaryColor(c),
-            ),
-            const SizedBox(height: 12),
-            _ColorPickerTile(
-              key: const Key('accent_color_tile'),
-              label: 'Accent color',
-              subtitle: 'Used for buttons, links, and active states',
-              currentColor: effectiveAccent,
-              isOverridden: custom.accentColor != null,
-              onColorChanged: (c) =>
-                  ref.read(customColorsProvider.notifier).setAccentColor(c),
-            ),
-            if (custom.hasOverrides) ...[
-              const SizedBox(height: 24),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: OutlinedButton.icon(
-                  key: const Key('reset_colors_button'),
-                  onPressed: () =>
-                      ref.read(customColorsProvider.notifier).resetColors(),
-                  icon: const Icon(Icons.refresh, size: 18),
-                  label: const Text('Reset to theme defaults'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: context.textSecondary,
-                    side: BorderSide(color: context.border),
-                  ),
-                ),
-              ),
-            ],
-          ],
+    return SettingsPanelScaffold(
+      children: [
+        Text(
+          'Advanced',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
         ),
-      ),
+        const SizedBox(height: 4),
+        Text(
+          'Override the active theme\'s primary and accent colors. '
+          'Changes apply immediately and survive restarts.',
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 13,
+            height: 1.5,
+          ),
+        ),
+        const Divider(height: 32),
+        _ColorPickerTile(
+          key: const Key('primary_color_tile'),
+          label: 'Primary color',
+          subtitle: 'Used for text highlights and UI elements',
+          currentColor: effectivePrimary,
+          isOverridden: custom.primaryColor != null,
+          onColorChanged: (c) =>
+              ref.read(customColorsProvider.notifier).setPrimaryColor(c),
+        ),
+        const SizedBox(height: 12),
+        _ColorPickerTile(
+          key: const Key('accent_color_tile'),
+          label: 'Accent color',
+          subtitle: 'Used for buttons, links, and active states',
+          currentColor: effectiveAccent,
+          isOverridden: custom.accentColor != null,
+          onColorChanged: (c) =>
+              ref.read(customColorsProvider.notifier).setAccentColor(c),
+        ),
+        if (custom.hasOverrides) ...[
+          const SizedBox(height: 24),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              key: const Key('reset_colors_button'),
+              onPressed: () =>
+                  ref.read(customColorsProvider.notifier).resetColors(),
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Reset to theme defaults'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: context.textSecondary,
+                side: BorderSide(color: context.border),
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

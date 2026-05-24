@@ -6,6 +6,7 @@ import '../../services/notification_service.dart';
 import '../../services/sound_service.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
+import '../../widgets/settings_panel_scaffold.dart';
 
 part 'notification_section/parts/time_tile.dart';
 part 'notification_section/parts/sound_picker.dart';
@@ -183,245 +184,225 @@ class _NotificationSectionState extends State<NotificationSection> {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 900),
-        child: ListView(
-          padding: const EdgeInsets.all(24),
-          children: [
-            Text(
-              'Notifications',
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Configure how you receive notifications and alerts.',
-              style: TextStyle(
-                color: context.textSecondary,
-                fontSize: 13,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 12),
+    return SettingsPanelScaffold(
+      children: [
+        Text(
+          'Notifications',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Configure how you receive notifications and alerts.',
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 13,
+            height: 1.5,
+          ),
+        ),
+        const SizedBox(height: 12),
 
-            // ---- DND active banner -------------------------------------------
-            if (_dndEnabled) ...[
-              Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: context.accent.withValues(alpha: 0.12),
-                  border: Border.all(
-                    color: context.accent.withValues(alpha: 0.31),
+        // ---- DND active banner -------------------------------------------
+        if (_dndEnabled) ...[
+          Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: context.accent.withValues(alpha: 0.12),
+              border: Border.all(color: context.accent.withValues(alpha: 0.31)),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.do_not_disturb_on, color: context.accent, size: 18),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Do Not Disturb is on — all notifications are muted.',
+                    style: TextStyle(
+                      color: context.accent,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
+        // ---- Do Not Disturb toggle ----------------------------------------
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          secondary: Icon(
+            Icons.do_not_disturb_on_outlined,
+            color: _dndEnabled ? context.accent : context.textSecondary,
+            size: 22,
+          ),
+          title: Text(
+            'Do Not Disturb',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
+          ),
+          subtitle: Text(
+            'Mute all notifications until manually disabled.',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+          value: _dndEnabled,
+          onChanged: _setDndEnabled,
+        ),
+
+        // ---- Quiet Hours --------------------------------------------------
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          secondary: Icon(
+            Icons.bedtime_outlined,
+            color: _quietHoursEnabled ? context.accent : context.textSecondary,
+            size: 22,
+          ),
+          title: Text(
+            'Quiet Hours',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
+          ),
+          subtitle: Text(
+            'Silence notifications during a scheduled time window.',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+          value: _quietHoursEnabled,
+          onChanged: _setQuietHoursEnabled,
+        ),
+        if (_quietHoursEnabled) ...[
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.only(left: 16, right: 4, bottom: 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _TimeTile(
+                    label: 'Start time',
+                    time: _quietStart,
+                    onTap: _pickQuietStart,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _TimeTile(
+                    label: 'End time',
+                    time: _quietEnd,
+                    onTap: _pickQuietEnd,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
+        const Divider(height: 32),
+
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            'Enable Notifications',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
+          ),
+          subtitle: Text(
+            'Show desktop/mobile notifications for new messages.',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+          value: _notificationsEnabled,
+          onChanged: _setNotificationsEnabled,
+        ),
+        if (_notificationsEnabled) ...[
+          SwitchListTile.adaptive(
+            contentPadding: const EdgeInsets.only(left: 16),
+            title: Text(
+              'Direct Messages',
+              style: TextStyle(color: context.textPrimary, fontSize: 14),
+            ),
+            subtitle: Text(
+              'Notify for incoming DMs.',
+              style: TextStyle(color: context.textMuted, fontSize: 12),
+            ),
+            value: _dmNotifications,
+            onChanged: _setDmNotifications,
+          ),
+          SwitchListTile.adaptive(
+            contentPadding: const EdgeInsets.only(left: 16),
+            title: Text(
+              'Group Messages',
+              style: TextStyle(color: context.textPrimary, fontSize: 14),
+            ),
+            subtitle: Text(
+              'Notify for messages in group conversations.',
+              style: TextStyle(color: context.textMuted, fontSize: 12),
+            ),
+            value: _groupNotifications,
+            onChanged: _setGroupNotifications,
+          ),
+        ],
+        const Divider(height: 32),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          secondary: Icon(
+            Icons.volume_up_outlined,
+            color: _soundEnabled ? context.accent : context.textSecondary,
+            size: 22,
+          ),
+          title: Text(
+            'Enable Sound Effects',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
+          ),
+          subtitle: Text(
+            'Play sounds for messages, voice, and other app events.',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+          value: _soundEnabled,
+          onChanged: _setSoundEnabled,
+        ),
+        _SoundPickerRow(
+          selected: _notificationSound,
+          onChanged: _setNotificationSound,
+        ),
+        if (_notificationsEnabled) ...[
+          const SizedBox(height: 24),
+          Text(
+            'Test',
+            style: TextStyle(
+              color: context.textPrimary,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Send a test notification to verify your settings.',
+            style: TextStyle(
+              color: context.textSecondary,
+              fontSize: 13,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _sendTestNotification,
+              icon: const Icon(Icons.notifications_active_outlined, size: 18),
+              label: const Text('Send Test Notification'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: context.accent,
+                side: BorderSide(color: context.accent),
+                shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.do_not_disturb_on,
-                      color: context.accent,
-                      size: 18,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'Do Not Disturb is on — all notifications are muted.',
-                        style: TextStyle(
-                          color: context.accent,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                padding: const EdgeInsets.symmetric(vertical: 12),
               ),
-            ],
-
-            // ---- Do Not Disturb toggle ----------------------------------------
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              secondary: Icon(
-                Icons.do_not_disturb_on_outlined,
-                color: _dndEnabled ? context.accent : context.textSecondary,
-                size: 22,
-              ),
-              title: Text(
-                'Do Not Disturb',
-                style: TextStyle(color: context.textPrimary, fontSize: 14),
-              ),
-              subtitle: Text(
-                'Mute all notifications until manually disabled.',
-                style: TextStyle(color: context.textMuted, fontSize: 12),
-              ),
-              value: _dndEnabled,
-              onChanged: _setDndEnabled,
             ),
-
-            // ---- Quiet Hours --------------------------------------------------
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              secondary: Icon(
-                Icons.bedtime_outlined,
-                color: _quietHoursEnabled
-                    ? context.accent
-                    : context.textSecondary,
-                size: 22,
-              ),
-              title: Text(
-                'Quiet Hours',
-                style: TextStyle(color: context.textPrimary, fontSize: 14),
-              ),
-              subtitle: Text(
-                'Silence notifications during a scheduled time window.',
-                style: TextStyle(color: context.textMuted, fontSize: 12),
-              ),
-              value: _quietHoursEnabled,
-              onChanged: _setQuietHoursEnabled,
-            ),
-            if (_quietHoursEnabled) ...[
-              const SizedBox(height: 4),
-              Padding(
-                padding: const EdgeInsets.only(left: 16, right: 4, bottom: 4),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _TimeTile(
-                        label: 'Start time',
-                        time: _quietStart,
-                        onTap: _pickQuietStart,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _TimeTile(
-                        label: 'End time',
-                        time: _quietEnd,
-                        onTap: _pickQuietEnd,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-
-            const Divider(height: 32),
-
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              title: Text(
-                'Enable Notifications',
-                style: TextStyle(color: context.textPrimary, fontSize: 14),
-              ),
-              subtitle: Text(
-                'Show desktop/mobile notifications for new messages.',
-                style: TextStyle(color: context.textMuted, fontSize: 12),
-              ),
-              value: _notificationsEnabled,
-              onChanged: _setNotificationsEnabled,
-            ),
-            if (_notificationsEnabled) ...[
-              SwitchListTile.adaptive(
-                contentPadding: const EdgeInsets.only(left: 16),
-                title: Text(
-                  'Direct Messages',
-                  style: TextStyle(color: context.textPrimary, fontSize: 14),
-                ),
-                subtitle: Text(
-                  'Notify for incoming DMs.',
-                  style: TextStyle(color: context.textMuted, fontSize: 12),
-                ),
-                value: _dmNotifications,
-                onChanged: _setDmNotifications,
-              ),
-              SwitchListTile.adaptive(
-                contentPadding: const EdgeInsets.only(left: 16),
-                title: Text(
-                  'Group Messages',
-                  style: TextStyle(color: context.textPrimary, fontSize: 14),
-                ),
-                subtitle: Text(
-                  'Notify for messages in group conversations.',
-                  style: TextStyle(color: context.textMuted, fontSize: 12),
-                ),
-                value: _groupNotifications,
-                onChanged: _setGroupNotifications,
-              ),
-            ],
-            const Divider(height: 32),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              secondary: Icon(
-                Icons.volume_up_outlined,
-                color: _soundEnabled ? context.accent : context.textSecondary,
-                size: 22,
-              ),
-              title: Text(
-                'Enable Sound Effects',
-                style: TextStyle(color: context.textPrimary, fontSize: 14),
-              ),
-              subtitle: Text(
-                'Play sounds for messages, voice, and other app events.',
-                style: TextStyle(color: context.textMuted, fontSize: 12),
-              ),
-              value: _soundEnabled,
-              onChanged: _setSoundEnabled,
-            ),
-            _SoundPickerRow(
-              selected: _notificationSound,
-              onChanged: _setNotificationSound,
-            ),
-            if (_notificationsEnabled) ...[
-              const SizedBox(height: 24),
-              Text(
-                'Test',
-                style: TextStyle(
-                  color: context.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Send a test notification to verify your settings.',
-                style: TextStyle(
-                  color: context.textSecondary,
-                  fontSize: 13,
-                  height: 1.5,
-                ),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: _sendTestNotification,
-                  icon: const Icon(
-                    Icons.notifications_active_outlined,
-                    size: 18,
-                  ),
-                  label: const Text('Send Test Notification'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: context.accent,
-                    side: BorderSide(color: context.accent),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
+          ),
+        ],
+      ],
     );
   }
 }
