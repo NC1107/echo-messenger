@@ -162,192 +162,202 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
       ),
     ];
 
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 900),
-        child: ListView(
-          padding: const EdgeInsets.all(24),
-          children: [
-            Text(
-              'Theme',
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
+    // SingleChildScrollView fills the full pane so mouse-wheel events in
+    // the side margins (outside the 900 px content column) still drive the
+    // scroll — the previous Center > ConstrainedBox > ListView only caught
+    // wheel events directly over a child (#1157).
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 900),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Theme',
+                style: TextStyle(
+                  color: context.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Choose a theme. All themes are tuned for WCAG AA contrast.',
-              style: TextStyle(
-                color: context.textSecondary,
-                fontSize: 13,
-                height: 1.5,
+              const SizedBox(height: 4),
+              Text(
+                'Choose a theme. All themes are tuned for WCAG AA contrast.',
+                style: TextStyle(
+                  color: context.textSecondary,
+                  fontSize: 13,
+                  height: 1.5,
+                ),
               ),
-            ),
-            const Divider(height: 24),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              alignment: WrapAlignment.center,
-              children: themeOptions
-                  .map(
-                    (data) => _ThemeCard(
-                      data: data,
-                      isSelected: currentTheme == data.selection,
-                      onTap: () => ref
-                          .read(themeProvider.notifier)
-                          .setTheme(data.selection),
-                    ),
-                  )
-                  .toList(),
-            ),
-            const SizedBox(height: 32),
-            Text(
-              'Message layout',
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
+              const Divider(height: 24),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                alignment: WrapAlignment.center,
+                children: themeOptions
+                    .map(
+                      (data) => _ThemeCard(
+                        data: data,
+                        isSelected: currentTheme == data.selection,
+                        onTap: () => ref
+                            .read(themeProvider.notifier)
+                            .setTheme(data.selection),
+                      ),
+                    )
+                    .toList(),
               ),
-            ),
-            const SizedBox(height: 16),
-            _LayoutOption(
-              label: 'Default',
-              subtitle: 'Bubbles aligned by sender, like iMessage or WhatsApp',
-              icon: Icons.chat_bubble_outline,
-              isSelected:
-                  ref.watch(messageLayoutProvider) == MessageLayout.bubbles,
-              onTap: () => ref
-                  .read(messageLayoutProvider.notifier)
-                  .setLayout(MessageLayout.bubbles),
-            ),
-            const SizedBox(height: 8),
-            _LayoutOption(
-              label: 'Discord',
-              subtitle:
-                  'Left-aligned with avatars and usernames, grouped by sender',
-              icon: Icons.format_align_left_outlined,
-              isSelected:
-                  ref.watch(messageLayoutProvider) == MessageLayout.compact,
-              onTap: () => ref
-                  .read(messageLayoutProvider.notifier)
-                  .setLayout(MessageLayout.compact),
-            ),
-            const SizedBox(height: 8),
-            _LayoutOption(
-              label: 'Slack',
-              subtitle: 'Left-aligned, no bubbles — clean document-style feed',
-              icon: Icons.notes_outlined,
-              isSelected:
-                  ref.watch(messageLayoutProvider) == MessageLayout.plain,
-              onTap: () => ref
-                  .read(messageLayoutProvider.notifier)
-                  .setLayout(MessageLayout.plain),
-            ),
-            const SizedBox(height: 32),
-            // Density tier — UX roadmap Phase 2.  Independent of message
-            // layout: density tunes sidebar row spacing without changing
-            // bubble style.
-            Text(
-              'Density',
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
+              const SizedBox(height: 32),
+              Text(
+                'Message layout',
+                style: TextStyle(
+                  color: context.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            _LayoutOption(
-              label: 'Cozy',
-              subtitle: 'More breathing room',
-              icon: Icons.density_large,
-              isSelected: ref.watch(uiDensityProvider) == UIDensity.cozy,
-              onTap: () => ref
-                  .read(uiDensityProvider.notifier)
-                  .setDensity(UIDensity.cozy),
-            ),
-            const SizedBox(height: 8),
-            _LayoutOption(
-              label: 'Normal',
-              subtitle: 'Balanced default',
-              icon: Icons.density_medium,
-              isSelected: ref.watch(uiDensityProvider) == UIDensity.normal,
-              onTap: () => ref
-                  .read(uiDensityProvider.notifier)
-                  .setDensity(UIDensity.normal),
-            ),
-            const SizedBox(height: 8),
-            _LayoutOption(
-              label: 'Compact',
-              subtitle: 'Power-user dense, Discord-style',
-              icon: Icons.density_small,
-              isSelected: ref.watch(uiDensityProvider) == UIDensity.compact,
-              onTap: () => ref
-                  .read(uiDensityProvider.notifier)
-                  .setDensity(UIDensity.compact),
-            ),
-            const SizedBox(height: 32),
-            // Channel layout — top chip bar vs Slack/Discord vertical column.
-            // The toggle only affects desktop wide layouts; narrow viewports
-            // always render the bar because a column doesn't fit on phones.
-            Text(
-              'Channels',
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
+              const SizedBox(height: 16),
+              _LayoutOption(
+                label: 'Default',
+                subtitle:
+                    'Bubbles aligned by sender, like iMessage or WhatsApp',
+                icon: Icons.chat_bubble_outline,
+                isSelected:
+                    ref.watch(messageLayoutProvider) == MessageLayout.bubbles,
+                onTap: () => ref
+                    .read(messageLayoutProvider.notifier)
+                    .setLayout(MessageLayout.bubbles),
               ),
-            ),
-            const SizedBox(height: 16),
-            _LayoutOption(
-              label: 'Bar',
-              subtitle: 'Chip row above the chat (current default)',
-              icon: Icons.view_stream_outlined,
-              isSelected: ref.watch(channelLayoutProvider) == ChannelLayout.bar,
-              onTap: () => ref
-                  .read(channelLayoutProvider.notifier)
-                  .setLayout(ChannelLayout.bar),
-            ),
-            const SizedBox(height: 8),
-            _LayoutOption(
-              label: 'Column',
-              subtitle: 'Slack/Discord-style vertical channel list',
-              icon: Icons.view_sidebar_outlined,
-              isSelected:
-                  ref.watch(channelLayoutProvider) == ChannelLayout.column,
-              onTap: () => ref
-                  .read(channelLayoutProvider.notifier)
-                  .setLayout(ChannelLayout.column),
-            ),
-            const SizedBox(height: 24),
-            // Font size (#1137 — moved from Accessibility). Pure visual
-            // preference, so it lives in Appearance alongside the theme
-            // picker. State still backs to accessibilityProvider so the
-            // setting roams between sections without a migration.
-            _FontSizeRow(),
-            const SizedBox(height: 32),
-            // Advanced color overrides (issue #613)
-            Text(
-              'Advanced',
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
+              const SizedBox(height: 8),
+              _LayoutOption(
+                label: 'Discord',
+                subtitle:
+                    'Left-aligned with avatars and usernames, grouped by sender',
+                icon: Icons.format_align_left_outlined,
+                isSelected:
+                    ref.watch(messageLayoutProvider) == MessageLayout.compact,
+                onTap: () => ref
+                    .read(messageLayoutProvider.notifier)
+                    .setLayout(MessageLayout.compact),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Override the active theme\'s primary and accent colors.',
-              style: TextStyle(
-                color: context.textSecondary,
-                fontSize: 13,
-                height: 1.5,
+              const SizedBox(height: 8),
+              _LayoutOption(
+                label: 'Slack',
+                subtitle:
+                    'Left-aligned, no bubbles — clean document-style feed',
+                icon: Icons.notes_outlined,
+                isSelected:
+                    ref.watch(messageLayoutProvider) == MessageLayout.plain,
+                onTap: () => ref
+                    .read(messageLayoutProvider.notifier)
+                    .setLayout(MessageLayout.plain),
               ),
-            ),
-            const SizedBox(height: 12),
-            const AdvancedThemeInline(),
-          ],
+              const SizedBox(height: 32),
+              // Density tier — UX roadmap Phase 2.  Independent of message
+              // layout: density tunes sidebar row spacing without changing
+              // bubble style.
+              Text(
+                'Density',
+                style: TextStyle(
+                  color: context.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 16),
+              _LayoutOption(
+                label: 'Cozy',
+                subtitle: 'More breathing room',
+                icon: Icons.density_large,
+                isSelected: ref.watch(uiDensityProvider) == UIDensity.cozy,
+                onTap: () => ref
+                    .read(uiDensityProvider.notifier)
+                    .setDensity(UIDensity.cozy),
+              ),
+              const SizedBox(height: 8),
+              _LayoutOption(
+                label: 'Normal',
+                subtitle: 'Balanced default',
+                icon: Icons.density_medium,
+                isSelected: ref.watch(uiDensityProvider) == UIDensity.normal,
+                onTap: () => ref
+                    .read(uiDensityProvider.notifier)
+                    .setDensity(UIDensity.normal),
+              ),
+              const SizedBox(height: 8),
+              _LayoutOption(
+                label: 'Compact',
+                subtitle: 'Power-user dense, Discord-style',
+                icon: Icons.density_small,
+                isSelected: ref.watch(uiDensityProvider) == UIDensity.compact,
+                onTap: () => ref
+                    .read(uiDensityProvider.notifier)
+                    .setDensity(UIDensity.compact),
+              ),
+              const SizedBox(height: 32),
+              // Channel layout — top chip bar vs Slack/Discord vertical column.
+              // The toggle only affects desktop wide layouts; narrow viewports
+              // always render the bar because a column doesn't fit on phones.
+              Text(
+                'Channels',
+                style: TextStyle(
+                  color: context.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 16),
+              _LayoutOption(
+                label: 'Bar',
+                subtitle: 'Chip row above the chat (current default)',
+                icon: Icons.view_stream_outlined,
+                isSelected:
+                    ref.watch(channelLayoutProvider) == ChannelLayout.bar,
+                onTap: () => ref
+                    .read(channelLayoutProvider.notifier)
+                    .setLayout(ChannelLayout.bar),
+              ),
+              const SizedBox(height: 8),
+              _LayoutOption(
+                label: 'Column',
+                subtitle: 'Slack/Discord-style vertical channel list',
+                icon: Icons.view_sidebar_outlined,
+                isSelected:
+                    ref.watch(channelLayoutProvider) == ChannelLayout.column,
+                onTap: () => ref
+                    .read(channelLayoutProvider.notifier)
+                    .setLayout(ChannelLayout.column),
+              ),
+              const SizedBox(height: 24),
+              // Font size (#1137 — moved from Accessibility). Pure visual
+              // preference, so it lives in Appearance alongside the theme
+              // picker. State still backs to accessibilityProvider so the
+              // setting roams between sections without a migration.
+              _FontSizeRow(),
+              const SizedBox(height: 32),
+              // Advanced color overrides (issue #613)
+              Text(
+                'Advanced',
+                style: TextStyle(
+                  color: context.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Override the active theme\'s primary and accent colors.',
+                style: TextStyle(
+                  color: context.textSecondary,
+                  fontSize: 13,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 12),
+              const AdvancedThemeInline(),
+            ],
+          ),
         ),
       ),
     );
