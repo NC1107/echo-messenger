@@ -39,30 +39,26 @@ int _lastOggGranulePosition(File f) {
   return lastGranule;
 }
 
+const _assets = [
+  'received.ogg',
+  'sent.ogg',
+  'voice_join.ogg',
+  'voice_leave.ogg',
+];
+
 void main() {
   group('bundled notification-sound assets', () {
-    test('received.ogg is long enough to be audible (>= 200 ms)', () {
-      final granule = _lastOggGranulePosition(
-        File('assets/sounds/received.ogg'),
-      );
-      expect(
-        granule,
-        greaterThanOrEqualTo(_minSamples),
-        reason:
-            'received.ogg must be at least 200 ms — shorter clips are '
-            'inaudible on most platform audio backends (#1156).',
-      );
-    });
-
-    test('sent.ogg is long enough to be audible (>= 200 ms)', () {
-      final granule = _lastOggGranulePosition(File('assets/sounds/sent.ogg'));
-      expect(
-        granule,
-        greaterThanOrEqualTo(_minSamples),
-        reason:
-            'sent.ogg must be at least 200 ms — shorter clips are '
-            'inaudible on most platform audio backends (#1156).',
-      );
-    });
+    for (final asset in _assets) {
+      test('$asset is long enough to be audible (>= 200 ms)', () {
+        final granule = _lastOggGranulePosition(File('assets/sounds/$asset'));
+        expect(
+          granule,
+          greaterThanOrEqualTo(_minSamples),
+          reason:
+              '$asset must be at least 200 ms — shorter clips are inaudible '
+              'on most platform audio backends (#1156).',
+        );
+      });
+    }
   });
 }
