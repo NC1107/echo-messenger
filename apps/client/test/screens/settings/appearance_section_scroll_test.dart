@@ -4,9 +4,10 @@
 // outside the 900 px content column received no scroll surface and the wheel
 // did nothing.
 //
-// Pump the section in a 1600 px window, fire a PointerScrollEvent 50 px from
-// the right edge (guaranteed to be outside the 900 px column), and assert the
-// SingleChildScrollView's offset increased.
+// On a 1600 px window the centered 900 px column sits at x≈350..1250, so
+// fire a PointerScrollEvent at x=1550 (right margin) AND x=50 (left margin),
+// asserting both drive the scroll — symmetric coverage so a future regression
+// that only re-narrows one side still fails.
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -22,9 +23,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  testWidgets('side-margin scroll drives the appearance panel (#1157)', (
-    tester,
-  ) async {
+  Future<ScrollPosition> pumpAndFindScroll(WidgetTester tester) async {
     tester.view.physicalSize = const Size(1600, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -39,28 +38,35 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final scrollableFinder = find.byType(Scrollable);
-    expect(scrollableFinder, findsOneWidget);
-    final scrollPosition = tester
-        .state<ScrollableState>(scrollableFinder)
-        .position;
-    expect(scrollPosition.pixels, 0.0);
+    final finder = find.byType(Scrollable);
+    expect(finder, findsOneWidget);
+    return tester.state<ScrollableState>(finder).position;
+  }
 
-    // Pointer 50 px from the right edge — well outside the 900 px content
-    // column on a 1600 px window. Before the fix this position received no
-    // scroll surface and the event did nothing.
+  Future<void> scrollAt(WidgetTester tester, Offset position) async {
     final pointer = TestPointer(1, PointerDeviceKind.mouse);
-    const sidePosition = Offset(1550, 450);
-    await tester.sendEventToBinding(pointer.hover(sidePosition));
+    await tester.sendEventToBinding(pointer.hover(position));
     await tester.sendEventToBinding(pointer.scroll(const Offset(0, 200)));
     await tester.pumpAndSettle();
+  }
 
-    expect(
-      scrollPosition.pixels,
-      greaterThan(0.0),
-      reason:
-          'Scrolling at the right margin (1550 px on a 1600 px window) must '
-          'drive the Appearance panel — fix for #1157.',
-    );
+  testWidgets('right-margin scroll drives the appearance panel (#1157)', (
+    tester,
+  ) async {
+    final scroll = await pumpAndFindScroll(tester);
+    expect(scroll.pixels, 0.0);
+
+    await scrollAt(tester, const Offset(1550, 450));
+    expect(scroll.pixels, greaterThan(0.0));
+  });
+
+  testWidgets('left-margin scroll drives the appearance panel (#1157)', (
+    tester,
+  ) async {
+    final scroll = await pumpAndFindScroll(tester);
+    expect(scroll.pixels, 0.0);
+
+    await scrollAt(tester, const Offset(50, 450));
+    expect(scroll.pixels, greaterThan(0.0));
   });
 }
