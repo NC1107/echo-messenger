@@ -83,7 +83,7 @@ class AdvancedThemeSection extends ConsumerWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Inline variant: embeds directly inside AppearanceSection's ListView
+// Inline variant: embeds directly inside AppearanceSection's panel column
 // ---------------------------------------------------------------------------
 
 /// Compact inline widget that renders the two color picker tiles and an
