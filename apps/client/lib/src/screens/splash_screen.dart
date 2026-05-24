@@ -633,7 +633,8 @@ class _UpdatePromptBody extends ConsumerWidget {
           isReady: isReady,
         ),
         if (isError) _buildErrorMessage(update),
-        if (!isReady && !isInstalling) _buildSkipButton(context, isBusy),
+        if (!isReady && !isInstalling && !isDownloading)
+          _buildSkipButton(context, isBusy),
       ],
     );
   }
