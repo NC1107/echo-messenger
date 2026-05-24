@@ -86,5 +86,46 @@ void main() {
       );
       expect(share.onPressed, isNull);
     });
+
+    // Regression guard for #1158. The dialog subscribes to three broadcast
+    // streams from `flutter_webrtc`'s desktopCapturer and cancels them in
+    // dispose() with `unawaited(sub.cancel())`. If the cancel future
+    // rejects (e.g. PlatformException('No active stream to cancel') when
+    // the native broadcast stream has already torn down), the rejection
+    // must not escape to the uncaught-async zone. We verify dispose runs
+    // cleanly and that `tester.takeException()` reports nothing.
+    testWidgets('closing the dialog does not throw uncaught async errors', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: EchoTheme.darkTheme,
+          darkTheme: EchoTheme.darkTheme,
+          themeMode: ThemeMode.dark,
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: TextButton(
+                  onPressed: () => showEchoScreenSelectDialog(context),
+                  child: const Text('Open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      await tester.tap(find.text('Cancel'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      // Give the unawaited cancel futures a chance to settle.
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(tester.takeException(), isNull);
+    });
   });
 }
