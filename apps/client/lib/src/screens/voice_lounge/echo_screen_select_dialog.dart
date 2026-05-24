@@ -87,7 +87,16 @@ class _EchoScreenSelectDialogState extends State<_EchoScreenSelectDialog> {
     _disposed = true;
     _refreshTimer?.cancel();
     for (final sub in _subs) {
-      unawaited(sub.cancel());
+      // flutter_webrtc's EventChannel can settle the cancel future with a
+      // PlatformException('No active stream to cancel') when the native
+      // broadcast stream has already torn down (e.g. picker closed during
+      // enumeration). Without `catchError` the rejection lands in the
+      // uncaught-async zone and surfaces as [FTL] flutter: — #1158.
+      unawaited(
+        sub.cancel().catchError((Object e) {
+          debugPrint('[EchoScreenSelect] sub.cancel ignored: $e');
+        }),
+      );
     }
     super.dispose();
   }
