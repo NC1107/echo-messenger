@@ -297,3 +297,14 @@ class DmException implements Exception {
   @override
   String toString() => message;
 }
+
+/// Thrown by [ConversationsNotifier.createGroup] when the server rejects
+/// the request or a network error occurs. [message] is safe to display to
+/// the user.
+class GroupException implements Exception {
+  final String message;
+  const GroupException(this.message);
+
+  @override
+  String toString() => message;
+}

@@ -55,26 +55,32 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
 
     final description = _descriptionController.text.trim();
 
-    final conversationId = await ref
-        .read(conversationsProvider.notifier)
-        .createGroup(
-          name,
-          _selectedUserIds.toList(),
-          description: description.isNotEmpty ? description : null,
-          isPublic: _isPublic,
-          isEncrypted: _isEncrypted,
-        );
+    final String conversationId;
+    try {
+      conversationId = await ref
+          .read(conversationsProvider.notifier)
+          .createGroup(
+            name,
+            _selectedUserIds.toList(),
+            description: description.isNotEmpty ? description : null,
+            isPublic: _isPublic,
+            isEncrypted: _isEncrypted,
+          );
+    } on GroupException catch (e) {
+      if (!mounted) return;
+      setState(() => _isCreating = false);
+      ToastService.show(context, e.message, type: ToastType.error);
+      return;
+    }
 
     if (!mounted) return;
     setState(() => _isCreating = false);
 
-    if (conversationId != null && conversationId.isNotEmpty) {
-      ToastService.show(context, 'Group created', type: ToastType.success);
-      if (Navigator.canPop(context)) {
-        Navigator.pop(context);
-      }
-      context.go('/home?conversation=$conversationId');
+    ToastService.show(context, 'Group created', type: ToastType.success);
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context);
     }
+    context.go('/home?conversation=$conversationId');
   }
 
   @override
