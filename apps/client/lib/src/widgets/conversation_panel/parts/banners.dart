@@ -201,10 +201,18 @@ mixin _ConversationPanelBannersMixin on ConsumerState<ConversationPanel> {
   ({String label, Widget? action, bool showDismiss, Widget? progress})
   _resolveAvailableUpdateState(BuildContext context, UpdateState update) {
     if (kIsWeb) {
+      // Web bundle is stale — the browser is serving cached JS until the
+      // user hard-refreshes (we ship --pwa-strategy=none so there's no
+      // service-worker auto-refresh either). Make the banner
+      // non-dismissible with explicit hard-refresh instructions and the
+      // current → latest version delta, so beta testers don't keep
+      // hitting a half-finished build without noticing (#1175).
       return (
-        label: 'New version available',
+        label:
+            'New version v${update.latestVersion} available — '
+            'hard-refresh to update (Ctrl+Shift+R / Cmd+Shift+R)',
         action: null,
-        showDismiss: true,
+        showDismiss: false,
         progress: null,
       );
     }
