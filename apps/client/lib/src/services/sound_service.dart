@@ -187,13 +187,7 @@ class SoundService {
     }
   }
 
-  /// Play a louder ping when the local user is @-mentioned in a message.
-  ///
-  /// Bypasses the [enabled] global only when no template asset is bundled
-  /// for mentions yet — for now it reuses `received.ogg` at higher volume
-  /// so the user can distinguish a mention from a normal message even with
-  /// the same sample. Swap to `assets/sounds/mention.ogg` once a dedicated
-  /// chime ships.
+  /// Play a distinct chime when the local user is @-mentioned in a message.
   ///
   /// OGG Vorbis is chosen over MP3 because `gst-plugins-base` (which ships
   /// in every Linux GStreamer install) decodes Vorbis out of the box, while
@@ -203,7 +197,7 @@ class SoundService {
     if (!_enabled) return;
     try {
       await _mentionPlayer
-          .play(AssetSource('sounds/received.ogg'), volume: 0.6)
+          .play(AssetSource('sounds/mention.ogg'), volume: 0.6)
           .catchError((Object e) {
             debugPrint('[Sound] Failed to play mention sound (late): $e');
           });
