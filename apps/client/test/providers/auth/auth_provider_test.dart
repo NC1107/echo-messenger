@@ -409,6 +409,88 @@ void main() {
       expect(st.token, 'new-tok');
     });
 
+    test(
+      'tryAutoLogin() restores is_admin=true from refresh (#1160)',
+      () async {
+        // Server returns is_admin=true; without parsing it the admin panel
+        // stayed invisible on native clients after cold-start.
+        await fakeKeyStore.writeGlobal('echo_auth_refresh_token', 'stored-ref');
+        SharedPreferences.setMockInitialValues({
+          'echo_auth_user_id': 'uid-1',
+          'echo_auth_username': 'admin-user',
+        });
+
+        when(
+          () => mockClient.post(
+            any(that: predicate<Uri>((u) => u.path == '/api/auth/refresh')),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+            encoding: any(named: 'encoding'),
+          ),
+        ).thenAnswer(
+          (_) async => http.Response(
+            jsonEncode({
+              'access_token': 'new-tok',
+              'refresh_token': 'new-ref',
+              'user_id': 'uid-1',
+              'username': 'admin-user',
+              'is_admin': true,
+            }),
+            200,
+          ),
+        );
+
+        final notifier = container.read(authProvider.notifier);
+        final result = await http.runWithClient(
+          () => notifier.tryAutoLogin(),
+          () => mockClient,
+        );
+
+        expect(result, isTrue);
+        expect(container.read(authProvider).isAdmin, isTrue);
+      },
+    );
+
+    test(
+      'tryAutoLogin() leaves is_admin=false for non-admins (#1160)',
+      () async {
+        await fakeKeyStore.writeGlobal('echo_auth_refresh_token', 'stored-ref');
+        SharedPreferences.setMockInitialValues({
+          'echo_auth_user_id': 'uid-1',
+          'echo_auth_username': 'dev',
+        });
+
+        when(
+          () => mockClient.post(
+            any(that: predicate<Uri>((u) => u.path == '/api/auth/refresh')),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+            encoding: any(named: 'encoding'),
+          ),
+        ).thenAnswer(
+          (_) async => http.Response(
+            jsonEncode({
+              'access_token': 'new-tok',
+              'refresh_token': 'new-ref',
+              'user_id': 'uid-1',
+              'username': 'dev',
+              'is_admin': false,
+            }),
+            200,
+          ),
+        );
+
+        final notifier = container.read(authProvider.notifier);
+        final result = await http.runWithClient(
+          () => notifier.tryAutoLogin(),
+          () => mockClient,
+        );
+
+        expect(result, isTrue);
+        expect(container.read(authProvider).isAdmin, isFalse);
+      },
+    );
+
     test('tryAutoLogin() refresh fails 401 clears tokens', () async {
       await fakeKeyStore.writeGlobal('echo_auth_refresh_token', 'expired-ref');
       SharedPreferences.setMockInitialValues({

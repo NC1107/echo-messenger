@@ -123,6 +123,12 @@ mixin AuthTokenRefreshMixin on Notifier<AuthState>, AuthTokenStorageMixin {
             data['refresh_token'] as String? ?? storedRefreshToken;
         final userId = data['user_id'] as String? ?? storedUserId ?? '';
         final username = data['username'] as String? ?? storedUsername ?? '';
+        // Server re-reads is_admin from the canonical users row on every
+        // refresh (apps/server/src/routes/auth.rs), so promotion /
+        // demotion since last login propagates here. Without parsing it
+        // the admin panel stays invisible after every cold restart on
+        // native clients — #1160.
+        final isAdmin = data['is_admin'] as bool? ?? false;
 
         // Persist new tokens BEFORE any other async work. The server
         // already revoked the old refresh token during rotation, so if
@@ -144,6 +150,7 @@ mixin AuthTokenRefreshMixin on Notifier<AuthState>, AuthTokenStorageMixin {
           username: username,
           token: newAccessToken,
           refreshToken: newRefreshToken,
+          isAdmin: isAdmin,
           onboardingCompleted: onboardingDone,
         );
         return true;
@@ -192,6 +199,10 @@ mixin AuthTokenRefreshMixin on Notifier<AuthState>, AuthTokenStorageMixin {
           final newAccessToken = data['access_token'] as String;
           final userId = data['user_id'] as String? ?? storedUserId;
           final username = data['username'] as String? ?? storedUsername;
+          // See companion comment in tryAutoLogin's body-token path. The
+          // server returns is_admin on every refresh; without it the
+          // admin panel stays invisible on the web client too — #1160.
+          final isAdmin = data['is_admin'] as bool? ?? false;
 
           await _storeTokens(
             accessToken: newAccessToken,
@@ -207,6 +218,7 @@ mixin AuthTokenRefreshMixin on Notifier<AuthState>, AuthTokenStorageMixin {
             userId: userId,
             username: username,
             token: newAccessToken,
+            isAdmin: isAdmin,
             // refreshToken stays null in state on web -- never needed by client
             onboardingCompleted: onboardingDone,
           );
