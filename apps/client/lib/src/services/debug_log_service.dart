@@ -280,6 +280,31 @@ class DebugLogService with ChangeNotifier {
     return List.unmodifiable(_entries);
   }
 
+  /// Format the most recent [n] entries as plaintext, one entry per line.
+  ///
+  /// Mirrors the format used by the in-app Debug Logs viewer
+  /// (`HH:MM:SS [LVL] source: message`) so feedback reports and the viewer
+  /// agree on layout. Returns an empty string when the buffer is empty.
+  String tail(int n) {
+    if (_entries.isEmpty || n <= 0) return '';
+    final start = _entries.length > n ? _entries.length - n : 0;
+    final buffer = StringBuffer();
+    for (var i = start; i < _entries.length; i++) {
+      final e = _entries[i];
+      final h = e.timestamp.hour.toString().padLeft(2, '0');
+      final m = e.timestamp.minute.toString().padLeft(2, '0');
+      final s = e.timestamp.second.toString().padLeft(2, '0');
+      final level = switch (e.level) {
+        LogLevel.info => 'INF',
+        LogLevel.warning => 'WRN',
+        LogLevel.error => 'ERR',
+        LogLevel.fatal => 'FTL',
+      };
+      buffer.writeln('$h:$m:$s [$level] ${e.source}: ${e.message}');
+    }
+    return buffer.toString();
+  }
+
   /// Remove all stored entries from memory and delete the log file.
   void clear() {
     _entries.clear();

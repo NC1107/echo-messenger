@@ -42,7 +42,7 @@ void main() {
   setUpAll(registerHttpFallbackValues);
 
   group('feedback_dialog', () {
-    testWidgets('renders title, body, public-ok checkbox and send button', (
+    testWidgets('renders body field, share-logs switch, and send button', (
       tester,
     ) async {
       await _pumpHost(tester);
@@ -50,16 +50,16 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Send feedback'), findsOneWidget);
-      expect(find.text('Title'), findsOneWidget);
-      expect(find.text('Details'), findsOneWidget);
+      expect(find.text('Describe the bug'), findsOneWidget);
+      expect(find.text('Share debug logs'), findsOneWidget);
       expect(
-        find.byKey(const Key('feedback-public-ok-checkbox')),
+        find.byKey(const Key('feedback-share-logs-switch')),
         findsOneWidget,
       );
       expect(find.byKey(const Key('feedback-send-button')), findsOneWidget);
     });
 
-    testWidgets('send button is disabled until both fields have content', (
+    testWidgets('send button is disabled until body has content', (
       tester,
     ) async {
       await _pumpHost(tester);
@@ -79,13 +79,9 @@ void main() {
 
       expect(isEnabled(), isFalse);
 
-      await tester.enterText(find.widgetWithText(TextField, 'Title'), 'Bug');
-      await tester.pump();
-      expect(isEnabled(), isFalse);
-
       await tester.enterText(
-        find.widgetWithText(TextField, 'Details'),
-        'Steps to reproduce here.',
+        find.widgetWithText(TextField, 'Describe the bug'),
+        'Repro steps go here.',
       );
       await tester.pump();
       expect(isEnabled(), isTrue);
@@ -110,12 +106,8 @@ void main() {
         await tester.pumpAndSettle();
 
         await tester.enterText(
-          find.widgetWithText(TextField, 'Title'),
-          'Test bug',
-        );
-        await tester.enterText(
-          find.widgetWithText(TextField, 'Details'),
-          'Repro steps go here.',
+          find.widgetWithText(TextField, 'Describe the bug'),
+          'Test bug — repro steps go here.',
         );
         await tester.pump();
 
@@ -153,12 +145,8 @@ void main() {
         await tester.pumpAndSettle();
 
         await tester.enterText(
-          find.widgetWithText(TextField, 'Title'),
-          'Login button mis-aligned',
-        );
-        await tester.enterText(
-          find.widgetWithText(TextField, 'Details'),
-          'Tapping it does nothing on iOS 18.',
+          find.widgetWithText(TextField, 'Describe the bug'),
+          'Login button mis-aligned\nTapping it does nothing on iOS 18.',
         );
         await tester.pump();
 

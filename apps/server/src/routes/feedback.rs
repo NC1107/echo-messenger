@@ -25,6 +25,7 @@ use crate::routes::AppState;
 /// fill the table with megabyte-sized rows.
 const MAX_TITLE_CHARS: usize = 100;
 const MAX_BODY_CHARS: usize = 4_000;
+const MAX_LOGS_CHARS: usize = 32_000;
 
 /// How many open/closed/triaged reports a single user may file per rolling
 /// 24-hour window.  Generous enough that a tester pasting 4 follow-ups in a
@@ -38,6 +39,12 @@ pub struct CreateFeedbackRequest {
     pub body: String,
     #[serde(default)]
     pub public_ok: bool,
+    #[serde(default)]
+    pub app_version: Option<String>,
+    #[serde(default)]
+    pub platform: Option<String>,
+    #[serde(default)]
+    pub logs: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -70,6 +77,25 @@ pub async fn create_feedback(
         )));
     }
 
+    // Trim diagnostic context fields; empty-after-trim becomes None so we
+    // don't pollute the table with whitespace-only rows.
+    let clean_opt = |s: &Option<String>| -> Option<String> {
+        s.as_ref()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+    };
+    let app_version = clean_opt(&req.app_version);
+    let platform = clean_opt(&req.platform);
+    let logs = clean_opt(&req.logs);
+
+    if let Some(ref l) = logs
+        && l.chars().count() > MAX_LOGS_CHARS
+    {
+        return Err(AppError::bad_request(format!(
+            "Logs must be {MAX_LOGS_CHARS} characters or fewer"
+        )));
+    }
+
     // Rolling-window rate limit.  We count the caller's reports in the last
     // 24h, including triaged + closed ones, so closing a report can't be
     // used to refill the quota.  `feedback_user_id_created_at_idx` keeps
@@ -95,13 +121,16 @@ pub async fn create_feedback(
     }
 
     let (id,): (uuid::Uuid,) = sqlx::query_as(
-        "INSERT INTO feedback (user_id, title, body, public_ok) \
-         VALUES ($1, $2, $3, $4) RETURNING id",
+        "INSERT INTO feedback (user_id, title, body, public_ok, app_version, platform, logs) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
     )
     .bind(auth.user_id)
     .bind(title)
     .bind(body)
     .bind(req.public_ok)
+    .bind(app_version)
+    .bind(platform)
+    .bind(logs)
     .fetch_one(&state.pool)
     .await
     .db_ctx("feedback/insert")?;
