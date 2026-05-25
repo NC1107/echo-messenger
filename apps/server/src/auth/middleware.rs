@@ -37,6 +37,12 @@ impl FromRequestParts<Arc<AppState>> for AuthUser {
         let user_id = Uuid::parse_str(&claims.sub)
             .map_err(|_| AppError::unauthorized("Invalid user ID in token"))?;
 
+        // Light up the `user_id` slot reserved by the per-request tracing
+        // span (see `routes::create_router`). The TraceLayer span is opened
+        // before handler extractors run, so this is the only point at which
+        // we know which user (if any) the request belongs to (#1173).
+        tracing::Span::current().record("user_id", tracing::field::display(user_id));
+
         Ok(AuthUser { user_id })
     }
 }

@@ -20,7 +20,7 @@ axum-extra = { version = "0.12", features = ["typed-header", "cookie"] }
 # Used by cookie max_age (#342). Matches the version pulled in by `cookie`.
 time = "0.3"
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "trace", "set-header"] }
+tower-http = { version = "0.6", features = ["cors", "request-id", "set-header", "trace"] }
 
 # Database
 sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono", "json", "migrate"] }

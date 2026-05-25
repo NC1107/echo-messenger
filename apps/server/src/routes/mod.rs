@@ -33,8 +33,17 @@ use sqlx::PgPool;
 use std::sync::Arc;
 use std::time::Instant;
 use tower_http::cors::{AllowOrigin, CorsLayer};
+use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 use tower_http::set_header::SetResponseHeaderLayer;
+use tower_http::trace::{DefaultOnResponse, TraceLayer};
+use tracing::Level;
 use uuid::Uuid;
+
+/// Header name used for end-to-end request-id correlation. Echoed back in
+/// every response and attached to the per-request tracing span so server
+/// logs can be cross-referenced to a feedback report's stashed value
+/// (#1173).
+pub const REQUEST_ID_HEADER: &str = "x-request-id";
 
 use crate::metrics::MessageRateCounter;
 use crate::middleware::rate_limit;
@@ -494,6 +503,48 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpNet>) -> Route
                 "default-src 'none'; img-src 'self'; media-src 'self'; \
                  frame-ancestors 'none'; base-uri 'none'",
             ),
+        ))
+        // Per-request tracing + request-id correlation (#1173).
+        //
+        // Layer order matters: axum's `.layer()` wraps the LAST-applied
+        // layer outermost, so the chain below produces — from outside in —
+        //   SetRequestIdLayer  → stamps `x-request-id` on the request
+        //                        (using inbound header if present, else a
+        //                        fresh UUID v4)
+        //   PropagateRequestIdLayer → mirrors that id onto the response so
+        //                             clients can log + report it
+        //   TraceLayer         → opens an `http.request` span that captures
+        //                        the request_id + leaves a `user_id` slot
+        //                        for the AuthUser middleware to fill in.
+        //
+        // SetRequestIdLayer must be outermost so the header is present by
+        // the time TraceLayer reads it.
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(|request: &axum::http::Request<_>| {
+                    let request_id = request
+                        .headers()
+                        .get(REQUEST_ID_HEADER)
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("?");
+                    tracing::info_span!(
+                        "http.request",
+                        method = %request.method(),
+                        uri = %request.uri(),
+                        request_id = %request_id,
+                        // Filled in by `AuthUser` after JWT validation
+                        // succeeds; stays empty for anonymous routes.
+                        user_id = tracing::field::Empty,
+                    )
+                })
+                .on_response(DefaultOnResponse::new().level(Level::INFO)),
+        )
+        .layer(PropagateRequestIdLayer::new(
+            header::HeaderName::from_static(REQUEST_ID_HEADER),
+        ))
+        .layer(SetRequestIdLayer::new(
+            header::HeaderName::from_static(REQUEST_ID_HEADER),
+            MakeRequestUuid,
         ))
         .with_state(state)
 }
