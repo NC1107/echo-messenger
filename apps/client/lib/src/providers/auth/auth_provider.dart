@@ -202,7 +202,16 @@ class AuthNotifier extends _$AuthNotifier
         String errorMsg = 'Registration failed';
         try {
           final data = jsonDecode(response.body) as Map<String, dynamic>;
-          errorMsg = data['error'] as String? ?? errorMsg;
+          final code = data['code'] as String?;
+          final serverMsg = data['error'] as String?;
+          // The most common signup-failure case deserves a friendlier
+          // toast than the server's literal 'Username already taken' —
+          // testers expect something they could plausibly act on (#1176).
+          if (response.statusCode == 409 && code == 'username-taken') {
+            errorMsg = 'That username is taken — try another.';
+          } else if (serverMsg != null && serverMsg.isNotEmpty) {
+            errorMsg = serverMsg;
+          }
         } catch (e) {
           debugPrint('[Auth] register response parse failed: $e');
           errorMsg = friendlyError(

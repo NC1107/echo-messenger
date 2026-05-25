@@ -299,7 +299,43 @@ void main() {
       expect(st.userId, 'new-uid');
     });
 
-    test('register() returns 409 stays logged out with error', () async {
+    test(
+      'register() 409 username-taken yields friendly message (#1176)',
+      () async {
+        // Server's actual envelope on duplicate-username — see
+        // apps/server/src/error.rs ErrorCode::UsernameTaken.
+        when(
+          () => mockClient.post(
+            any(that: predicate<Uri>((u) => u.path == '/api/auth/register')),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+            encoding: any(named: 'encoding'),
+          ),
+        ).thenAnswer(
+          (_) async => http.Response(
+            jsonEncode({
+              'error': 'Username already taken',
+              'code': 'username-taken',
+            }),
+            409,
+          ),
+        );
+
+        final notifier = container.read(authProvider.notifier);
+        await http.runWithClient(
+          () => notifier.register('taken', 'pass'),
+          () => mockClient,
+        );
+
+        final st = container.read(authProvider);
+        expect(st.isLoggedIn, isFalse);
+        expect(st.error, 'That username is taken — try another.');
+      },
+    );
+
+    test('register() 4xx without code falls back to server message', () async {
+      // Server-supplied error.  Code field absent so the username-taken
+      // friendly path doesn't trigger.
       when(
         () => mockClient.post(
           any(that: predicate<Uri>((u) => u.path == '/api/auth/register')),
@@ -309,19 +345,16 @@ void main() {
         ),
       ).thenAnswer(
         (_) async =>
-            http.Response(jsonEncode({'error': 'Username already taken'}), 409),
+            http.Response(jsonEncode({'error': 'Password too weak'}), 400),
       );
 
       final notifier = container.read(authProvider.notifier);
       await http.runWithClient(
-        () => notifier.register('taken', 'pass'),
+        () => notifier.register('user', 'pw'),
         () => mockClient,
       );
 
-      final st = container.read(authProvider);
-      expect(st.isLoggedIn, isFalse);
-      expect(st.error, isNotNull);
-      expect(st.error, contains('already taken'));
+      expect(container.read(authProvider).error, 'Password too weak');
     });
 
     test('register() network error sets error', () async {
