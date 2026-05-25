@@ -44,6 +44,7 @@ const _assets = [
   'sent.ogg',
   'voice_join.ogg',
   'voice_leave.ogg',
+  'mention.ogg',
 ];
 
 void main() {
