@@ -69,6 +69,14 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   void initState() {
     super.initState();
     _selectedTimezone = DateTime.now().timeZoneName;
+    // Pre-fill display name with the username so the Welcome page can be
+    // skipped without forcing the user to type anything. They can still
+    // edit it before continuing, but Skip no longer hard-blocks on an
+    // empty field — #1177.
+    final username = ref.read(authProvider).username;
+    if (username != null && username.isNotEmpty) {
+      _displayNameController.text = username;
+    }
     _loadNotificationPrefs();
   }
 
