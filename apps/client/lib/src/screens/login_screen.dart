@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/server_url_provider.dart';
@@ -195,6 +196,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                               foregroundColor: context.textSecondary,
                             ),
                             child: const Text('Create an account'),
+                          ),
+                          // Last-resort escape hatch for testers stuck at
+                          // auth (#1174). The in-app feedback dialog needs
+                          // login, so a stuck user can't reach it; a
+                          // mailto: works without a session.
+                          TextButton(
+                            onPressed: () => launchUrl(
+                              Uri.parse(
+                                'mailto:admin@echo-messenger.us'
+                                '?subject=Echo%20support%3A%20trouble%20signing%20in',
+                              ),
+                            ),
+                            style: TextButton.styleFrom(
+                              foregroundColor: context.textMuted,
+                              textStyle: const TextStyle(fontSize: 12),
+                            ),
+                            child: const Text('Trouble signing in?'),
                           ),
                         ],
                       ),

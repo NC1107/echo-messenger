@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/server_url_provider.dart';
@@ -211,6 +212,22 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                             overflow: TextOverflow.visible,
                             softWrap: true,
                           ),
+                        ),
+                        // Escape hatch for testers who can't complete
+                        // signup (#1174). The in-app feedback dialog
+                        // requires a session, so we fall back to mailto.
+                        TextButton(
+                          onPressed: () => launchUrl(
+                            Uri.parse(
+                              'mailto:admin@echo-messenger.us'
+                              '?subject=Echo%20support%3A%20trouble%20signing%20up',
+                            ),
+                          ),
+                          style: TextButton.styleFrom(
+                            foregroundColor: context.textMuted,
+                            textStyle: const TextStyle(fontSize: 12),
+                          ),
+                          child: const Text('Trouble signing up?'),
                         ),
                       ],
                     ),
