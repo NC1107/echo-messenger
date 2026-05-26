@@ -57,23 +57,28 @@ mixin _HomeScreenWideLayoutMixin
         ? _self._selectedConversation!.displayName(myUserId)
         : null;
 
+    final voiceLk = ref.watch(livekitVoiceProvider);
+    final loungeFullscreen =
+        voiceLk.channelId != null &&
+        _self._showingLounge &&
+        ref.watch(voiceLoungeFullscreenProvider);
+
     return Scaffold(
       body: Column(
         children: [
-          AppTitleBar(title: titleBarText),
+          if (!loungeFullscreen) AppTitleBar(title: titleBarText),
           Expanded(
             child: Stack(
               children: [
                 Row(
                   children: [
-                    // Left sidebar
-                    if (_self._showSettings)
-                      _buildSettingsSidebar(300)
-                    else
-                      SizedBox(width: 300, child: _buildConversationPanel()),
-                    // Thin vertical divider
-                    Container(width: 1, color: context.border),
-                    // Right: content area
+                    if (!loungeFullscreen) ...[
+                      if (_self._showSettings)
+                        _buildSettingsSidebar(300)
+                      else
+                        SizedBox(width: 300, child: _buildConversationPanel()),
+                      Container(width: 1, color: context.border),
+                    ],
                     Expanded(child: rightPanel),
                   ],
                 ),

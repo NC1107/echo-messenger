@@ -287,19 +287,26 @@ mixin _HomeScreenDesktopLayoutMixin
         ? _self._selectedConversation!.displayName(myUserId)
         : null;
 
+    final loungeFullscreen =
+        voiceActive &&
+        _self._showingLounge &&
+        ref.watch(voiceLoungeFullscreenProvider);
+
     return Scaffold(
       body: Column(
         children: [
-          AppTitleBar(title: titleBarText),
+          if (!loungeFullscreen) AppTitleBar(title: titleBarText),
           Expanded(
             child: Stack(
               children: [
                 Row(
                   children: [
-                    _buildDesktopSidebar(sidebarWidth, animatedSidebarWidth),
-                    _buildResizeHandle(),
+                    if (!loungeFullscreen) ...[
+                      _buildDesktopSidebar(sidebarWidth, animatedSidebarWidth),
+                      _buildResizeHandle(),
+                    ],
                     Expanded(child: rightPanel),
-                    ..._buildMembersPanel(),
+                    if (!loungeFullscreen) ..._buildMembersPanel(),
                   ],
                 ),
                 // Voice dock moved inline into ConversationPanel — float overlay occluded sidebar chrome (F-029).
