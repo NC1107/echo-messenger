@@ -47,7 +47,12 @@ class SenderNameLabel extends StatelessWidget {
       ),
     );
 
-    final padding = EdgeInsets.only(bottom: 4, left: hasMedia ? 8 : 0);
+    // Compact density gets ~IRC-style chrome: zero bottom gap between
+    // header and body so name+timestamp read as a prefix line, not a
+    // separate paragraph. Bubbles/non-compact keep the small breathing
+    // gap that lets the bold name stand off the body text.
+    final bottomGap = density == UIDensity.compact ? 0.0 : 4.0;
+    final padding = EdgeInsets.only(bottom: bottomGap, left: hasMedia ? 8 : 0);
 
     if (!compactLayout) {
       return Padding(padding: padding, child: nameText);

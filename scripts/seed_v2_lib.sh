@@ -93,14 +93,30 @@ _seed_curl() {
 #   Populates: SEED_USER_ID, SEED_USER_TOKEN
 seed_user() {
   local username="$1" password="$2" bio="${3:-}" status="${4:-}"
-  local body resp
+  local body resp attempts=0
   body=$(jq -nc --arg u "$username" --arg p "$password" \
     '{username:$u, password:$p}')
-  resp=$(_seed_curl POST /api/auth/register "" "$body" || true)
+
+  # Register-with-backoff: prod's per-IP signup rate-limiter rejects bursts
+  # of registrations even with the 5s pause; retry the register up to 4
+  # times with growing pauses before falling through to login (which only
+  # helps if the username already exists).
+  while [ $attempts -lt 4 ]; do
+    resp=$(_seed_curl POST /api/auth/register "" "$body" || true)
+    if [ -n "$(jq -r '.access_token // empty' <<<"$resp" 2>/dev/null)" ]; then
+      break
+    fi
+    attempts=$((attempts + 1))
+    sleep $((15 * attempts))
+  done
+
   if [ -z "$(jq -r '.access_token // empty' <<<"$resp" 2>/dev/null)" ]; then
-    # Username already exists (or registration rate-limited): fall back to login.
+    # Username already exists (or rate-limit never cleared): fall back to login.
     resp=$(_seed_curl POST /api/auth/login "" "$body")
   fi
+  # Short delay between users so the next register doesn't immediately trip
+  # the per-IP burst limit. Tunable via SEED_REGISTER_PAUSE (defaults 5s).
+  sleep "${SEED_REGISTER_PAUSE:-5}"
   SEED_USER_ID=$(jq -r '.user_id // empty' <<<"$resp")
   SEED_USER_TOKEN=$(jq -r '.access_token // empty' <<<"$resp")
   if [ -z "$SEED_USER_ID" ] || [ -z "$SEED_USER_TOKEN" ]; then

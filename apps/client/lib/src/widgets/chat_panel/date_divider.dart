@@ -33,13 +33,21 @@ class DateDivider extends ConsumerWidget {
       final dt = DateTime.parse(timestamp).toLocal();
       final now = DateTime.now();
       final yesterday = now.subtract(const Duration(days: 1));
+      final isToday =
+          dt.year == now.year && dt.month == now.month && dt.day == now.day;
+
+      // iMessage convention: skip the "Today" divider — the most recent
+      // messages are assumed to be today. Yesterday + older days still get
+      // labelled so the day boundary is visible when scrolling back. Keep
+      // the divider only for genuine "Start of conversation" callouts on
+      // the very first message.
+      if (isToday && !isStartOfConversation) {
+        return const SizedBox.shrink();
+      }
+
       String label;
       if (isStartOfConversation) {
         label = 'Start of conversation';
-      } else if (dt.year == now.year &&
-          dt.month == now.month &&
-          dt.day == now.day) {
-        label = 'Today';
       } else if (dt.year == yesterday.year &&
           dt.month == yesterday.month &&
           dt.day == yesterday.day) {

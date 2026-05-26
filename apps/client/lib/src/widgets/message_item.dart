@@ -620,18 +620,34 @@ class _MessageItemState extends State<MessageItem>
     return context.recvBubble;
   }
 
-  /// Resolve the bubble border radius with a flat corner on the sender's side.
-  /// In compact mode all messages are left-aligned, so the flat corner is
-  /// always on the bottom-left regardless of sender. Plain mode squares off
-  /// entirely (#564).
+  /// Resolve the bubble border radius with iMessage stacked-pill cornering:
+  /// inside a same-author run the inner-facing corners square to 4px while
+  /// outer corners keep the full 14px radius, so a run of bubbles reads as
+  /// one continuous stack rather than N separate pills. Plain mode squares
+  /// off entirely (#564); compact layout drops the bubble fill so radius
+  /// only matters on the original `bubbles` layout.
   BorderRadius _bubbleBorderRadius({required bool isMine}) {
     if (widget._isPlain) return BorderRadius.zero;
     final isRight = isMine && !widget.compactLayout;
+    const full = Radius.circular(14);
+    const tight = Radius.circular(4);
+    final isFirst = widget.showHeader; // showHeader == first-in-group
+    final isLast = widget.isLastInGroup;
+    if (isRight) {
+      // Bubble sits on the right edge; "inner" = the left-facing corners.
+      return BorderRadius.only(
+        topLeft: full,
+        topRight: isFirst ? full : tight,
+        bottomLeft: full,
+        bottomRight: isLast ? full : tight,
+      );
+    }
+    // Received bubble (left side); "inner" = the right-facing corners.
     return BorderRadius.only(
-      topLeft: const Radius.circular(14),
-      topRight: const Radius.circular(14),
-      bottomLeft: Radius.circular(isRight ? 14 : 4),
-      bottomRight: Radius.circular(isRight ? 4 : 14),
+      topLeft: isFirst ? full : tight,
+      topRight: full,
+      bottomLeft: isLast ? full : tight,
+      bottomRight: full,
     );
   }
 
