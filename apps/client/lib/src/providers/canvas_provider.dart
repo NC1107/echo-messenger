@@ -262,6 +262,41 @@ class CanvasController extends _$CanvasController {
     _sendCanvasEvent('image_remove', {'id': imageId});
   }
 
+  /// Live-resize throttle: piggybacks on the existing image_move WS event so
+  /// the server's update_image upserts the new size without any server-side
+  /// changes (CanvasImage.toJson includes width + height).
+  void resizeImage(String imageId, double width, double height) {
+    if (_channelId == null) return;
+    final idx = state.images.indexWhere((img) => img.id == imageId);
+    if (idx == -1) return;
+    final clampedW = width.clamp(0.05, 1.0);
+    final clampedH = height.clamp(0.05, 1.0);
+    final updated = state.images[idx].copyWith(
+      width: clampedW,
+      height: clampedH,
+    );
+    final newImages = List<CanvasImage>.from(state.images)..[idx] = updated;
+    state = state.copyWith(images: newImages);
+
+    _pendingImageMove = updated.toJson();
+    _imageThrottle ??= Timer.periodic(
+      const Duration(milliseconds: 100),
+      (_) => _flushImageMove(),
+    );
+  }
+
+  /// Flushes the pending resize state immediately on pointer-up.
+  void commitImageResize(String imageId) {
+    _imageThrottle?.cancel();
+    _imageThrottle = null;
+    _pendingImageMove = null;
+
+    if (_channelId == null) return;
+    final idx = state.images.indexWhere((img) => img.id == imageId);
+    if (idx == -1) return;
+    _sendCanvasEvent('image_move', state.images[idx].toJson());
+  }
+
   // -------------------------------------------------------------------------
   // Avatars
   // -------------------------------------------------------------------------

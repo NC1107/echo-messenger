@@ -374,6 +374,20 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
                   .commitImageMove(img.id, currentImg.x, currentImg.y);
             }
           },
+          onResize: (dx, dy) {
+            final current = ref
+                .read(canvasProvider)
+                .images
+                .where((i) => i.id == img.id)
+                .firstOrNull;
+            final curW = (current?.width ?? img.width) * size.width;
+            final curH = (current?.height ?? img.height) * size.height;
+            final newW = ((curW + dx) / size.width).clamp(0.05, 1.0);
+            final newH = ((curH + dy) / size.height).clamp(0.05, 1.0);
+            ref.read(canvasProvider.notifier).resizeImage(img.id, newW, newH);
+          },
+          onResizeEnd: () =>
+              ref.read(canvasProvider.notifier).commitImageResize(img.id),
           onRemove: () => ref.read(canvasProvider.notifier).removeImage(img.id),
         ),
       );
@@ -919,6 +933,8 @@ class _CanvasImageWidget extends StatefulWidget {
   final Map<String, String>? httpHeaders;
   final void Function(double dx, double dy) onMove;
   final VoidCallback onMoveEnd;
+  final void Function(double dx, double dy) onResize;
+  final VoidCallback onResizeEnd;
   final VoidCallback onRemove;
 
   const _CanvasImageWidget({
@@ -926,6 +942,8 @@ class _CanvasImageWidget extends StatefulWidget {
     this.httpHeaders,
     required this.onMove,
     required this.onMoveEnd,
+    required this.onResize,
+    required this.onResizeEnd,
     required this.onRemove,
   });
 
@@ -990,6 +1008,35 @@ class _CanvasImageWidgetState extends State<_CanvasImageWidget> {
                       Icons.close,
                       size: 16,
                       color: context.textPrimary,
+                    ),
+                  ),
+                ),
+              ),
+            if (_hovered)
+              Positioned(
+                bottom: 0,
+                right: 0,
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.resizeDownRight,
+                  child: GestureDetector(
+                    onPanUpdate: (d) => widget.onResize(d.delta.dx, d.delta.dy),
+                    onPanEnd: (_) => widget.onResizeEnd(),
+                    child: Container(
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        color: context.surface.withValues(alpha: 0.7),
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(8),
+                          bottomRight: Radius.circular(4),
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      child: Icon(
+                        Icons.open_in_full,
+                        size: 14,
+                        color: context.textPrimary,
+                      ),
                     ),
                   ),
                 ),
