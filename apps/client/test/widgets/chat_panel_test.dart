@@ -210,10 +210,17 @@ void main() {
       await tester.pump();
 
       // Compact density inlines the IRC-style header into the body
-      // RichText (`HH:MM Name body…`), so plain `find.text` no longer
-      // matches the body alone — use textContaining instead.
-      expect(find.textContaining('Hello there!'), findsOneWidget);
-      expect(find.textContaining('Hi alice!'), findsOneWidget);
+      // RichText (`HH:MM Name body…`). Flutter 3.44+ requires
+      // findRichText: true for textContaining to walk RichText spans;
+      // 3.41 was permissive by default.
+      expect(
+        find.textContaining('Hello there!', findRichText: true),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Hi alice!', findRichText: true),
+        findsOneWidget,
+      );
     });
 
     testWidgets('loading indicator shows when loading history', (tester) async {
