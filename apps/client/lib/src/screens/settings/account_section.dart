@@ -75,6 +75,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
   final _bioController = TextEditingController();
   final _pronounsController = TextEditingController();
   final _timezoneController = TextEditingController();
+  final _locationController = TextEditingController();
   final _websiteController = TextEditingController();
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
@@ -103,6 +104,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     _currentPasswordController.dispose();
     _newPasswordController.dispose();
     _timezoneController.dispose();
+    _locationController.dispose();
     _websiteController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
@@ -143,6 +145,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
           _phoneController.text = data['phone'] as String? ?? '';
           _parsePhoneIntoComponents(data['phone'] as String? ?? '');
           _backgroundColor = data['background_color'] as String?;
+          _locationController.text = data['location'] as String? ?? '';
           _profileLoaded = true;
           _profileError = false;
         });
@@ -175,6 +178,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
         'email': _emailController.text,
         'phone': phoneValue,
         'background_color': _backgroundColor ?? '',
+        'location': _locationController.text,
       };
 
       final resp = await ref
@@ -678,6 +682,13 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
           ),
           const SizedBox(height: 12),
           _buildTimezoneDropdown(),
+          const SizedBox(height: 12),
+          _profileField(
+            controller: _locationController,
+            label: 'Location',
+            hint: 'City, region — shown on your profile',
+            maxLength: 80,
+          ),
           const SizedBox(height: 12),
           _profileField(
             controller: _websiteController,
