@@ -73,7 +73,6 @@ class AccountSection extends ConsumerStatefulWidget {
 class _AccountSectionState extends ConsumerState<AccountSection> {
   final _displayNameController = TextEditingController();
   final _bioController = TextEditingController();
-  final _statusController = TextEditingController();
   final _pronounsController = TextEditingController();
   final _timezoneController = TextEditingController();
   final _websiteController = TextEditingController();
@@ -99,7 +98,6 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
   void dispose() {
     _displayNameController.dispose();
     _bioController.dispose();
-    _statusController.dispose();
     _pronounsController.dispose();
     _currentPasswordController.dispose();
     _newPasswordController.dispose();
@@ -132,7 +130,6 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
         setState(() {
           _displayNameController.text = data['display_name'] as String? ?? '';
           _bioController.text = data['bio'] as String? ?? '';
-          _statusController.text = data['status_message'] as String? ?? '';
           _pronounsController.text = data['pronouns'] as String? ?? '';
           // Default the timezone to the device's current zone when the server
           // has no value persisted yet — saves the user a manual selection.
@@ -170,7 +167,6 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
       final body = <String, dynamic>{
         'display_name': _displayNameController.text,
         'bio': _bioController.text,
-        'status_message': _statusController.text,
         'pronouns': _pronounsController.text,
         'timezone': _timezoneController.text,
         'website': _websiteController.text,
@@ -573,19 +569,6 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
                     ],
                   ],
                 ),
-                if (_statusController.text.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    _statusController.text,
-                    style: TextStyle(
-                      color: context.textSecondary,
-                      fontSize: 13,
-                      fontStyle: FontStyle.italic,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
               ],
             ),
           ),
@@ -680,13 +663,6 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
           ),
           const SizedBox(height: 12),
           _buildPronounsField(),
-          const SizedBox(height: 12),
-          _profileField(
-            controller: _statusController,
-            label: 'Status',
-            hint: 'What are you up to?',
-            maxLength: 100,
-          ),
           const SizedBox(height: 12),
           _profileField(
             controller: _bioController,

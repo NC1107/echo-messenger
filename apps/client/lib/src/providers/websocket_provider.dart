@@ -546,11 +546,13 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     String? conversationId = '',
     String? originalContent,
   }) {
-    final myUserId = ref.read(authProvider).userId ?? '';
+    final auth = ref.read(authProvider);
+    final myUserId = auth.userId ?? '';
+    final myName = auth.username ?? 'You';
     final msg = ChatMessage(
       id: 'failed_${DateTime.now().millisecondsSinceEpoch}',
       fromUserId: myUserId,
-      fromUsername: 'You',
+      fromUsername: myName,
       conversationId: conversationId ?? '',
       content: reason,
       timestamp: DateTime.now().toIso8601String(),

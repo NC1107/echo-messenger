@@ -184,7 +184,8 @@ class ChatMessageList extends ConsumerWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (needsDateDivider) DateDivider(timestamp: msg.timestamp),
+        if (needsDateDivider)
+          DateDivider(timestamp: msg.timestamp, isStartOfConversation: i == 0),
         if (showUnreadDivider) UnreadDivider(count: unreadBoundaryCount),
         AnimatedContainer(
           key: messageKey,

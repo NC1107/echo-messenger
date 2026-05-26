@@ -1280,11 +1280,13 @@ class _MessageItemState extends State<MessageItem>
     }
 
     // Continuation messages (same author as the row above) reserve the
-    // avatar column with a blank spacer so the bubble stays aligned with
-    // the header row, but DO NOT repeat the avatar. This matches the
-    // Discord behaviour where back-to-back messages from one user read
-    // as a single grouped column with one header.
-    if (widget.compactLayout && !widget.showHeader) {
+    // avatar column with a blank spacer so the bubble/row stays aligned
+    // with the header row, but DO NOT repeat the avatar. This matches the
+    // Discord / Slack / iMessage behaviour where back-to-back messages
+    // from one user read as a single grouped column with one header.
+    // Applies to every layout — bubbles included — so received-message
+    // groups don't smear a small avatar against each follow-up bubble.
+    if (!widget.showHeader) {
       return [
         SizedBox(width: _resolveAvatarWidth()),
         const SizedBox(width: 8),
@@ -1489,11 +1491,13 @@ class _MessageItemState extends State<MessageItem>
         UIDensity.compact => 3,
       };
     }
-    // Slice 3: collapse same-sender gap to 1-2px to remove "floaty" look.
+    // Continuation row in the same group — pull subsequent messages
+    // tighter so a multi-line group reads as one paragraph (Discord +
+    // iMessage rhythm).
     return switch (widget.density) {
-      UIDensity.cozy => 2,
-      UIDensity.normal => 2,
-      UIDensity.compact => 1,
+      UIDensity.cozy => 1,
+      UIDensity.normal => 1,
+      UIDensity.compact => 0,
     };
   }
 

@@ -135,10 +135,14 @@ class Chat extends _$Chat
     String? replyToUsername,
   }) {
     final pendingId = 'pending_${DateTime.now().millisecondsSinceEpoch}';
+    // Use the user's own username so their message renders symmetrically
+    // with everyone else's (no asymmetric "You" label). Falls back to the
+    // generic "You" only if the username somehow isn't loaded yet.
+    final myName = ref.read(authProvider).username ?? 'You';
     final msg = ChatMessage(
       id: pendingId,
       fromUserId: myUserId,
-      fromUsername: 'You',
+      fromUsername: myName,
       conversationId: conversationId,
       channelId: channelId,
       content: content,

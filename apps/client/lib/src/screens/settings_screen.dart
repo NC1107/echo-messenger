@@ -160,12 +160,6 @@ class SettingsRootView extends ConsumerWidget {
           const SectionHeader('Account preferences'),
           _CardGroup(
             children: [
-              _row(
-                context,
-                icon: Icons.mood_outlined,
-                iconColor: context.settingsIconPalette.status,
-                section: SettingsSection.status,
-              ),
               if (onSavedMessages != null)
                 CardRow(
                   icon: Icons.bookmark_outline,
