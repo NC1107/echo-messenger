@@ -5,6 +5,8 @@ import 'dart:io' show File, IOException;
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../version.dart' show appVersion;
+
 /// Severity level for debug log entries.
 enum LogLevel { info, warning, error, fatal }
 
@@ -17,12 +19,18 @@ class DebugLogEntry {
   final String source;
   final String message;
 
-  const DebugLogEntry({
+  /// App version that produced the entry. Persisted alongside the entry
+  /// so a log exported from one build is still readable when the user
+  /// has since upgraded. Stamped from [appVersion] by default.
+  final String version;
+
+  DebugLogEntry({
     required this.timestamp,
     required this.level,
     required this.source,
     required this.message,
-  });
+    String? version,
+  }) : version = version ?? appVersion;
 
   /// Serialize to a single JSON line for file storage.
   String toJsonLine() {
@@ -31,6 +39,7 @@ class DebugLogEntry {
       'l': level.name,
       's': source,
       'm': message,
+      'v': version,
     });
   }
 
@@ -51,6 +60,7 @@ class DebugLogEntry {
         level: level,
         source: map['s'] as String? ?? '',
         message: map['m'] as String? ?? '',
+        version: map['v'] as String?,
       );
     } catch (_) {
       return null;

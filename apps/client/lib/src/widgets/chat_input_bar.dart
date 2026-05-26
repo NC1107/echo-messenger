@@ -429,11 +429,23 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                       onCancel: _removePendingAttachment,
                       onAnnotate: _annotatePendingAttachment,
                     ),
-                  // Markdown toolbar: always-on desktop; mobile is opt-in via "+" sheet so it doesn't eat 36px.
+                  // Markdown toolbar (Discord pattern): only render when the
+                  // user has highlighted text in the composer. Mobile keeps
+                  // the "+" sheet opt-in so the row doesn't reflow under the
+                  // keyboard mid-type.
                   if (!isMobileLayout || _showFormatToolbarOnMobile)
-                    MarkdownToolbar(
-                      controller: _messageController,
-                      onLinkTap: _showLinkDialog,
+                    ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: _messageController,
+                      builder: (context, value, _) {
+                        final hasSelection =
+                            value.selection.isValid &&
+                            value.selection.start != value.selection.end;
+                        if (!hasSelection) return const SizedBox.shrink();
+                        return MarkdownToolbar(
+                          controller: _messageController,
+                          onLinkTap: _showLinkDialog,
+                        );
+                      },
                     ),
                   _buildInputRow(
                     showMediaPicker: showMediaPicker,

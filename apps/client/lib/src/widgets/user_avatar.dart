@@ -19,6 +19,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/server_url_provider.dart';
+import '../providers/theme_provider.dart' show avatarShapeProvider;
 import '../providers/user_presence_provider.dart';
 import '../screens/user_profile_screen.dart';
 import '../theme/echo_theme.dart';
@@ -83,6 +84,7 @@ class UserAvatar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final serverUrl = ref.watch(serverUrlProvider);
+    final shape = ref.watch(avatarShapeProvider);
     final resolvedUrl = resolveAvatarUrl(avatarUrl, serverUrl);
 
     Widget avatar = buildAvatar(
@@ -91,6 +93,7 @@ class UserAvatar extends ConsumerWidget {
       imageUrl: resolvedUrl,
       bgColor: bgColor,
       fallbackIcon: fallbackIcon,
+      shape: shape,
     );
 
     if (showPresence) {

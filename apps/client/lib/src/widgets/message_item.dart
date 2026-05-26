@@ -11,7 +11,8 @@ import 'package:http/http.dart' as http;
 import 'package:photo_manager/photo_manager.dart' show PhotoManager;
 
 import '../models/chat_message.dart';
-import '../providers/theme_provider.dart' show MessageLayout, UIDensity;
+import '../providers/theme_provider.dart'
+    show AvatarShape, MessageLayout, UIDensity;
 import '../services/clipboard_service.dart';
 import '../services/message_cache.dart' show MessageCache;
 import '../services/toast_service.dart';
@@ -21,7 +22,7 @@ import '../utils/download_helper.dart';
 import '../utils/clipboard_image_helper.dart' show writeImageToClipboard;
 import '../utils/semantics_preview.dart';
 import '../utils/time_utils.dart';
-import 'avatar_utils.dart' show buildAvatar, avatarColor;
+import 'avatar_utils.dart' show avatarColor, buildAvatar, senderLabelColor;
 import '../services/media_cache_service.dart';
 import 'message/hover_action_button.dart';
 import 'message/link_preview_card.dart';
@@ -108,6 +109,11 @@ class MessageItem extends StatefulWidget {
   /// header decision.
   final UIDensity density;
 
+  /// Circle vs Slack-style rounded square for the sender avatar. Read by
+  /// the parent from `avatarShapeProvider` so the message tree doesn't
+  /// need to watch the provider itself.
+  final AvatarShape avatarShape;
+
   /// True for any non-bubbles layout — they share alignment + spacing semantics.
   bool get compactLayout => layout != MessageLayout.bubbles;
 
@@ -157,7 +163,8 @@ class MessageItem extends StatefulWidget {
     this.mediaTicket,
     this.senderAvatarUrl,
     this.layout = MessageLayout.bubbles,
-    this.density = UIDensity.compact,
+    this.density = UIDensity.normal,
+    this.avatarShape = AvatarShape.circle,
     this.hideUndecryptable = false,
     this.onImageTap,
   });
@@ -848,6 +855,7 @@ class _MessageItemState extends State<MessageItem>
       accentHoverColor: context.accentHover,
       textSecondaryColor: context.textSecondary,
       density: widget.density,
+      leadingSpans: _ircHeaderSpans(msg, isMine),
     );
 
     final embeddedImages = extractEmbeddedImageUrls(displayContent);
@@ -882,6 +890,26 @@ class _MessageItemState extends State<MessageItem>
         : content;
   }
 
+  /// IRC-style inline prefix: `HH:MM **Name** ` before the body when the
+  /// user is on Compact density AND this row starts a new group. Returns
+  /// null otherwise so RichTextContent stays on its plain rendering path.
+  List<InlineSpan>? _ircHeaderSpans(ChatMessage msg, bool isMine) {
+    if (widget.density != UIDensity.compact) return null;
+    if (!widget.showHeader) return null;
+    final timeStyle = GoogleFonts.inter(fontSize: 11, color: context.textMuted);
+    final nameStyle = GoogleFonts.inter(
+      fontSize: 13,
+      fontWeight: FontWeight.w600,
+      color: senderLabelColor(msg.fromUsername),
+    );
+    return [
+      TextSpan(text: formatMessageTimestamp(msg.timestamp), style: timeStyle),
+      const TextSpan(text: '  '),
+      TextSpan(text: msg.fromUsername, style: nameStyle),
+      const TextSpan(text: '  '),
+    ];
+  }
+
   /// Assemble the children of the bubble Column.
   List<Widget> _bubbleChildren({
     required ChatMessage msg,
@@ -891,8 +919,12 @@ class _MessageItemState extends State<MessageItem>
   }) {
     return [
       if (msg.pinnedAt != null) PinnedIndicator(isMine: isMine),
-      // Show sender name once per author-run; the prior "always show in compact" reproduced author/time on every continuation (2026-05-26 regression).
-      if (widget.showHeader && (!isMine || widget.compactLayout))
+      // Show sender name once per author-run. In Compact density the
+      // header is inlined as a RichText prefix on the body itself
+      // (see _ircHeaderSpans) so we skip the standalone label there.
+      if (widget.showHeader &&
+          (!isMine || widget.compactLayout) &&
+          widget.density != UIDensity.compact)
         SenderNameLabel(
           message: msg,
           hasMedia: hasMedia,
@@ -1060,6 +1092,7 @@ class _MessageItemState extends State<MessageItem>
                   radius: avatarRadius,
                   bgColor: _getAvatarColor(msg.fromUserId),
                   imageUrl: avatarImageUrl,
+                  shape: widget.avatarShape,
                 )
               : const SizedBox.shrink(),
         ),
@@ -1106,13 +1139,24 @@ class _MessageItemState extends State<MessageItem>
             ),
           if (msg.editedAt != null)
             Padding(
-              padding: const EdgeInsets.only(left: 4),
-              child: Text(
-                '(edited)',
-                style: GoogleFonts.inter(
-                  fontSize: 10,
-                  fontStyle: FontStyle.italic,
-                  color: context.textMuted,
+              padding: const EdgeInsets.only(left: 6),
+              // Slack-style edited pill: distinct token in the metadata
+              // row rather than inline italic text. Reads as a label, not
+              // part of the timestamp.
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: context.surfaceHover,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  'edited',
+                  style: GoogleFonts.inter(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w500,
+                    color: context.textMuted,
+                    letterSpacing: 0.2,
+                  ),
                 ),
               ),
             ),

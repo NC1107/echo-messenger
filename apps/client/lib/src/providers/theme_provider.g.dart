@@ -59,6 +59,23 @@ final uIDensityNotifierProvider =
     );
 
 typedef _$UIDensityNotifier = Notifier<UIDensity>;
+String _$avatarShapeNotifierHash() =>
+    r'8bc8779cc07502b4a909916a2c1189123baba78d';
+
+/// See also [AvatarShapeNotifier].
+@ProviderFor(AvatarShapeNotifier)
+final avatarShapeNotifierProvider =
+    NotifierProvider<AvatarShapeNotifier, AvatarShape>.internal(
+      AvatarShapeNotifier.new,
+      name: r'avatarShapeNotifierProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$avatarShapeNotifierHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+typedef _$AvatarShapeNotifier = Notifier<AvatarShape>;
 String _$customColorsHash() => r'8c29d77cdeb45748e1dd87e93287d132534582b8';
 
 /// See also [CustomColors].

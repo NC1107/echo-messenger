@@ -211,7 +211,8 @@ void main() {
 
       // Compact density inlines the IRC-style header into the body
       // RichText (`HH:MM Name body…`). Flutter 3.44+ requires
-      // findRichText: true for textContaining to walk RichText spans.
+      // findRichText: true for textContaining to walk RichText spans;
+      // 3.41 was permissive by default.
       expect(
         find.textContaining('Hello there!', findRichText: true),
         findsOneWidget,

@@ -217,9 +217,14 @@ class Chat extends _$Chat
     final msg = messages[idx];
     if (msg.status != MessageStatus.sending) return;
 
+    // Keep the user's original text visible in the bubble; the
+    // failed status + RetryRow already communicate "couldn't send"
+    // alongside explicit Retry / Delete buttons, so replacing the
+    // body text with a "Tap to retry" label was redundant and
+    // misleading (you don't actually tap the body to retry).
     final updated = msg.copyWith(
       status: MessageStatus.failed,
-      content: "Couldn't send · Tap to retry",
+      content: originalContent,
       failedContent: originalContent,
     );
     final updatedList = List<ChatMessage>.from(messages);

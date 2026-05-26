@@ -76,7 +76,14 @@ class RichTextContent extends StatefulWidget {
     required this.textSecondaryColor,
     this.compact = false,
     this.density,
+    this.leadingSpans,
   });
+
+  /// Optional inline spans prepended to the rendered body. Used by IRC-style
+  /// Compact mode to inline `[HH:MM] **Name** ` before the message body so
+  /// the whole row collapses to a single wrapping paragraph rather than a
+  /// stacked header + body.
+  final List<InlineSpan>? leadingSpans;
 
   @override
   State<RichTextContent> createState() => _RichTextContentState();
@@ -573,14 +580,25 @@ class _RichTextContentState extends State<RichTextContent> {
           !hasStrikethrough &&
           !hasSpoiler &&
           !hasMaskedLink) {
-        return Text(
-          text,
-          style: TextStyle(fontSize: 15, color: textColor, height: 1.47),
+        if (widget.leadingSpans == null) {
+          return Text(
+            text,
+            style: TextStyle(fontSize: 15, color: textColor, height: 1.47),
+          );
+        }
+        return RichText(
+          text: TextSpan(
+            children: [
+              ...?widget.leadingSpans,
+              TextSpan(text: text, style: _baseStyle()),
+            ],
+          ),
         );
       }
 
+      final bodySpans = _buildInlineCodeAndFormatting(text);
       return RichText(
-        text: TextSpan(children: _buildInlineCodeAndFormatting(text)),
+        text: TextSpan(children: [...?widget.leadingSpans, ...bodySpans]),
       );
     }
 
