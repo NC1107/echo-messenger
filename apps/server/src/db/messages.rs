@@ -36,6 +36,11 @@ pub struct MessageWithSender {
     pub reply_to_id: Option<Uuid>,
     pub reply_to_content: Option<String>,
     pub reply_to_username: Option<String>,
+    /// Root of the thread this message belongs to. NULL = top-level (lives
+    /// in the main channel timeline); non-NULL = thread reply (lives only
+    /// in the thread panel). Distinct from `reply_to_id` which still names
+    /// the immediate quoted parent.
+    pub thread_root_id: Option<Uuid>,
     pub reply_count: i64,
     /// Truncated content of the most recent reply to this message
     /// (Slack-style inline thread preview). `None` when there are no
@@ -194,21 +199,38 @@ pub async fn store_message(
     // GRP2 senders bind a client-minted UUID into their signature payload
     // (audit OQ-12); when None the column default assigns one.
     client_message_id: Option<Uuid>,
+    // Threads M2: when set, the row joins the thread rooted at this id and
+    // is filtered out of the main channel timeline. The CTE resolves the
+    // root through the parent's own thread_root_id so a "reply to a
+    // thread reply" still anchors to the original root (Slack-flat).
+    thread_root_id: Option<Uuid>,
 ) -> Result<MessageRow, sqlx::Error> {
     let expires_at: Option<DateTime<Utc>> =
         ttl_seconds.map(|s| Utc::now() + chrono::Duration::seconds(s));
     sqlx::query_as::<_, MessageRow>(
         "WITH parent AS ( \
-             SELECT id FROM messages \
+             SELECT id, thread_root_id FROM messages \
              WHERE id = $5 AND conversation_id = $1 AND deleted_at IS NULL \
+         ), thread_anchor AS ( \
+             SELECT id FROM messages \
+             WHERE id = $9 AND conversation_id = $1 AND deleted_at IS NULL \
          ) \
-         INSERT INTO messages (id, conversation_id, channel_id, sender_id, content, reply_to_id, expires_at, sender_device_id) \
+         INSERT INTO messages (id, conversation_id, channel_id, sender_id, content, reply_to_id, expires_at, sender_device_id, thread_root_id) \
          SELECT COALESCE($8, gen_random_uuid()), \
                 $1, $2, $3, $4, \
                 CASE WHEN $5::uuid IS NULL THEN NULL \
                      ELSE (SELECT id FROM parent) END, \
-                $6, $7 \
-         WHERE $5::uuid IS NULL OR EXISTS (SELECT 1 FROM parent) \
+                $6, $7, \
+                CASE \
+                    WHEN $9::uuid IS NOT NULL THEN \
+                        COALESCE( \
+                            (SELECT thread_root_id FROM messages WHERE id = $9 AND conversation_id = $1), \
+                            (SELECT id FROM thread_anchor) \
+                        ) \
+                    ELSE NULL \
+                END \
+         WHERE ($5::uuid IS NULL OR EXISTS (SELECT 1 FROM parent)) \
+           AND ($9::uuid IS NULL OR EXISTS (SELECT 1 FROM thread_anchor)) \
          RETURNING id, conversation_id, channel_id, sender_id, sender_device_id, \
                    content, created_at, delivered, reply_to_id, expires_at",
     )
@@ -220,6 +242,7 @@ pub async fn store_message(
     .bind(expires_at)
     .bind(sender_device_id)
     .bind(client_message_id)
+    .bind(thread_root_id)
     .fetch_one(pool)
     .await
 }
@@ -243,6 +266,7 @@ pub async fn get_messages(
                 m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
                 ru.username AS reply_to_username, \
+                m.thread_root_id, \
                 COALESCE(rc.reply_count, 0) AS reply_count, \
                 lr.snippet AS last_reply_snippet, \
                 lr.last_reply_at AS last_reply_at, \
@@ -299,6 +323,7 @@ pub async fn get_messages(
            AND ($2::uuid IS NULL OR m.channel_id = $2) \
            AND ($3::timestamptz IS NULL OR m.created_at < $3) \
            AND m.deleted_at IS NULL \
+           AND m.thread_root_id IS NULL \
          ORDER BY m.created_at DESC \
          LIMIT $4",
     )
@@ -369,6 +394,7 @@ pub async fn get_undelivered(
                 m.content, m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
                 ru.username AS reply_to_username, \
+                m.thread_root_id, \
                 COALESCE(rc.reply_count, 0) AS reply_count, \
                 NULL::text AS last_reply_snippet, \
                 NULL::timestamptz AS last_reply_at, \
@@ -631,6 +657,7 @@ pub async fn search_messages(
                 m.content, m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
                 ru.username AS reply_to_username, \
+                m.thread_root_id, \
                 COALESCE(rc.reply_count, 0) AS reply_count, \
                 NULL::text AS last_reply_snippet, \
                 NULL::timestamptz AS last_reply_at, \
@@ -1006,6 +1033,7 @@ pub async fn get_thread_replies(
                 m.content, m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
                 ru.username AS reply_to_username, \
+                m.thread_root_id, \
                 COALESCE(rc.reply_count, 0) AS reply_count, \
                 NULL::text AS last_reply_snippet, \
                 NULL::timestamptz AS last_reply_at, \
@@ -1032,7 +1060,7 @@ pub async fn get_thread_replies(
              JOIN users rxu ON rxu.id = r.user_id \
              WHERE r.message_id = m.id \
          ) rx ON true \
-         WHERE m.reply_to_id = $1 \
+         WHERE (m.thread_root_id = $1 OR m.reply_to_id = $1) \
            AND m.conversation_id = $2 \
            AND m.deleted_at IS NULL \
            AND ($3::timestamptz IS NULL OR m.created_at < $3) \

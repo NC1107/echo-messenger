@@ -114,6 +114,9 @@ pub struct MessageDto {
     pub reply_to_id: Option<Uuid>,
     pub reply_to_content: Option<String>,
     pub reply_to_username: Option<String>,
+    /// Threads M2: when set, this message belongs to the thread rooted at
+    /// the given id and is filtered out of the main channel timeline.
+    pub thread_root_id: Option<Uuid>,
     pub reply_count: i64,
     /// Truncated content of the most recent reply to this message, when
     /// `reply_count > 0`. `None` on real-time WS events; only history
@@ -151,6 +154,7 @@ impl From<db::messages::MessageWithSender> for MessageDto {
             reply_to_id: m.reply_to_id,
             reply_to_content: m.reply_to_content,
             reply_to_username: m.reply_to_username,
+            thread_root_id: m.thread_root_id,
             reply_count: m.reply_count,
             last_reply_snippet: m.last_reply_snippet,
             last_reply_at: m.last_reply_at,

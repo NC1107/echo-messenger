@@ -1570,6 +1570,7 @@ async fn offline_replay_delivers_beyond_one_page() {
             None,
             None,
             None,
+            None,
         )
         .await
         .expect("store_message failed");

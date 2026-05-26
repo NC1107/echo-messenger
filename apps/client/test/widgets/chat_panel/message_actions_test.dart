@@ -146,6 +146,7 @@ class _StubChat extends Chat {
     String? replyToId,
     String? replyToContent,
     String? replyToUsername,
+    String? threadRootId,
   }) {
     addMessageCalls.add(
       ChatMessage(
@@ -191,6 +192,7 @@ class _StubWs extends WebSocketNotifier {
     String content, {
     String? conversationId,
     String? replyToId,
+    String? threadRootId,
   }) async {
     sendCalls.add([toUserId, content, conversationId, replyToId]);
     if (sendThrows) throw Exception('ws-send-failed');
@@ -202,6 +204,7 @@ class _StubWs extends WebSocketNotifier {
     String content, {
     String? channelId,
     String? replyToId,
+    String? threadRootId,
   }) async {
     sendGroupCalls.add([conversationId, content, channelId, replyToId]);
     if (sendThrows) throw Exception('ws-send-failed');

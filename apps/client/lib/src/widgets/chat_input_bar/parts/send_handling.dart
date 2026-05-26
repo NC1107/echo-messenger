@@ -174,6 +174,11 @@ extension _SendHandling on ChatInputBarState {
     final myUserId = ref.read(authProvider).userId ?? '';
     final chatState = ref.read(chatProvider);
     final replyTo = chatState.replyToMessage;
+    // Threads M2: resolve the root for the thread-reply path. Reply targets
+    // that are themselves thread replies anchor to the same root; replies
+    // to a top-level message anchor to its id.
+    final asThread = chatState.replyAsThread && replyTo != null;
+    final threadRootId = asThread ? (replyTo.threadRootId ?? replyTo.id) : null;
 
     String peerUserId = '';
     String? channelId;
@@ -198,6 +203,7 @@ extension _SendHandling on ChatInputBarState {
           replyToId: replyTo?.id,
           replyToContent: replyTo?.content,
           replyToUsername: replyTo?.fromUsername,
+          threadRootId: threadRootId,
         );
 
     // Haptic + chime on local commit (desktop no-op; iOS respects system-haptics setting).
@@ -218,6 +224,7 @@ extension _SendHandling on ChatInputBarState {
               expandedText,
               channelId: channelId,
               replyToId: replyTo?.id,
+              threadRootId: threadRootId,
             );
       } else {
         await ref
@@ -227,6 +234,7 @@ extension _SendHandling on ChatInputBarState {
               expandedText,
               conversationId: conv.id,
               replyToId: replyTo?.id,
+              threadRootId: threadRootId,
             );
       }
     } catch (e) {

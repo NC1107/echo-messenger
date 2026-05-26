@@ -63,6 +63,10 @@ pub(super) async fn handle_send_message(
     // GRP2: client-minted, bound into the sender signature (OQ-12). The server
     // MUST honour it or signature verification breaks.
     client_message_id: Option<Uuid>,
+    // Threads M2: set when the client used "Reply in thread"; resolved to
+    // the parent's own thread_root_id inside store_message so a reply to
+    // a reply still anchors to the original root.
+    thread_root_id: Option<Uuid>,
 ) {
     if !validate_message_length(state, sender_id, &content) {
         return;
@@ -135,6 +139,7 @@ pub(super) async fn handle_send_message(
         conv_security.disappearing_ttl_seconds,
         conv_security.is_encrypted,
         client_message_id,
+        thread_root_id,
     )
     .await
     else {
@@ -156,6 +161,7 @@ pub(super) async fn handle_send_message(
         reply_to_id,
         reply_to_content: reply_content,
         reply_to_username: reply_username,
+        thread_root_id,
         expires_at: stored.expires_at,
         undecryptable: None,
     };

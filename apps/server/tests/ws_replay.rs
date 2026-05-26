@@ -97,6 +97,7 @@ async fn offline_replay_delivers_all_stored_messages() {
             None,
             None,
             None,
+            None,
         )
         .await
         .expect("store_message failed");
@@ -157,6 +158,7 @@ async fn offline_replay_paginated_no_duplicates() {
             alice_uuid,
             None,
             &format!("page-replay-msg-{i}"),
+            None,
             None,
             None,
             None,
@@ -474,6 +476,7 @@ async fn soft_deleted_message_not_replayed() {
         None,
         None,
         None,
+        None,
     )
     .await
     .expect("store kept message failed");
@@ -485,6 +488,7 @@ async fn soft_deleted_message_not_replayed() {
         alice_uuid,
         None,
         "delete-this-message",
+        None,
         None,
         None,
         None,
@@ -568,6 +572,7 @@ async fn ttl_expired_message_not_replayed() {
         None,
         None,
         None,
+        None,
     )
     .await
     .expect("store live message failed");
@@ -580,6 +585,7 @@ async fn ttl_expired_message_not_replayed() {
         alice_uuid,
         None,
         "expired-message",
+        None,
         None,
         None,
         None,

@@ -41,6 +41,13 @@ class ChatState {
   /// The message being replied to (shown in the input bar).
   final ChatMessage? replyToMessage;
 
+  /// Threads M2: when true, the active [replyToMessage] reply should be
+  /// sent with `thread_root_id` set so the row lands only in the thread
+  /// panel, not the main timeline. Flipped on by the thread panel's
+  /// "Reply" action and by the message context menu's "Reply in thread";
+  /// regular "Reply" leaves this false and the row stays inline.
+  final bool replyAsThread;
+
   /// Per-conversation count of *consecutive* "[Could not decrypt…]"
   /// placeholders. Resets to 0 when any message in the conversation decrypts
   /// successfully. The chat UI shows an "encryption out of sync — reset?"
@@ -78,6 +85,7 @@ class ChatState {
     this.loadingHistory = const {},
     this.hasMore = const {},
     this.replyToMessage,
+    this.replyAsThread = false,
     this.consecutiveDecryptFailures = const {},
     this.signatureFailures = const {},
     this.groupsNeedingRotation = const {},
@@ -338,6 +346,7 @@ class ChatState {
     Map<String, bool>? loadingHistory,
     Map<String, bool>? hasMore,
     ChatMessage? replyToMessage,
+    bool? replyAsThread,
     bool clearReply = false,
     Map<String, int>? consecutiveDecryptFailures,
     Set<String>? signatureFailures,
@@ -352,6 +361,7 @@ class ChatState {
       replyToMessage: clearReply
           ? null
           : (replyToMessage ?? this.replyToMessage),
+      replyAsThread: clearReply ? false : (replyAsThread ?? this.replyAsThread),
       consecutiveDecryptFailures:
           consecutiveDecryptFailures ?? this.consecutiveDecryptFailures,
       signatureFailures: signatureFailures ?? this.signatureFailures,

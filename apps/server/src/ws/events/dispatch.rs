@@ -79,6 +79,7 @@ pub(in crate::ws) async fn handle_text_message(
             recipient_device_contents,
             ttl_seconds,
             client_message_id,
+            thread_root_id,
         } => {
             message_service::handle_send_message(
                 state,
@@ -93,6 +94,7 @@ pub(in crate::ws) async fn handle_text_message(
                 recipient_device_contents,
                 ttl_seconds,
                 client_message_id,
+                thread_root_id,
             )
             .await;
         }

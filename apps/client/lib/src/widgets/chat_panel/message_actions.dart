@@ -45,6 +45,7 @@ Future<void> retryMessage({
         message.failedContent ?? message.content,
         channelId: message.channelId,
         replyToId: message.replyToId,
+        threadRootId: message.threadRootId,
       );
     } else {
       final myUserId = ref.read(authProvider).userId ?? '';
@@ -55,6 +56,7 @@ Future<void> retryMessage({
         message.failedContent ?? message.content,
         conversationId: conv.id,
         replyToId: message.replyToId,
+        threadRootId: message.threadRootId,
       );
     }
   } catch (_) {

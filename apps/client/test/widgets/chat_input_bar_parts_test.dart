@@ -82,6 +82,7 @@ class _StubChat extends Chat {
     String? replyToId,
     String? replyToContent,
     String? replyToUsername,
+    String? threadRootId,
   }) {
     addOptimisticCalls.add([peerUserId, content, conversationId]);
     // Skip the real Timer-based timeout machinery — tests would leak.
@@ -127,6 +128,7 @@ class _StubWs extends WebSocketNotifier {
     String content, {
     String? conversationId,
     String? replyToId,
+    String? threadRootId,
   }) async {
     sendCalls.add([toUserId, content, conversationId]);
   }
@@ -137,6 +139,7 @@ class _StubWs extends WebSocketNotifier {
     String content, {
     String? channelId,
     String? replyToId,
+    String? threadRootId,
   }) async {
     sendGroupCalls.add([conversationId, content]);
   }
