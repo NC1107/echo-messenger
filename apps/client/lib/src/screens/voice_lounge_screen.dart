@@ -19,6 +19,7 @@ import '../providers/voice_lounge_background_provider.dart';
 import '../providers/voice_settings_provider.dart';
 import '../services/debug_log_service.dart';
 import '../services/pip_controller.dart';
+import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/canvas_utils.dart';
 import '../widgets/echo_bottom_sheet.dart';
@@ -501,17 +502,32 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   /// `dart:io`'s [File] is unavailable).  Mobile/desktop is the supported
   /// surface for MVP.
   Future<void> _pickBackground() async {
+    String stage = 'open picker';
     try {
       final result = await FilePicker.pickFiles(
         type: FileType.image,
         allowMultiple: false,
         withData: false,
       );
-      if (result == null || result.files.isEmpty) return;
+      if (result == null || result.files.isEmpty) {
+        // User dismissed — not an error.
+        return;
+      }
       final picked = result.files.single;
+      stage = 'read picked path';
       final srcPath = picked.path;
-      if (srcPath == null || srcPath.isEmpty) return;
+      if (srcPath == null || srcPath.isEmpty) {
+        if (mounted) {
+          ToastService.show(
+            context,
+            'Couldn’t read the picked file — try Browse files again.',
+            type: ToastType.error,
+          );
+        }
+        return;
+      }
 
+      stage = 'copy to documents dir';
       String resolved = srcPath;
       if (!kIsWeb) {
         try {
@@ -527,15 +543,46 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
         } catch (e) {
           debugPrint('[VoiceLoungeScreen] copy background failed: $e');
           // Fall back to the original path; it may still load if the source
-          // file is in a stable location.
+          // file is in a stable location (e.g. the user's own ~/Pictures).
+          stage = 'fall back to source path';
         }
+      }
+
+      // Final guard: confirm the resolved path actually points at a readable
+      // file before persisting. Without this we silently saved a dead path
+      // and the background quietly didn't update on next render.
+      if (!kIsWeb && !File(resolved).existsSync()) {
+        if (mounted) {
+          ToastService.show(
+            context,
+            'Picked file isn’t accessible (sandbox path). Try saving the '
+            'image to your Documents folder and picking it again.',
+            type: ToastType.error,
+          );
+        }
+        return;
       }
 
       await ref
           .read(voiceLoungeBackgroundProvider.notifier)
           .setCustomBackgroundPath(resolved);
+
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Lounge background updated.',
+          type: ToastType.success,
+        );
+      }
     } catch (e) {
-      debugPrint('[VoiceLoungeScreen] pick background failed: $e');
+      debugPrint('[VoiceLoungeScreen] pick background failed at $stage: $e');
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Couldn’t set background ($stage): $e',
+          type: ToastType.error,
+        );
+      }
     }
   }
 
@@ -744,7 +791,6 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     BuildContext context,
     Widget contentArea,
     Widget dock,
-    Widget drawingOverlay,
     String conversationId,
     String channelName,
     int totalParticipants,
@@ -758,7 +804,6 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
           Expanded(child: contentArea),
         ],
       ),
-      if (!_spotlightMode) Positioned.fill(child: drawingOverlay),
       ..._buildSubmenuFollowers(conversationId),
       Positioned(bottom: 16, left: 0, right: 0, child: dock),
       Positioned(
@@ -779,7 +824,6 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     BuildContext context,
     Widget contentArea,
     Widget dock,
-    Widget drawingOverlay,
     String conversationId,
     String channelName,
     int totalParticipants,
@@ -802,7 +846,6 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
           const SizedBox(height: 80),
         ],
       ),
-      if (!_spotlightMode) Positioned.fill(child: drawingOverlay),
       ..._buildSubmenuFollowers(conversationId),
       Positioned(bottom: 16, left: 0, right: 0, child: dock),
       // Pushed below the LoungeHeader (48 + 12 margin) so it doesn't
@@ -919,29 +962,38 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       },
     );
 
-    final drawingOverlay = LoungeDrawingCanvas(isActive: _isDrawing);
+    // Merge the drawing overlay INTO the content area so they share the
+    // same render bounds. Previously the overlay was a separate
+    // Positioned.fill over the whole scaffold, so its LayoutBuilder
+    // captured the full scaffold height while VoiceCanvas's stroke
+    // painter denormalized against the smaller inner-area height — the
+    // strokes landed ~40 px below the cursor because the header strip
+    // (64 px landscape / LoungeHeader portrait) was double-counted.
+    final mergedContent = Stack(
+      fit: StackFit.expand,
+      children: [
+        contentArea,
+        if (!_spotlightMode)
+          Positioned.fill(child: LoungeDrawingCanvas(isActive: _isDrawing)),
+      ],
+    );
 
     return OrientationBuilder(
       builder: (context, orientation) {
-        // In landscape: drop the 56-px header bar to maximise stream height,
-        // replacing it with a small floating badge in the top-left corner.
         if (orientation == Orientation.landscape) {
           return _buildLandscapeLayout(
             context,
-            contentArea,
+            mergedContent,
             dock,
-            drawingOverlay,
             conversationId,
             channelName,
             totalParticipants,
           );
         }
-        // Portrait: full header bar + content + floating dock
         return _buildPortraitLayout(
           context,
-          contentArea,
+          mergedContent,
           dock,
-          drawingOverlay,
           conversationId,
           channelName,
           totalParticipants,
