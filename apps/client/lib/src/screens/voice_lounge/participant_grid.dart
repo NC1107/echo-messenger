@@ -7,15 +7,19 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
 
 import '../../providers/livekit_voice/livekit_voice_provider.dart';
+import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
 import '../../theme/motion_tokens.dart';
 import '../../utils/canvas_utils.dart';
+import '../../widgets/context_menu/echo_context_menu.dart';
 import '../../widgets/voice/participant_attention.dart';
 import '../../widgets/voice_speaking_ring.dart';
+import '../user_profile_screen.dart';
 import 'participant_volume_controller.dart';
 
 class ParticipantGrid extends StatelessWidget {
@@ -250,7 +254,7 @@ class ParticipantGrid extends StatelessWidget {
 // Single participant tile
 // ---------------------------------------------------------------------------
 
-class ParticipantTile extends StatefulWidget {
+class ParticipantTile extends ConsumerStatefulWidget {
   final String name;
   final String? avatarUrl;
   final bool hasVideo;
@@ -305,10 +309,10 @@ class ParticipantTile extends StatefulWidget {
   });
 
   @override
-  State<ParticipantTile> createState() => _ParticipantTileState();
+  ConsumerState<ParticipantTile> createState() => _ParticipantTileState();
 }
 
-class _ParticipantTileState extends State<ParticipantTile> {
+class _ParticipantTileState extends ConsumerState<ParticipantTile> {
   /// Grace period that keeps `isSpeaking` true for a brief window after the
   /// last above-threshold sample, so the ring doesn't flicker during natural
   /// pauses mid-sentence (#907).
@@ -535,212 +539,70 @@ class _ParticipantTileState extends State<ParticipantTile> {
     final participant = widget.remoteParticipant;
     if (participant == null) return;
 
-    final overlay =
-        Overlay.of(context, rootOverlay: true).context.findRenderObject()
-            as RenderBox?;
-    final overlaySize = overlay?.size ?? MediaQuery.of(context).size;
-
-    showMenu<void>(
+    final identity = participant.identity.isNotEmpty
+        ? participant.identity
+        : participant.sid.toString();
+    final initialVolume = ParticipantVolumeController.instance.volumeFor(
+      identity,
+    );
+    final perUserVolumeSupported =
+        kIsWeb || defaultTargetPlatform != TargetPlatform.windows;
+    // Capture a stable, mounted-safe reference to the menu's context so the
+    // slider callbacks can fire after EchoContextMenu's overlay disposes.
+    EchoContextMenu.open(
       context: context,
-      position: RelativeRect.fromLTRB(
-        position.dx,
-        position.dy,
-        overlaySize.width - position.dx,
-        overlaySize.height - position.dy,
-      ),
-      color: context.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-        side: BorderSide(color: context.border),
-      ),
-      items: [
-        PopupMenuItem<void>(
-          // enabled: true (default) keeps the slider track + thumb rendered in
-          // their normal theme colors. We override [onTap] to null so tapping
-          // the slider doesn't dismiss the menu — the popover handles its own
-          // dismissal via the "Toggle mute for me" row.
-          onTap: null,
-          padding: EdgeInsets.zero,
-          child: _ParticipantVolumePopover(
-            participant: participant,
-            name: widget.name,
-            onToggleMute: widget.onMuteForMe,
-          ),
+      target: DebugTarget('voice-member:$identity'),
+      anchor: position,
+      model: ContextMenuModel(
+        header: VolumeSliderHeader(
+          title: widget.name,
+          initialValue: initialVolume,
+          enabled: perUserVolumeSupported,
+          disabledTooltip: perUserVolumeSupported
+              ? null
+              : 'Per-user volume isn’t supported on Windows yet.',
+          onChanged: (_) {},
+          onChangeEnd: (next) {
+            unawaited(
+              ParticipantVolumeController.instance.setVolume(participant, next),
+            );
+          },
         ),
-      ],
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Volume slider popover (per-participant)
-// ---------------------------------------------------------------------------
-
-class _ParticipantVolumePopover extends StatefulWidget {
-  final lk.RemoteParticipant participant;
-  final String name;
-  final VoidCallback? onToggleMute;
-
-  const _ParticipantVolumePopover({
-    required this.participant,
-    required this.name,
-    this.onToggleMute,
-  });
-
-  @override
-  State<_ParticipantVolumePopover> createState() =>
-      _ParticipantVolumePopoverState();
-}
-
-class _ParticipantVolumePopoverState extends State<_ParticipantVolumePopover> {
-  late double _volume;
-
-  /// `flutter_webrtc`'s `Helper.setVolume` is a no-op on the Windows native
-  /// backend (#909). We keep the slider visible so users can see the control
-  /// exists, but render it disabled with a tooltip explaining why.
-  bool get _perUserVolumeSupported {
-    if (kIsWeb) return true;
-    return defaultTargetPlatform != TargetPlatform.windows;
-  }
-
-  static const String _windowsTooltip =
-      'Per-user volume is not supported on Windows yet (flutter_webrtc limitation)';
-
-  @override
-  void initState() {
-    super.initState();
-    final identity = widget.participant.identity.isNotEmpty
-        ? widget.participant.identity
-        : widget.participant.sid.toString();
-    _volume = ParticipantVolumeController.instance.volumeFor(identity);
-  }
-
-  /// Visual-only update while the user is dragging. We deliberately do NOT
-  /// call [ParticipantVolumeController.setVolume] from here — overlapping
-  /// async slider events can resolve out of order and leave the WebRTC track
-  /// gain at a stale value. The commit happens once on [_onChangeEnd].
-  void _onChanged(double next) {
-    setState(() => _volume = next);
-  }
-
-  Future<void> _onChangeEnd(double next) async {
-    await ParticipantVolumeController.instance.setVolume(
-      widget.participant,
-      next,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final percent = (_volume * 100).round();
-    final sliderTheme = SliderTheme.of(context).copyWith(
-      trackHeight: 4,
-      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
-      overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-      activeTrackColor: context.accent,
-      inactiveTrackColor: context.border,
-      thumbColor: context.accent,
-      overlayColor: context.accent.withValues(alpha: 0.18),
-    );
-
-    // Vertical slider: rotate a horizontal Slider 90° counter-clockwise so
-    // the high end sits at the top. SfSlider isn't a project dep, and a
-    // hand-rolled GestureDetector slider would skip a11y/keyboard support
-    // — rotating the framework Slider keeps semantics intact.
-    final supported = _perUserVolumeSupported;
-    Widget verticalSlider = SizedBox(
-      width: 36,
-      height: 140,
-      child: RotatedBox(
-        quarterTurns: 3,
-        child: SliderTheme(
-          data: sliderTheme,
-          child: Slider(
-            value: _volume,
-            min: 0,
-            max: 1,
-            onChanged: supported ? _onChanged : null,
-            onChangeEnd: supported ? _onChangeEnd : null,
-          ),
-        ),
-      ),
-    );
-    if (!supported) {
-      verticalSlider = Tooltip(message: _windowsTooltip, child: verticalSlider);
-    }
-
-    return SizedBox(
-      width: 180,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            SizedBox(
-              width: double.infinity,
-              child: Text(
-                widget.name,
-                style: TextStyle(
-                  color: context.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
+        sections: [
+          ContextMenuSection(
+            actions: [
+              ContextMenuAction(
+                label: 'Profile',
+                icon: Icons.person_outline,
+                onTap: () => UserProfileScreen.show(context, ref, identity),
               ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              '$percent%',
-              style: TextStyle(color: context.textMuted, fontSize: 11),
-            ),
-            const SizedBox(height: 4),
-            Icon(Icons.volume_up, size: 16, color: context.textMuted),
-            verticalSlider,
-            Icon(
-              _volume <= 0.001 ? Icons.volume_off : Icons.volume_down,
-              size: 16,
-              color: context.textMuted,
-            ),
-            if (widget.onToggleMute != null) ...[
-              const SizedBox(height: 6),
-              const Divider(height: 1),
-              const SizedBox(height: 4),
-              InkWell(
+              ContextMenuAction(
+                label: 'Mention',
+                icon: Icons.alternate_email,
                 onTap: () {
-                  Navigator.of(context).pop();
-                  widget.onToggleMute?.call();
+                  // Mention is wired by the chat composer; until that hook
+                  // lands here, copy a "@name" handle to the clipboard so
+                  // the user can paste it.
+                  Clipboard.setData(ClipboardData(text: '@${widget.name}'));
+                  ToastService.show(
+                    context,
+                    'Copied @${widget.name} to clipboard',
+                    type: ToastType.info,
+                  );
                 },
-                borderRadius: BorderRadius.circular(6),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 8,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.volume_off,
-                        size: 16,
-                        color: context.textSecondary,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Toggle mute for me',
-                        style: TextStyle(
-                          color: context.textPrimary,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
               ),
             ],
-          ],
-        ),
+          ),
+          ContextMenuSection(
+            actions: [
+              ContextMenuAction(
+                label: 'Mute for me',
+                icon: Icons.volume_off_outlined,
+                onTap: widget.onMuteForMe ?? () {},
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

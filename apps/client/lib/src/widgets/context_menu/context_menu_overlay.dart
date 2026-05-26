@@ -158,11 +158,14 @@ class _ContextMenuOverlayState extends State<_ContextMenuOverlay> {
     // Rough lower bound used only for viewport clamping. Real
     // intrinsic size handles itself once painted.
     const headerRow = 56.0;
+    const volumeHeaderRow = 92.0;
     const itemRow = 36.0;
     const divider = 13.0;
     const padding = 12.0;
     var h = padding * 2;
-    if (model.header != null) h += headerRow;
+    if (model.header != null) {
+      h += model.header is VolumeSliderHeader ? volumeHeaderRow : headerRow;
+    }
     if (model.title != null) h += 32;
     for (var i = 0; i < model.sections.length; i++) {
       if (i > 0) h += divider;
@@ -282,7 +285,87 @@ class _MenuContents extends StatelessWidget {
   Widget _renderHeader(BuildContext context, ContextMenuHeader header) {
     return switch (header) {
       InlineReactionsHeader h => _InlineReactionsRow(header: h),
+      VolumeSliderHeader h => _VolumeSliderRow(header: h),
     };
+  }
+}
+
+class _VolumeSliderRow extends StatefulWidget {
+  const _VolumeSliderRow({required this.header});
+  final VolumeSliderHeader header;
+
+  @override
+  State<_VolumeSliderRow> createState() => _VolumeSliderRowState();
+}
+
+class _VolumeSliderRowState extends State<_VolumeSliderRow> {
+  late double _value = widget.header.initialValue;
+
+  @override
+  Widget build(BuildContext context) {
+    final percent = (_value * 100).round();
+    final disabled = !widget.header.enabled;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  widget.header.title,
+                  style: TextStyle(
+                    color: context.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Text(
+                '$percent%',
+                style: TextStyle(
+                  color: disabled ? context.textMuted : context.textSecondary,
+                  fontSize: 12,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 3,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+              activeTrackColor: context.accent,
+              inactiveTrackColor: context.border,
+            ),
+            child: Slider(
+              value: _value.clamp(0.0, 2.0),
+              min: 0,
+              max: 2,
+              onChanged: disabled
+                  ? null
+                  : (v) {
+                      setState(() => _value = v);
+                      widget.header.onChanged(v);
+                    },
+              onChangeEnd: disabled ? null : widget.header.onChangeEnd,
+            ),
+          ),
+          if (disabled && widget.header.disabledTooltip != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                widget.header.disabledTooltip!,
+                style: TextStyle(color: context.textMuted, fontSize: 11),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 

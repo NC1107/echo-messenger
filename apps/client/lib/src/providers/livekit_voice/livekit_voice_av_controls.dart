@@ -181,11 +181,18 @@ mixin LiveKitVoiceAvControlsMixin on Notifier<LiveKitVoiceState> {
         final track = await LocalVideoTrack.createScreenShareTrack(
           captureOptions,
         );
+        // (#910) Single-layer VP8 + the user's current bitrate/fps so the
+        // quality picker (dock_submenus.ScreenShareSubmenu) actually takes
+        // effect on the screen-share track instead of silently defaulting.
         await room.localParticipant?.publishVideoTrack(
           track,
-          publishOptions: const VideoPublishOptions(
+          publishOptions: VideoPublishOptions(
             simulcast: false,
             videoCodec: 'vp8',
+            videoEncoding: VideoEncoding(
+              maxBitrate: state.videoBitrate,
+              maxFramerate: state.videoFps,
+            ),
           ),
         );
       }
@@ -233,33 +240,72 @@ mixin LiveKitVoiceAvControlsMixin on Notifier<LiveKitVoiceState> {
     }
   }
 
-  /// Apply the current videoBitrate / videoFps to the active camera track.
+  /// Apply the current videoBitrate / videoFps to BOTH the active camera
+  /// track AND the active screen-share track.
   ///
   /// LiveKit 2.7.x throws TrackPublishException when publishVideoTrack is
   /// called on an already-published track, so we unpublish first and then
-  /// republish with the new encoding options via a fresh camera track.
+  /// republish with the new encoding options via a fresh track.
+  ///
+  /// Screen-share's quality picker (dock_submenus.ScreenShareSubmenu) was
+  /// previously a no-op because this method only touched camera publications.
   Future<void> _applyVideoEncoding() async {
     final room = _room;
-    if (room == null || !state.isVideoEnabled || state.autoQuality) return;
+    if (room == null || state.autoQuality) return;
 
     final localParticipant = room.localParticipant;
     if (localParticipant == null) return;
 
-    final cameraPub = localParticipant.videoTrackPublications
-        .where((pub) => pub.source == TrackSource.camera && pub.track != null)
-        .firstOrNull;
+    // Camera leg — only republish when video is actually enabled.
+    if (state.isVideoEnabled) {
+      final cameraPub = localParticipant.videoTrackPublications
+          .where((pub) => pub.source == TrackSource.camera && pub.track != null)
+          .firstOrNull;
+      if (cameraPub != null) {
+        try {
+          await localParticipant.removePublishedTrack(cameraPub.sid);
+          final newTrack = await LocalVideoTrack.createCameraTrack(
+            room.roomOptions.defaultCameraCaptureOptions,
+          );
+          await localParticipant.publishVideoTrack(
+            newTrack,
+            publishOptions: VideoPublishOptions(
+              videoEncoding: VideoEncoding(
+                maxBitrate: state.videoBitrate,
+                maxFramerate: state.videoFps,
+              ),
+            ),
+          );
+        } catch (e) {
+          debugPrint('[LiveKitVoice] setVideoParams (camera) failed: $e');
+          DebugLogService.instance.log(
+            LogLevel.warning,
+            'LiveKitVoice',
+            'Video params change (camera) failed: $e',
+          );
+        }
+      }
+    }
 
-    if (cameraPub != null) {
+    // Screen-share leg — republish if currently sharing so the new bitrate
+    // / fps takes effect on the active stream.
+    final screenPub = localParticipant.videoTrackPublications
+        .where(
+          (pub) =>
+              pub.source == TrackSource.screenShareVideo && pub.track != null,
+        )
+        .firstOrNull;
+    if (screenPub != null) {
       try {
-        // Unpublish the existing track; re-publishing the same track object
-        // throws TrackPublishException('track already exists') in SDK 2.7.x.
-        await localParticipant.removePublishedTrack(cameraPub.sid);
-        final newTrack = await LocalVideoTrack.createCameraTrack(
-          room.roomOptions.defaultCameraCaptureOptions,
+        await localParticipant.removePublishedTrack(screenPub.sid);
+        final newTrack = await LocalVideoTrack.createScreenShareTrack(
+          room.roomOptions.defaultScreenShareCaptureOptions,
         );
         await localParticipant.publishVideoTrack(
           newTrack,
           publishOptions: VideoPublishOptions(
+            simulcast: false,
+            videoCodec: 'vp8',
             videoEncoding: VideoEncoding(
               maxBitrate: state.videoBitrate,
               maxFramerate: state.videoFps,
@@ -267,11 +313,11 @@ mixin LiveKitVoiceAvControlsMixin on Notifier<LiveKitVoiceState> {
           ),
         );
       } catch (e) {
-        debugPrint('[LiveKitVoice] setVideoParams failed: $e');
+        debugPrint('[LiveKitVoice] setVideoParams (screen) failed: $e');
         DebugLogService.instance.log(
           LogLevel.warning,
           'LiveKitVoice',
-          'Video params change failed: $e',
+          'Video params change (screen) failed: $e',
         );
       }
     }
