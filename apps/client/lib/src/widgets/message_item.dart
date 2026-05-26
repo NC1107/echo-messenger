@@ -1128,45 +1128,59 @@ class _MessageItemState extends State<MessageItem>
     );
   }
 
-  /// Inline timestamp that appears on hover/tap for messages that are not the
-  /// last in their group (those already always show the timestamp).
-  Widget _buildHoverTimestamp({
-    required ChatMessage msg,
-    required bool isMine,
-  }) {
-    // Scale font with density so the hover-timestamp matches the
-    // surrounding message-stream sizing.
-    final hoverFontSize = switch (widget.density) {
-      UIDensity.cozy => 12.0,
-      UIDensity.normal => 11.0,
-      UIDensity.compact => 10.0,
+  /// Hover-timestamp rendered in the avatar gutter on continuation rows
+  /// (Discord-style). The widget always occupies the same width as the
+  /// avatar slot so the bubble alignment doesn't shift on hover; the text
+  /// itself fades in/out.
+  Widget _buildHoverGutterTimestamp({required ChatMessage msg}) {
+    final fontSize = switch (widget.density) {
+      UIDensity.cozy => 11.0,
+      UIDensity.normal => 10.0,
+      UIDensity.compact => 9.0,
     };
-    return ValueListenableBuilder<bool>(
-      valueListenable: _hoverNotifier,
-      builder: (context, isHovered, child) => AnimatedOpacity(
-        opacity: isHovered ? 1.0 : 0.0,
-        duration: const Duration(milliseconds: 140),
-        child: child,
-      ),
-      child: Padding(
-        // Compact/plain left-align all messages, so even own messages need the 36px avatar-gutter inset.
-        padding: EdgeInsets.only(
-          top: 2,
-          left: (isMine && !widget.compactLayout) ? 0 : 36,
-        ),
-        child: Text(
-          () {
-            final timestamp = formatMessageTimestamp(msg.timestamp);
-            return msg.editedAt != null ? '$timestamp (edited)' : timestamp;
-          }(),
-          style: GoogleFonts.inter(
-            fontSize: hoverFontSize,
-            color: context.textMuted,
+    return SizedBox(
+      width: _resolveAvatarWidth(),
+      child: ValueListenableBuilder<bool>(
+        valueListenable: _hoverNotifier,
+        builder: (context, isHovered, _) => AnimatedOpacity(
+          opacity: isHovered ? 1.0 : 0.0,
+          duration: const Duration(milliseconds: 140),
+          child: Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              _formatHourMinute(msg.timestamp),
+              textAlign: TextAlign.right,
+              style: GoogleFonts.inter(
+                fontSize: fontSize,
+                color: context.textMuted,
+              ),
+            ),
           ),
         ),
       ),
     );
   }
+
+  /// "HH:MM" only — Discord-style compact hover timestamp.
+  String _formatHourMinute(String iso) {
+    try {
+      final dt = DateTime.parse(iso).toLocal();
+      final h = dt.hour;
+      final h12 = h == 0 ? 12 : (h > 12 ? h - 12 : h);
+      final am = h < 12 ? 'AM' : 'PM';
+      return '${h12.toString()}:${dt.minute.toString().padLeft(2, '0')} $am';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /// True when the last-in-group row needs to surface extra metadata
+  /// (edited tag, pin, expiry, lock) that the gutter timestamp can't.
+  bool _hasTrailingMeta(ChatMessage msg) =>
+      msg.editedAt != null ||
+      msg.pinnedAt != null ||
+      msg.expiresAt != null ||
+      msg.isEncrypted;
 
   /// Build the hover-actions overlay that appears above the bubble.
   ///
@@ -1222,10 +1236,13 @@ class _MessageItemState extends State<MessageItem>
       return [Flexible(child: bubbleWithReactions)];
     }
 
-    // Continuation rows reserve the avatar column with a spacer (no repeated avatar) — Discord/Slack/iMessage grouping.
+    // Continuation rows: avatar slot becomes the hover-timestamp gutter
+    // (Discord pattern). The previous below-bubble hover timestamp reserved
+    // ~16-18px of vertical space per row even at opacity 0, which is the
+    // bulk of the inter-message gap users were seeing.
     if (!widget.showHeader) {
       return [
-        SizedBox(width: _resolveAvatarWidth()),
+        _buildHoverGutterTimestamp(msg: msg),
         const SizedBox(width: 8),
         Flexible(child: bubbleWithReactions),
       ];
@@ -1503,10 +1520,15 @@ class _MessageItemState extends State<MessageItem>
                 preview: msg.latestReplyPreview!,
                 isMine: isMine,
               ),
-            if (widget.isLastInGroup)
-              _buildTimestampRow(msg: msg, isMine: isMine)
-            else
-              _buildHoverTimestamp(msg: msg, isMine: isMine),
+            // Bottom timestamp row stays only when we genuinely need to
+            // show delivery status (own messages) or trailing metadata on
+            // the last message of a group. Continuation rows lift their
+            // hover timestamp into the left gutter (see
+            // _buildHoverGutterTimestamp), freeing the ~16-18px below-row
+            // reservation that AnimatedOpacity used to keep even at 0
+            // opacity.
+            if (widget.isLastInGroup && (isMine || _hasTrailingMeta(msg)))
+              _buildTimestampRow(msg: msg, isMine: isMine),
             if (isFailed && isMine)
               RetryRow(
                 message: msg,
