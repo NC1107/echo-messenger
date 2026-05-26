@@ -195,6 +195,27 @@ void main() {
       expect(x, 1.0);
       expect(y, 0.0);
     });
+
+    test('AvatarPosition.scale defaults to 1.0 and survives copyWith', () {
+      const a = AvatarPosition(userId: 'u', x: 0.3, y: 0.6);
+      expect(a.scale, 1.0);
+      final moved = a.copyWith(x: 0.4);
+      expect(moved.scale, 1.0);
+      final resized = moved.copyWith(scale: 2.5);
+      expect(resized.scale, 2.5);
+      expect(resized.x, 0.4);
+    });
+
+    test('AvatarPosition.scale honours min/max constants', () {
+      expect(AvatarPosition.minScale, lessThan(1.0));
+      expect(AvatarPosition.maxScale, greaterThan(1.0));
+      // Clamping happens inside the controller; verify constants are wired so
+      // a future refactor does not silently drop the bound.
+      expect(
+        AvatarPosition.minScale,
+        lessThanOrEqualTo(AvatarPosition.maxScale),
+      );
+    });
   });
 
   group('CanvasState.copyWith', () {

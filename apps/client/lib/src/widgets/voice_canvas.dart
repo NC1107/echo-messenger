@@ -20,7 +20,6 @@ import 'voice/participant_attention.dart';
 import 'voice_speaking_ring.dart';
 
 const double _kAvatarSize = 48.0;
-const double _kAvatarHalfSize = _kAvatarSize / 2;
 
 /// Interactive voice-lounge canvas.
 ///
@@ -281,15 +280,20 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
       index,
     );
     final normalized = pos ?? defaultPos;
+    final scale = normalized.scale;
     final offset = _toLocal(CanvasPoint(x: normalized.x, y: normalized.y));
 
-    final left = (offset.dx - _kAvatarHalfSize).clamp(
+    final effectiveSize = _kAvatarSize * scale;
+    final effectiveHalf = effectiveSize / 2;
+    final left = (offset.dx - effectiveHalf).clamp(
       0.0,
-      canvasSize.width > _kAvatarSize ? canvasSize.width - _kAvatarSize : 0.0,
+      canvasSize.width > effectiveSize ? canvasSize.width - effectiveSize : 0.0,
     );
-    final top = (offset.dy - _kAvatarHalfSize).clamp(
+    final top = (offset.dy - effectiveHalf).clamp(
       0.0,
-      canvasSize.height > _kAvatarSize ? canvasSize.height - _kAvatarSize : 0.0,
+      canvasSize.height > effectiveSize
+          ? canvasSize.height - effectiveSize
+          : 0.0,
     );
 
     final attention = attentionFor(
@@ -305,6 +309,7 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
         participant: participant,
         canvasSize: canvasSize,
         currentPos: CanvasPoint(x: normalized.x, y: normalized.y),
+        scale: scale,
         attention: attention,
         httpHeaders: authState.token != null
             ? {'Authorization': 'Bearer ${authState.token}'}
@@ -319,6 +324,20 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
               .read(canvasProvider.notifier)
               .commitLocalAvatarMove(participant.userId, norm);
         },
+        onResize: (dx, dy) {
+          // Diagonal grip — use the larger of dx + dy so the user feels
+          // a uniform resize regardless of which axis they pull. Pixel
+          // delta over the base 48 px tile sets the per-frame scale step.
+          final delta = (dx + dy) / 2.0;
+          final current = normalized.scale;
+          final next = current + delta / _kAvatarSize;
+          ref
+              .read(canvasProvider.notifier)
+              .resizeAvatar(participant.userId, next);
+        },
+        onResizeEnd: () => ref
+            .read(canvasProvider.notifier)
+            .commitAvatarResize(participant.userId),
         draggable: true,
         onDoubleTap: participant.videoTrack != null
             ? () => widget.onVideoDoubleTap?.call(
@@ -621,8 +640,19 @@ class _DraggableAvatar extends StatefulWidget {
 
   /// Current normalized position [0,1] on the canvas.
   final CanvasPoint currentPos;
+
+  /// User-controlled size multiplier on top of [_kAvatarSize]. 1.0 = the
+  /// historical default 48 px puck.
+  final double scale;
+
   final void Function(CanvasPoint norm) onDrag;
   final void Function(CanvasPoint norm) onDragEnd;
+
+  /// Called while the user drags the bottom-right resize handle. [dx], [dy]
+  /// are pixel deltas; the parent translates them to a new scale factor.
+  final void Function(double dx, double dy)? onResize;
+  final VoidCallback? onResizeEnd;
+
   final bool draggable;
   final VoidCallback? onDoubleTap;
 
@@ -640,6 +670,9 @@ class _DraggableAvatar extends StatefulWidget {
     required this.currentPos,
     required this.onDrag,
     required this.onDragEnd,
+    this.scale = 1.0,
+    this.onResize,
+    this.onResizeEnd,
     this.attention = ParticipantAttention.idle,
     this.draggable = false,
     this.onDoubleTap,
@@ -653,6 +686,7 @@ class _DraggableAvatar extends StatefulWidget {
 class _DraggableAvatarState extends State<_DraggableAvatar>
     with SingleTickerProviderStateMixin {
   CanvasPoint? _localPos;
+  bool _hovered = false;
 
   /// Buffer of recent positions used to paint the presence trail
   /// (Phase 3a sub-slice 2 of `docs/ux-roadmap.md`).
@@ -779,6 +813,8 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
     return _initialsWidget(initial);
   }
 
+  double get _effectiveAvatarSize => _kAvatarSize * widget.scale;
+
   Widget _buildAvatarTile(
     _ParticipantInfo info,
     Widget innerContent,
@@ -788,8 +824,8 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
     final avatarColor = HSLColor.fromAHSL(1.0, hue, 0.5, 0.35).toColor();
 
     return Container(
-      width: _kAvatarSize,
-      height: _kAvatarSize,
+      width: _effectiveAvatarSize,
+      height: _effectiveAvatarSize,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: hasVideo
@@ -825,8 +861,8 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
         child: VoiceSpeakingRing(
           audioLevel: info.audioLevel,
           child: Container(
-            width: _kAvatarSize,
-            height: _kAvatarSize,
+            width: _effectiveAvatarSize,
+            height: _effectiveAvatarSize,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               boxShadow: [
@@ -855,13 +891,13 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
         IgnorePointer(
           child: RepaintBoundary(
             child: CustomPaint(
-              size: const Size(_kAvatarSize, _kAvatarSize),
+              size: Size(_effectiveAvatarSize, _effectiveAvatarSize),
               painter: _TrailPainter(
                 trail: _trail,
                 currentPos: _localPos ?? widget.currentPos,
                 canvasSize: widget.canvasSize,
                 color: EchoTheme.online,
-                radius: _kAvatarHalfSize * 0.45,
+                radius: _effectiveAvatarSize * 0.225,
                 tick: _trailTick,
               ),
             ),
@@ -901,28 +937,62 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
   Widget _buildDraggableWrapper(Widget content) {
     return MouseRegion(
       cursor: SystemMouseCursors.grab,
-      child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onDoubleTap: widget.onDoubleTap,
-        onPanUpdate: (details) {
-          final s = widget.canvasSize;
-          if (s.width <= 0 || s.height <= 0) return;
-          final dx = details.delta.dx / s.width;
-          final dy = details.delta.dy / s.height;
-          final base = _localPos ?? widget.currentPos;
-          final newPos = CanvasPoint(
-            x: (base.x + dx).clamp(0.0, 1.0),
-            y: (base.y + dy).clamp(0.0, 1.0),
-          );
-          _pushTrailSample(base);
-          _localPos = newPos;
-          widget.onDrag(newPos);
-        },
-        onPanEnd: (_) {
-          widget.onDragEnd(_localPos ?? widget.currentPos);
-          _localPos = null;
-        },
-        child: content,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onDoubleTap: widget.onDoubleTap,
+            onPanUpdate: (details) {
+              final s = widget.canvasSize;
+              if (s.width <= 0 || s.height <= 0) return;
+              final dx = details.delta.dx / s.width;
+              final dy = details.delta.dy / s.height;
+              final base = _localPos ?? widget.currentPos;
+              final newPos = CanvasPoint(
+                x: (base.x + dx).clamp(0.0, 1.0),
+                y: (base.y + dy).clamp(0.0, 1.0),
+              );
+              _pushTrailSample(base);
+              _localPos = newPos;
+              widget.onDrag(newPos);
+            },
+            onPanEnd: (_) {
+              widget.onDragEnd(_localPos ?? widget.currentPos);
+              _localPos = null;
+            },
+            child: content,
+          ),
+          if (_hovered && widget.onResize != null)
+            Positioned(
+              right: -2,
+              bottom: -2,
+              child: MouseRegion(
+                cursor: SystemMouseCursors.resizeDownRight,
+                child: GestureDetector(
+                  onPanUpdate: (d) => widget.onResize!(d.delta.dx, d.delta.dy),
+                  onPanEnd: (_) => widget.onResizeEnd?.call(),
+                  child: Container(
+                    width: 22,
+                    height: 22,
+                    decoration: BoxDecoration(
+                      color: context.surface.withValues(alpha: 0.85),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: context.border),
+                    ),
+                    alignment: Alignment.center,
+                    child: Icon(
+                      Icons.open_in_full,
+                      size: 12,
+                      color: context.textPrimary,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
