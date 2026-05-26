@@ -33,8 +33,8 @@ void main() {
       await tester.pumpWidget(
         host(const ServerSubtitle(serverUrl: 'https://echo-messenger.us')),
       );
-      expect(find.text('Server: echo-messenger.us'), findsOneWidget);
-      expect(find.byIcon(Icons.chevron_right), findsOneWidget);
+      expect(find.text('Connect to server: echo-messenger.us'), findsOneWidget);
+      expect(find.byIcon(Icons.dns_outlined), findsOneWidget);
     });
 
     testWidgets('falls back to the raw URL when host is unparseable', (
@@ -43,7 +43,7 @@ void main() {
       await tester.pumpWidget(
         host(const ServerSubtitle(serverUrl: 'not-a-url')),
       );
-      expect(find.text('Server: not-a-url'), findsOneWidget);
+      expect(find.text('Connect to server: not-a-url'), findsOneWidget);
     });
 
     testWidgets('exposes a semantics button labelled "switch server"', (
@@ -54,7 +54,7 @@ void main() {
       );
       expect(
         find.byWidgetPredicate(
-          (w) => w is Semantics && w.properties.label == 'switch server',
+          (w) => w is Semantics && w.properties.label == 'choose server',
         ),
         findsOneWidget,
       );
@@ -66,7 +66,7 @@ void main() {
       );
       await tester.tap(
         find.byWidgetPredicate(
-          (w) => w is Semantics && w.properties.label == 'switch server',
+          (w) => w is Semantics && w.properties.label == 'choose server',
         ),
       );
       await tester.pumpAndSettle();
@@ -95,7 +95,7 @@ void main() {
 
       await tester.tap(
         find.byWidgetPredicate(
-          (w) => w is Semantics && w.properties.label == 'switch server',
+          (w) => w is Semantics && w.properties.label == 'choose server',
         ),
       );
       await tester.pumpAndSettle();
@@ -113,7 +113,7 @@ void main() {
       );
       await tester.tap(
         find.byWidgetPredicate(
-          (w) => w is Semantics && w.properties.label == 'switch server',
+          (w) => w is Semantics && w.properties.label == 'choose server',
         ),
       );
       await tester.pumpAndSettle();
@@ -135,7 +135,7 @@ void main() {
 
         await tester.tap(
           find.byWidgetPredicate(
-            (w) => w is Semantics && w.properties.label == 'switch server',
+            (w) => w is Semantics && w.properties.label == 'choose server',
           ),
         );
         await tester.pumpAndSettle();
@@ -181,7 +181,7 @@ void main() {
 
       await tester.tap(
         find.byWidgetPredicate(
-          (w) => w is Semantics && w.properties.label == 'switch server',
+          (w) => w is Semantics && w.properties.label == 'choose server',
         ),
       );
       await tester.pumpAndSettle();
