@@ -120,6 +120,15 @@ pub struct MessageDto {
     /// queries (`get_messages`) populate it. Server truncates to 80
     /// chars; clients render a single line with ellipsis.
     pub last_reply_snippet: Option<String>,
+    /// Timestamp of the most-recent reply, populated by history queries
+    /// and consumed by the client's thread indicator chip ("3m ago"
+    /// label). `None` on real-time WS frames + when no replies exist.
+    pub last_reply_at: Option<DateTime<Utc>>,
+    /// Usernames of up to 3 distinct most-recent repliers, newest first.
+    /// Surfaces the avatar-face stack on the thread indicator chip
+    /// without an extra round-trip. Always present (possibly empty).
+    #[serde(default)]
+    pub recent_replier_usernames: Vec<String>,
     /// Reactions on this message: array of
     /// `{message_id, user_id, username, emoji}`.  Aggregated by the DB
     /// query so history reloads render reactions immediately instead of
@@ -144,6 +153,8 @@ impl From<db::messages::MessageWithSender> for MessageDto {
             reply_to_username: m.reply_to_username,
             reply_count: m.reply_count,
             last_reply_snippet: m.last_reply_snippet,
+            last_reply_at: m.last_reply_at,
+            recent_replier_usernames: m.recent_replier_usernames,
             reactions: m
                 .reactions
                 .map(|j| j.0)

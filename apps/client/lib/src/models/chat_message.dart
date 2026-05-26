@@ -60,6 +60,15 @@ class ChatMessage {
   /// keeps this null and relies on `message_reply_added` to bump the
   /// count. `null` when there are no replies.
   final String? latestReplyPreview;
+
+  /// Timestamp of the most-recent reply. Populated by history loads;
+  /// drives the "Xm ago" label on the thread indicator chip.
+  final DateTime? lastReplyAt;
+
+  /// Usernames of up to 3 distinct most-recent repliers, newest first.
+  /// Populated by history loads so the thread chip can render face stacks
+  /// inline; never larger than 3.
+  final List<String> recentReplierUsernames;
   final String? pinnedById;
   final DateTime? pinnedAt;
   final DateTime? expiresAt;
@@ -111,6 +120,8 @@ class ChatMessage {
     this.replyToUsername,
     this.replyCount = 0,
     this.latestReplyPreview,
+    this.lastReplyAt,
+    this.recentReplierUsernames = const [],
     this.pinnedById,
     this.pinnedAt,
     this.expiresAt,
@@ -176,6 +187,14 @@ class ChatMessage {
       replyToUsername: json['reply_to_username'] as String?,
       replyCount: (json['reply_count'] as int?) ?? 0,
       latestReplyPreview: json['last_reply_snippet'] as String?,
+      lastReplyAt: json['last_reply_at'] != null
+          ? DateTime.tryParse(json['last_reply_at'] as String)
+          : null,
+      recentReplierUsernames:
+          (json['recent_replier_usernames'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
       pinnedById: pinnedByIdRaw,
       pinnedAt: pinnedAtRaw != null ? DateTime.tryParse(pinnedAtRaw) : null,
       expiresAt: json['expires_at'] != null
@@ -320,6 +339,8 @@ class ChatMessage {
       'reply_to_username': replyToUsername,
       'reply_count': replyCount,
       'last_reply_snippet': latestReplyPreview,
+      'last_reply_at': lastReplyAt?.toIso8601String(),
+      'recent_replier_usernames': recentReplierUsernames,
       'pinned_by_id': pinnedById,
       'pinned_at': pinnedAt?.toIso8601String(),
       'expires_at': expiresAt?.toIso8601String(),
@@ -346,6 +367,8 @@ class ChatMessage {
     String? replyToUsername,
     int? replyCount,
     Object? latestReplyPreview = _sentinel,
+    Object? lastReplyAt = _sentinel,
+    List<String>? recentReplierUsernames,
     Object? pinnedById = _sentinel,
     Object? pinnedAt = _sentinel,
     Object? expiresAt = _sentinel,
@@ -371,6 +394,11 @@ class ChatMessage {
       latestReplyPreview: latestReplyPreview == _sentinel
           ? this.latestReplyPreview
           : latestReplyPreview as String?,
+      lastReplyAt: lastReplyAt == _sentinel
+          ? this.lastReplyAt
+          : lastReplyAt as DateTime?,
+      recentReplierUsernames:
+          recentReplierUsernames ?? this.recentReplierUsernames,
       pinnedById: pinnedById == _sentinel
           ? this.pinnedById
           : pinnedById as String?,
@@ -405,6 +433,8 @@ class ChatMessage {
             replyToUsername == other.replyToUsername &&
             replyCount == other.replyCount &&
             latestReplyPreview == other.latestReplyPreview &&
+            lastReplyAt == other.lastReplyAt &&
+            _listEquals(recentReplierUsernames, other.recentReplierUsernames) &&
             pinnedById == other.pinnedById &&
             pinnedAt == other.pinnedAt &&
             expiresAt == other.expiresAt &&
@@ -430,6 +460,8 @@ class ChatMessage {
     replyToUsername,
     replyCount,
     latestReplyPreview,
+    lastReplyAt,
+    Object.hashAll(recentReplierUsernames),
     pinnedById,
     pinnedAt,
     expiresAt,

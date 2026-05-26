@@ -466,5 +466,42 @@ void main() {
 
       expect(first == second, isFalse);
     });
+
+    test('parses thread indicator fields from server payload', () {
+      final json = {
+        'message_id': 'msg-th',
+        'from_user_id': 'user-abc',
+        'from_username': 'alice',
+        'conversation_id': 'conv-1',
+        'content': 'parent',
+        'timestamp': '2026-05-26T12:00:00Z',
+        'reply_count': 4,
+        'last_reply_at': '2026-05-26T12:03:30Z',
+        'recent_replier_usernames': ['carol', 'bob', 'alice'],
+      };
+
+      final msg = ChatMessage.fromServerJson(json, 'user-abc');
+
+      expect(msg.replyCount, 4);
+      expect(msg.lastReplyAt, DateTime.parse('2026-05-26T12:03:30Z'));
+      expect(msg.recentReplierUsernames, ['carol', 'bob', 'alice']);
+    });
+
+    test('defaults thread indicator fields when absent', () {
+      final json = {
+        'message_id': 'msg-noth',
+        'from_user_id': 'user-abc',
+        'from_username': 'alice',
+        'conversation_id': 'conv-1',
+        'content': 'no replies yet',
+        'timestamp': '2026-05-26T12:00:00Z',
+      };
+
+      final msg = ChatMessage.fromServerJson(json, 'user-abc');
+
+      expect(msg.replyCount, 0);
+      expect(msg.lastReplyAt, isNull);
+      expect(msg.recentReplierUsernames, isEmpty);
+    });
   });
 }
