@@ -225,11 +225,7 @@ class ParticipantGrid extends StatelessWidget {
     }
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Aim for a tile that's a comfortable ~220 px wide on desktop; the
-        // grid then naturally widens to fill ultrawide viewports rather than
-        // capping at 3 columns the way the old portrait/landscape heuristic
-        // did. Clamped to [2, 6] so tiny widths still get a 2-up layout and
-        // we never shrink avatars into illegibility on 4K monitors.
+        // ~220 px target tile; clamp [2, 6] so phones still get 2-up and 4K stays legible.
         const targetTileWidth = 220.0;
         final crossAxisCount = (constraints.maxWidth / targetTileWidth)
             .floor()
@@ -415,12 +411,10 @@ class _ParticipantTileState extends State<ParticipantTile> {
             clipBehavior: Clip.antiAlias,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(15),
-              // RepaintBoundary isolates the blur layer so audio-level
-              // rebuilds (~10 Hz) don't re-rasterise the BackdropFilter
-              // for every tile in the grid.
+              // RepaintBoundary isolates ~10 Hz audio-level rebuilds; blur skipped on web (CanvasKit perf).
               child: RepaintBoundary(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                child: _MaybeBackdropBlur(
+                  enabled: !kIsWeb,
                   child: Container(
                     color: context.surface.withValues(alpha: 0.30),
                     child: Stack(
@@ -910,4 +904,23 @@ class _LocalScreenShareTrackState extends State<LocalScreenShareTrack> {
 
 Map<String, String>? _getAuthHeaders(String? authToken) {
   return authToken != null ? {'Authorization': 'Bearer $authToken'} : null;
+}
+
+/// BackdropFilter wrapper that skips the blur on web. The 12×12 Gaussian
+/// blur is a CanvasKit hotspot on Firefox/NVIDIA EGL — see the comment at
+/// the call site above for the perf rationale.
+class _MaybeBackdropBlur extends StatelessWidget {
+  final bool enabled;
+  final Widget child;
+
+  const _MaybeBackdropBlur({required this.enabled, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!enabled) return child;
+    return BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+      child: child,
+    );
+  }
 }

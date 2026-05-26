@@ -89,10 +89,7 @@ class MessageCache {
       entries[msg.id] = msg.toJson();
     }
     if (entries.isEmpty) return;
-    // Tests tear down Hive between cases and a stray cacheMessages future
-    // can fire after tearDown; bail out instead of throwing
-    // "Box has already been closed" which surfaces as a flaky
-    // failed-after-completion error in CI (#prod-2026-05-22).
+    // Bail on closed box: post-tearDown futures fire flaky CI failures (#prod-2026-05-22).
     if (!box.isOpen) return;
     try {
       await box.putAll(entries);

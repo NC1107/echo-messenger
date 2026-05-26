@@ -129,10 +129,7 @@ class _FeedbackDialogState extends ConsumerState<_FeedbackDialog> {
     final body = _bodyController.text.trim();
     if (body.isEmpty) return;
 
-    // Capture the root overlay BEFORE we start awaiting so success / error
-    // toasts can still resolve an `Overlay` after the dialog pops -- using
-    // the dialog's own context after `Navigator.pop` returns a disposed
-    // overlay and the toast never renders (#928).
+    // Capture root overlay before await — dialog's own context is disposed by the time the toast resolves (#928).
     final rootOverlay = Overlay.of(context, rootOverlay: true);
 
     setState(() {

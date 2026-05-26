@@ -112,7 +112,9 @@ void main() {
       expect(find.text('My Test Group'), findsOneWidget);
     });
 
-    testWidgets('has private/public visibility toggle', (tester) async {
+    testWidgets('has Private-group switch styled like the E2E toggle', (
+      tester,
+    ) async {
       final router = _buildRouter();
 
       await tester.pumpWidget(
@@ -128,8 +130,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Private'), findsOneWidget);
-      expect(find.text('Public'), findsOneWidget);
+      // The Private/Public segmented button was replaced with a Private-
+      // group SwitchListTile so it reads consistently with the E2E
+      // toggle directly below it.
+      expect(find.text('Private group'), findsOneWidget);
+      // Default is "private" (ON) → subtitle reflects that.
+      expect(find.textContaining('only invited members'), findsOneWidget);
     });
   });
 }

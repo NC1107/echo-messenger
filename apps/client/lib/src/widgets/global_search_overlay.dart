@@ -288,9 +288,7 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
     // Responsive width: tablets (< 900) get screen-48, desktops get fixed 560
     final width = _resolveOverlayWidth(isMobile, screenWidth);
 
-    // A non-focusable Focus observer: it sees raw key events but never owns
-    // primary focus, so it can't steal the user's first keystroke from the
-    // TextField below.
+    // Non-focusable Focus: observes keys without stealing the first keystroke from the TextField.
     return Focus(
       canRequestFocus: false,
       descendantsAreFocusable: true,

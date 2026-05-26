@@ -203,9 +203,7 @@ class _VoiceMessageWidgetState extends State<VoiceMessageWidget> {
     if (response.statusCode >= 200 && response.statusCode < 300) {
       await _player.play(BytesSource(response.bodyBytes));
     } else {
-      // Surface the failure to the user instead of silently no-op'ing.
-      // Without this, mobile users tapped the play button and saw
-      // nothing happen (#554).
+      // Surface fetch failure — previously played button no-op'd silently (#554).
       final reason = 'fetch failed (${response.statusCode})';
       debugPrint('[VoiceMsg] $reason');
       if (mounted) {

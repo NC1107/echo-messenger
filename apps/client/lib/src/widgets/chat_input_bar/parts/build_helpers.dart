@@ -13,9 +13,7 @@ extension _BuildHelpers on ChatInputBarState {
     required VoiceSettingsState voiceSettings,
     required String? effectiveActiveVoiceChannelId,
   }) {
-    // Clamp the composer to 6 lines on mobile so a long draft with the
-    // keyboard up doesn't eat more than ~half the available height. Desktop
-    // keeps the original 10-line allowance.
+    // Mobile clamp to 6 lines so the keyboard+draft don't eat >50% height.
     final composerMaxLines = isMobileLayout ? 6 : 10;
     return Expanded(
       child: Focus(
@@ -132,9 +130,6 @@ extension _BuildHelpers on ChatInputBarState {
       );
     }
 
-    // Three-element design: bordered round + button on the left, pill input
-    // (with emoji glyph inside on the right), bordered round mic/send on
-    // the right. Edit mode tints the pill border accent.
     final pillBorderColor = _isEditing ? context.accent : context.border;
 
     return Row(

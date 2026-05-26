@@ -106,9 +106,7 @@ class _ContextMenuOverlayState extends State<_ContextMenuOverlay> {
       return;
     }
     Navigator.of(context).pop();
-    // Run the action AFTER the route is gone so it sees the parent
-    // context unobstructed (showSnackBar, navigation, dialogs all
-    // need the post-dismiss tree).
+    // Defer so onTap sees the post-dismiss tree (snackbar/nav/dialogs need it).
     WidgetsBinding.instance.addPostFrameCallback((_) => action.onTap?.call());
   }
 
@@ -119,10 +117,7 @@ class _ContextMenuOverlayState extends State<_ContextMenuOverlay> {
     final current = _stack.last;
     final isSubmenu = _stack.length > 1;
 
-    // Anchor + clamp. We always try to place the menu's top-left at
-    // the click; if that overflows the viewport (right or bottom),
-    // clamp inside the safe area. No flipping — keeps geometry
-    // predictable when menus contain submenus of differing heights.
+    // Clamp (don't flip) so submenu geometry stays predictable across varying heights.
     final menuHeight = _estimateMenuHeight(current);
     var left = widget.anchor.dx;
     var top = widget.anchor.dy;
@@ -135,9 +130,7 @@ class _ContextMenuOverlayState extends State<_ContextMenuOverlay> {
     if (left < _viewportPadding) left = _viewportPadding;
     if (top < _viewportPadding) top = _viewportPadding;
 
-    // Origin for the scale-from-anchor transform is the click point
-    // relative to the menu's own rect — so the menu visually expands
-    // from where the user clicked.
+    // Scale origin is the click point in menu-local coords so the menu expands from the click.
     final originX = ((widget.anchor.dx - left) / _menuWidth).clamp(0.0, 1.0);
     final originY = ((widget.anchor.dy - top) / menuHeight).clamp(0.0, 1.0);
 
@@ -257,9 +250,7 @@ class _MenuContents extends StatelessWidget {
       }
     }
 
-    // Dismiss on Esc — keyboard navigation proper is deferred to a
-    // follow-up, but Esc-to-close is one shortcut and ubiquitous
-    // enough that omitting it would surprise people.
+    // Esc-to-close; full keyboard nav deferred.
     return Shortcuts(
       shortcuts: const {
         SingleActivator(LogicalKeyboardKey.escape): _DismissIntent(),

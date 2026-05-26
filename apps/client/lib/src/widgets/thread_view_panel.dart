@@ -139,9 +139,6 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
     final isMobile = Responsive.isMobile(context);
     final parent = widget.parentMessage;
 
-    // Watch the full conversation message list and filter for replies to this
-    // parent.  Any WS-delivered message that has replyToId == parent.id will
-    // automatically appear here because chatProvider notifies on addMessage().
     final allMessages = ref.watch(
       chatProvider.select(
         (s) => s.messagesForConversation(parent.conversationId),
@@ -377,11 +374,7 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
               color: isMine ? context.sentBubble : context.recvBubble,
               borderRadius: BorderRadius.circular(10),
             ),
-            // Per #449-2: swap plain Text for RichTextContent so
-            // markdown bold/italic, @mentions, and URL autolinks
-            // render in thread replies the same way they do in the
-            // main chat. Compact mode matches the thread's denser
-            // visual rhythm.
+            // #449-2: RichTextContent so threads render markdown/mentions/links like the main chat.
             child: RichTextContent(
               text: reply.content,
               textColor: context.textPrimary,
@@ -406,12 +399,7 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
         button: true,
         child: GestureDetector(
           onTap: () {
-            // Per #449-1: stop closing the thread on reply. Users were
-            // losing context every time they tapped Reply because the
-            // panel collapsed back to the main chat. Fire the parent
-            // reply handler so the composer goes into reply-to-thread
-            // mode, but keep the thread panel open so the user can
-            // read context while composing.
+            // #449-1: don't close the thread on reply; keep panel open for context.
             widget.onReply?.call(widget.parentMessage);
           },
           child: Container(

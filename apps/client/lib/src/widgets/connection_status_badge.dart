@@ -196,9 +196,7 @@ class _ConnectionStatusBadgeState extends ConsumerState<ConnectionStatusBadge>
     );
     if (kind != _lastKind) {
       _lastKind = kind;
-      // Defer to post-frame: MediaQuery isn't safe to read in build for
-      // the controller side-effect, and the pulse state only needs to be
-      // accurate within a frame of the kind change.
+      // Post-frame because MediaQuery isn't safe to read in build for controller side-effects.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _syncPulse(kind);
       });
@@ -251,9 +249,7 @@ class _ConnectionStatusBadgeState extends ConsumerState<ConnectionStatusBadge>
       ],
     );
 
-    // Mobile: keep the system tooltip (long-press hint). Desktop uses the
-    // custom OverlayPortal popover, so we drop the tooltip to avoid the
-    // double-hover affect (system tooltip overlaps + covers the popover).
+    // Mobile keeps system tooltip; desktop drops it so the custom OverlayPortal popover isn't double-hovered.
     if (isMobile) {
       return Semantics(
         button: true,

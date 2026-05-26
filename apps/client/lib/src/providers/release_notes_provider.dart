@@ -41,10 +41,7 @@ class ReleaseNotesNotifier extends AsyncNotifier<ReleaseNotesView?> {
   Future<ReleaseNotesView?> build() async {
     final prefs = await SharedPreferences.getInstance();
 
-    // Fresh install bootstrap: if we have no record of a previously-
-    // shown version, mark the CURRENT app version as seen and bail
-    // out.  The user gets release notes only on FUTURE updates, never
-    // on first launch (matches Discord / VS Code / GitHub Desktop UX).
+    // Fresh install: mark current version seen; notes only on future updates.
     final stored = prefs.getString(_lastShownVersionKey);
     if (stored == null) {
       if (appVersion != 'dev') {
@@ -56,25 +53,13 @@ class ReleaseNotesNotifier extends AsyncNotifier<ReleaseNotesView?> {
     // Already shown the notes for this version — done.
     if (stored == appVersion) return null;
 
-    // We have an outdated "last shown" record; the user updated since
-    // we last showed them notes.  Watch updateProvider for the body to
-    // arrive.  If updateProvider's check completed before this notifier
-    // built, ref.read returns the populated state immediately.
+    // Outdated last-shown: user updated since; watch updateProvider for body.
     final update = ref.watch(updateProvider);
     final body = update.releaseBody;
     final remote = update.latestVersion;
 
-    // Two cases for the version comparison:
-    //   1. updateProvider already saw the new release ⇒ remote == appVersion
-    //   2. server lags ⇒ remote is older than appVersion (still show
-    //      whatever notes were cached for the version we know about,
-    //      since the user has clearly updated past `stored`).
-    // Either way, we render the cached body if non-empty.
+    // Render whatever body the cache holds — server may lag but user updated.
     if (body == null || body.isEmpty) return null;
-
-    // Show notes for the running app version.  The body in cache may
-    // correspond to a slightly different release on the server, but
-    // for the user the headline is "you updated; here's what changed".
     return ReleaseNotesView(version: remote ?? appVersion, body: body);
   }
 

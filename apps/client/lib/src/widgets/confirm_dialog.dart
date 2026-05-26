@@ -56,10 +56,7 @@ Future<bool> showEchoConfirmDialog(
         title: Text(
           title,
           style: TextStyle(
-            // Destructive confirms colour the title red as an extra
-            // signal beyond the red confirm button — matches the
-            // pattern conversation_panel and chat_header_bar already
-            // used by hand.
+            // Destructive: red title + red button (matches conversation_panel/chat_header_bar).
             color: destructive ? EchoTheme.danger : dialogCtx.textPrimary,
             fontSize: 16,
             fontWeight: FontWeight.w600,

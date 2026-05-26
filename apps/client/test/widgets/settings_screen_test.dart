@@ -102,7 +102,8 @@ void main() {
 
       // Profile is reached via the UserHeaderCard at the top, not a row.
       // Encryption keys is gone (was redundant with Privacy).
-      expect(find.text('Status'), findsOneWidget);
+      // Status was removed from the sidebar in batch 3.
+      expect(find.text('Status'), findsNothing);
       expect(find.text('Appearance'), findsOneWidget);
       expect(find.text('Language'), findsOneWidget);
       expect(find.text('Notifications'), findsOneWidget);

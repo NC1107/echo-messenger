@@ -58,10 +58,8 @@ class WebSocketState {
   /// Updated from presence events that include the presence_status field.
   final Map<String, String> presenceStatuses;
 
-  /// Map of userId -> last seen timestamp. Populated from offline presence
-  /// events that include `last_seen_at`. Only peers we observe transition
-  /// online → offline during this session have an entry; truly long-offline
-  /// peers stay null and the header falls back to "offline" (#503).
+  /// (#503) userId -> last seen; only populated for peers observed going
+  /// offline this session, header falls back to "offline" otherwise.
   final Map<String, DateTime> lastSeenAt;
 
   /// True when the server sent a `session_replaced` event, meaning another
@@ -160,14 +158,8 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
   /// lists when another device is revoked.
   StreamController<Map<String, dynamic>> get deviceRevokedController;
 
-  /// Messages received before crypto was initialized.
-  /// Drained by [drainPendingDecryptQueue] once crypto is ready.
-  ///
-  /// Each entry carries the user ID that was authenticated at the time the
-  /// envelope was queued. The drain step refuses to decrypt entries whose
-  /// owner does not match the currently-authenticated user, so a logout +
-  /// re-login on the same process cannot leak user A's queued ciphertext
-  /// into user B's chat/conversations state (#830 finding 4).
+  /// (#830) Pre-crypto-init envelope queue; each entry binds an owner-userId
+  /// so drain after logout can't leak user A's ciphertext into user B.
   final List<_PendingDecryptEntry> _pendingDecryptQueue = [];
 
   /// Length of the pending decrypt queue. Exposed for tests asserting that
@@ -183,14 +175,8 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
     );
   }
 
-  /// Library-private state accessors used by the part-file extensions.
-  ///
-  /// `StateNotifier.state` is `@protected`, so accessing it from an
-  /// extension (even one defined in the same library) trips the analyzer's
-  /// `invalid_use_of_protected_member` lint. Reading/writing through these
-  /// instance members keeps the access within a subclass scope where the
-  /// lint is satisfied, while the underscore prefix keeps them private to
-  /// this library.
+  /// Library-private state accessor so part-file extensions avoid the
+  /// invalid_use_of_protected_member lint on `state`.
   WebSocketState get _state => state;
   set _state(WebSocketState value) => state = value;
 
@@ -227,9 +213,7 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
 
     for (final entry in queue) {
       if (entry.ownerUserId != myUserId) {
-        // Cross-account envelope from a previous session — discard silently.
-        // The cleanup hook should have already cleared this, but defence in
-        // depth: never deliver into the wrong user's chat state.
+        // Defence in depth: drop cross-account envelopes silently.
         DebugLogService.instance.log(
           LogLevel.warning,
           'WebSocket',
@@ -540,8 +524,7 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
             senderVerifyKey: senderVerifyKey,
           );
         } on GroupSenderSignatureException catch (e) {
-          // Render with a distinct placeholder so the chat UI can stripe
-          // the bubble in a danger color (different from key-out-of-sync).
+          // Distinct placeholder lets chat UI stripe in a danger color.
           debugLog(
             'GRP2 signature failed for $conversationId msg=$messageId: $e',
             'WebSocket',
@@ -550,9 +533,7 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
         }
       }
 
-      // GRP1 path. Reject when the envelope has been pinned to GRP2 —
-      // a hostile sender or compromised server cannot downgrade past
-      // the signature requirement once the key version is locked.
+      // GRP1 refused when envelope is pinned to GRP2 (downgrade attack).
       if (minWireVersion >= 2) {
         debugLog(
           'GRP1 wire refused at min_wire_version=$minWireVersion '
@@ -601,11 +582,7 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
     String myUserId,
     String decryptedContent,
   ) {
-    // Mention detection runs over the *decrypted* plaintext. Skip the
-    // sender's own messages — we don't want to badge someone for
-    // mentioning themselves. Sentinel-shaped strings (failed decrypt,
-    // placeholders) won't contain real mentions and are filtered by
-    // _decryptedPreviews logic upstream.
+    // Run over decrypted plaintext; skip self so users don't badge themselves.
     if (fromUserId == myUserId) return false;
     return containsMention(decryptedContent, ref.read(authProvider).username);
   }
@@ -627,10 +604,7 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
     final isMuted = conv?.isMuted ?? false;
     if (isMuted) return;
 
-    // Gate everything below on DND/quiet-hours so the user gets full silence
-    // when they've asked for it. The desktop NotificationService also checks
-    // shouldSuppressNotification, but pre-checking here keeps the sound and
-    // the platform toast aligned and skips a wasted async call.
+    // Gate sound+toast on DND/quiet-hours; pre-check keeps them aligned.
     shouldSuppressNotification().then((suppress) {
       if (suppress) return;
       if (isMention) {

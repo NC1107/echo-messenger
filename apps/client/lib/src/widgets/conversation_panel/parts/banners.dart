@@ -35,11 +35,7 @@ mixin _ConversationPanelBannersMixin on ConsumerState<ConversationPanel> {
     );
   }
 
-  // NOTE: This banner stays hand-rolled (not EchoBanner) because the whole
-  // surface is a tap target that triggers reconnect, while the trailing
-  // close button is a *nested* tap target that must NOT bubble up to the
-  // outer GestureDetector. EchoBanner is a one-action shape; mapping this
-  // two-zone behaviour onto it would be more confusing than the duplication.
+  // Hand-rolled (not EchoBanner): needs two tap zones — surface reconnects, close button must not bubble.
   Widget _buildReplacedBanner(BuildContext context, bool wsReplaced) {
     if (!wsReplaced || _replacedBannerDismissed) return const SizedBox.shrink();
     return Column(
@@ -201,12 +197,7 @@ mixin _ConversationPanelBannersMixin on ConsumerState<ConversationPanel> {
   ({String label, Widget? action, bool showDismiss, Widget? progress})
   _resolveAvailableUpdateState(BuildContext context, UpdateState update) {
     if (kIsWeb) {
-      // Web bundle is stale — the browser is serving cached JS until the
-      // user hard-refreshes (we ship --pwa-strategy=none so there's no
-      // service-worker auto-refresh either). Make the banner
-      // non-dismissible with explicit hard-refresh instructions and the
-      // current → latest version delta, so beta testers don't keep
-      // hitting a half-finished build without noticing (#1175).
+      // Web bundle stale: --pwa-strategy=none means no SW auto-refresh; non-dismissible banner forces hard-refresh (#1175).
       return (
         label:
             'New version v${update.latestVersion} available — '
@@ -257,9 +248,7 @@ mixin _ConversationPanelBannersMixin on ConsumerState<ConversationPanel> {
         update.updateAvailable ||
         isActive ||
         update.status == UpdateStatus.error;
-    // When no update banner is showing, fall back to a small "Report a bug"
-    // affordance so the user can reach the feedback dialog without leaving
-    // the sidebar / opening Settings.
+    // Fall back to bug-report when no update banner.
     if (!isVisible) return _buildBugReportRow(context);
     if (update.dismissed && !isActive) return _buildBugReportRow(context);
 

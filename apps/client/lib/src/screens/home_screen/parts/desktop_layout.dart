@@ -79,11 +79,7 @@ mixin _HomeScreenDesktopLayoutMixin
                 final displayName = conv.displayName(myUserId);
                 final isSelected = conv.id == _self._selectedConversation?.id;
 
-                // KeyedSubtree so element identity tracks conv.id rather
-                // than the position index — prevents the Stack +
-                // conditional selection-pill subtree from briefly
-                // binding to the wrong conversation when the list
-                // reorders after a new message / pin / delete (TD-10).
+                // KeyedSubtree binds element identity to conv.id so list reorders don't misbind (TD-10).
                 return KeyedSubtree(
                   key: ValueKey('conv-rail-${conv.id}'),
                   child: Padding(
@@ -99,10 +95,7 @@ mixin _HomeScreenDesktopLayoutMixin
                           child: SizedBox(
                             width: 44,
                             height: 44,
-                            // Stack so the left-edge selection pill can sit
-                            // alongside the centred avatar without affecting
-                            // its layout. Matches the pattern used in
-                            // conversation_item so both sidebars agree.
+                            // Stack lets the selection pill sit beside the centred avatar (matches conversation_item).
                             child: Stack(
                               children: [
                                 Center(
@@ -200,11 +193,7 @@ mixin _HomeScreenDesktopLayoutMixin
                         Positioned(
                           top: 10,
                           right: 10,
-                          // Ring needs to contrast with the surrounding chip,
-                          // not blend into it. The footer chip uses `mainBg`,
-                          // so a `mainBg` ring is invisible. `sidebarBg`
-                          // matches the surrounding rail and keeps the dot
-                          // legible regardless of theme.
+                          // `sidebarBg` ring contrasts with the footer chip's `mainBg` so the dot stays visible.
                           child: _DotBadge(
                             ringColor: context.sidebarBg,
                             bgColor: context.accent,
@@ -313,12 +302,7 @@ mixin _HomeScreenDesktopLayoutMixin
                     ..._buildMembersPanel(),
                   ],
                 ),
-                // Voice dock used to float here as an AnimatedPositioned
-                // overlay at bottom: 60, which made it occlude the sidebar
-                // chrome (bug-report row, update banner). It now renders
-                // inline inside ConversationPanel just above the bottom
-                // chrome so everything flows naturally and nothing is
-                // covered. F-029 in the 2026-05-19 UI audit.
+                // Voice dock moved inline into ConversationPanel — float overlay occluded sidebar chrome (F-029).
                 if (_self._whatsNewNotes != null)
                   WhatsNewInlineOverlay(
                     notes: _self._whatsNewNotes!,
@@ -425,12 +409,7 @@ mixin _HomeScreenDesktopLayoutMixin
       isCollapsed: _self._sidebarCollapsed,
       onHorizontalDragUpdate: (details) {
         if (_self._sidebarCollapsed) return;
-        // Allow dragging below `_sidebarMinWidth` so users can pull the
-        // handle through to compact mode and the drag-end handler can
-        // snap to collapsed. The lower clamp keeps the sidebar from
-        // disappearing entirely mid-drag (#739). The upper clamp now
-        // scales with viewport width via `_sidebarMaxWidthFor` so ultra-
-        // wide displays can grow the sidebar past 500 px (up to 720).
+        // Lower clamp allows pull-through to compact mode without hiding mid-drag (#739); upper scales with viewport.
         final maxWidth = _HomeScreenState._sidebarMaxWidthFor(
           MediaQuery.of(context).size.width,
         );

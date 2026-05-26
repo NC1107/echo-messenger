@@ -6,9 +6,7 @@ extension CryptoHandlersOn on WsMessageHandler {
     final fromUsername = json['from_username'] as String? ?? 'Someone';
     final conversationId = json['conversation_id'] as String? ?? '';
 
-    // Invalidate the local session so the next message re-establishes X3DH.
-    // Also drop any cached prekey bundles so the next outgoing message
-    // re-fetches against the freshly-rotated keys (#662).
+    // (#662) Invalidate session + bundle cache so next message re-X3DHes.
     final crypto = ref.read(cryptoServiceProvider);
     crypto.invalidateSessionKey(fromUserId);
     if (fromUserId.isNotEmpty) {
@@ -46,8 +44,7 @@ extension CryptoHandlersOn on WsMessageHandler {
   }
 
   void _handleDeviceRevoked(Map<String, dynamic> json) {
-    // Use `num?` + toInt() so dart2js (web) doesn't blow up when the JSON
-    // number is decoded as a double rather than an int.
+    // num+toInt: dart2js may decode the JSON number as double, not int.
     final revokedDeviceId = (json['device_id'] as num?)?.toInt();
     final myDeviceId = ref.read(cryptoServiceProvider).isInitialized
         ? ref.read(cryptoServiceProvider).deviceId
@@ -87,18 +84,9 @@ extension CryptoHandlersOn on WsMessageHandler {
     groupCrypto.fetchGroupKey(conversationId);
   }
 
-  /// #656 — server signalled that a member was removed and the surviving
-  /// members need to regenerate the group AES key for the bumped version.
-  ///
-  /// Phase 3b adds a server-elected leader on top of the underlying
-  /// UNIQUE-constraint race. The event carries `leader_user_id` plus an
-  /// ordered `fallback_order` and a `deadline_ms` hint; the local client
-  /// uses its own position in `[leader, ...fallback_order]` to delay its
-  /// attempt. The leader fires immediately; each fallback waits one
-  /// `deadline_ms` per slot, re-checks whether the new version has
-  /// already arrived (via the cache populated by `group_key_rotated`),
-  /// and only then attempts to upload. The UNIQUE constraint remains the
-  /// safety net for any split-brain / pre-Phase-3b mixed-fleet case.
+  /// (#656) Server-elected leader rotation; this client waits its slot in
+  /// `[leader, ...fallback_order] * deadline_ms` and aborts if a peer wins.
+  /// UNIQUE constraint is the safety net for split-brain / mixed-fleet.
   void _handleGroupKeyRotationRequested(Map<String, dynamic> json) {
     final request = parseRotationRequested(json);
     if (request == null) return;
@@ -116,10 +104,7 @@ extension CryptoHandlersOn on WsMessageHandler {
     );
 
     if (delay == null) {
-      // Server did not see us as online when it elected the leader.
-      // Stay out of the fallback queue; the broadcast `group_key_rotated`
-      // event (or our next getGroupKey) will pull the winning envelope
-      // once any elected member completes the rotation.
+      // Not in elected set; group_key_rotated broadcast will pull winning envelope.
       DebugLogService.instance.log(
         LogLevel.info,
         'GroupRotation',
@@ -154,11 +139,7 @@ extension CryptoHandlersOn on WsMessageHandler {
       );
       await Future<void>.delayed(delay);
 
-      // After the wait, check whether someone earlier in the priority
-      // list already completed the rotation. The `group_key_rotated`
-      // broadcast invalidates our cache and pre-fetches the new
-      // envelope, so a successful peer rotation surfaces here as a
-      // current version >= the requested version.
+      // Check if a higher-priority peer already rotated (current >= target).
       final current = await groupCrypto.getGroupKey(request.conversationId);
       final currentVersion = current?.$1;
       if (shouldAbortRotation(
@@ -201,20 +182,14 @@ extension CryptoHandlersOn on WsMessageHandler {
           return [];
         }
       },
-      // Self-wrap uses the local pubkey so we can always unwrap our
-      // own envelope; peer wraps bypass the TOFU cache so we use the
-      // recipient's current server-known identity rather than a
-      // stale entry from a previous account session. See
-      // seedInitialGroupKey for the longer rationale.
+      // Self: local pubkey; peers: force-refresh past TOFU cache.
       fetchIdentityKey: (userId) {
         if (userId == myUserId) {
           return crypto.getIdentityPublicKey();
         }
         return crypto.fetchPeerIdentityKey(userId, forceRefresh: true);
       },
-      // TD-4: same TOFU-bypass guard as seedInitialGroupKey. If any
-      // peer's identity key changed on the most recent refresh,
-      // refuse to wrap the new group key under it.
+      // TD-4: refuse to wrap under TOFU-changed peer key.
       hasIdentityKeyChanged: (userId) async {
         if (userId == myUserId) return false;
         return crypto.hasPeerIdentityKeyChanged(userId);

@@ -12,24 +12,6 @@ import '../widgets/empty_state.dart';
 import '../widgets/settings/section_header.dart';
 import '../widgets/user_avatar.dart';
 
-// ---------------------------------------------------------------------------
-// NewMessageScreen
-//
-// Chip-based new-chat composer.
-//
-// UX flow:
-//   1. User types a name or @handle in the text field.
-//   2. An autocomplete dropdown shows matching contacts.
-//   3. Selecting a suggestion OR pressing Enter materialises the typed text
-//      as a chip; the field clears ready for the next recipient.
-//   4. Each chip has an × to remove it.
-//   5. Bottom action area:
-//      - 0 chips  → disabled "Start chat" button
-//      - 1 chip   → "Start chat with @username" → getOrCreateDm → navigate
-//      - 2+ chips → inline group-name step appears; "Create group" calls
-//                   createGroup → navigate
-// ---------------------------------------------------------------------------
-
 /// Modal-style "New message" composer with chip-based recipient selection.
 ///
 /// Pass [onStartConversation] to receive the resolved [Conversation] and

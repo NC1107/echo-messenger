@@ -31,10 +31,7 @@ Future<img.Image?> decodeAvatarImage(Uint8List bytes) {
   }
   if (direct != null) return Future.value(direct);
 
-  // Only try the platform decoder for formats `image` legitimately can't
-  // handle. Falling back unconditionally would hide truly malformed input
-  // and stall the dialog when the platform decoder isn't available
-  // (notably in widget tests, where instantiateImageCodec doesn't resolve).
+  // Platform codec only for HEIF family — unconditional fallback would hide malformed input and stall widget tests.
   if (_looksLikeHeifFamily(bytes)) {
     return _decodeViaPlatformCodec(bytes);
   }
@@ -115,9 +112,7 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
   // The decoded image (nullable until async decode completes).
   img.Image? _decoded;
 
-  // Viewport dimensions for the preview area. Picked at runtime in
-  // [didChangeDependencies] so the desktop window gets a roomier cropper
-  // (mouse users can't pinch-zoom; they pan + use the zoom slider).
+  // Desktop gets a roomier preview because mouse users can't pinch-zoom.
   static const _previewSizeMobile = 280.0;
   static const _previewSizeDesktop = 460.0;
   double _previewSize = _previewSizeMobile;
@@ -157,9 +152,7 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
     final isDesktop = w >= 800;
     final desired = isDesktop ? _previewSizeDesktop : _previewSizeMobile;
     if (_previewSize == desired) return;
-    // TD-12: wrap the size flip in setState so the next build sees the
-    // new viewport. The Custompaint mask, slider min, and crop preview
-    // all key off _previewSize.
+    // TD-12: setState so mask/slider-min/preview all see the new _previewSize.
     setState(() {
       _previewSize = desired;
       if (_decoded != null) {
@@ -195,9 +188,7 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
       }
       final imgW = decoded.width.toDouble();
       final imgH = decoded.height.toDouble();
-      // Scale so the shorter side covers the preview square. Cache the
-      // min so the build-time Slider doesn't recompute it every frame
-      // (TD-13).
+      // Cache minScale so the Slider doesn't recompute per frame (TD-13).
       final minScale = _previewSize / (imgW < imgH ? imgW : imgH);
       final scaledW = imgW * minScale;
       final scaledH = imgH * minScale;
@@ -457,9 +448,6 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
                   left: _offset.dx,
                   top: _offset.dy,
                   child: Image.memory(
-                    // Re-encode a thumbnail for display to avoid re-decoding
-                    // the full bitmap every frame. We cache the memory image
-                    // from rawBytes directly.
                     widget.rawBytes,
                     width: _decoded!.width * _scale,
                     height: _decoded!.height * _scale,

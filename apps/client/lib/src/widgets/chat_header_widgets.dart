@@ -77,9 +77,7 @@ class _IdentityChangedBadgeState extends ConsumerState<IdentityChangedBadge> {
   /// banner so the warning lives entirely in the header.
   Future<void> _showActions() async {
     final myName = ref.read(authProvider).username ?? 'You';
-    // Username is cosmetic on the safety-number screen; falling back to the
-    // userId keeps the badge self-contained without plumbing the peer's
-    // display name down from the header.
+    // peerLabel is cosmetic on the safety-number screen; fall back to userId.
     final peerLabel = widget.peerUserId;
 
     await showEchoBottomSheet<void>(
@@ -369,13 +367,7 @@ class _PinnedMessagesDialogState extends ConsumerState<PinnedMessagesDialog> {
         final list = decoded is List
             ? decoded
             : (decoded['messages'] as List? ?? []);
-        // The /pinned endpoint returns the raw stored content, which is
-        // ciphertext for encrypted DMs.  Re-hydrate from the per-conversation
-        // message cache (which stores the decrypted view) so users see the
-        // plaintext they expect.  Falls back to the server payload if the
-        // message isn't in the cache (e.g. pinned before this device joined
-        // the conversation) -- in that case the user still sees something is
-        // pinned, just as ciphertext, which matches the prior behavior (#724).
+        // /pinned returns ciphertext for encrypted DMs; rehydrate from message cache to show plaintext (#724).
         final messages = <ChatMessage>[];
         for (final e in list) {
           final raw = ChatMessage.fromServerJson(

@@ -92,14 +92,8 @@ pub async fn find_or_create_dm_conversation(
         return Ok(row.0);
     }
 
-    // Slow path: create the conversation and claim the canonical slot.
-    // Acquire a transaction-scoped advisory lock keyed on the canonical
-    // (lo, hi) pair so concurrent creators for the same user pair serialize
-    // here rather than contending at the UNIQUE constraint level.  We
-    // concatenate the lexicographically smaller UUID first so both argument
-    // orderings hash to the same i64.  `pg_advisory_xact_lock` (not the
-    // `try_` variant) blocks until the lock is available and releases
-    // automatically when the transaction ends.
+    // Slow path: transaction-scoped advisory lock on the canonical (lo, hi)
+    // pair so concurrent creators serialize here, not at the UNIQUE constraint.
     let mut tx = pool.begin().await?;
 
     sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1::text || $2::text))")
@@ -145,10 +139,8 @@ pub async fn find_or_create_dm_conversation(
         .execute(&mut *tx)
         .await?;
 
-    // Atomically claim the (lo, hi) slot.  If another concurrent request
-    // already committed a row for this pair, the DO UPDATE is a no-op that
-    // returns the *existing* conversation_id, letting us discard the one we
-    // just created by rolling back.
+    // Atomically claim the (lo, hi) slot; on race the DO UPDATE returns the
+    // existing conversation_id and we roll back our orphan rows below.
     let winner: (Uuid,) = sqlx::query_as(
         "INSERT INTO direct_conversations (user_lo, user_hi, conversation_id) \
          VALUES ($1, $2, $3) \
@@ -191,10 +183,8 @@ pub async fn store_message(
     content: &str,
     reply_to_id: Option<Uuid>,
     ttl_seconds: Option<i64>,
-    // GRP2 senders mint a UUID client-side and bind it into their
-    // signature payload (audit OQ-12). When supplied the server uses
-    // it verbatim; otherwise the column default (`gen_random_uuid`)
-    // assigns one. v4 collisions surface as a unique-constraint error.
+    // GRP2 senders bind a client-minted UUID into their signature payload
+    // (audit OQ-12); when None the column default assigns one.
     client_message_id: Option<Uuid>,
 ) -> Result<MessageRow, sqlx::Error> {
     let expires_at: Option<DateTime<Utc>> =
@@ -236,11 +226,7 @@ pub async fn get_messages(
     requesting_user_id: Uuid,
     requesting_device_id: Option<i32>,
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
-    // Single query handles both cursor and non-cursor cases via optional $3 param.
-    // When device_id is supplied, COALESCE per-device ciphertext over the
-    // canonical content. reply_count is computed via a single aggregating
-    // subquery joined once (O(N+M)) instead of a LATERAL correlated subquery
-    // that re-executes per row (O(N*M)).
+    // reply_count joined once (O(N+M)) instead of LATERAL (O(N*M)).
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
                 m.sender_device_id, \
@@ -328,32 +314,10 @@ pub async fn get_undelivered(
         Some((ts, id)) => (Some(ts), Some(id)),
         None => (None, None),
     };
-    // reply_count is computed via a single aggregating subquery joined once
-    // (O(N+M)) rather than a LATERAL correlated subquery that re-executes for
-    // every returned row (O(N*M)).
-    //
-    // #829: this query MUST NOT filter on `m.delivered = false`. The global
-    // `delivered` flag is flipped on first-device delivery (see
-    // `send_delivery_confirmation`), so a sibling device coming online later
-    // would never receive a replay. The per-device `message_deliveries`
-    // ledger is the correct gate -- the fanout path is responsible for
-    // populating it for online deliveries.
-    //
-    // System messages (sentinel-prefixed; e.g. `__system__:member_joined:...`)
-    // are best-effort UI pills broadcast at the moment of the event via
-    // `broadcast_json`; they intentionally do not flow through the ledger or
-    // mark_delivered path. We exclude them from replay so a member who was
-    // offline when a join/leave happened does NOT get a stale pill on
-    // reconnect, while real chat traffic still replays through the ledger.
-    //
-    // The NOT EXISTS guard filters messages that were already pushed to THIS
-    // device (either successfully decryptable or as an undecryptable marker).
-    // Without it a device that can't decrypt a frame would receive the same
-    // placeholder on every reconnect.
-    // reply_count is scoped to the specific message IDs being returned rather
-    // than a full-table GROUP BY.  The CTE `batch` captures the IDs first;
-    // the reply_count subquery filters `WHERE reply_to_id = ANY(SELECT id FROM batch)`
-    // which is O(batch_size) instead of O(total messages).
+    // #829: gate on the per-device `message_deliveries` ledger, NOT the global
+    // `m.delivered` flag — that flips on first-device delivery and would starve
+    // sibling devices. System messages (`__system__:` prefix) are excluded so
+    // offline members don't get stale join/leave pills on reconnect.
     sqlx::query_as::<_, MessageWithSender>(
         "WITH batch AS ( \
              SELECT m.id \
@@ -631,12 +595,9 @@ pub async fn search_messages(
     query: &str,
     limit: i64,
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
-    // reply_count is computed via a single aggregating subquery joined once
-    // (O(N+M)) rather than the prior LATERAL correlated subquery that
-    // re-executed per row (O(N*M)). The partial index on
+    // reply_count joined once (O(N+M)); backed by the partial index on
     // `(reply_to_id) WHERE reply_to_id IS NOT NULL AND deleted_at IS NULL`
-    // (added in an earlier migration) backs the GROUP BY scan (#834
-    // finding 8).
+    // (#834 finding 8).
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
                 m.sender_device_id, \
@@ -1007,12 +968,9 @@ pub async fn get_thread_replies(
     before: Option<chrono::DateTime<chrono::Utc>>,
     limit: i64,
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
-    // reply_count is computed via a single aggregating subquery joined once
-    // (O(N+M)) rather than the prior LATERAL correlated subquery that
-    // re-executed per row (O(N*M)). The partial index on
+    // reply_count joined once (O(N+M)); backed by the partial index on
     // `(reply_to_id) WHERE reply_to_id IS NOT NULL AND deleted_at IS NULL`
-    // (added in an earlier migration) backs the GROUP BY scan (#834
-    // finding 8).
+    // (#834 finding 8).
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
                 m.sender_device_id, \

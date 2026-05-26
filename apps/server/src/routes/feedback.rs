@@ -96,10 +96,7 @@ pub async fn create_feedback(
         )));
     }
 
-    // Rolling-window rate limit.  We count the caller's reports in the last
-    // 24h, including triaged + closed ones, so closing a report can't be
-    // used to refill the quota.  `feedback_user_id_created_at_idx` keeps
-    // this cheap even as the table grows.
+    // Count includes triaged/closed so closing a report can't refill quota.
     let (recent,): (i64,) = sqlx::query_as(
         "SELECT COUNT(*) FROM feedback \
          WHERE user_id = $1 AND created_at > NOW() - INTERVAL '24 hours'",

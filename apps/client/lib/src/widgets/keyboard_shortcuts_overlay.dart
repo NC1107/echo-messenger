@@ -28,10 +28,7 @@ class _KeyboardShortcutsOverlayState extends State<KeyboardShortcutsOverlay> {
     super.dispose();
   }
 
-  // Keep this list in sync with the actual `CallbackShortcuts` bindings in
-  // `home_screen.dart` and the message-composer key handlers. Listing keys
-  // here that aren't really bound is worse than listing fewer — users try
-  // them, nothing happens, and the whole overlay loses trust.
+  // Keep in sync with CallbackShortcuts in home_screen.dart + composer handlers — unbound entries erode trust.
   static const _sections = <_ShortcutSection>[
     _ShortcutSection('Navigation', [
       _Shortcut('Ctrl+K', 'Quick-switch conversations'),
@@ -249,9 +246,7 @@ class _ShortcutRow extends StatelessWidget {
   /// Splits a shortcut string like "Ctrl+K" into ["Ctrl", "K"].
   /// Preserves multi-word tokens (e.g. "Long press" stays as one part).
   static List<String> _splitKeys(String keys) {
-    // Use + as separator only when surrounded by identifier-like chars.
-    // e.g. "Ctrl+K" → ["Ctrl", "K"], "Hover + ❤" → ["Hover ", " ❤"]
-    // Simple heuristic: split on bare `+` (not surrounded by spaces).
+    // Split on bare `+` only; " + " is kept (e.g. "Hover + ❤").
     if (keys.contains('+') && !keys.contains(' + ')) {
       return keys.split('+');
     }

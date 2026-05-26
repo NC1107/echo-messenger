@@ -94,10 +94,7 @@ mixin _HomeScreenListenersMixin
       _self._selectedConversation = fresh;
       return;
     }
-    // Permanently removed (left, deleted, kicked) — clear selection.
-    // Gate on isLoading rather than emptiness so deleting the very
-    // last conversation still clears the panel instead of getting
-    // stuck because convs.isEmpty.
+    // Clear selection on removal; gate on isLoading so deleting the last conversation still clears.
     if (fresh == null && !convState.isLoading) {
       _self._selectedConversation = null;
       _self._narrowPanelIndex = 0;

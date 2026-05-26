@@ -209,10 +209,7 @@ class ChatHeaderBar extends ConsumerWidget {
           )
         : null;
 
-    // For DMs, render an amber lock-open glyph when the conversation is not
-    // encrypted (explicit "plaintext DM" warning replaces the old banner).
-    // Groups never show the unlock-open glyph because group plaintext is
-    // expected today.
+    // Plaintext-DM warning glyph; groups skip it (group plaintext is currently expected).
     final Widget? unencryptedDmGlyph = !conv.isGroup
         ? const Padding(
             padding: EdgeInsets.only(left: 5),
@@ -395,10 +392,7 @@ class ChatHeaderBar extends ConsumerWidget {
             label: 'Shared media',
           ),
         ),
-      // "Members" is now always surfaced as an inline icon:
-      //   • narrow layout → people_outline button added by _buildNarrowActionButtons
-      //   • wide layout   → people_outline inline button in _buildWideActionButtons
-      // No overflow entry is needed for either layout.
+      // Members lives as an inline icon (narrow + wide layouts); no overflow entry needed.
       if (!conv.isGroup)
         PopupMenuItem<String>(
           value: 'disappearing',
@@ -510,13 +504,7 @@ class ChatHeaderBar extends ConsumerWidget {
   }
 
   void _openSharedMedia(BuildContext context, Conversation conv) {
-    // Two surfaces share this gallery:
-    //   • Wide viewports (>= 900 px) → a centred dialog sized so the
-    //     grid has enough breathing room to render 4-5 thumbnails per
-    //     row instead of the cramped 2-per-row a phone-shaped sheet
-    //     forced on desktop.
-    //   • Narrow viewports → the existing bottom-sheet treatment,
-    //     which feels native on phones.
+    // Wide viewports (>= 900px) get a centred dialog; narrow stays on bottom sheet.
     final screen = MediaQuery.of(context).size;
     if (screen.width >= 900) {
       showDialog<void>(

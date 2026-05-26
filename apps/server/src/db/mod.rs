@@ -35,10 +35,7 @@ pub async fn create_pool(database_url: &str) -> PgPool {
     const MAX_RETRIES: u32 = 5;
     let mut delay_secs = 1u64;
 
-    // TD-56: keep a small warm pool so the first request after a long
-    // idle stretch doesn't pay 50–200 ms of TCP+TLS+startup latency. The
-    // 15 s acquire timeout (up from 5 s) gives heavy bursts room to drain
-    // without surfacing pool exhaustion as 500s on the readyz probe.
+    // TD-56: warm pool + 15s acquire so idle-recovery + bursts don't 500.
     let min_conns: u32 = std::env::var("DB_MIN_CONNECTIONS")
         .ok()
         .and_then(|s| s.parse().ok())

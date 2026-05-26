@@ -83,9 +83,7 @@ impl MessageRateCounter {
         let now = Instant::now();
         let mut history = self.history.lock().expect("metrics mutex poisoned");
 
-        // Roll the in-progress bucket out whenever a full second has
-        // elapsed.  We always pull the AtomicU64 to zero (swap) so two
-        // back-to-back `per_second` calls can't double-count.
+        // swap-to-zero so back-to-back per_second calls can't double-count.
         if now.duration_since(history.current_started) >= Duration::from_secs(1) {
             let count = self.current_bucket.swap(0, Ordering::Relaxed);
             let started = history.current_started;

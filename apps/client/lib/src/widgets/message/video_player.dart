@@ -146,11 +146,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
   ///      corner is the explicit entry point for users who don't discover
   ///      the gesture.
   Widget _buildVideoArea() {
-    // Server generates a JPEG first-frame thumbnail at upload time (#561).
-    // If that endpoint 404s (older upload, ffmpeg missing, etc.), the
-    // CachedNetworkImage's errorWidget falls back to the previous solid tile.
-    // Use the pre-resolved thumbUrl from the widget so that query params
-    // (e.g. ?ticket= on web) appear after /thumb, not before it (#411).
+    // Server JPEG thumbnail (#561); pre-resolved thumbUrl keeps `?ticket=` after `/thumb` (#411).
     final thumbUrl = widget.thumbUrl;
     // Inline thumbnail is 170px tall; cap decode height at 170 * DPR so
     // we don't hold a 4K still-frame in RAM for a thumbnail (#639).
@@ -211,9 +207,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       );
     }
 
-    // States 1 + 2: thumbnail with a play button. Tapping starts inline
-    // playback; if init has already failed once we route to the standalone
-    // fullscreen player which renders a richer error UI.
+    // Thumbnail + play. Init-failure routes to fullscreen player for richer error UI.
     return Semantics(
       label: 'play video',
       button: true,

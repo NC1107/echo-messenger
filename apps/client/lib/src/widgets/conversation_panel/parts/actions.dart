@@ -118,9 +118,7 @@ mixin _ConversationPanelActionsMixin on ConsumerState<ConversationPanel> {
     );
   }
 
-  // The owner of a group with other members can't leave (the server
-  // enforces this); per the cross-cutting decision we hide the row
-  // entirely rather than render it disabled.
+  // Server forbids owner-leave with other members; hide the row rather than render disabled.
   bool _resolveCanLeave(Conversation conv, String myRole, String myUserId) {
     if (!conv.isGroup) return false;
     final ownerWithMembers =

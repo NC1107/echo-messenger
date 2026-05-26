@@ -36,10 +36,7 @@ class _ShutdownHandlerState extends ConsumerState<ShutdownHandler>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // Force-instantiate the websocket provider so we don't have to discover
-    // it lazily inside _handleShutdown — at OS-shutdown time the framework
-    // is mid-tear-down and provider creation can race the dispose pipeline.
-    // Using read() (not watch()) avoids unnecessary rebuilds.
+    // Pre-instantiate so OS-shutdown handler doesn't race provider creation against dispose.
     ref.read(websocketProvider.notifier);
   }
 
@@ -65,10 +62,7 @@ class _ShutdownHandlerState extends ConsumerState<ShutdownHandler>
       // Provider may already be disposed during forced teardown — ignore.
     }
 
-    // 2. Flush pending Hive writes.  `Hive.close()` is async; since
-    //    `didChangeAppLifecycleState` is a synchronous callback we cannot
-    //    await it.  Fire-and-forget: even starting the close is far better
-    //    than an abrupt kill mid-write which would corrupt box files.
+    // 2. Fire-and-forget Hive.close (sync callback can't await); starting close beats mid-write kill.
     Hive.close().ignore();
   }
 

@@ -24,9 +24,7 @@ extension _EditMode on ChatInputBarState {
     if (text.isEmpty || _editingMessage == null) return;
 
     final conv = widget.conversation;
-    // #582: belt-and-suspenders for the parent UI gate. Editing on an
-    // encrypted conversation would broadcast plaintext to every member, so
-    // we never submit it. The server also returns 409.
+    // #582: never submit edits on encrypted convs (broadcasts plaintext); server also returns 409.
     if (conv.isEncrypted) {
       _cancelEditMode();
       if (mounted) {
@@ -58,9 +56,7 @@ extension _EditMode on ChatInputBarState {
               body: jsonEncode({'content': text}),
             ),
           );
-      // The server returns 409 when an encrypted conversation rejects an
-      // edit (#582). Surface a non-fatal toast so the user understands
-      // why the change rolled back.
+      // 409 = encrypted-conv edit rejection (#582); surface non-fatal toast for rollback.
       if (response.statusCode == 409 && mounted) {
         ToastService.show(
           context,

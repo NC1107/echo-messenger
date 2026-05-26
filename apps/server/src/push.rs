@@ -153,10 +153,7 @@ pub async fn notify_offline_users(
         return;
     }
 
-    // Drop recipients who muted this conversation so they don't get an APNs
-    // alert for messages they would not be notified about locally either.
-    // Fail open on database errors -- it is better to over-notify than to
-    // silently drop legitimate notifications.
+    // Fail open: over-notify beats silently dropping legitimate alerts.
     let unmuted =
         match db::messages::get_unmuted_user_ids(pool, conversation_id, offline_user_ids).await {
             Ok(u) => u,
@@ -181,11 +178,8 @@ pub async fn notify_offline_users(
         return;
     }
 
-    // TD-58: fan out APNs pushes concurrently with a bounded semaphore so a
-    // 50-recipient group doesn't serialise N×50–200 ms HTTP RTTs in one
-    // tokio task. APNs HTTP/2 connections support multiple streams so 16
-    // concurrent sends per call is well within their per-connection budget
-    // and keeps the latency under ~1 s for typical group sizes.
+    // TD-58: bounded-concurrency fanout (16) so big groups don't serialise
+    // N×100ms HTTP RTTs; APNs HTTP/2 multiplexes streams comfortably.
     use futures_util::stream::StreamExt;
     let pool = pool.clone();
     const PUSH_FANOUT_CONCURRENCY: usize = 16;
@@ -384,9 +378,7 @@ mod tests {
 
     #[test]
     fn multibyte_boundary_mid_char_no_panic() {
-        // "e\u{0301}" = 'e' (1 byte) + combining acute U+0301 (2 bytes) = 3 bytes per unit.
-        // 47 units = 141 bytes (> 140). Byte 140 is 0x81, the continuation byte of the
-        // 47th combining accent. floor_char_boundary(140) = 139, the start of that accent.
+        // 47 × "e\u{0301}" = 141 bytes; truncating at 140 must back off to 139.
         let accent = "e\u{0301}".repeat(47); // 141 bytes
         assert_eq!(accent.len(), 141);
         let body = format_push_body(&accent, false);

@@ -16,31 +16,29 @@ import 'widgets/shutdown_handler.dart';
 ThemeData _applyCustomColors(ThemeData base, CustomColorsState custom) {
   if (!custom.hasOverrides) return base;
   final scheme = base.colorScheme;
-  final primary = custom.primaryColor ?? scheme.primary;
-  final accent = custom.accentColor ?? scheme.secondary;
-  // Recompute on-color contrast for the new primary so text on sent bubbles
-  // + buttons stays readable on a custom accent.
-  final onPrimary =
-      ThemeData.estimateBrightnessForColor(primary) == Brightness.dark
-      ? Colors.white
-      : Colors.black;
-  final onSecondary =
+  // `context.accent` (the dominant accent reader, ~270 callsites) is
+  // wired to `colorScheme.primary`, so the user's accent override must
+  // land there for the picker to actually move the UI.
+  final accent = custom.accentColor ?? scheme.primary;
+  final secondary = custom.primaryColor ?? scheme.secondary;
+  final onAccent =
       ThemeData.estimateBrightnessForColor(accent) == Brightness.dark
       ? Colors.white
       : Colors.black;
-  // Propagate the override into EchoColorExtension so old + new message
-  // bubbles (sentBubble) and any accent-derived surface (accentLight) reflect
-  // the picker choice. Locked rule: sentBubble = primary.
+  final onSecondary =
+      ThemeData.estimateBrightnessForColor(secondary) == Brightness.dark
+      ? Colors.white
+      : Colors.black;
   final echoExt = base.extension<EchoColorExtension>();
   final updatedEcho = echoExt?.copyWith(
-    sentBubble: primary,
-    accentLight: primary.withValues(alpha: 0.2),
+    sentBubble: accent,
+    accentLight: accent.withValues(alpha: 0.2),
   );
   return base.copyWith(
     colorScheme: scheme.copyWith(
-      primary: primary,
-      onPrimary: onPrimary,
-      secondary: accent,
+      primary: accent,
+      onPrimary: onAccent,
+      secondary: secondary,
       onSecondary: onSecondary,
     ),
     extensions: [
@@ -50,7 +48,7 @@ ThemeData _applyCustomColors(ThemeData base, CustomColorsState custom) {
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         backgroundColor: accent,
-        foregroundColor: onSecondary,
+        foregroundColor: onAccent,
       ),
     ),
     textButtonTheme: TextButtonThemeData(

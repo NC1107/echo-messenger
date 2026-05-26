@@ -85,12 +85,8 @@ class CryptoState {
 /// not change.
 @Riverpod(keepAlive: true)
 class CryptoNotifier extends _$CryptoNotifier {
-  /// Per-conversation single-flight tracker for [seedInitialGroupKey].
-  /// Without this, multiple admins joining a group simultaneously (or one
-  /// admin firing the self-heal repeatedly) issue concurrent rotations:
-  /// each does probe + member fetch + N identity-key fetches + envelope
-  /// POST, and N-1 of those POSTs lose a 409 race. Audit P2 critical
-  /// finding (rotation storm).
+  /// Per-conversation single-flight to prevent rotation-storm (audit P2);
+  /// concurrent admins/self-heal would fan out to A×(N+2) parallel HTTP POSTs.
   final Set<String> _rotatingGroups = <String>{};
 
   @override
@@ -128,10 +124,7 @@ class CryptoNotifier extends _$CryptoNotifier {
   Future<void> retryStorageUnlock() async {
     if (!state.secureStorageUnavailable) return;
     state = state.copyWith(secureStorageUnavailable: false);
-    // The next decrypt against any session will re-read from secure storage.
-    // If the keyring is still locked the flag will be re-set automatically
-    // via the observer callback. Drain pending messages to give the retry
-    // an immediate chance to either succeed or re-flip the flag.
+    // Drain pending so retry either succeeds or re-flips the flag immediately.
     final myUserId = ref.read(authProvider).userId ?? '';
     if (myUserId.isNotEmpty) {
       ref.read(websocketProvider.notifier).drainPendingDecryptQueue(myUserId);
@@ -157,10 +150,7 @@ class CryptoNotifier extends _$CryptoNotifier {
           'Crypto',
           'Key upload attempt $attempt failed: $uploadError',
         );
-        // Don't retry on rate limit or identity conflict -- same error repeats.
-        // Identity-key conflicts now surface as the typed
-        // IdentityKeyConflictException (#664); UI is responsible for prompting
-        // the user to run resetThisDeviceKeys.
+        // (#664) Skip retry on rate limit / identity conflict — same error repeats.
         if (uploadError is IdentityKeyConflictException ||
             errorStr.contains('429') ||
             errorStr.contains('409')) {
@@ -194,9 +184,7 @@ class CryptoNotifier extends _$CryptoNotifier {
 
       final crypto = ref.read(cryptoServiceProvider);
       crypto.setToken(token);
-      // Audit P0-1 / P0-2: wire observability callbacks so transient
-      // keyring failures and exhausted upload-heal retries become visible
-      // UI banners instead of silent debugPrints.
+      // Audit P0-1/P0-2: surface keyring + upload-heal failures as UI banners.
       crypto.setObservers(
         onSecureStorageUnavailable: _markSecureStorageUnavailable,
         onKeyUploadTerminalFailure: _markKeyUploadTerminalFailure,
@@ -205,10 +193,8 @@ class CryptoNotifier extends _$CryptoNotifier {
       if (crypto.keysAreFresh) {
         final uploadError = await _uploadKeysWithRetry(crypto);
         if (uploadError != null) {
-          // Keys are initialized locally but upload to server failed.
-          // Mark initialized so incoming messages can still be decrypted
-          // with the valid local keys. The keysUploadFailed flag blocks
-          // outgoing encrypted sends and shows a degradation banner.
+          // Local keys OK but upload failed: mark initialized so inbound still
+          // decrypts; keysUploadFailed blocks outbound + shows banner.
           state = state.copyWith(
             isInitialized: true,
             isUploading: false,
@@ -244,9 +230,7 @@ class CryptoNotifier extends _$CryptoNotifier {
       final myUserId = ref.read(authProvider).userId ?? '';
       ref.read(websocketProvider.notifier).drainPendingDecryptQueue(myUserId);
     } on PlatformException catch (e) {
-      // Linux libsecret / keyring failures -- crypto is NOT available.
-      // Explicitly mark as not initialized so callers never send plaintext
-      // thinking encryption is active.
+      // Keyring failure: mark NOT initialized so callers don't send plaintext.
       debugPrint('[Crypto] PlatformException during init: $e');
       DebugLogService.instance.log(
         LogLevel.error,
@@ -421,12 +405,8 @@ class CryptoNotifier extends _$CryptoNotifier {
     String conversationId, {
     int? currentVersion,
   }) async {
-    // Single-flight per conversation. Drops concurrent attempts so a
-    // multi-admin group, an invite-link burst, or rapid Send retries
-    // can't fan out to A×(N+2) parallel HTTP requests per join (audit
-    // critical finding — rotation storm). The first caller does the
-    // work; subsequent callers get `null` and rely on the next
-    // group_key_rotated WS event to populate the local cache.
+    // Single-flight per conversation (rotation-storm guard). Losers return
+    // null and rely on group_key_rotated WS to populate the cache.
     if (_rotatingGroups.contains(conversationId)) {
       DebugLogService.instance.log(
         LogLevel.info,
@@ -460,13 +440,8 @@ class CryptoNotifier extends _$CryptoNotifier {
 
     final serverUrl = ref.read(serverUrlProvider);
 
-    // Recovery path for groups whose v=1 envelopes were uploaded with
-    // stale identity keys (and are therefore unwrappable). Probe
-    // /keys/latest — if a key already exists we rotate to version+1
-    // instead of hardcoding v=1, which would 409-conflict and leave the
-    // group wedged forever. Callers with a fresh version hint (e.g. the
-    // group_key_rotation_requested WS payload) can pass currentVersion
-    // and skip the probe entirely (TD-6).
+    // TD-6: probe /keys/latest so we rotate to version+1 instead of 409ing on
+    // hardcoded v=1 — leaves the group wedged forever otherwise.
     var nextVersion = 1;
     if (currentVersion != null) {
       nextVersion = currentVersion + 1;
@@ -481,9 +456,7 @@ class CryptoNotifier extends _$CryptoNotifier {
           final existing = body['key_version'] as int?;
           if (existing != null) nextVersion = existing + 1;
         } else if (probe.statusCode == 401 || probe.statusCode == 403) {
-          // TD-18: 401/403 means the rotation will also be rejected;
-          // bail rather than uploading v=1 envelopes the server can't
-          // accept. The caller's WS event will retry once auth refreshes.
+          // TD-18: rotation would also be rejected — let WS event retry on auth.
           DebugLogService.instance.log(
             LogLevel.warning,
             'GroupRotation',
@@ -495,9 +468,7 @@ class CryptoNotifier extends _$CryptoNotifier {
         }
         // 404 (no key yet) falls through with nextVersion == 1.
       } catch (e) {
-        // TD-18: network/decoder failures fall through to v=1 (the
-        // brand-new-group case). Log so a post-mortem can distinguish
-        // legitimate first-key rotations from blocked recovery attempts.
+        // TD-18: fall through to v=1 for brand-new-group; log for post-mortem.
         DebugLogService.instance.log(
           LogLevel.warning,
           'GroupRotation',
@@ -535,30 +506,15 @@ class CryptoNotifier extends _$CryptoNotifier {
           return [];
         }
       },
-      // For self, use the local public key derived from the in-memory
-      // identity keypair — that's the only key guaranteed to round-trip
-      // through our local private key on the unwrap side. A stale TOFU
-      // cache entry for self would otherwise wrap with an old public key
-      // and leave us unable to decrypt our own envelope.
-      //
-      // For other members, force a server refresh so we use whatever
-      // identity key the recipient currently has uploaded, not whatever
-      // we cached weeks ago. If the recipient's local private key has
-      // since drifted from the server-known public key, that's a
-      // recipient-side problem the server can't help with; the TOFU
-      // change-detection will flag it on the recipient's next fetch.
+      // Self: use local pubkey (only one guaranteed to unwrap via our private).
+      // Peers: force-refresh so we wrap under their current server-uploaded key.
       fetchIdentityKey: (userId) {
         if (userId == myUserId) {
           return crypto.getIdentityPublicKey();
         }
         return crypto.fetchPeerIdentityKey(userId, forceRefresh: true);
       },
-      // TD-4: refuse to wrap the group secret under a changed peer
-      // identity key. The force-refresh above silently updates the
-      // TOFU cache to whatever the server returned; the rotation
-      // checks the per-user "changed" flag and aborts if anyone's
-      // key is unconfirmed. Self is never flagged (we generate our
-      // own key) so the check is a no-op for myUserId.
+      // TD-4: refuse to wrap under an unconfirmed TOFU-changed peer key.
       hasIdentityKeyChanged: (userId) async {
         if (userId == myUserId) return false;
         return crypto.hasPeerIdentityKeyChanged(userId);

@@ -208,10 +208,7 @@ pub async fn accept_invite(
         })));
     }
 
-    // #829: the in-tx revalidation can surface `Expired` / `Exhausted` if a
-    // concurrent accept raced past the pre-tx fast path above. Map those
-    // outcomes to the same error shape the fast-path checks use so the API
-    // response is consistent.
+    // #829: surface race-discovered Expired/Exhausted with the same error shape.
     let outcome = db::groups::accept_invite_token(&state.pool, &token, auth.user_id)
         .await
         .db_ctx("accept_invite/insert")?;

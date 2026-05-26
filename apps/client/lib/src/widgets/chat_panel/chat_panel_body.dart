@@ -224,11 +224,7 @@ Widget buildChatContentBox(
         : BoxDecoration(color: context.chatBg),
     child: Stack(
       children: [
-        // Hidden live region for screen-reader announcements when peer
-        // messages arrive (#495 / #630). Mounted as the first child of
-        // the outer Stack so it lives at a stable index in the build
-        // tree — Flutter won't recreate the Semantics node when the
-        // floating-date pill or new-messages-below pill toggle.
+        // Hidden live region (#495/#630); first Stack child so its index stays stable across pill toggles.
         Semantics(
           liveRegion: true,
           label: p.liveRegionAnnouncement,
@@ -243,9 +239,7 @@ Widget buildChatContentBox(
               onBack: p.onBack,
               onMembersToggle: p.onMembersToggle,
               onGroupInfo: p.onGroupInfo,
-              // Column mode's left rail already shows the group avatar +
-              // name + member count in its own header; rendering them
-              // here too produced the duplicate label the user reported.
+              // Column-mode rail already shows group identity; suppress duplicate label here.
               hideGroupIdentity: useColumn,
             ),
             if (p.conv.isGroup && !useColumn && !useColumnDrawer)
@@ -258,10 +252,7 @@ Widget buildChatContentBox(
                 onVoiceChannelChanged: p.onVoiceChannelChanged,
                 onShowLounge: p.onShowLounge,
               ),
-            // Audit P0-1/P0-2/P0-3: surface keyring-lock, OTP-heal failure,
-            // and wedged-session states above the message list with an
-            // action button where applicable. Renders a SizedBox.shrink()
-            // when no flag is active.
+            // Audit P0-1/P0-2/P0-3: surface keyring/OTP/wedged-session states (renders shrink when idle).
             EncryptionStatusBanner(conversation: p.conv),
             if (p.isLoadingHistory)
               LinearProgressIndicator(

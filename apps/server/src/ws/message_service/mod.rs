@@ -60,9 +60,8 @@ pub(super) async fn handle_send_message(
     reply_to_id: Option<Uuid>,
     recipient_device_contents: Option<RecipientDeviceContents>,
     ttl_seconds: Option<i64>,
-    // GRP2 senders mint this client-side and bind it into the sender
-    // signature; the server has to honour it or signature verification
-    // breaks (audit OQ-12). Plaintext / GRP1 senders leave it `None`.
+    // GRP2: client-minted, bound into the sender signature (OQ-12). The server
+    // MUST honour it or signature verification breaks.
     client_message_id: Option<Uuid>,
 ) {
     if !validate_message_length(state, sender_id, &content) {
@@ -80,10 +79,8 @@ pub(super) async fn handle_send_message(
         return;
     };
 
-    // Belt-and-suspenders ciphertext shape gate. When a conversation is marked
-    // `is_encrypted`, the server must refuse any payload that isn't shaped like
-    // an Echo wire frame (initial V1/V2 or normal-message header). This closes
-    // the confidentiality hole left open by client-only enforcement.
+    // Server-side ciphertext shape gate: refuse non-wire-frame payloads on
+    // encrypted conversations (closes the client-only enforcement hole).
     if conv_security.is_encrypted
         && !validate_encrypted_payload(
             state,
@@ -97,15 +94,8 @@ pub(super) async fn handle_send_message(
         return;
     }
 
-    // Phase 1.5 (audit P1-2): encrypted-group sender-membership gate.
-    //
-    // `resolve_conversation` already verifies membership for every send,
-    // but the migration plan in `docs/group-e2e-design/04-migration-plan.md`
-    // calls out the "kicked member tries to send" attack as a distinct
-    // surface that deserves its own structured rejection (`sender-not-member`).
-    // Running this only on the encrypted-group branch keeps the signal
-    // unambiguous in logs/metrics and adds a defence-in-depth re-check
-    // for any future code path that resolves the conversation differently.
+    // P1-2: encrypted-group sender-membership re-check (kicked-member attack);
+    // structured `sender-not-member` rejection + defence-in-depth.
     if conv_security.is_encrypted
         && conv_kind == Some(ConversationKind::Group)
         && !enforce_group_sender_membership(state, sender_id, conv_id).await
@@ -113,12 +103,8 @@ pub(super) async fn handle_send_message(
         return;
     }
 
-    // TD-30: encrypted-DM recipient-inclusion gate. The shape validator
-    // already requires `recipient_device_contents` to be non-empty, but it
-    // doesn't check that the actual peer is in the map. Without this check
-    // a sender could populate only their own devices and let the fanout
-    // fallback deliver `legacy_msg` to the peer with whatever bytes pass
-    // the structural shape gate.
+    // TD-30: encrypted-DM peer must be in `recipient_device_contents`, else
+    // a sender could ship arbitrary bytes via the legacy fallback.
     if conv_security.is_encrypted
         && conv_kind == Some(ConversationKind::Direct)
         && let Some(rdc) = recipient_device_contents.as_ref()
@@ -127,11 +113,7 @@ pub(super) async fn handle_send_message(
         return;
     }
 
-    // #834 finding 15: parse the wire-shape recipient_device_contents exactly
-    // once here, after validation. Downstream consumers (store_and_confirm,
-    // fanout_message, build_per_device_json, the self-device-delivery loop)
-    // all read the typed `HashMap<Uuid, HashMap<i32, String>>` instead of
-    // reparsing the same UUID + i32 fields up to three times per device.
+    // #834 finding 15: parse rdc once instead of reparsing per device downstream.
     let parsed_rdc = recipient_device_contents
         .as_ref()
         .map(ParsedRecipientDeviceContents::from_wire);
@@ -159,11 +141,7 @@ pub(super) async fn handle_send_message(
         return;
     };
 
-    // Bump the dashboard "messages per second" counter exactly once per
-    // accepted relay (post-store, pre-fanout). Hot path: a single relaxed
-    // atomic fetch-add, no allocation, no lock except for the once-per-second
-    // bucket roll inside `MessageRateCounter`.  Carries no per-user or
-    // per-content data — see `metrics.rs` for the privacy invariant.
+    // Aggregate rate only — privacy invariant in `metrics.rs`.
     state.message_rate.record();
 
     let deliver = ServerMessage::NewMessage {

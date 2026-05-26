@@ -15,15 +15,7 @@ import '../../providers/screen_share_provider.dart';
 import 'echo_screen_select_dialog.dart';
 
 bool _useLiveKitPicker() {
-  // macOS, Windows, and Linux: use EchoScreenSelectDialog which enumerates
-  // sources via flutter_webrtc's DesktopCapturer (no portal dependency).
-  //
-  // Linux previously deferred to flutter_webrtc's setScreenShareEnabled which
-  // was supposed to route through xdg-desktop-portal. In practice the portal
-  // handshake is unreliable — it returns "source not found" when the portal
-  // daemon isn't running or dismisses the picker before flutter_webrtc reads
-  // the result (#12). Using the same custom picker path as macOS/Windows
-  // bypasses the portal entirely and gives consistent source enumeration.
+  // Desktop uses EchoScreenSelectDialog (DesktopCapturer); Linux xdg-portal handshake is flaky (#12).
   if (kIsWeb) return false;
   if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) return true;
   return false;
@@ -64,9 +56,7 @@ Future<void> _stopScreenShare(
   LiveKitVoiceNotifier lkNotifier,
   ScreenShare ssNotifier,
 ) async {
-  // #936: Explicitly unpublish + stop + dispose the screen-share publication
-  // so the next start request acquires a brand-new portal source instead of
-  // reusing a stale reference that would publish white frames.
+  // #936: Full unpublish/stop/dispose so the next start gets a fresh portal source, not white frames.
   final local = lkNotifier.room?.localParticipant;
   if (local != null) {
     await _cleanupScreenSharePubs(local);
@@ -84,9 +74,7 @@ Future<void> _startScreenShareWithPicker(
   ScreenShare ssNotifier,
 ) async {
   try {
-    // Use our custom picker instead of lk.ScreenSelectDialog, which has two
-    // bugs: Image.memory without errorBuilder (crashes on non-decodable
-    // thumbnail bytes) and a setState-after-dispose race on dismiss.
+    // lk.ScreenSelectDialog has two bugs (no errorBuilder, setState-after-dispose); use our picker.
     final source = await showEchoScreenSelectDialog(context);
     if (source == null || !context.mounted) return;
     final track = await lk.LocalVideoTrack.createScreenShareTrack(
@@ -94,15 +82,7 @@ Future<void> _startScreenShareWithPicker(
     );
     final room = lkNotifier.room;
     if (room != null) {
-      // #910: explicit single-layer VP8 publish for screen-share. Without
-      // this, the SDK falls back to `roomOptions.defaultVideoPublishOptions`
-      // which is tuned for camera (simulcast=true + a camera-shaped
-      // VideoEncoding). On macOS/Windows that combination negotiates a
-      // simulcast layout that the SFU silently drops for remote viewers —
-      // the sharer keeps their local preview (no SFU round-trip) but
-      // remotes see no track. A single-layer VP8 publish matches what
-      // LiveKit's own meet sample uses for screen-share and is decodable
-      // everywhere flutter_webrtc runs.
+      // #910: single-layer VP8 — camera-shaped simulcast default gets dropped by SFU on macOS/Windows.
       await room.localParticipant?.publishVideoTrack(
         track,
         publishOptions: const lk.VideoPublishOptions(
@@ -122,13 +102,7 @@ Future<void> _startScreenShareNative(
   LiveKitVoiceNotifier lkNotifier,
   ScreenShare ssNotifier,
 ) async {
-  // #936: defensively sweep any leftover screen-share publication before
-  // asking LiveKit to enable one. If the toggle state in
-  // [screenShareProvider] ever drifts out of sync with LiveKit's internal
-  // `getTrackPublicationBySource`, the SDK would take the
-  // `unmute(stale-track)` branch and publish white frames instead of
-  // creating a fresh track from the portal source the user just picked.
-  // Cheap no-op when there's nothing stale to clear.
+  // #936: sweep leftover pubs first — stale-track unmute publishes white frames if state drifts.
   final local = lkNotifier.room?.localParticipant;
   if (local != null) {
     await _cleanupScreenSharePubs(local);

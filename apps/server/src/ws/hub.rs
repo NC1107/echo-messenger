@@ -114,13 +114,8 @@ impl Hub {
     /// ledger can be populated even on the legacy/plaintext code path that
     /// doesn't carry a per-device frame map.
     pub fn send_to_user_collecting(&self, user_id: &Uuid, msg: WsMessage) -> SmallVec<[i32; 4]> {
-        // Snapshot the device IDs while holding the read ref so we can
-        // mutate `connections` (via `unregister`) without re-entrant locks
-        // on the slow-consumer eviction path below.
-        //
-        // SmallVec<[_; 4]> keeps the snapshot and accepted-IDs buffer on
-        // the stack for the typical 1-4 devices/user case so the hot
-        // fanout path stays heap-free (#834).
+        // Snapshot first so slow-consumer eviction below doesn't re-enter the
+        // map lock. #834: SmallVec<[_; 4]> keeps the hot path heap-free.
         let device_ids: SmallVec<[(i32, WsTx); 4]> = {
             let Some(devices) = self.inner.connections.get(user_id) else {
                 return SmallVec::new();

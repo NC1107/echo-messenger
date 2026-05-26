@@ -192,9 +192,7 @@ fn extract_ip(req: &Request<Body>, trusted_proxies: &[IpNet]) -> IpAddr {
         return ip;
     }
 
-    // Fallback to X-Forwarded-For -- use the LAST IP (appended by our proxy),
-    // not the first (attacker-controlled).  Reject private/loopback IPs to
-    // prevent spoofing bypass.
+    // X-Forwarded-For: use LAST IP (proxy-appended); first is attacker-set.
     if let Some(xff) = req.headers().get("x-forwarded-for")
         && let Ok(value) = xff.to_str()
         && let Some(last_ip) = value.rsplit(',').next()
@@ -435,9 +433,7 @@ mod tests {
 
     #[test]
     fn test_is_private_ipv4_mapped_ipv6() {
-        // TD-32: ::ffff:10.0.0.1 must be treated as the private v4 10.0.0.1.
-        // Without unwrapping, a trusted proxy passing the mapped form would
-        // let an attacker pick the rate-limit bucket key.
+        // TD-32: mapped form must unwrap or attacker picks the bucket key.
         let mapped_private = IpAddr::V6(Ipv4Addr::new(10, 0, 0, 1).to_ipv6_mapped());
         assert!(
             is_private(mapped_private),
@@ -655,10 +651,7 @@ mod tests {
         // sweep interval so no sweep fires during this test.
         let limiter = RateLimiter::new(100, 3600);
 
-        // Pre-fill 1000 distinct IPs with expired buckets (window_start = epoch,
-        // which is far in the past relative to any real Instant).  We can't
-        // directly set window_start to an "ancient" Instant from outside, so we
-        // insert at address-space level via the DashMap.
+        // Pre-fill 1000 expired buckets via the DashMap directly (epoch Instant).
         let ancient = limiter.sweep.epoch; // epoch itself: 0 nanos since epoch
         for i in 0u32..1000 {
             let ip = IpAddr::V4(std::net::Ipv4Addr::from(0x0A00_0001 + i));
@@ -671,9 +664,7 @@ mod tests {
             );
         }
 
-        // The sweep timer starts at 0 (never swept).  SWEEP_INTERVAL_SECS is 60 s.
-        // Set last_sweep_nanos to "right now" so the 60-second interval has NOT
-        // elapsed -- no sweep will be triggered during check().
+        // Force "just swept" so the 60s gate prevents sweep during check().
         let now_nanos = Instant::now()
             .duration_since(limiter.sweep.epoch)
             .as_nanos() as u64;
@@ -687,10 +678,7 @@ mod tests {
         let allowed = limiter.check(fresh_ip);
 
         assert!(allowed, "fresh IP should be allowed");
-        // Stale entries still present -- sweep did NOT run on this hot path.
-        // Deterministic check; the wall-clock perf claim is covered by the
-        // sweep-gate logic itself (verified by the entries.len() == 1001
-        // invariant, which only holds if retain() was never called).
+        // entries.len() == 1001 confirms retain() was not called on hot path.
         assert_eq!(
             limiter.entries.len(),
             1001, // 1000 pre-filled + 1 for fresh_ip

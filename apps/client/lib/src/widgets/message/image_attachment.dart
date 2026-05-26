@@ -89,21 +89,11 @@ class ImageAttachment extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Prefer explicit dimensions; fall back to the session-scoped cache
-    // (pre-populated by the upload path or by prior renders).
     final cached = imageDimensionCache[imageUrl];
     final resolvedWidth = imageWidth ?? cached?.width.toInt();
     final resolvedHeight = imageHeight ?? cached?.height.toInt();
 
-    // Cache-key keying: stripping the entire query string is too aggressive
-    // because the media-ticket on web flips between two states (null → fresh
-    // ticket) over the lifetime of a single chat session. A first render
-    // before the ticket arrives produces a no-ticket URL that 401s; once the
-    // ticket lands and the widget rebuilds with a ?ticket=… URL the
-    // image lookup HIT against the poisoned cache slot and the user sees
-    // [Image failed to load] permanently (#1094). Include a coarse
-    // ticket-bucket in the cache key so the failed-without-auth attempt
-    // doesn't poison the with-auth fetch.
+    // Bucket cache key by ticket presence so a no-auth 401 doesn't poison the with-auth fetch (#1094).
     final hasTicketSuffix =
         Uri.tryParse(imageUrl)?.queryParameters.containsKey('ticket') == true;
     final cachedImage = CachedNetworkImage(
@@ -140,8 +130,6 @@ class ImageAttachment extends StatelessWidget {
       placeholder: (_, _) => _skeleton(context, resolvedWidth, resolvedHeight),
     );
 
-    // When dimensions are known, wrap in AspectRatio so the bubble reserves
-    // the exact pixel proportion before any bytes arrive.
     if (resolvedWidth != null && resolvedHeight != null) {
       return AspectRatio(
         aspectRatio: resolvedWidth / resolvedHeight,

@@ -111,11 +111,8 @@ async fn broadcast_rotation_requested(state: &Arc<AppState>, group_id: Uuid, new
     let elected = elect_rotation_leader(&online);
 
     let Some(leader) = elected else {
-        // No online member can act on this trigger. Suppress the event
-        // (it would land in nobody's inbox anyway) and rely on the
-        // client-side getGroupKey path to recover when a member next
-        // returns. A deferred-trigger queue keyed by reconnect is a
-        // sensible follow-up; see CLAUDE.md / docs/group-e2e-design.
+        // No online member — suppress event; client getGroupKey recovers on
+        // reconnect. Deferred-trigger queue is a follow-up.
         tracing::info!(
             "rotate_group_key({group_id}): no online member at trigger time; \
              new_version={new_version} stored but rotation-requested event suppressed"
@@ -246,10 +243,7 @@ pub async fn add_member(
         ));
     }
 
-    // Fetch the canonical member list once inside the tx. Previously this
-    // happened twice (once for the `member_added` broadcast and once for
-    // the system-message broadcast); the duplicate fetch could even
-    // observe a stale list when other mutations raced.
+    // One in-tx fetch — duplicate reads could observe a stale list under races.
     let all_members = db::groups::get_conversation_member_ids(&mut *tx, group_id)
         .await
         .unwrap_or_default();

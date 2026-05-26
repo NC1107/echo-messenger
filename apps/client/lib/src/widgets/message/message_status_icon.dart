@@ -44,11 +44,7 @@ class MessageStatusIcon extends StatelessWidget {
       padding: const EdgeInsets.only(left: 4),
       child: Tooltip(
         message: tooltip,
-        // AnimatedSwitcher gives the sending → sent → delivered → read
-        // progression a brief scale transition so each status hand-off
-        // reads as 'something happened' instead of an instant icon swap.
-        // The ValueKey on the icon ensures the switcher detects the
-        // status change (icons of the same type still differ).
+        // Scale transition makes each status hand-off feel like 'something happened'; ValueKey lets switcher detect same-icon changes.
         child: AnimatedSwitcher(
           duration: MotionDurations.quick,
           switchInCurve: MotionCurves.emphasis,

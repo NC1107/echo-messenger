@@ -45,9 +45,7 @@ mixin AuthTokenRefreshMixin on Notifier<AuthState>, AuthTokenStorageMixin {
       final storedUsername = prefs.getString(AuthNotifier._keyUsername);
 
       if (kIsWeb) {
-        // On web the refresh token lives in an HttpOnly cookie managed by the
-        // browser. We only need a stored userId/username to restore session
-        // state after a successful cookie-based refresh.
+        // Web: refresh token is in HttpOnly cookie; just need stored user info.
         if (storedUserId == null || storedUsername == null) {
           return false;
         }
@@ -58,9 +56,7 @@ mixin AuthTokenRefreshMixin on Notifier<AuthState>, AuthTokenStorageMixin {
         );
       }
 
-      // Read refresh token from secure storage first, fall back to prefs
-      // (covers the case where secure storage was unavailable during
-      // migration or during a previous _storeTokens fallback write).
+      // Prefer secure storage; fall back to prefs if storage was unavailable.
       String? storedRefreshToken;
       try {
         storedRefreshToken = await SecureKeyStore.instance.readGlobal(
@@ -84,9 +80,7 @@ mixin AuthTokenRefreshMixin on Notifier<AuthState>, AuthTokenStorageMixin {
             legacyToken.isNotEmpty &&
             storedUserId != null &&
             storedUsername != null) {
-          // Legacy mode: we have an access token but no refresh token.
-          // Restore the session optimistically -- it may be expired, but
-          // individual API calls will handle 401 gracefully.
+          // Legacy: optimistic restore from access token; 401 path handles expiry.
           await _setUserScope(storedUserId);
           final legacyOnboardingDone =
               prefs.getBool('onboarding_completed') ?? true;
@@ -123,18 +117,12 @@ mixin AuthTokenRefreshMixin on Notifier<AuthState>, AuthTokenStorageMixin {
             data['refresh_token'] as String? ?? storedRefreshToken;
         final userId = data['user_id'] as String? ?? storedUserId ?? '';
         final username = data['username'] as String? ?? storedUsername ?? '';
-        // Server re-reads is_admin from the canonical users row on every
-        // refresh (apps/server/src/routes/auth.rs), so promotion /
-        // demotion since last login propagates here. Without parsing it
-        // the admin panel stays invisible after every cold restart on
-        // native clients — #1160.
+        // (#1160) Server re-reads is_admin on refresh so promotion propagates;
+        // without parsing it native cold-restart hides the admin panel.
         final isAdmin = data['is_admin'] as bool? ?? false;
 
-        // Persist new tokens BEFORE any other async work. The server
-        // already revoked the old refresh token during rotation, so if
-        // _setUserScope throws (e.g. Hive/IndexedDB error on web) or the
-        // page is refreshed before we finish, the new token is safe in
-        // localStorage and the next auto-login attempt will succeed.
+        // Persist tokens FIRST: server already revoked the old one in rotation,
+        // so a downstream throw must not lose the new token.
         await _storeTokens(
           accessToken: newAccessToken,
           refreshToken: newRefreshToken,
@@ -162,8 +150,7 @@ mixin AuthTokenRefreshMixin on Notifier<AuthState>, AuthTokenStorageMixin {
       }
     } catch (e) {
       debugPrint('[Auth] tryAutoLogin failed: $e');
-      // Network error or other failure -- don't clear tokens, just fail
-      // so user can retry when connectivity is restored.
+      // Network failure: don't clear tokens — let user retry when online.
       state = const AuthState();
       return false;
     }
@@ -184,12 +171,8 @@ mixin AuthTokenRefreshMixin on Notifier<AuthState>, AuthTokenStorageMixin {
             .post(
               Uri.parse('$_serverUrl/api/auth/refresh'),
               headers: _kJsonHeaders,
-              // Empty `{}` body, not no body: with `Content-Type:
-              // application/json` set, axum's `Option<Json<T>>` extractor
-              // tries to parse and fails with "EOF" on a zero-length body,
-              // which short-circuits before the cookie path runs and the
-              // user gets logged out on every refresh.  An empty object is
-              // valid JSON and makes serde's #[serde(default)] kick in.
+              // '{}' (not empty): axum's Option<Json<T>> fails on zero-length
+              // body with Content-Type: application/json, bypassing the cookie path.
               body: '{}',
             )
             .timeout(const Duration(seconds: 15));
@@ -199,9 +182,7 @@ mixin AuthTokenRefreshMixin on Notifier<AuthState>, AuthTokenStorageMixin {
           final newAccessToken = data['access_token'] as String;
           final userId = data['user_id'] as String? ?? storedUserId;
           final username = data['username'] as String? ?? storedUsername;
-          // See companion comment in tryAutoLogin's body-token path. The
-          // server returns is_admin on every refresh; without it the
-          // admin panel stays invisible on the web client too — #1160.
+          // (#1160) Parse is_admin so promotion propagates on web too.
           final isAdmin = data['is_admin'] as bool? ?? false;
 
           await _storeTokens(
@@ -244,9 +225,7 @@ mixin AuthTokenRefreshMixin on Notifier<AuthState>, AuthTokenStorageMixin {
   /// a new access token. Returns false if the refresh failed (in which case
   /// the user is logged out).
   Future<bool> refreshAccessToken() async {
-    // If a refresh is already in-flight, coalesce with it instead of
-    // sending a duplicate request (server-side token rotation consumes
-    // the token on first use, so the second request would fail).
+    // Coalesce in-flight refresh: server rotation consumes on first use.
     if (_refreshLock != null) {
       return _refreshLock!.future;
     }
@@ -265,8 +244,7 @@ mixin AuthTokenRefreshMixin on Notifier<AuthState>, AuthTokenStorageMixin {
   }
 
   Future<bool> _doRefreshAccessToken() async {
-    // On web the refresh token is in the HttpOnly cookie; the client never
-    // holds it in memory. On native the token must be present in state.
+    // Web: token is in HttpOnly cookie. Native: must be in state.
     if (!kIsWeb) {
       final currentRefreshToken = state.refreshToken;
       if (currentRefreshToken == null || currentRefreshToken.isEmpty) {
@@ -277,11 +255,7 @@ mixin AuthTokenRefreshMixin on Notifier<AuthState>, AuthTokenStorageMixin {
     try {
       final http.Response response;
       if (kIsWeb) {
-        // Let the browser attach the cookie automatically.  Send an empty
-        // `{}` body rather than nothing -- axum's Option<Json<T>> extractor
-        // fails with "EOF" if Content-Type is application/json and the body
-        // is zero-length, which short-circuits before the cookie path can
-        // run.  See companion comment in tryAutoLogin's _tryRefreshWithCookie.
+        // Browser attaches cookie; '{}' body avoids axum EOF on Option<Json<T>>.
         final client = buildHttpClient();
         try {
           response = await client

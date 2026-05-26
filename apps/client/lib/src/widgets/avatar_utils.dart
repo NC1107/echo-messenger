@@ -41,10 +41,7 @@ Widget buildAvatar({
   );
 
   if (imageUrl != null && imageUrl.isNotEmpty) {
-    // Decode at ~3x the display size so the image cache holds a small
-    // bitmap instead of the source resolution. A 1024×1024 source decoded
-    // at 64dp display becomes a ~192×192 bitmap — roughly 28× less memory.
-    // 3× covers retina DPR; oversized sources never decode larger than this.
+    // Decode at 3× display size (covers retina DPR) so 1024² avatars don't sit in RAM as 1024² bitmaps.
     final memCacheWidth = (radius * 2 * 3).ceil();
     return ClipOval(
       key: ValueKey(imageUrl),

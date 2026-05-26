@@ -23,10 +23,7 @@ class SharedMediaGallery extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // TD-60: subscribe only to *this* conversation's message list, not the
-    // whole `ChatState`. Before, opening this screen and idling on any other
-    // conversation rebuilt the gallery (and every CachedNetworkImage tile)
-    // on every inbound message system-wide.
+    // TD-60: per-conv selector so messages in other convs don't rebuild the gallery.
     final messages = ref.watch(
       chatProvider.select((s) => s.messagesForConversation(conversationId)),
     );
@@ -152,11 +149,7 @@ class _MediaGrid extends StatelessWidget {
       return _buildEmpty(context);
     }
 
-    // For images, the resolved URL points to the file itself. For videos, the
-    // file URL would be the .mp4/.webm bytes, so we resolve `<rawUrl>/thumb`
-    // for the tile preview instead. Building the `/thumb` path off the raw URL
-    // (before resolveMediaUrl appends any `?ticket=`) keeps the query string
-    // at the very end of the URL — matches the InlineVideoPlayer fix in #411.
+    // Videos resolve `<rawUrl>/thumb` for tile previews; build path BEFORE resolveMediaUrl appends `?ticket=` (#411).
     final resolvedThumbUrls = [
       for (final item in items)
         resolveMediaUrl(
@@ -180,9 +173,7 @@ class _MediaGrid extends StatelessWidget {
         : resolvedThumbUrls;
     final headers = mediaHeaders(authToken: authToken);
 
-    // Use a max-extent delegate so the grid scales: 3 columns on a phone,
-    // 5-6 on a wide desktop dialog. A fixed `crossAxisCount: 3` looked
-    // sparse when the gallery opened on desktop.
+    // Max-extent delegate so grid scales from 3 cols (phone) to 5-6 (desktop dialog).
     return GridView.builder(
       padding: const EdgeInsets.all(4),
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(

@@ -153,10 +153,7 @@ class _ConversationRail extends StatelessWidget {
                     child: InkResponse(
                       onTap: () => onSelect(c.id),
                       radius: 24,
-                      // Avatars without an image fall back to a single
-                      // initial letter; without this exclude, that letter
-                      // gets merged into the row's accessibility label
-                      // (e.g. "chat with jake J").
+                      // ExcludeSemantics so the fallback initial doesn't append to the row's label.
                       child: ExcludeSemantics(child: avatar),
                     ),
                   ),

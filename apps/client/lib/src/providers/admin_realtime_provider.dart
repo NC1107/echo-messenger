@@ -139,15 +139,10 @@ class AdminRealtimeNotifier
   }
 
   Future<void> _tick() async {
-    // Don't stomp on an in-progress request: only fire when the previous
-    // result has settled.  If the dashboard is offscreen or the user just
-    // switched tabs, autoDispose has already torn us down.
+    // Skip if previous request still in flight.
     if (state.isLoading || state.isRefreshing) return;
     final next = await AsyncValue.guard(_load);
-    // Don't overwrite a fresh data state with a transient error during a
-    // background tick — keep showing the last good numbers but stash the
-    // error so the UI can surface a small "stale" indicator. We use
-    // [AsyncValue.guard] above precisely so this branch is reachable.
+    // AsyncValue.guard preserves last-good data on transient error → stale indicator.
     state = next;
   }
 
@@ -165,9 +160,7 @@ class AdminRealtimeNotifier
         final json = jsonDecode(response.body) as Map<String, dynamic>;
         return AdminRealtimeStats.fromJson(json);
       case 401:
-        // The server emits `code: "reauth-required"` plus a
-        // WWW-Authenticate header.  We accept either as the signal so a
-        // stale token doesn't surface as a generic 401.
+        // Accept either code:"reauth-required" or WWW-Authenticate header.
         final wwwAuth = response.headers['www-authenticate'] ?? '';
         if (wwwAuth.contains('reauth_required') ||
             response.body.contains('reauth-required')) {

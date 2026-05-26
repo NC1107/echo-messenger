@@ -138,14 +138,10 @@ mod tests {
 
     #[test]
     fn test_expired_token_is_rejected() {
-        // Mint a token whose exp is in the past and confirm validate_token
-        // rejects it.  Guards against regressions that disable expiry checks
-        // (e.g. flipping `validation.validate_exp` off).
+        // Guards against regressions that disable validate_exp.
         let user_id = Uuid::new_v4();
         let now = chrono::Utc::now().timestamp() as usize;
-        // jsonwebtoken's Validation::default() has a 60-second clock-skew
-        // leeway, so the expiry must be more than 60s in the past for the
-        // assertion to be meaningful.
+        // Default 60s clock-skew leeway — push exp >60s past for a real test.
         let expired = Claims {
             sub: user_id.to_string(),
             exp: now - 3600,

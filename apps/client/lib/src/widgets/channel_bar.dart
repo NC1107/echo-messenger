@@ -299,10 +299,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     if (mounted) setState(() => _joiningChannelId = channel.id);
 
     try {
-      // Breadcrumb: write and force-flush to disk synchronously before the
-      // LiveKit join so any iOS SIGKILL inside joinChannel still leaves a clear
-      // trail.  The blocking write completes in <5 ms on iOS flash storage
-      // (buffer is capped at 5000 NDJSON lines, well under 1 MB).
+      // Sync flush before join so iOS SIGKILL inside joinChannel still leaves a breadcrumb (<5ms).
       DebugLogService.instance.log(
         LogLevel.info,
         'VoiceLoungeUI',

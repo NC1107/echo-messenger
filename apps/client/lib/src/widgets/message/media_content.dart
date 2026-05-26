@@ -17,10 +17,7 @@ import 'image_attachment.dart';
 import 'video_player.dart';
 import 'voice_message_widget.dart';
 
-// Markers may be followed by a newline + caption (the seed script and the
-// chat input both produce `[img:URL]\nCaption`), so the regex is anchored at
-// the start, uses a lazy capture, and does NOT require the closing `]` to
-// be at end-of-string. See #795.
+// Markers may be followed by `\nCaption`, so regex is start-anchored, not end-anchored (#795).
 
 /// Regex for detecting image markers: [img:URL]
 final _imgRegex = RegExp(r'^\[img:([^\]\n]+)\]');
@@ -101,9 +98,7 @@ String resolveMediaUrl(
       resolved = '$base$url';
     }
   }
-  // On web, <img> tags cannot carry Authorization headers, so pass a
-  // media ticket via query parameter.  Tickets are scoped to media only
-  // and expire after 5 minutes (unlike JWTs which grant full API access).
+  // <img> tags can't carry Authorization on web; ticket query param is media-scoped, 5-min TTL.
   if (kIsWeb && mediaTicket != null && mediaTicket.isNotEmpty) {
     final separator = resolved.contains('?') ? '&' : '?';
     resolved = '$resolved${separator}ticket=$mediaTicket';
@@ -391,9 +386,7 @@ class MediaContentState extends State<MediaContent> {
                   : ImageAttachment(
                       imageUrl: fullUrl,
                       headers: _headers(),
-                      // Cap decode at 300px * DPR so a 4K JPEG isn't
-                      // held in RAM at full size for a 300px inline
-                      // bubble (#639).
+                      // Cap decode at 300px*DPR — keeps 4K JPEGs out of RAM for a 300px bubble (#639).
                       memCacheWidth:
                           (300 * MediaQuery.devicePixelRatioOf(context))
                               .round(),
@@ -411,12 +404,7 @@ class MediaContentState extends State<MediaContent> {
       builder: (ctx, ref, _) {
         final gif = ref.watch(gifPlaybackProvider);
         if (gif.isAnimating) {
-          // Route GIF playback through the disk cache so
-          // switching conversations doesn't re-fetch the
-          // animation each time (#562).
-          // Cap decode at 300px * DPR so a 4K GIF
-          // doesn't get fully decoded for a 300px
-          // bubble (#639).
+          // Disk-cache GIFs (#562); decode capped at 300px*DPR (#639).
           final dpr = MediaQuery.devicePixelRatioOf(ctx);
           return Image(
             image: ResizeImage(
@@ -681,9 +669,6 @@ class _ImageViewerDialog extends StatelessWidget {
               minScale: 0.8,
               maxScale: 4,
               child: GestureDetector(
-                // Tap on the image (or its letterbox padding) dismisses
-                // the viewer. Pinch / pan are different gesture kinds
-                // and still flow up to InteractiveViewer.
                 onTap: () => Navigator.of(context).pop(),
                 behavior: HitTestBehavior.opaque,
                 child: _buildViewerImage(viewerCacheWidth),

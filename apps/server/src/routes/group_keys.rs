@@ -140,10 +140,7 @@ fn validate_upload_request(body: &UploadGroupKeyRequest) -> Result<(), AppError>
             "key_version must be a positive integer",
         ));
     }
-    // The CHECK constraint on the column enforces 1..=255, but a clear
-    // 400 with a typed message beats the bare 23514 db error on the
-    // happy mistake (a client passing 0 to "disable" or a future GRPN
-    // value the server hasn't shipped support for yet).
+    // Mirror the column CHECK (1..=255) so clients see 400 not 23514.
     if !(1..=255).contains(&body.min_wire_version) {
         return Err(AppError::bad_request(
             "min_wire_version must be between 1 and 255",
@@ -262,12 +259,8 @@ async fn persist_group_key_and_envelopes(
     .await
     .map_err(map_store_group_key_error)?;
 
-    // Store per-member envelopes inside the same tx. Every envelope at a
-    // given key_version shares the same min_wire_version — the constraint
-    // is "this key version requires GRP-N or newer", not "this member
-    // requires GRP-N". Per-member differences would let a hostile rotator
-    // pin GRP1 for one recipient and GRP2 for another, leaving the GRP1
-    // recipient open to downgrade.
+    // All envelopes at a given key_version share min_wire_version — per-member
+    // differences would let a hostile rotator pin one recipient on GRP1.
     for envelope in &body.envelopes {
         db::keys::store_group_key_envelope(
             &mut *tx,
@@ -281,12 +274,8 @@ async fn persist_group_key_and_envelopes(
         .db_ctx("upload_group_key/store_envelope")?;
     }
 
-    // OQ-13: append the rotation to the audit log inside the same tx
-    // as the envelope writes so the audit trail and the envelope
-    // table commit together. `completed_by_user_id` mirrors
-    // `triggered_by_user_id` for now — server-led leader election
-    // (where the leader != the trigger source) is a follow-up that
-    // can populate it differently without a schema change.
+    // OQ-13: audit log written in the same tx as the envelopes so they commit
+    // atomically; leader election is a future enhancement.
     db::group_key_rotations::insert_completed_rotation(
         &mut *tx,
         group_id,
@@ -374,25 +363,14 @@ pub async fn get_latest_group_key(
         return Ok(Json(GroupKeyEnvelopeResponse::from_row(env)).into_response());
     }
 
-    // No envelope for this caller — figure out which sub-case we're in.
-    // - If the group has NO key version at all -> 400 "no group key" (legacy
-    //   shape; pre-encryption groups and tests rely on this).
-    // - If the group HAS a key version but the caller's envelope is missing
-    //   at that version -> 410 Gone. Previously we fell back to serving the
-    //   sentinel `"__envelope__"` placeholder string out of `group_keys`,
-    //   which the client tried to decrypt as if it were a wrapped AES key
-    //   and exploded with `candidate key has wrong length: 9 bytes`. The
-    //   410 lets the client mark the group as "needs rotation" and surface
-    //   the recovery banner instead.
+    // No envelope for caller: 400 if group has no key at all, 410 if a sentinel
+    // exists (so the client can surface the "needs rotation" banner).
     let row = db::keys::get_latest_group_key(&state.pool, group_id)
         .await
         .db_ctx("get_latest_group_key/fetch")?
         .ok_or_else(|| AppError::bad_request("No group key found for this conversation"))?;
 
-    // A sentinel row means envelope-based distribution is in effect for this
-    // group AND we already confirmed (above) that no envelope exists for the
-    // caller. Anything else is a legacy plaintext key — preserve the old
-    // behaviour so groups created before the envelope scheme keep working.
+    // Sentinel = envelope distribution; non-sentinel = legacy plaintext key.
     if row.encrypted_key == "__envelope__" {
         let body = serde_json::json!({
             "error": "No group-key envelope exists for this user at the latest version",
@@ -444,12 +422,8 @@ pub async fn get_group_key_version(
 // -------------------------------------------------------------------------
 // GET /api/groups/:id/encryption-activity -- list completed rotations
 // -------------------------------------------------------------------------
-//
-// Audit OQ-13: server-side audit log of group key rotations. Returns
-// the audit rows newest-first for the admin "Encryption activity"
-// view. Restricted to admins+ because the rotation cadence and
-// trigger-source labels are a meaningful operational signal — a
-// regular member doesn't need a malicious-admin radar; an admin does.
+// OQ-13: admin-only audit log. Rotation cadence is an operational signal an
+// admin needs (malicious-admin radar) and a regular member does not.
 
 #[derive(Debug, Serialize)]
 pub struct GroupKeyRotationResponse {

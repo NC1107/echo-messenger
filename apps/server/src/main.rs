@@ -41,10 +41,7 @@ async fn main() {
         token_invalidator: echo_server::auth::TokenInvalidator::new(),
     });
 
-    // TD-37: cooperative shutdown token. Every periodic task takes a clone
-    // and exits on `cancelled()`; the main task awaits all handles in the
-    // shutdown path so DELETE/UPDATE batches finish cleanly instead of being
-    // torn at an arbitrary instruction by tokio runtime drop.
+    // TD-37: cooperative shutdown so DELETE/UPDATE batches finish cleanly.
     let shutdown_token = tokio_util::sync::CancellationToken::new();
     let mut periodic_handles: Vec<tokio::task::JoinHandle<()>> = Vec::new();
 
@@ -180,13 +177,8 @@ async fn main() {
         .await
         .expect("Failed to bind");
 
-    // Graceful shutdown via Ctrl+C — TD-37.
-    //
-    // Two-stage drain: (1) cancel the background-task token so periodic
-    // loops finish their current batch and exit; (2) let axum complete
-    // in-flight HTTP/WS responses via `with_graceful_shutdown`. After axum
-    // returns we await every periodic handle so the process only exits
-    // once each cleanup task is fully resolved.
+    // TD-37: two-stage drain — cancel periodics, then axum graceful shutdown,
+    // then await every periodic handle before exit.
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
     {
         let shutdown_token = shutdown_token.clone();
@@ -208,9 +200,7 @@ async fn main() {
     .await
     .expect("Server error");
 
-    // axum has stopped accepting new requests and drained in-flight ones;
-    // also ensure the background cleanup loops are fully wound down before
-    // the process exits.
+    // Wind down background loops too before exit.
     shutdown_token.cancel();
     for handle in periodic_handles {
         if let Err(e) = handle.await {
@@ -252,9 +242,7 @@ where
                 _ = interval.tick() => {}
             }
 
-            // Inside the tick, also race the work future against shutdown so
-            // we don't begin a fresh DELETE/UPDATE batch when the operator is
-            // already trying to bring the server down.
+            // Race against shutdown so we don't start a fresh batch mid-drain.
             let fut = make_fut();
             let work = std::panic::AssertUnwindSafe(Box::pin(fut)).catch_unwind();
             let result = tokio::select! {

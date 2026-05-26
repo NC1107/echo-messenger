@@ -116,9 +116,7 @@ pub async fn upload_group_avatar(
         .await
         .map_err(|e| AppError::bad_request(format!("Invalid multipart data: {e}")))?
     {
-        // Accept either "avatar" (historical) or "file" (matches the
-        // /api/media/upload convention used by the seed scripts and most
-        // generic upload pickers).
+        // Accept "avatar" (historical) or "file" (matches /api/media/upload).
         let field_name = field.name().unwrap_or_default().to_string();
         if field_name != "avatar" && field_name != "file" {
             continue;

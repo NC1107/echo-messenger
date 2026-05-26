@@ -186,10 +186,7 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
     );
     if (!confirmed) return;
 
-    // Wipe scoped state. SecureKeyStore.deleteAllForUser only operates on
-    // the currently-set scope, so we briefly set it for the user we have
-    // stored against this server (if any), then restore the scope of the
-    // currently-logged-in session afterwards.
+    // deleteAllForUser only acts on the current scope, so briefly switch and then restore.
     try {
       final host = Uri.tryParse(target.url)?.host ?? target.url;
       final keystore = SecureKeyStore.instance;
@@ -857,12 +854,7 @@ class _DebugLogEntryTileState extends State<_DebugLogEntryTile> {
 
   @override
   Widget build(BuildContext context) {
-    // Whole row is clickable; tap copies the formatted entry to the
-    // clipboard. The dedicated trailing IconButton was retired in #1128
-    // because Copy All already lives in the header and the per-row icon
-    // wasted ~44px of vertical reserve, cutting visible rows in half.
-    // RepaintBoundary so hover state on one row doesn't invalidate the
-    // whole list's paint layer (the buffer can hold up to 5000 entries).
+    // Whole row clickable copies the entry (#1128); RepaintBoundary keeps hover from invalidating up to 5000 rows.
     return RepaintBoundary(
       child: MouseRegion(
         onEnter: (_) => setState(() => _hovered = true),

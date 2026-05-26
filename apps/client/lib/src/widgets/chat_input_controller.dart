@@ -20,10 +20,7 @@ class ChatInputController extends ChangeNotifier {
   final FocusNode focus = FocusNode();
   final MentionComposerController mention;
 
-  // Single-pick stages one entry (caption-and-send flow); multi-pick stages
-  // all picked files so the user can review / cancel / watch progress before
-  // sending. Each entry carries a ValueNotifier for upload progress so chip
-  // rebuilds don't ripple through the whole input bar.
+  // Per-attachment ValueNotifier so chip progress rebuilds don't ripple through the input bar.
   final List<PendingAttachment> pendingAttachments = [];
 
   bool get hasPendingAttachment => pendingAttachments.isNotEmpty;
@@ -33,9 +30,7 @@ class ChatInputController extends ChangeNotifier {
       pendingAttachments.isNotEmpty &&
       pendingAttachments.every((a) => a.uploadedUrl != null);
 
-  // Voice amplitude tick runs every 100ms while [isRecording] is true.
-  // [recordingTimer] is cancelled in [dispose] before [recorder] is torn
-  // down so a late tick can't fire `getAmplitude` on a disposed recorder.
+  // recordingTimer cancelled in dispose BEFORE recorder teardown so a late tick can't hit a disposed recorder.
   final AudioRecorder recorder = AudioRecorder();
   bool isRecording = false;
   DateTime? recordingStartTime;

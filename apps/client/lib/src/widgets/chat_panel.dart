@@ -125,9 +125,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   int get _unreadBoundaryCount => _controller.unreadBoundaryCount;
   set _unreadBoundaryCount(int v) => _controller.unreadBoundaryCount = v;
 
-  // GlobalKeys for rendered message items, keyed by ID. Used by
-  // `_scrollToMessage` for pixel-accurate scrolling and by
-  // `_updateFloatingDate` to detect the topmost visible message.
+  // Per-message GlobalKeys for pixel-accurate scroll + topmost-visible detection.
   final _messageKeys = <String, GlobalKey>{};
 
   ChatMessage? _threadParent;
@@ -160,9 +158,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   Timer? _liveRegionClearTimer;
   OverlayEntry? _reactionOverlay;
 
-  // Previous-state trackers for transition-only toasts (replacing the
-  // four full-width banners). A toast fires when the relevant state
-  // crosses a boundary, never on every rebuild.
+  // Edge-detect trackers so toasts fire on state crossings, not every rebuild.
   bool? _prevWsConnected;
   bool? _prevWsReplaced;
   bool _prevWsMaxAttempts = false;
@@ -184,9 +180,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       if (mounted) _controller.deletedForMeIds = DeletedForMeStorage.ids;
     });
     _pendingInitialMessageId = widget.initialMessageId;
-    // Poll the peer-specific crypto flags every 4s while a DM is open. The
-    // old IdentityChangedBadge/SessionCorruptedBanner widgets each polled
-    // independently on rebuild; this single timer covers both transitions.
+    // Single 4s timer covers identity/corruption polls; was previously two independent rebuild polls.
     _peerStateTimer = Timer.periodic(
       const Duration(seconds: 4),
       (_) => _refreshPeerCryptoFlags(),
@@ -197,16 +191,11 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   void didUpdateWidget(covariant ChatPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.conversation?.id != oldWidget.conversation?.id) {
-      // Save scroll offset + current channel for the old conversation so a
-      // later return restores both. Order matters: capture channel BEFORE
-      // resetting selectedTextChannelId, and cache offset under the still-
-      // current cacheKeyFor (which uses that channel id).
+      // Save BEFORE resetting selectedTextChannelId so cacheKeyFor uses the right channel.
       final oldId = oldWidget.conversation?.id;
       if (oldId != null) _saveOldConversationState(oldId);
 
-      // Restore the channel the user last viewed in this conversation BEFORE
-      // anything reads cacheKeyFor — otherwise the per-channel scroll cache
-      // misses on the very lookup that should be hitting.
+      // Restore last-viewed channel BEFORE anything reads cacheKeyFor or the per-channel cache misses.
       final newId = widget.conversation?.id;
       _selectedTextChannelId = newId != null
           ? _controller.lastChannelByConversation[newId]
@@ -816,11 +805,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       ),
     );
 
-    // Watch only this conversation's message list reference and the loading
-    // flag for this channel — `messagesByConversation` keeps inner list
-    // refs stable across copyWith for unaffected conversations, so adding
-    // a message to conv B no longer rebuilds conv A's panel (#834 F6).
-    // PR #838 perf: keep this as .select
+    // Per-conv selector — inner list refs stay stable so conv-A doesn't rebuild on conv-B traffic (#834 F6, #838).
     final convMessages = ref.watch(
       chatProvider.select((s) => s.messagesByConversation[conv.id]),
     );
@@ -906,11 +891,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       } else if (_unreadBoundaryMessageId != null) {
         _scrollToUnreadBoundary();
       } else {
-        // First open: history is loading async in parallel and may render
-        // additional rows over the next several hundred ms. Mark the scroll
-        // as pending so we re-trigger it when the load completes; landing
-        // on the genuinely-newest message requires waiting for the layout
-        // pass that includes those new rows (#919).
+        // First open: re-trigger scroll after history load lands so we end on the actual newest row (#919).
         _initialScrollPending = true;
         _scrollToBottom(settleRetries: 3);
       }
@@ -921,10 +902,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   /// load finishes. Only active while [_initialScrollPending] is true (#919).
   void _listenForInitialHistoryLoad(Conversation conv) {
     if (!_initialScrollPending) return;
-    // Re-scroll to bottom when the initial history load completes. The first
-    // `_scrollToBottom` fires before any rows are rendered; once the server
-    // returns and the list grows downward, we want to land at the newest
-    // message rather than wherever the partial list ended (#919).
+    // Re-scroll once initial history load finishes — first `_scrollToBottom` ran before rows existed (#919).
     ref.listen(
       chatProvider.select(
         (s) => s.isLoadingHistory(conv.id, channelId: _selectedTextChannelId),

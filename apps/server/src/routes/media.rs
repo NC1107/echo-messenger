@@ -141,10 +141,8 @@ fn validate_bytes(data: &[u8], declared_mime: &str) -> Result<String, AppError> 
     match infer::get(data) {
         Some(inferred) => {
             let m = inferred.mime_type();
-            // M4A audio files share the same MP4 container magic bytes as
-            // video/mp4.  Different `infer` versions disambiguate differently:
-            // some report video/mp4 (and we trust the declared audio MIME),
-            // others report audio/m4a directly (which we accept on its own).
+            // M4A shares MP4 magic bytes; `infer` returns either depending on
+            // version, so trust an audio declared MIME when shape matches.
             let effective = if (m == "video/mp4" || m == "audio/m4a")
                 && matches!(
                     declared_mime,
@@ -262,9 +260,7 @@ pub(super) fn validate_head(head: &[u8], declared_mime: &str) -> Result<String, 
     match infer::get(head) {
         Some(inferred) => {
             let m = inferred.mime_type();
-            // M4A audio files share the same MP4 container magic bytes as
-            // video/mp4.  Different `infer` versions disambiguate differently
-            // (see validate_bytes for details).
+            // M4A shares MP4 magic bytes (see validate_bytes for details).
             let effective = if (m == "video/mp4" || m == "audio/m4a")
                 && matches!(
                     declared_mime,
@@ -711,10 +707,8 @@ pub async fn download(
     let ext = extension_for_mime(&row.mime_type);
     let disk_path = format!("./uploads/{id}.{ext}");
 
-    // Stat the file once so we can advertise Content-Length and serve byte
-    // ranges. iOS AVFoundation refuses to play video URLs that don't
-    // properly support `Range:` requests ("the server is not correctly
-    // configured" — the symptom the user hit on their iPhone).
+    // iOS AVFoundation requires Content-Length + Range support or refuses to
+    // play video URLs ("the server is not correctly configured").
     let metadata = fs::metadata(&disk_path).await.map_err(|e| {
         tracing::error!("Failed to stat media file {}: {}", disk_path, e);
         AppError {
@@ -748,9 +742,7 @@ pub async fn download(
     };
     let disposition = format!("inline; filename=\"{}\"", safe_filename);
 
-    // Honor a Range request if present. We support a single open or closed
-    // range; the multi-range form is rare in practice and AVFoundation
-    // doesn't issue it.
+    // Single-range only; multi-range is rare and AVFoundation never issues it.
     if let Some(range_header) = headers.get(RANGE).and_then(|v| v.to_str().ok()) {
         match parse_byte_range(range_header, total_size) {
             Ok((start, end)) => {
@@ -805,9 +797,7 @@ pub async fn download_thumb(
         return Err(AppError::unauthorized("Missing authentication"));
     };
 
-    // Fetch the media row first so we can derive the disk path from
-    // DB-validated state — this also acts as a CodeQL sanitizer for the
-    // path-traversal check on `id` (matching `download()`'s flow).
+    // Fetch the row first so the disk path is DB-validated (CodeQL sanitizer).
     let row = db::media::get_media(&state.pool, id)
         .await?
         .ok_or_else(|| AppError {
@@ -952,10 +942,7 @@ mod tests {
     // Minimal ELF header (magic 7F 45 4C 46).
     const ELF_BYTES: &[u8] = b"\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00";
 
-    // Minimal M4V header -- ftyp box with "M4V " brand, padded to 512 bytes.
-    // Apple M4V files use this brand; infer detects them as "video/x-m4v".
-    // These were rejected before the fix because "video/x-m4v" was missing
-    // from ALLOWED_MIME_TYPES (#411).
+    // #411: Apple M4V ftyp box, padded to 512 bytes.
     fn make_m4v_head() -> Vec<u8> {
         let mut v = vec![
             0x00, 0x00, 0x00, 0x14, // box size = 20
@@ -977,10 +964,7 @@ mod tests {
         assert_eq!(mime, "video/x-m4v");
     }
 
-    // Minimal M4A header -- ftyp box with "M4A " brand, padded to 512 bytes.
-    // The `record` plugin on iOS/Android produces this brand for AAC-LC voice
-    // recordings.  Different `infer` crate versions return either "video/mp4"
-    // or "audio/m4a" for this magic; both must round-trip through validation.
+    // #837: `record` plugin AAC-LC voice ftyp box, padded to 512 bytes.
     fn make_m4a_head() -> Vec<u8> {
         let mut v = vec![
             0x00, 0x00, 0x00, 0x14, // box size = 20
@@ -995,10 +979,7 @@ mod tests {
 
     #[test]
     fn validate_bytes_accepts_m4a_voice_recording() {
-        // Regression for #837: voice messages from mobile (record plugin,
-        // AAC-LC in MP4 container) were rejected because the declared MIME
-        // path only accepted infer="video/mp4", and infer can also report
-        // "audio/m4a" for the same magic bytes.
+        // Regression for #837: AAC-LC voice in MP4 container.
         let head = make_m4a_head();
         let mime = validate_bytes(&head, "audio/mp4")
             .expect("M4A voice recordings should be accepted when declared as audio/mp4");
@@ -1024,9 +1005,7 @@ mod tests {
 
     #[test]
     fn validate_bytes_rejects_elf_executable() {
-        // Either infer detects it as a disallowed executable type, or it
-        // returns None and falls through to the "Could not detect" branch.
-        // Both paths must reject, regardless of the declared MIME.
+        // Both the inferred-disallowed and infer-None paths must reject.
         let err = validate_bytes(ELF_BYTES, "application/octet-stream")
             .expect_err("ELF should be rejected");
         assert!(

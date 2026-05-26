@@ -107,13 +107,8 @@ impl FromRef<Arc<AppState>> for AuthExtract {
 }
 
 pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpNet>) -> Router {
-    // The built-in default covers the centralised deployment so a fresh
-    // self-hoster doesn't have to think about CORS. Self-hosters on a
-    // different apex MUST set CORS_ORIGINS explicitly; otherwise the web
-    // build can't refresh tokens against their server. `web.echo-messenger.us`
-    // is included as part of the domain migration (docs/domain-migration/)
-    // — Phase 1 serves the web build at BOTH apex and web.* so the new
-    // origin needs to be in the credentialed allow-list.
+    // Default targets the centralised deployment; self-hosters on a different
+    // apex MUST set CORS_ORIGINS or the web build can't refresh tokens.
     let cors_origins = std::env::var("CORS_ORIGINS").unwrap_or_else(|_| {
         "https://echo-messenger.us,https://web.echo-messenger.us,http://localhost:8081".into()
     });
@@ -129,10 +124,8 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpNet>) -> Route
     let allowed_headers = [header::CONTENT_TYPE, header::AUTHORIZATION];
 
     let cors = if cors_origins == "*" {
-        // Browsers reject `Access-Control-Allow-Credentials: true` paired with
-        // `Access-Control-Allow-Origin: *`, so the wildcard branch CANNOT enable
-        // credentials. The web client's HttpOnly refresh cookie requires
-        // explicit origins -- set `CORS_ORIGINS` to a comma-separated list.
+        // Wildcard CORS cannot enable credentials (browsers reject the pair),
+        // so the refresh cookie requires explicit `CORS_ORIGINS` entries.
         tracing::warn!(
             "CORS_ORIGINS is set to '*' — allowing all origins WITHOUT credentials. \
              This is insecure for production and disables cookie-based refresh. \
@@ -306,12 +299,9 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpNet>) -> Route
         .route("/device/{device_id}", delete(keys::revoke_device))
         .route("/otp-count", get(keys::get_otp_count));
 
-    // Chunked-upload routes (#556).  These coexist with the legacy
-    // `POST /api/media/upload` single-shot endpoint at `/upload`.  Each
-    // chunked route carries its own DefaultBodyLimit (32 MB, comfortably
-    // above the 16 MB hard cap on a single PATCH body) so the parent
-    // router's 100 MB MAX_FILE_SIZE limit -- which protects the legacy
-    // multipart upload -- isn't accidentally applied to chunks too.
+    // Chunked-upload routes (#556): each carries its own 32 MB DefaultBodyLimit
+    // so the parent's 100 MB MAX_FILE_SIZE (for the legacy multipart upload)
+    // doesn't apply to per-chunk PATCH bodies.
     let chunk_body_limit = DefaultBodyLimit::max(32 * 1024 * 1024);
 
     let media_routes = Router::new()
@@ -444,9 +434,7 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpNet>) -> Route
     let push_routes = Router::new()
         .route("/register", post(push::register_token))
         .route("/unregister", post(push::unregister_token))
-        // Server-switching teardown (#PR-2): clears every push token bound to
-        // the caller. Idempotent — calling with no tokens registered still
-        // returns 200 so clients can call it unconditionally before logout.
+        // #PR-2: idempotent push-token teardown for server switching.
         .route("/token", delete(push::delete_all_tokens));
 
     Router::new()
@@ -499,33 +487,16 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpNet>) -> Route
         ))
         .layer(SetResponseHeaderLayer::overriding(
             header::CONTENT_SECURITY_POLICY,
-            // API responses are JSON or binary (avatars, media files served
-            // via /api/{users,groups}/.../avatar and /api/media/{id}).
-            // Allow self-origin img + media so Firefox does not block their
-            // use in <img>/<video> embeds with the page's CSP fallback
-            // (#732, #733).  Everything else stays locked to 'none'.
-            // The Flutter web client (HTML+JS) is served by nginx with its
-            // own broader CSP that covers script/style/font/connect.
+            // #732, #733: self-origin img/media so Firefox doesn't block avatar
+            // and media embeds via the CSP fallback. Everything else 'none';
+            // the web client itself has a broader CSP set by nginx.
             header::HeaderValue::from_static(
                 "default-src 'none'; img-src 'self'; media-src 'self'; \
                  frame-ancestors 'none'; base-uri 'none'",
             ),
         ))
-        // Per-request tracing + request-id correlation (#1173).
-        //
-        // Layer order matters: axum's `.layer()` wraps the LAST-applied
-        // layer outermost, so the chain below produces — from outside in —
-        //   SetRequestIdLayer  → stamps `x-request-id` on the request
-        //                        (using inbound header if present, else a
-        //                        fresh UUID v4)
-        //   PropagateRequestIdLayer → mirrors that id onto the response so
-        //                             clients can log + report it
-        //   TraceLayer         → opens an `http.request` span that captures
-        //                        the request_id + leaves a `user_id` slot
-        //                        for the AuthUser middleware to fill in.
-        //
-        // SetRequestIdLayer must be outermost so the header is present by
-        // the time TraceLayer reads it.
+        // #1173: tracing + request-id. Layer order matters — SetRequestIdLayer
+        // must be outermost so TraceLayer sees the header.
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &axum::http::Request<_>| {
@@ -575,9 +546,7 @@ pub async fn readyz(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     match result {
         Ok(Ok(_)) => (StatusCode::OK, Json(serde_json::json!({ "status": "ok" }))),
         Ok(Err(e)) => {
-            // Log the underlying error server-side; do NOT expose connection
-            // details (hostnames, usernames, etc.) on the unauthenticated
-            // /readyz endpoint.
+            // Never expose DB connection details on the unauth /readyz.
             tracing::warn!(error = %e, "/readyz: db query failed");
             (
                 StatusCode::SERVICE_UNAVAILABLE,

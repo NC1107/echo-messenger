@@ -33,9 +33,7 @@ class HoverActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 33×33 hit target (scaled down from 44×44 per slice 4) — still
-    // comfortably above the 24px Material minimum for hit testing on
-    // desktop, while keeping the visual bar dense like Discord/Slack.
+    // 33×33 hit target — denser than Material's 24px minimum but tighter than 44px to match Discord/Slack.
     return Semantics(
       label: tooltip,
       button: true,

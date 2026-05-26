@@ -68,10 +68,7 @@ mixin ChatHistoryMixin on Notifier<ChatState> {
     _setLoadingHistory(historyKey, true);
 
     try {
-      // #557: pass our local device_id so the server can return device-aware
-      // ciphertexts via `message_device_contents`. Without this the server
-      // returns the canonical (originating-device) wire and secondary
-      // devices fail to decrypt their own DM history.
+      // (#557) Pass device_id so server returns device-scoped ciphertexts.
       final localDeviceId = crypto?.deviceId;
       final url = _buildHistoryUrl(
         conversationId,
@@ -122,9 +119,7 @@ mixin ChatHistoryMixin on Notifier<ChatState> {
     if (before != null) {
       url += '&before=${Uri.encodeComponent(before)}';
     }
-    // #557: device_id lets the server LEFT JOIN
-    // `message_device_contents` and return the row scoped to this device's
-    // ratchet rather than the originating device's wire.
+    // (#557) device_id scopes server LEFT JOIN to this device's ratchet.
     if (deviceId != null && deviceId > 0) {
       url += '&device_id=$deviceId';
     }
@@ -309,9 +304,7 @@ mixin ChatHistoryMixin on Notifier<ChatState> {
     // Skip decryption for non-encrypted group messages
     if (isGroup || !looksEncrypted(msg.content)) return msg;
 
-    // Check Hive cache first — Double Ratchet keys are consumed once and
-    // cannot be re-derived, so previously decrypted messages must come from
-    // the cache rather than re-decryption.
+    // Cache first: Ratchet keys are consumed once; re-decryption is impossible.
     if (conversationId != null) {
       final cached = await MessageCache.getCachedMessage(
         conversationId,
@@ -327,10 +320,8 @@ mixin ChatHistoryMixin on Notifier<ChatState> {
       return msg.copyWith(content: '[Encrypted history]', isEncrypted: true);
     }
 
-    // Use decryptHistoryMessage which never creates new sessions and returns
-    // null on failure instead of throwing.
-    // #557: pass the originating device so the right per-device ratchet is
-    // selected; null falls back to the legacy peer-only session key.
+    // (#557) decryptHistoryMessage: no new session, returns null on fail;
+    // fromDeviceId selects per-device ratchet (null → legacy key).
     final decrypted = await crypto.decryptHistoryMessage(
       msg.fromUserId,
       msg.content,

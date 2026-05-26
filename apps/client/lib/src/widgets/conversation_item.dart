@@ -175,11 +175,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
     final conv = widget.conversation;
     String? snippet = conv.lastMessage;
 
-    // System sentinels (e.g. `__system__:member_joined:UUID:USERNAME`) must
-    // be rendered as the friendly event line, not the raw sentinel and not
-    // with a "You: " sender prefix. They never come through the WS preview
-    // path — only the HTTP last_msg_cte fetch surfaces them — so this is the
-    // only place the sidebar gets to translate them.
+    // System sentinels reach the sidebar only via HTTP last_msg_cte — translate to friendly line here.
     if (snippet != null && snippet.startsWith('__system__:')) {
       final translated = ChatMessage.translateSystemSentinel(
         snippet,
@@ -212,13 +208,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
 
   String? _maskEncryptedSnippet(String? snippet) {
     if (snippet == null) return null;
-    // Normalise all encrypted-looking previews to a friendly placeholder.
-    // Anything starting with a "[Could not decrypt..." / "[Could not verify
-    // sender]" / "[Encrypted" / "[E2E]" bracketed sentinel is a protocol
-    // status string that should never read like a real message in the
-    // sidebar. We also catch raw GRP1:/GRP2: ciphertext + base64-shaped
-    // blobs that slipped past the WS decrypt path (missing key envelope,
-    // sender device not on file yet).
+    // Mask all crypto sentinels + raw ciphertext blobs that slipped past WS decrypt.
     if (snippet.startsWith('[Could not decrypt') ||
         snippet.startsWith('[Could not verify sender') ||
         snippet.startsWith('[Encrypted') ||
@@ -231,13 +221,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
 
   String? _applyMediaLabel(String? snippet) {
     if (snippet == null) return null;
-    // Match a leading [kind:url] marker, optionally followed by a newline and
-    // a caption (the seed scripts emit `[img:URL]\ncaption` for captioned
-    // attachments).  The previous `^\[img:.+\]$` regex only matched bare
-    // markers, so captioned messages leaked the raw `[img:...]` text into
-    // the conversation preview (#prod-2026-05-08). TD-80: regex itself
-    // lifted to a top-level final so the sidebar doesn't recompile it on
-    // every tile rebuild.
+    // Captioned `[kind:URL]\ncaption` previews used to leak the raw marker (#prod-2026-05-08).
     final match = _mediaMarkerRegExp.firstMatch(snippet);
     if (match == null) return snippet;
     final kind = match.group(1)!;
@@ -302,13 +286,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
               onSecondaryTapUp: (details) {
                 widget.onContextMenu?.call(details.globalPosition);
               },
-              // Mobile long-press now routes through the same
-              // onContextMenu callback as desktop right-click — the
-              // parent (conversation_panel) opens the centralised
-              // EchoContextMenu so the item itself no longer carries
-              // its own bottom-sheet implementation. The anchor
-              // coordinate is irrelevant on mobile (renders as a
-              // bottom sheet), so Offset.zero is a fine sentinel.
+              // Mobile long-press routes through onContextMenu → centralised EchoContextMenu (bottom sheet, anchor unused).
               onLongPress: _enableLongPressMenu
                   ? () => widget.onContextMenu?.call(Offset.zero)
                   : null,
@@ -324,9 +302,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                 padding: EdgeInsets.symmetric(
                   horizontal: _resolveHorizontalPadding(isCozy, isCompact),
                 ),
-                // Visual children re-announce muted/unread/timestamp via
-                // their own Semantics nodes; suppress those so the composed
-                // outer label is the single announcement (#631).
+                // ExcludeSemantics: outer composed label is the single screen-reader announcement (#631).
                 child: ExcludeSemantics(
                   child: Row(
                     children: [
@@ -350,9 +326,6 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                 ),
               ),
             ),
-            // Active-conversation accent pill — 4px wide left-edge marker
-            // with fully rounded ends so it reads as a Discord-style
-            // selection pill rather than a sharp-cornered bar.
             // IgnorePointer so taps pass through to the InkWell.
             if (widget.isSelected)
               Positioned(
@@ -405,10 +378,6 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
     String displayName, {
     UIDensity density = UIDensity.normal,
   }) {
-    // Density tier sizes (UX roadmap Phase 2):
-    //   compact -> 14px radius (28px diameter), 10px dot, 14px group icon
-    //   normal  -> 20px radius (40px diameter), 12px dot, 18px group icon
-    //   cozy    -> 22px radius (44px diameter), 13px dot, 20px group icon
     final double avatarRadius = switch (density) {
       UIDensity.cozy => 22,
       UIDensity.normal => 20,
@@ -637,9 +606,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
     }
 
     if (widget.timestamp.isNotEmpty) {
-      // If the conversation's latest message is one we sent, show a Signal-
-      // style status tick next to the timestamp (#507). Falls back silently
-      // when local chat state hasn't loaded the conversation yet.
+      // Signal-style status tick on our latest sent message (#507).
       final tick = _buildOwnStatusTick(context);
       return Row(
         mainAxisSize: MainAxisSize.min,
@@ -703,10 +670,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
   /// pre-existing layout in that case.
   Widget? _buildOwnStatusTick(BuildContext context) {
     final conv = widget.conversation;
-    // Selector: only watch the last message of *this* conversation so that
-    // messages arriving in other conversations don't trigger a rebuild here
-    // (#578). The spread-copy fix in #676 keeps unaffected list references
-    // stable, so select() equality holds for untouched conversations.
+    // Per-conv selector so other conversations' messages don't trigger rebuilds (#578, #676).
     final last = ref.watch(
       chatProvider.select((s) => s.messagesByConversation[conv.id]?.lastOrNull),
     );
@@ -743,10 +707,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
               color: context.mutedSurface,
             ),
           ),
-        // Mention badge sits to the LEFT of the unread count badge so it
-        // remains visible when the unread count is multi-digit.  Distinct
-        // color (mentionBadgeBg) so "you were mentioned" reads differently
-        // from "X unread."
+        // Mention badge left of unread count so multi-digit counts don't hide it.
         if (conv.mentionCount > 0)
           Semantics(
             label: '${conv.mentionCount} mentions',

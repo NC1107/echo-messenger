@@ -279,9 +279,7 @@ pub(super) async fn send_presence_snapshot(state: &AppState, user_id: Uuid) {
         return;
     }
 
-    // Build per-user status entries, filtering out invisible contacts.
-    // Batched lookup (#834 finding 7): one round-trip with ANY($1) replaces
-    // the prior per-contact query inside this loop.
+    // #834 finding 7: batched ANY($1) replaces the per-contact query.
     let statuses = db::users::get_presence_statuses_for(&state.pool, &online_contacts)
         .await
         .unwrap_or_default();
@@ -337,12 +335,8 @@ pub(super) async fn broadcast_presence(
         }
     };
 
-    // When coming online, look up stored presence_status so we broadcast
-    // the right status (e.g. "away" or "dnd") rather than always "online".
-    // For "offline" (disconnect), always broadcast "offline" regardless of
-    // stored status. Invisible users also appear offline -- and we omit
-    // the presence_status field entirely so observers cannot distinguish
-    // invisible from truly offline.
+    // Invisible → "offline" with no presence_status field, so observers
+    // cannot distinguish invisible from truly offline.
     let (broadcast_status, presence_status) = if status == "offline" {
         ("offline".to_string(), None)
     } else {

@@ -8,11 +8,24 @@ import '../../theme/echo_theme.dart';
 class DateDivider extends ConsumerWidget {
   final String timestamp;
 
+  /// True when this divider sits above the *first* message in the
+  /// conversation. In that case the day label adds little signal
+  /// ("Today" with nothing above it just frames the start of history),
+  /// so we render a "Start of conversation" marker instead — closer to
+  /// the iMessage default + Discord's "This is the start of #channel"
+  /// pattern.
+  final bool isStartOfConversation;
+
   /// Optional density override; defaults to the value from
   /// [uiDensityProvider]. Tests can pin a specific tier via this param.
   final UIDensity? density;
 
-  const DateDivider({super.key, required this.timestamp, this.density});
+  const DateDivider({
+    super.key,
+    required this.timestamp,
+    this.isStartOfConversation = false,
+    this.density,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -21,7 +34,11 @@ class DateDivider extends ConsumerWidget {
       final now = DateTime.now();
       final yesterday = now.subtract(const Duration(days: 1));
       String label;
-      if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
+      if (isStartOfConversation) {
+        label = 'Start of conversation';
+      } else if (dt.year == now.year &&
+          dt.month == now.month &&
+          dt.day == now.day) {
         label = 'Today';
       } else if (dt.year == yesterday.year &&
           dt.month == yesterday.month &&

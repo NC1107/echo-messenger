@@ -97,10 +97,7 @@ pub(in crate::ws::message_service) fn build_per_device_json(
     fields: &NewMessageFields,
     recipient_device_contents: &ParsedRecipientDeviceContents,
 ) -> HashMap<Uuid, Vec<(i32, WsMessage)>> {
-    // Sentinel chosen so it cannot collide with any legitimate string in the
-    // serialized JSON: includes characters that would be JSON-escaped, plus
-    // a per-call UUID. Anchored to a fixed, unmistakable prefix so a future
-    // reader can grep for it.
+    // Per-call UUID sentinel; cannot collide with any legitimate JSON content.
     let sentinel = format!("__ECHO_CONTENT_PLACEHOLDER_{}__", Uuid::new_v4());
 
     let base_msg = ServerMessage::NewMessage {
@@ -123,10 +120,7 @@ pub(in crate::ws::message_service) fn build_per_device_json(
         return HashMap::new();
     };
 
-    // The sentinel was a String and goes through JSON string-escape, so the
-    // exact substring to match is `"<sentinel>"`. The sentinel never
-    // contains any character requiring escape (only ASCII alphanumerics +
-    // `_`), so we can rely on a direct surround-with-quotes match.
+    // Sentinel is ASCII-safe so the JSON-escaped form is just `"<sentinel>"`.
     let sentinel_quoted = format!("\"{sentinel}\"");
     let Some(pos) = serialized.find(&sentinel_quoted) else {
         return HashMap::new();
@@ -201,10 +195,8 @@ pub(in crate::ws::message_service) fn deliver_to_member(
         };
     }
     if let Some(msg) = legacy_msg {
-        // #829: the legacy/plaintext path also needs to populate the per-device
-        // ledger so sibling devices that come online later don't re-receive
-        // the message via `get_undelivered` replay. Use the collecting variant
-        // so we know which device queues actually accepted the frame.
+        // #829: legacy path also needs to populate the per-device ledger so
+        // late-arriving sibling devices don't re-replay via `get_undelivered`.
         let accepted = hub.send_to_user_collecting(member_id, msg.clone());
         return MemberDeliveryOutcome {
             delivered: !accepted.is_empty(),
@@ -380,10 +372,8 @@ pub(in crate::ws::message_service) async fn fanout_message(
         None => None,
     };
 
-    // Pre-build per-recipient WsMessage values and the legacy fallback once
-    // before the fanout loop so no serialization or String allocation happens
-    // per recipient (#690). Both paths store Bytes-backed WsMessage::Text;
-    // clone inside the loop is O(1).
+    // #690: pre-build per-recipient frames so the fanout loop only does
+    // O(1) Bytes-backed clones, no serialization per recipient.
     let per_recipient_json = recipient_device_contents
         .as_ref()
         .map(|rdc| build_per_device_json(&fields, rdc));
@@ -393,10 +383,8 @@ pub(in crate::ws::message_service) async fn fanout_message(
 
     let mut any_delivered = false;
     let mut offline_user_ids = Vec::new();
-    // #829: collect (recipient_user_id, device_id) pairs that the hub actually
-    // accepted on the per-device path. After fanout we batch-insert them into
-    // `message_deliveries` so a sibling device that comes online later does
-    // NOT receive the same message again via `get_undelivered` replay.
+    // #829: accepted (user, device) pairs feed the per-device ledger so late
+    // siblings don't replay via `get_undelivered`.
     let mut accepted_device_pairs: Vec<(Uuid, i32)> = Vec::new();
 
     let eligible = member_ids
@@ -420,12 +408,8 @@ pub(in crate::ws::message_service) async fn fanout_message(
         }
     }
 
-    // #829: populate the per-device ledger for every recipient device whose
-    // queue accepted the frame. Without this, sibling devices that were
-    // offline at fan-out time would never receive the message: the global
-    // `messages.delivered` flag was the historical gate but now only serves
-    // the read-receipt UI; the per-device ledger is the authoritative replay
-    // gate (see `db::messages::get_undelivered`).
+    // #829: per-device ledger is the authoritative replay gate (the global
+    // `messages.delivered` flag only feeds read-receipt UI now).
     if !accepted_device_pairs.is_empty()
         && let Err(e) = db::messages::mark_devices_delivered_pairs(
             &state.pool,
@@ -444,14 +428,8 @@ pub(in crate::ws::message_service) async fn fanout_message(
         send_delivery_confirmation(state, sender_id, sender_device_id, stored_id, conv_id).await;
     }
 
-    // #451: `@here` only notifies online members.  When the plaintext body
-    // contains a standalone `@here`, drop the offline list so no APNs push
-    // fires.
-    //
-    // Privacy trade-off: this is the only path where the server inspects
-    // message body content outside of storage / sender-routing.  We keep
-    // the read narrow (single substring scan, no logging of body bytes)
-    // and gate it on `!is_encrypted` so encrypted groups are unaffected.
+    // #451: `@here` only notifies online members. Body inspection is gated on
+    // `!is_encrypted` so encrypted groups are unaffected.
     let suppress_offline_push = should_suppress_offline_push(
         offline_user_ids.len(),
         is_group,
@@ -460,9 +438,7 @@ pub(in crate::ws::message_service) async fn fanout_message(
     );
 
     if suppress_offline_push {
-        // Audit trail for #451: suppressing pushes is observable abuse
-        // surface (any member can silence offline notifications). Log
-        // counts only — no body or recipient identifiers.
+        // Audit #451 abuse surface: counts only, no body or recipient IDs.
         tracing::info!(
             %sender_id,
             %conv_id,

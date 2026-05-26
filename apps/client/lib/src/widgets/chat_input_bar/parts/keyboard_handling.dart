@@ -208,11 +208,7 @@ extension _KeyboardHandling on ChatInputBarState {
     return KeyEventResult.ignored;
   }
 
-  // Mention picker keyboard nav takes precedence — Tab/Enter accept the
-  // selected row, arrows move it, Escape closes the picker (without
-  // also bubbling Escape through to message edit-cancel). Space falls
-  // through — extractMentionQuery sees the space and closes the picker,
-  // leaving the literal "@" in the text.
+  // Mention picker nav takes precedence; Escape doesn't bubble to edit-cancel. Space falls through to close.
   KeyEventResult _handleMentionPickerIfActive(KeyDownEvent event) {
     if (!_mentionController.showPicker) return KeyEventResult.ignored;
     return _handleMentionPickerKey(event);

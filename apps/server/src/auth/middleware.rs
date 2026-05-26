@@ -37,10 +37,7 @@ impl FromRequestParts<Arc<AppState>> for AuthUser {
         let user_id = Uuid::parse_str(&claims.sub)
             .map_err(|_| AppError::unauthorized("Invalid user ID in token"))?;
 
-        // CR-4: reject tokens whose `iat` predates the user's last
-        // revocation event (device revoke, password change, "log out
-        // everywhere"). Closes the 15-minute access-token window where a
-        // revoked credential continued to authorize every REST call.
+        // CR-4: reject access tokens minted before the last revocation event.
         if !state
             .token_invalidator
             .is_token_valid(user_id, claims.iat as i64)
@@ -51,10 +48,7 @@ impl FromRequestParts<Arc<AppState>> for AuthUser {
             ));
         }
 
-        // Light up the `user_id` slot reserved by the per-request tracing
-        // span (see `routes::create_router`). The TraceLayer span is opened
-        // before handler extractors run, so this is the only point at which
-        // we know which user (if any) the request belongs to (#1173).
+        // #1173: only point we know `user_id` for the request's tracing span.
         tracing::Span::current().record("user_id", tracing::field::display(user_id));
 
         Ok(AuthUser { user_id })

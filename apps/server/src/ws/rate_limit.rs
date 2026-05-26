@@ -216,10 +216,8 @@ fn handle_other_frame(
     user_id: Uuid,
     bucket: &mut BucketState,
 ) -> bool {
-    // TD-36: every binary/ping/pong frame consumes one message token. Without
-    // this check an attacker can blast 1000 zero-byte pings per second; the
-    // byte bucket sees 0 cost and never throttles, but each frame still
-    // triggers a tokio wakeup + axum parse + dispatch round.
+    // TD-36: each frame costs a message token — byte bucket alone misses
+    // zero-byte ping floods.
     if bucket.tokens < 1.0 {
         return record_violation(
             state,

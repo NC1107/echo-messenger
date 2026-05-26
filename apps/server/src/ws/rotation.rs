@@ -76,9 +76,7 @@ pub fn elect_rotation_leader(online_members: &[Uuid]) -> Option<RotationLeader> 
     }
     let mut sorted: Vec<Uuid> = online_members.to_vec();
     sorted.sort();
-    // Deduplicate in case the caller handed us repeated entries (e.g. a
-    // multi-device user with 3 connections — the leader is per-user, not
-    // per-device). The sort above puts duplicates adjacent so dedup is O(n).
+    // Leader is per-user, not per-device — dedup adjacent multi-device entries.
     sorted.dedup();
     let leader = sorted.remove(0);
     Some(RotationLeader {
@@ -147,10 +145,7 @@ mod tests {
 
     #[test]
     fn deduplicates_repeated_user_ids() {
-        // The Hub keys connections per (user_id, device_id); if a future
-        // refactor accidentally passes the per-connection list instead
-        // of the per-user list, the election must still produce a sane
-        // leader rather than duplicating slots.
+        // Guards against a future caller passing per-connection (vs per-user) ids.
         let a = u("00000000-0000-0000-0000-000000000001");
         let b = u("00000000-0000-0000-0000-000000000002");
         let got = elect_rotation_leader(&[a, b, a, b, a]).expect("non-empty");
@@ -178,10 +173,7 @@ mod tests {
 
     #[test]
     fn default_deadline_is_documented_value() {
-        // Locked at 7.5s in the design doc; bumping it is a wire-format
-        // change in spirit even though the field is just a hint. Any
-        // change should land with a docs update — this assert is here
-        // to make sure that pairing doesn't drift silently.
+        // Locked at 7.5s in the design doc; bumping requires a docs update.
         assert_eq!(DEFAULT_ROTATION_DEADLINE_MS, 7_500);
     }
 }

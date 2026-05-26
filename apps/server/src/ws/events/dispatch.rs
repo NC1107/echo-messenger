@@ -62,10 +62,7 @@ pub(in crate::ws) async fn handle_text_message(
     let msg: ClientMessage = match serde_json::from_str(text) {
         Ok(m) => m,
         Err(e) => {
-            // TD-74: don't echo the serde_json parser's internal byte/line
-            // position back to the client — it lets attackers fingerprint
-            // the parser and probe field tolerances cheaply. Log the
-            // detail server-side instead so we still have it for support.
+            // TD-74: don't echo parser position to clients (fingerprinting).
             tracing::debug!(sender_id = %sender_id, error = %e, "invalid client frame");
             send_error(state, sender_id, "Invalid message");
             return;
@@ -121,9 +118,8 @@ pub(in crate::ws) async fn handle_text_message(
             to_user_id,
             signal,
         } => {
-            // TD-35: bound the inner JSON payload before relaying. The 64 KB
-            // frame cap alone let one peer cost N×64 KB per ICE candidate
-            // across an in-call group.
+            // TD-35: bound the inner payload — the 64 KB frame cap alone lets
+            // one peer cost N×64 KB per ICE candidate in a group call.
             let signal_bytes = json_bytes(&signal);
             if signal_bytes > MAX_VOICE_SIGNAL_BYTES {
                 tracing::warn!(
@@ -184,10 +180,8 @@ pub(in crate::ws) async fn handle_text_message(
             kind,
             payload,
         } => {
-            // TD-35: bound the canvas payload before relaying/persisting.
-            // Stroke segments and pointer moves should each fit in a few
-            // hundred bytes; 16 KB is loose enough to allow image-add
-            // descriptors without enabling a fan-out amplifier.
+            // TD-35: bound canvas payload — strokes are tiny, 16 KB allows
+            // image-add descriptors without enabling a fan-out amplifier.
             let payload_bytes = json_bytes(&payload);
             if payload_bytes > MAX_CANVAS_PAYLOAD_BYTES {
                 tracing::warn!(

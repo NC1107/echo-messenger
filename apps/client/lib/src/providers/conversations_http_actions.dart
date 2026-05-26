@@ -85,11 +85,7 @@ mixin _ConversationsHttpActionsMixin on Notifier<ConversationsState> {
       if (convId != null && convId.isNotEmpty) {
         await loadConversations();
 
-        // The server sorts conversations by last-message time (LIMIT 50).
-        // A brand-new DM with no messages sorts last and may be excluded.
-        // If it is not in the refreshed list, add a minimal entry so the
-        // caller can navigate to it immediately; subsequent activity will
-        // populate the full data.
+        // Server LIMIT-50 excludes brand-new empty DMs; add stub so user can navigate.
         final found = state.conversations
             .where((c) => c.id == convId && !c.isGroup)
             .firstOrNull;
@@ -372,19 +368,14 @@ mixin _ConversationsHttpActionsMixin on Notifier<ConversationsState> {
           throw const GroupException('Server response missing conversation id');
         }
         await loadConversations();
-        // Only seed the initial group-key envelope when the creator
-        // actually opted into encryption. A plaintext group skips this
-        // entirely; sends go through the unencrypted path.
+        // Seed group-key envelope only when creator opted into encryption.
         if (isEncrypted) {
           try {
             await ref
                 .read(cryptoProvider.notifier)
                 .seedInitialGroupKey(conversationId);
           } catch (e) {
-            // Seeding failure is non-fatal at this point — the
-            // conversation row exists, the user is in the group, and
-            // self-heal in [GroupCryptoService.getGroupKey] will
-            // retry the rotation on the next message attempt.
+            // Non-fatal: self-heal retries on next message attempt.
             debugPrint(
               '[ConversationsHttp] seedInitialGroupKey failed for '
               '$conversationId: $e',

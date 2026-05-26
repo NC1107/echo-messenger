@@ -91,11 +91,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   @override
   void initState() {
     super.initState();
-    // Breadcrumb: VoiceLoungeScreen mounted. This fires immediately after
-    // joinChannel succeeds and the route transitions to the lounge. If the
-    // app crashes before this appears in logs, the crash is in joinChannel
-    // itself (captured by channel_bar.dart breadcrumbs). If it appears but
-    // no further breadcrumbs follow, the crash is inside the lounge build.
+    // Breadcrumb fires post-joinChannel: missing = crash in joinChannel; present-but-alone = crash in build.
     final voiceLk = ref.read(livekitVoiceProvider);
     DebugLogService.instance.log(
       LogLevel.info,
@@ -755,11 +751,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   ) {
     return _buildLoungeScaffold(context, [
       Positioned.fill(child: _buildBackground(context)),
-      // Reserve the top strip for the floating header badge + the
-      // background-picker button so a remote screen share (or any other
-      // edge-to-edge contentArea like a video tile) doesn't sit under
-      // them. 64 px = badge/button top:16 + their ~32 px height + a
-      // little breathing room before the share frame begins.
+      // 64 px reserves top strip for header badge + background picker (top:16 + ~32 px + gap).
       Column(
         children: [
           const SizedBox(height: 64),
@@ -876,11 +868,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     final conversationId = voiceLk.conversationId ?? '';
     final channelId = voiceLk.channelId ?? '';
 
-    // Picture-in-Picture: render only the remote screen-share track in a
-    // bare full-bleed VideoTrackRenderer.  No header, no dock, no canvas
-    // chrome — the whole point of PiP is a tiny system window with just
-    // the relevant pixels.  Falls through to the regular layout if the
-    // OS reports PiP without a remote track (e.g. transient state).
+    // PiP: bare remote screen-share track only; falls through if PiP without a remote track.
     if (inPip) {
       final pipBody = _buildPipBody(ref);
       if (pipBody != null) return pipBody;

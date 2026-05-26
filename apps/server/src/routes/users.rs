@@ -347,11 +347,8 @@ async fn broadcast_presence_with_status(
         }
     };
 
-    // Privacy: when the user's stored status is "invisible", the contact-
-    // visible payload is "offline". Do NOT leak the raw "invisible" value in
-    // the `presence_status` field -- a patched client could otherwise observe
-    // it and defeat the invisibility. The user's own session keeps the raw
-    // value via the PATCH response, which is separate from this broadcast.
+    // Privacy: stored "invisible" must surface as "offline" — leaking the raw
+    // value would let a patched client defeat invisibility.
     let hide_presence_status = presence_status == "invisible" && broadcast_status == "offline";
 
     let presence = if hide_presence_status {
@@ -434,9 +431,7 @@ pub async fn change_password(
         .db_ctx("change_password/find_user")?
         .ok_or_else(|| AppError::not_found("User not found"))?;
 
-    // Argon2 verify takes ~50-150ms of pure CPU. Without spawn_blocking it
-    // stalls a tokio worker for the whole duration -- login/register already
-    // do this; change_password was missing it.
+    // spawn_blocking: Argon2 verify is 50-150ms CPU — keep tokio workers free.
     let stored_hash = user.password_hash.clone();
     let current_password = body.current_password.clone();
     let valid = tokio::task::spawn_blocking(move || {
@@ -663,11 +658,7 @@ pub async fn upload_avatar(
         .await
         .map_err(|e| AppError::bad_request(format!("Invalid multipart data: {e}")))?
     {
-        // Accept either "avatar" (historical) or "file" (matches the
-        // /api/media/upload convention used by the seed scripts and most
-        // generic upload pickers).  Mismatch was returning a confusing
-        // "Missing 'avatar' field in multipart form data" even when a
-        // perfectly valid PNG was attached under the wrong field name.
+        // Accept "avatar" (historical) or "file" (matches /api/media/upload).
         let field_name = field.name().unwrap_or_default().to_string();
         if field_name != "avatar" && field_name != "file" {
             continue;
