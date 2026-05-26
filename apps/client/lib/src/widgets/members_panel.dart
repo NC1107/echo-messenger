@@ -330,15 +330,32 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
                           ),
                         ],
                       ),
-                      Text(
-                        presenceLabel(
-                          presence.status,
-                          isOnline: presence.isOnline,
-                        ),
-                        style: TextStyle(
-                          color: context.textMuted,
-                          fontSize: 11,
-                        ),
+                      Builder(
+                        builder: (_) {
+                          final selfStatusText = widget.isMe
+                              ? ref.watch(
+                                  authProvider.select((s) => s.statusText),
+                                )
+                              : null;
+                          final memberStatus =
+                              selfStatusText ?? member.statusText;
+                          final label =
+                              (memberStatus != null &&
+                                  memberStatus.trim().isNotEmpty)
+                              ? memberStatus
+                              : presenceLabel(
+                                  presence.status,
+                                  isOnline: presence.isOnline,
+                                );
+                          return Text(
+                            label,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: context.textMuted,
+                              fontSize: 11,
+                            ),
+                          );
+                        },
                       ),
                     ],
                   ),

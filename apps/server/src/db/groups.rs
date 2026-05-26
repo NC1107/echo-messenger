@@ -33,6 +33,8 @@ pub struct GroupMember {
     pub joined_at: DateTime<Utc>,
     pub role: String,
     pub avatar_url: Option<String>,
+    pub status_text: Option<String>,
+    pub presence_status: Option<String>,
 }
 
 /// A row from `group_invite_tokens` (#579).
@@ -297,7 +299,8 @@ pub async fn get_group_members(
     group_id: Uuid,
 ) -> Result<Vec<GroupMember>, sqlx::Error> {
     sqlx::query_as::<_, GroupMember>(
-        "SELECT cm.user_id, u.username, cm.joined_at, cm.role, u.avatar_url \
+        "SELECT cm.user_id, u.username, cm.joined_at, cm.role, u.avatar_url, \
+                u.status_text, u.presence_status \
          FROM conversation_members cm \
          JOIN users u ON u.id = cm.user_id \
          WHERE cm.conversation_id = $1 AND cm.is_removed = false \
@@ -624,7 +627,8 @@ pub async fn get_group_member_previews(
     limit: i64,
 ) -> Result<Vec<GroupMember>, sqlx::Error> {
     sqlx::query_as::<_, GroupMember>(
-        "SELECT cm.user_id, u.username, cm.joined_at, cm.role, u.avatar_url \
+        "SELECT cm.user_id, u.username, cm.joined_at, cm.role, u.avatar_url, \
+                u.status_text, u.presence_status \
          FROM conversation_members cm \
          JOIN users u ON u.id = cm.user_id \
          WHERE cm.conversation_id = $1 AND cm.is_removed = false \
