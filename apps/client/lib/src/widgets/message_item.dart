@@ -904,11 +904,14 @@ class _MessageItemState extends State<MessageItem>
   }) {
     return [
       if (msg.pinnedAt != null) PinnedIndicator(isMine: isMine),
-      // Slice 5: in compact mode (Discord-style) show the sender name on
-      // EVERY message, not only first-in-group. In bubbles/plain we keep
-      // the grouped-header behaviour.
-      if ((widget._isCompact || widget.showHeader) &&
-          (!isMine || widget.compactLayout))
+      // Sender name + inline timestamp is shown ONCE per consecutive run
+      // of messages from the same author (Discord-style grouping). The
+      // earlier "always show in compact" branch made every continuation
+      // bubble repeat the author + time, which read as visual noise on
+      // back-to-back replies — see the user-reported screenshots from
+      // 2026-05-26. Now keyed solely on `showHeader` (computed by the
+      // chat list from the previous neighbour).
+      if (widget.showHeader && (!isMine || widget.compactLayout))
         SenderNameLabel(
           message: msg,
           hasMedia: hasMedia,
@@ -1276,12 +1279,14 @@ class _MessageItemState extends State<MessageItem>
       return [Flexible(child: bubbleWithReactions)];
     }
 
-    // In compact mode, show a small avatar for every follow-up message too
-    // (Discord / Slack compact style). The avatar is visually smaller than the
-    // header avatar and has no name row — it just anchors the bubble spatially.
+    // Continuation messages (same author as the row above) reserve the
+    // avatar column with a blank spacer so the bubble stays aligned with
+    // the header row, but DO NOT repeat the avatar. This matches the
+    // Discord behaviour where back-to-back messages from one user read
+    // as a single grouped column with one header.
     if (widget.compactLayout && !widget.showHeader) {
       return [
-        _buildAvatarSection(msg: msg, forceShow: true),
+        SizedBox(width: _resolveAvatarWidth()),
         const SizedBox(width: 8),
         Flexible(child: bubbleWithReactions),
       ];

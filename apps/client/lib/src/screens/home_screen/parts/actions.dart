@@ -88,7 +88,22 @@ mixin _HomeScreenActionsMixin on ConsumerState<HomeScreen> {
   /// Opens the dedicated "New message" composer. Tapping a contact starts
   /// a DM and selects the resulting conversation. On desktop the composer
   /// is shown as a centered dialog; on mobile it pushes as a full screen.
+  ///
+  /// Zero-contacts short-circuit: with no contacts the picker would only
+  /// show "No contacts available", so we route the user to the contacts
+  /// screen instead (where Add-contact actually works) and surface a
+  /// toast explaining why.
   Future<void> _openNewMessage() async {
+    final contactsState = ref.read(contactsProvider);
+    if (contactsState.contacts.isEmpty) {
+      ToastService.show(
+        context,
+        'Add a contact first — there\'s no-one to message yet.',
+        type: ToastType.info,
+      );
+      _openContacts();
+      return;
+    }
     if (_self._isDesktop) {
       await showDialog<void>(
         context: context,

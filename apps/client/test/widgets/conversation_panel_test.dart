@@ -316,18 +316,46 @@ void main() {
       },
     );
 
-    testWidgets('empty state shows message when no conversations', (
-      tester,
-    ) async {
-      await tester.pumpApp(
-        ConversationPanel(onConversationTap: (_) {}),
-        overrides: standardOverrides(conversations: []),
-      );
-      await tester.pump();
+    testWidgets(
+      'empty state shows message when no conversations (mobile only)',
+      (tester) async {
+        // Mobile viewport keeps the sidebar empty-state guidance — the
+        // main pane is hidden on narrow layouts so the sidebar is the
+        // only place to show the affordance.
+        tester.view.physicalSize = const Size(400, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
 
-      // With no conversations, the empty state shows "No conversations yet"
-      expect(find.text('No conversations yet'), findsOneWidget);
-    });
+        await tester.pumpApp(
+          ConversationPanel(onConversationTap: (_) {}),
+          overrides: standardOverrides(conversations: []),
+        );
+        await tester.pump();
+
+        expect(find.text('No conversations yet'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'empty state is suppressed on wide layouts (main pane carries it)',
+      (tester) async {
+        // Wide viewport — the main pane's "No conversation selected"
+        // panel already carries Add-contact / Browse-groups CTAs, so the
+        // sidebar leaves the column blank instead of duplicating the
+        // guidance side-by-side with the main pane.
+        tester.view.physicalSize = const Size(1280, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        await tester.pumpApp(
+          ConversationPanel(onConversationTap: (_) {}),
+          overrides: standardOverrides(conversations: []),
+        );
+        await tester.pump();
+
+        expect(find.text('No conversations yet'), findsNothing);
+      },
+    );
 
     testWidgets('header renders without a duplicate connection dot', (
       tester,

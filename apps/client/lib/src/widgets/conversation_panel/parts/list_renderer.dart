@@ -113,23 +113,23 @@ mixin _ConversationPanelListRendererMixin
     }
 
     // No conversations yet — show onboarding guidance.
+    //
+    // On wide (desktop / tablet) layouts the main pane already renders its
+    // own \"No conversation selected\" empty state with Add-contact /
+    // Browse-groups CTAs, so duplicating the same panel in the sidebar
+    // gives first-time users two identical pieces of guidance side by
+    // side. Suppress the sidebar copy in that case and leave the column
+    // visually empty; the main pane carries the affordance.
     final isMobile = MediaQuery.sizeOf(context).width < 600;
+    if (!isMobile) {
+      return const SizedBox.shrink();
+    }
     return EmptyState(
       icon: Icons.forum_outlined,
       title: 'No conversations yet',
       body: 'Start a new chat or wait for friends to message you.',
       ctaLabel: 'Start a new chat',
       onCta: widget.onNewChat,
-      footer: (!isMobile && widget.onShowKeyboardShortcuts != null)
-          ? Text(
-              'Keyboard shortcuts (Ctrl+/)',
-              style: TextStyle(
-                color: context.textMuted,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
-            )
-          : null,
     );
   }
 
