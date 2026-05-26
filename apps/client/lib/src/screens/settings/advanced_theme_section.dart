@@ -17,8 +17,9 @@ class AdvancedThemeSection extends ConsumerWidget {
     final custom = ref.watch(customColorsProvider);
     final scheme = Theme.of(context).colorScheme;
 
-    final effectivePrimary = custom.primaryColor ?? scheme.primary;
-    final effectiveAccent = custom.accentColor ?? scheme.secondary;
+    // Accent maps to colorScheme.primary so context.accent (the dominant
+    // accent reader app-wide) actually moves when the user picks a colour.
+    final effectiveAccent = custom.accentColor ?? scheme.primary;
 
     return SettingsPanelScaffold(
       children: [
@@ -32,7 +33,7 @@ class AdvancedThemeSection extends ConsumerWidget {
         ),
         const SizedBox(height: 4),
         Text(
-          'Override the active theme\'s primary and accent colors. '
+          'Override the active theme\'s accent colour. '
           'Changes apply immediately and survive restarts.',
           style: TextStyle(
             color: context.textSecondary,
@@ -42,19 +43,9 @@ class AdvancedThemeSection extends ConsumerWidget {
         ),
         const Divider(height: 32),
         _ColorPickerTile(
-          key: const Key('primary_color_tile'),
-          label: 'Primary color',
-          subtitle: 'Used for text highlights and UI elements',
-          currentColor: effectivePrimary,
-          isOverridden: custom.primaryColor != null,
-          onColorChanged: (c) =>
-              ref.read(customColorsProvider.notifier).setPrimaryColor(c),
-        ),
-        const SizedBox(height: 12),
-        _ColorPickerTile(
           key: const Key('accent_color_tile'),
-          label: 'Accent color',
-          subtitle: 'Used for buttons, links, and active states',
+          label: 'Accent colour',
+          subtitle: 'Buttons, links, sent bubbles, and active states',
           currentColor: effectiveAccent,
           isOverridden: custom.accentColor != null,
           onColorChanged: (c) =>
@@ -97,26 +88,15 @@ class AdvancedThemeInline extends ConsumerWidget {
     final custom = ref.watch(customColorsProvider);
     final scheme = Theme.of(context).colorScheme;
 
-    final effectivePrimary = custom.primaryColor ?? scheme.primary;
-    final effectiveAccent = custom.accentColor ?? scheme.secondary;
+    final effectiveAccent = custom.accentColor ?? scheme.primary;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _ColorPickerTile(
-          key: const Key('primary_color_tile'),
-          label: 'Primary color',
-          subtitle: 'Text highlights and UI elements',
-          currentColor: effectivePrimary,
-          isOverridden: custom.primaryColor != null,
-          onColorChanged: (c) =>
-              ref.read(customColorsProvider.notifier).setPrimaryColor(c),
-        ),
-        const SizedBox(height: 8),
-        _ColorPickerTile(
           key: const Key('accent_color_tile'),
-          label: 'Accent color',
-          subtitle: 'Buttons, links, and active states',
+          label: 'Accent colour',
+          subtitle: 'Buttons, links, sent bubbles, and active states',
           currentColor: effectiveAccent,
           isOverridden: custom.accentColor != null,
           onColorChanged: (c) =>

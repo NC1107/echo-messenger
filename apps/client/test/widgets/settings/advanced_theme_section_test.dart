@@ -38,12 +38,11 @@ void main() {
   });
 
   group('AdvancedThemeInline', () {
-    testWidgets('renders primary and accent color tiles', (tester) async {
+    testWidgets('renders accent colour tile', (tester) async {
       await tester.pumpWidget(_wrap(const AdvancedThemeInline()));
       await tester.pump();
 
-      expect(find.text('Primary color'), findsOneWidget);
-      expect(find.text('Accent color'), findsOneWidget);
+      expect(find.text('Accent colour'), findsOneWidget);
     });
 
     testWidgets('does not show reset button when no overrides', (tester) async {
@@ -53,14 +52,14 @@ void main() {
       expect(find.text('Reset to theme defaults'), findsNothing);
     });
 
-    testWidgets('shows reset button when primary override is set', (
+    testWidgets('shows reset button when accent override is set', (
       tester,
     ) async {
       await tester.pumpWidget(
         _wrap(
           const AdvancedThemeInline(),
           initialColors: const CustomColorsState(
-            primaryColor: Color(0xFFFF0000),
+            accentColor: Color(0xFFFF0000),
           ),
         ),
       );
@@ -90,11 +89,7 @@ void main() {
       await tester.pump();
 
       expect(
-        find.bySemanticsLabel(RegExp('Primary color picker')),
-        findsOneWidget,
-      );
-      expect(
-        find.bySemanticsLabel(RegExp('Accent color picker')),
+        find.bySemanticsLabel(RegExp('Accent colour picker')),
         findsOneWidget,
       );
       semantics.dispose();
