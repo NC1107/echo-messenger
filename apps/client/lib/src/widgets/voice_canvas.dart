@@ -928,6 +928,14 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
   );
 }
 
+/// Returns true when a URL points at an animated GIF asset. We only check
+/// the path's extension because the server already vets MIME type on
+/// upload and query strings on .gif (CDN cache busters) are common.
+bool _isGif(String url) {
+  final lower = url.split('?').first.toLowerCase();
+  return lower.endsWith('.gif');
+}
+
 class _CanvasImageWidget extends StatefulWidget {
   final CanvasImage image;
   final Map<String, String>? httpHeaders;
@@ -979,15 +987,36 @@ class _CanvasImageWidgetState extends State<_CanvasImageWidget> {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(4),
-                child: CachedNetworkImage(
-                  imageUrl: widget.image.url,
-                  httpHeaders: widget.httpHeaders ?? const {},
-                  fit: BoxFit.cover,
-                  errorWidget: (_, _, _) => Container(
-                    color: context.surfaceHover,
-                    child: Icon(Icons.broken_image, color: context.textMuted),
-                  ),
-                ),
+                // GIFs need Image.network for multi-frame animation;
+                // CachedNetworkImage decodes a single frame so animated
+                // GIFs render as a static first frame. Detect the .gif
+                // extension and pick the right widget per image.
+                child: _isGif(widget.image.url)
+                    ? Image.network(
+                        widget.image.url,
+                        headers: widget.httpHeaders ?? const {},
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                        errorBuilder: (_, _, _) => Container(
+                          color: context.surfaceHover,
+                          child: Icon(
+                            Icons.broken_image,
+                            color: context.textMuted,
+                          ),
+                        ),
+                      )
+                    : CachedNetworkImage(
+                        imageUrl: widget.image.url,
+                        httpHeaders: widget.httpHeaders ?? const {},
+                        fit: BoxFit.cover,
+                        errorWidget: (_, _, _) => Container(
+                          color: context.surfaceHover,
+                          child: Icon(
+                            Icons.broken_image,
+                            color: context.textMuted,
+                          ),
+                        ),
+                      ),
               ),
             ),
             if (_hovered)
