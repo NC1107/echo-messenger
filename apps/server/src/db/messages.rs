@@ -42,6 +42,14 @@ pub struct MessageWithSender {
     /// replies. Server truncates to 80 characters so the wire payload is
     /// bounded; clients still render a single line with ellipsis.
     pub last_reply_snippet: Option<String>,
+    /// Timestamp of the most-recent reply, used by the thread indicator
+    /// chip ("3m ago" label). `None` when there are no replies.
+    pub last_reply_at: Option<DateTime<Utc>>,
+    /// Usernames of up to 3 distinct most-recent repliers, newest first.
+    /// Populated by a LATERAL join in `get_messages` so the thread chip
+    /// can render face stacks without a follow-up round-trip.
+    #[serde(default)]
+    pub recent_replier_usernames: Vec<String>,
     /// Reactions aggregated as a JSON array of
     /// `{message_id, user_id, username, emoji}` objects.  Public history
     /// queries (`get_messages`, `get_thread_replies`) populate this with
@@ -237,6 +245,8 @@ pub async fn get_messages(
                 ru.username AS reply_to_username, \
                 COALESCE(rc.reply_count, 0) AS reply_count, \
                 lr.snippet AS last_reply_snippet, \
+                lr.last_reply_at AS last_reply_at, \
+                COALESCE(rru.usernames, ARRAY[]::text[]) AS recent_replier_usernames, \
                 COALESCE(rx.reactions, '[]'::json) AS reactions \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
@@ -249,12 +259,26 @@ pub async fn get_messages(
              GROUP BY reply_to_id \
          ) rc ON rc.reply_to_id = m.id \
          LEFT JOIN LATERAL ( \
-             SELECT LEFT(lrm.content, 80) AS snippet \
+             SELECT LEFT(lrm.content, 80) AS snippet, lrm.created_at AS last_reply_at \
              FROM messages lrm \
              WHERE lrm.reply_to_id = m.id AND lrm.deleted_at IS NULL \
              ORDER BY lrm.created_at DESC \
              LIMIT 1 \
          ) lr ON true \
+         LEFT JOIN LATERAL ( \
+             SELECT ARRAY( \
+                 SELECT rru_u.username FROM ( \
+                     SELECT sender_id, MAX(created_at) AS last_at \
+                     FROM messages \
+                     WHERE reply_to_id = m.id AND deleted_at IS NULL \
+                     GROUP BY sender_id \
+                     ORDER BY last_at DESC \
+                     LIMIT 3 \
+                 ) latest \
+                 JOIN users rru_u ON rru_u.id = latest.sender_id \
+                 ORDER BY latest.last_at DESC \
+             ) AS usernames \
+         ) rru ON true \
          LEFT JOIN LATERAL ( \
              SELECT json_agg(json_build_object( \
                  'message_id', r.message_id, \
@@ -347,6 +371,8 @@ pub async fn get_undelivered(
                 ru.username AS reply_to_username, \
                 COALESCE(rc.reply_count, 0) AS reply_count, \
                 NULL::text AS last_reply_snippet, \
+                NULL::timestamptz AS last_reply_at, \
+                ARRAY[]::text[] AS recent_replier_usernames, \
                 '[]'::json AS reactions \
          FROM messages m \
          JOIN batch ON batch.id = m.id \
@@ -607,6 +633,8 @@ pub async fn search_messages(
                 ru.username AS reply_to_username, \
                 COALESCE(rc.reply_count, 0) AS reply_count, \
                 NULL::text AS last_reply_snippet, \
+                NULL::timestamptz AS last_reply_at, \
+                ARRAY[]::text[] AS recent_replier_usernames, \
                 '[]'::json AS reactions \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
@@ -980,6 +1008,8 @@ pub async fn get_thread_replies(
                 ru.username AS reply_to_username, \
                 COALESCE(rc.reply_count, 0) AS reply_count, \
                 NULL::text AS last_reply_snippet, \
+                NULL::timestamptz AS last_reply_at, \
+                ARRAY[]::text[] AS recent_replier_usernames, \
                 COALESCE(rx.reactions, '[]'::json) AS reactions \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
