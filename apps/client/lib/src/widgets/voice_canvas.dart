@@ -52,6 +52,14 @@ class VoiceCanvas extends ConsumerStatefulWidget {
   ConsumerState<VoiceCanvas> createState() => _VoiceCanvasState();
 }
 
+/// Globally-accessible key used to capture the active voice-lounge canvas
+/// as a PNG. The Stack inside this RepaintBoundary holds the strokes,
+/// images, and avatar tiles. Reset whenever the canvas widget rebuilds so
+/// the key always points at the currently mounted instance.
+final GlobalKey voiceCanvasRepaintKey = GlobalKey(
+  debugLabel: 'voice-canvas-repaint',
+);
+
 class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
   final _canvasKey = GlobalKey();
 
@@ -125,39 +133,42 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
           children: [
             Expanded(
               child: ClipRect(
-                child: Stack(
-                  key: _canvasKey,
-                  children: [
-                    Positioned.fill(
-                      child: _DrawingLayer(
-                        canvas: canvas,
-                        onPointerDown: (offset) {
-                          if (tool == CanvasTool.pen ||
-                              tool == CanvasTool.eraser) {
-                            ref
-                                .read(canvasProvider.notifier)
-                                .startStroke(_toNormalized(offset));
-                          }
-                        },
-                        onPointerMove: (offset) {
-                          if (tool == CanvasTool.pen ||
-                              tool == CanvasTool.eraser) {
-                            ref
-                                .read(canvasProvider.notifier)
-                                .continueStroke(_toNormalized(offset));
-                          }
-                        },
-                        onPointerUp: () {
-                          if (tool == CanvasTool.pen ||
-                              tool == CanvasTool.eraser) {
-                            ref.read(canvasProvider.notifier).endStroke();
-                          }
-                        },
+                child: RepaintBoundary(
+                  key: voiceCanvasRepaintKey,
+                  child: Stack(
+                    key: _canvasKey,
+                    children: [
+                      Positioned.fill(
+                        child: _DrawingLayer(
+                          canvas: canvas,
+                          onPointerDown: (offset) {
+                            if (tool == CanvasTool.pen ||
+                                tool == CanvasTool.eraser) {
+                              ref
+                                  .read(canvasProvider.notifier)
+                                  .startStroke(_toNormalized(offset));
+                            }
+                          },
+                          onPointerMove: (offset) {
+                            if (tool == CanvasTool.pen ||
+                                tool == CanvasTool.eraser) {
+                              ref
+                                  .read(canvasProvider.notifier)
+                                  .continueStroke(_toNormalized(offset));
+                            }
+                          },
+                          onPointerUp: () {
+                            if (tool == CanvasTool.pen ||
+                                tool == CanvasTool.eraser) {
+                              ref.read(canvasProvider.notifier).endStroke();
+                            }
+                          },
+                        ),
                       ),
-                    ),
-                    ..._buildImages(canvas, authState),
-                    ..._buildAvatars(canvas, myUserId, authState),
-                  ],
+                      ..._buildImages(canvas, authState),
+                      ..._buildAvatars(canvas, myUserId, authState),
+                    ],
+                  ),
                 ),
               ),
             ),

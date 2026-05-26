@@ -203,6 +203,25 @@ class CanvasController extends _$CanvasController {
     _sendCanvasEvent('clear', {});
   }
 
+  /// Replace the local canvas state with a previously-exported snapshot and
+  /// broadcast it to the rest of the participants. Used by the JSON import
+  /// affordance — sends a `clear`, then `image_add` for every image, then
+  /// `stroke` for every stroke, so remote clients converge.
+  void importSnapshot({
+    required List<CanvasStroke> strokes,
+    required List<CanvasImage> images,
+  }) {
+    state = state.copyWith(strokes: strokes, images: images);
+    if (_channelId == null) return;
+    _sendCanvasEvent('clear', {});
+    for (final img in images) {
+      _sendCanvasEvent('image_add', img.toJson());
+    }
+    for (final stroke in strokes) {
+      _sendCanvasEvent('stroke', stroke.toJson());
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Images
   // -------------------------------------------------------------------------
