@@ -164,15 +164,17 @@ async fn edit_message_empty_content_returns_400() {
     assert_eq!(resp.status().as_u16(), 400);
 }
 
+// TD-34: "message not found or you are not the sender" → 404.
 #[tokio::test]
-async fn edit_someone_elses_message_returns_400() {
+async fn edit_someone_elses_message_returns_404() {
     let base = common::spawn_server().await;
     let (client, _, _, bob_token, _, _, message_id) = setup_dm_with_message(&base).await;
 
     // Bob tries to edit Alice's message — should fail. Note: the encrypted-DM
-    // gate (#582) now runs BEFORE the ownership check, so non-senders also
-    // get 409 instead of 400 for encrypted conversations. Either is fine; we
-    // just need to confirm the edit didn't succeed.
+    // gate (#582) now runs BEFORE the ownership check, so non-senders get 409
+    // for encrypted conversations and 404 (TD-34: "not found / not the
+    // sender") for unencrypted ones. Either is fine; we just need to confirm
+    // the edit didn't succeed.
     let resp = client
         .put(format!("{base}/api/messages/{message_id}"))
         .header("Authorization", format!("Bearer {bob_token}"))
@@ -183,8 +185,8 @@ async fn edit_someone_elses_message_returns_400() {
 
     let status = resp.status().as_u16();
     assert!(
-        status == 400 || status == 409,
-        "expected 400/409, got {status}"
+        status == 404 || status == 409,
+        "expected 404/409, got {status}"
     );
 }
 
@@ -253,7 +255,8 @@ async fn edit_message_on_unencrypted_group_succeeds() {
 }
 
 #[tokio::test]
-async fn edit_nonexistent_message_returns_400() {
+// TD-34: not-found → 404.
+async fn edit_nonexistent_message_returns_404() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let username = common::unique_username("editunk");
@@ -269,7 +272,7 @@ async fn edit_nonexistent_message_returns_400() {
         .await
         .unwrap();
 
-    assert_eq!(resp.status().as_u16(), 400);
+    assert_eq!(resp.status().as_u16(), 404);
 }
 
 // ---------------------------------------------------------------------------
@@ -291,8 +294,9 @@ async fn delete_own_message_returns_204() {
     assert_eq!(resp.status().as_u16(), 204);
 }
 
+// TD-34: not-the-sender / not-found → 404.
 #[tokio::test]
-async fn delete_someone_elses_message_returns_400() {
+async fn delete_someone_elses_message_returns_404() {
     let base = common::spawn_server().await;
     let (client, _, _, bob_token, _, _, message_id) = setup_dm_with_message(&base).await;
 
@@ -303,11 +307,11 @@ async fn delete_someone_elses_message_returns_400() {
         .await
         .unwrap();
 
-    assert_eq!(resp.status().as_u16(), 400);
+    assert_eq!(resp.status().as_u16(), 404);
 }
 
 #[tokio::test]
-async fn delete_nonexistent_message_returns_400() {
+async fn delete_nonexistent_message_returns_404() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let username = common::unique_username("delunk");
@@ -322,7 +326,7 @@ async fn delete_nonexistent_message_returns_400() {
         .await
         .unwrap();
 
-    assert_eq!(resp.status().as_u16(), 400);
+    assert_eq!(resp.status().as_u16(), 404);
 }
 
 // ---------------------------------------------------------------------------
@@ -391,8 +395,9 @@ async fn get_messages_returns_sent_message() {
     );
 }
 
+// TD-34: NotMember now returns 403 (permission failure), not 401 (auth failure).
 #[tokio::test]
-async fn get_messages_non_member_returns_401() {
+async fn get_messages_non_member_returns_403() {
     let base = common::spawn_server().await;
     let (client, _, _, _, _, conv_id, _) = setup_dm_with_message(&base).await;
 
@@ -407,7 +412,7 @@ async fn get_messages_non_member_returns_401() {
         .await
         .unwrap();
 
-    assert_eq!(resp.status().as_u16(), 401);
+    assert_eq!(resp.status().as_u16(), 403);
 }
 
 // ---------------------------------------------------------------------------
@@ -513,8 +518,8 @@ async fn get_unmuted_user_ids_excludes_muted_member() {
 /// ciphertext would index/scan random bytes and could leak presence
 /// metadata via hit/miss timings, so the route (#350) returns
 /// `400 Bad Request` rather than scanning. The auth/member check runs
-/// first; an unauthenticated or non-member request still gets the
-/// usual 401/403 (see `search_messages_non_member_returns_401`).
+/// first; an unauthenticated request gets 401 and a non-member request
+/// gets 403 (see `search_messages_non_member_returns_403`).
 #[tokio::test]
 async fn search_messages_rejects_encrypted_conversation() {
     let base = common::spawn_server().await;
@@ -530,8 +535,9 @@ async fn search_messages_rejects_encrypted_conversation() {
     assert_eq!(resp.status().as_u16(), 400);
 }
 
+// TD-34: NotMember now returns 403, not 401.
 #[tokio::test]
-async fn search_messages_non_member_returns_401() {
+async fn search_messages_non_member_returns_403() {
     let base = common::spawn_server().await;
     let (client, _, _, _, _, conv_id, _) = setup_dm_with_message(&base).await;
 
@@ -548,7 +554,7 @@ async fn search_messages_non_member_returns_401() {
         .await
         .unwrap();
 
-    assert_eq!(resp.status().as_u16(), 401);
+    assert_eq!(resp.status().as_u16(), 403);
 }
 
 // ---------------------------------------------------------------------------

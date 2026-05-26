@@ -290,6 +290,71 @@ pub(in crate::ws::message_service) fn validate_encrypted_payload(
     }
 }
 
+// ── Encrypted-DM recipient enforcement (TD-30) ──────────────────────────────
+
+/// Structured rejection code emitted when an encrypted DM's
+/// `recipient_device_contents` map omits the actual peer. Surfaced verbatim
+/// in the WS `error` frame back to the sender so monitoring can flag the
+/// signal without grepping free-form text.
+pub(in crate::ws::message_service) const DM_PEER_MISSING_CODE: &str = "dm-peer-not-in-recipients";
+
+/// For encrypted DMs, require the actual conversation peer to appear as a
+/// key in `recipient_device_contents`. Without this gate a sender could
+/// satisfy the non-empty / shape checks by populating only their *own*
+/// devices, then ship attacker-shaped `legacy_msg` bytes to the peer via
+/// the fanout fallback in
+/// [`crate::ws::message_service::fanout::deliver_to_member`].
+///
+/// Returns `true` when the recipient set is acceptable.
+pub(in crate::ws::message_service) async fn enforce_dm_recipient_includes_peer(
+    state: &AppState,
+    sender_id: Uuid,
+    conversation_id: Uuid,
+    rdc: &RecipientDeviceContents,
+) -> bool {
+    let members = match db::groups::get_conversation_member_ids(&state.pool, conversation_id).await
+    {
+        Ok(ids) => ids,
+        Err(e) => {
+            tracing::warn!(
+                conversation_id = %conversation_id,
+                sender_id = %sender_id,
+                error = ?e,
+                "db error looking up DM members for recipient enforcement",
+            );
+            send_error(state, sender_id, "Database error");
+            return false;
+        }
+    };
+
+    // The DM has exactly two members; everyone besides the sender is a peer
+    // that must receive ciphertext. `rdc` keys are user_id strings, so build
+    // a string-set view of the expected peers for the membership check.
+    let mut missing_peer = false;
+    for member_id in &members {
+        if *member_id == sender_id {
+            continue;
+        }
+        if !rdc.contains_key(&member_id.to_string()) {
+            missing_peer = true;
+            break;
+        }
+    }
+
+    if missing_peer {
+        tracing::warn!(
+            conversation_id = %conversation_id,
+            sender_id = %sender_id,
+            code = DM_PEER_MISSING_CODE,
+            "rejected encrypted DM: recipient_device_contents omits the conversation peer",
+        );
+        send_error(state, sender_id, DM_PEER_MISSING_CODE);
+        return false;
+    }
+
+    true
+}
+
 // ── Encrypted-group sender membership (Phase 1.5, audit P1-2) ───────────────
 
 /// Structured rejection code used by the encrypted-group sender-membership

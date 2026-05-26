@@ -167,11 +167,13 @@ impl AppError {
             ErrorCode::Unauthorized
             | ErrorCode::InvalidCredentials
             | ErrorCode::TokenExpired
-            | ErrorCode::TokenRevoked
-            // NotMember was `AppError::unauthorized` at all existing call sites;
-            // keep 401 to avoid breaking existing tests.
-            | ErrorCode::NotMember => StatusCode::UNAUTHORIZED,
-            ErrorCode::Forbidden | ErrorCode::RegistrationDisabled => StatusCode::FORBIDDEN,
+            | ErrorCode::TokenRevoked => StatusCode::UNAUTHORIZED,
+            // TD-34: "not a member of this conversation" is a permission
+            // failure, not an authentication failure. Returning 401 made
+            // clients trigger a global re-auth/logout. 403 is correct.
+            ErrorCode::Forbidden | ErrorCode::RegistrationDisabled | ErrorCode::NotMember => {
+                StatusCode::FORBIDDEN
+            }
             ErrorCode::NotFound => StatusCode::NOT_FOUND,
             ErrorCode::Conflict | ErrorCode::UsernameTaken | ErrorCode::AlreadyMember => {
                 StatusCode::CONFLICT
@@ -220,7 +222,32 @@ impl IntoResponse for AppError {
 
 impl From<sqlx::Error> for AppError {
     fn from(err: sqlx::Error) -> Self {
-        tracing::error!("Database error: {:?}", err);
+        // TD-71: log structured fields instead of the raw Debug formatting.
+        // The Debug repr of a Postgres error can echo back column *values*
+        // from constraint violations (the unique-key column data, the
+        // failing FK row, etc.). That's a PII leak waiting to happen.
+        // Logging the SQLSTATE + constraint name keeps the operator
+        // diagnostic signal intact.
+        match &err {
+            sqlx::Error::Database(db_err) => {
+                tracing::error!(
+                    sqlstate = ?db_err.code(),
+                    constraint = ?db_err.constraint(),
+                    table = ?db_err.table(),
+                    "Database error (Postgres-side)",
+                );
+            }
+            sqlx::Error::PoolTimedOut => {
+                tracing::error!("Database error: pool acquire timed out");
+            }
+            sqlx::Error::Io(e) => {
+                tracing::error!(kind = ?e.kind(), "Database error: IO");
+            }
+            other => {
+                // Other variants don't carry row data; their Debug is safe.
+                tracing::error!("Database error: {:?}", other);
+            }
+        }
         match err {
             sqlx::Error::Database(ref db_err) => {
                 if db_err.code().as_deref() == Some("23505") {
@@ -396,11 +423,12 @@ mod tests {
     }
 
     #[test]
-    fn with_code_not_member_is_401() {
-        // NotMember maps to 401 to preserve all existing call sites which
-        // previously used AppError::unauthorized("Not a member...").
+    fn with_code_not_member_is_403() {
+        // TD-34: "not a member" is a permission failure, not an
+        // authentication failure. Returning 401 made clients trigger global
+        // re-auth/logout when they hit a stale conversation.
         let err = AppError::with_code(ErrorCode::NotMember, "Not a member");
-        assert_eq!(err.status, StatusCode::UNAUTHORIZED);
+        assert_eq!(err.status, StatusCode::FORBIDDEN);
         assert_eq!(err.code, ErrorCode::NotMember);
     }
 

@@ -359,11 +359,11 @@ async fn get_group_member_can_fetch() {
 }
 
 // ---------------------------------------------------------------------------
-// get_group — non-member receives 401 (NotMember error code)
+// get_group — non-member receives 403 (NotMember error code) — TD-34
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn get_group_non_member_returns_401() {
+async fn get_group_non_member_returns_403() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let (owner_token, _, _) = common::register_and_login(&client, &base, "ggnmown").await;
@@ -378,7 +378,10 @@ async fn get_group_non_member_returns_401() {
         .await
         .unwrap();
 
-    assert_eq!(resp.status().as_u16(), 401);
+    // TD-34: NotMember is a permission failure (403), not an authentication
+    // failure (401). 401 made clients trigger global re-auth on what was
+    // really an authorisation problem.
+    assert_eq!(resp.status().as_u16(), 403);
     let body: Value = resp.json().await.unwrap();
     assert_eq!(
         body["code"].as_str(),
@@ -388,11 +391,11 @@ async fn get_group_non_member_returns_401() {
 }
 
 // ---------------------------------------------------------------------------
-// get_group — non-existent UUID: is_member returns false → 401
+// get_group — non-existent UUID: is_member returns false → 403 — TD-34
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn get_group_nonexistent_uuid_returns_401() {
+async fn get_group_nonexistent_uuid_returns_403() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let (token, _, _) = common::register_and_login(&client, &base, "ggnoexist").await;
@@ -407,8 +410,8 @@ async fn get_group_nonexistent_uuid_returns_401() {
         .unwrap();
 
     // The handler checks is_member first; a non-existent group ID returns false
-    // from is_member → 401 NotMember before even attempting to fetch the group.
-    assert_eq!(resp.status().as_u16(), 401);
+    // from is_member → 403 NotMember (was 401 before TD-34).
+    assert_eq!(resp.status().as_u16(), 403);
 }
 
 // ---------------------------------------------------------------------------

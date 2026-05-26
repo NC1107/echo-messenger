@@ -77,7 +77,7 @@ pub async fn generate_token(
     let user = db::users::find_by_id(&state.pool, auth.user_id)
         .await
         .db_ctx("looking up user for voice token")?
-        .ok_or_else(|| AppError::bad_request("User not found"))?;
+        .ok_or_else(|| AppError::not_found("User not found"))?;
 
     let username = user.username;
     let identity = body.identity.unwrap_or_else(|| username.clone());

@@ -430,6 +430,25 @@ pub struct DeviceRow {
     pub last_seen: Option<DateTime<Utc>>,
 }
 
+/// TD-53: return the lowest active device_id for a user, or None when the
+/// user has no non-revoked devices. Used by `get_bundle` to short-circuit
+/// the N-device loop when device 0 has no bundle — saves up to N×3 DB
+/// round-trips per X3DH initiation against a multi-device user.
+pub async fn get_first_active_device_id(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Option<i32>, sqlx::Error> {
+    let row: Option<(i32,)> = sqlx::query_as(
+        "SELECT device_id FROM identity_keys \
+         WHERE user_id = $1 AND revoked_at IS NULL \
+         ORDER BY device_id ASC LIMIT 1",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|(id,)| id))
+}
+
 /// Return devices registered for a given user (capped at 10), including
 /// their platform and last-seen timestamp. Excludes revoked devices (#657).
 pub async fn get_user_devices(pool: &PgPool, user_id: Uuid) -> Result<Vec<DeviceRow>, sqlx::Error> {
@@ -464,19 +483,21 @@ pub async fn update_last_seen(
     Ok(())
 }
 
-/// Revoke all keys for a specific (user_id, device_id) pair.
+/// Revoke all keys for a specific (user_id, device_id) pair, inside an
+/// externally-managed transaction.
 ///
 /// Soft-deletes the `identity_keys` row by stamping `revoked_at` so the fanout
 /// filter can distinguish "revoked" from "never registered" (#657). Prekeys are
 /// hard-deleted because they are useless after revocation.
 /// Returns true if the device was found and is now revoked, false if not found.
-pub async fn revoke_device(
-    pool: &PgPool,
+///
+/// Callers that don't already have a transaction should use [`revoke_device`]
+/// which opens and commits one for them.
+pub async fn revoke_device_in_tx(
+    conn: &mut PgConnection,
     user_id: Uuid,
     device_id: i32,
 ) -> Result<bool, sqlx::Error> {
-    let mut tx = pool.begin().await?;
-
     // Soft-delete: stamp revoked_at instead of hard-deleting so the fanout
     // filter can detect "was revoked" vs "never existed" (#657).
     let r1 = sqlx::query(
@@ -485,24 +506,36 @@ pub async fn revoke_device(
     )
     .bind(user_id)
     .bind(device_id)
-    .execute(&mut *tx)
+    .execute(&mut *conn)
     .await?;
 
     // Prekeys are worthless after revocation; hard-delete them.
     sqlx::query("DELETE FROM signed_prekeys WHERE user_id = $1 AND device_id = $2")
         .bind(user_id)
         .bind(device_id)
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
 
     sqlx::query("DELETE FROM one_time_prekeys WHERE user_id = $1 AND device_id = $2")
         .bind(user_id)
         .bind(device_id)
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
 
-    tx.commit().await?;
     Ok(r1.rows_affected() > 0)
+}
+
+/// Revoke all keys for a specific (user_id, device_id) pair in its own tx.
+/// Thin wrapper around [`revoke_device_in_tx`].
+pub async fn revoke_device(
+    pool: &PgPool,
+    user_id: Uuid,
+    device_id: i32,
+) -> Result<bool, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let revoked = revoke_device_in_tx(&mut tx, user_id, device_id).await?;
+    tx.commit().await?;
+    Ok(revoked)
 }
 
 /// Revoke every device belonging to `user_id` except `keep_device_id` in a

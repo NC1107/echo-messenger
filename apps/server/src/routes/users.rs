@@ -3,8 +3,9 @@
 use axum::Json;
 use axum::body::Body;
 use axum::extract::{Multipart, Path, Query, State};
+use axum::http::HeaderMap;
 use axum::http::StatusCode;
-use axum::http::header::CONTENT_TYPE;
+use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE, ETAG, IF_NONE_MATCH};
 use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
@@ -78,7 +79,7 @@ pub async fn get_my_privacy(
     let privacy = db::users::get_privacy_preferences(&state.pool, auth.user_id)
         .await
         .db_ctx("get_my_privacy")?
-        .ok_or_else(|| AppError::bad_request("User not found"))?;
+        .ok_or_else(|| AppError::not_found("User not found"))?;
 
     Ok(Json(PrivacyPreferencesResponse {
         read_receipts_enabled: privacy.read_receipts_enabled,
@@ -92,34 +93,32 @@ pub async fn get_my_privacy(
 }
 
 /// PATCH /api/users/me/privacy
+///
+/// TD-51: single-statement partial update. Unset fields keep their current
+/// value via `COALESCE`, eliminating the read-modify-write race the old
+/// implementation had — two concurrent PATCHes from different devices could
+/// lose fields between the SELECT and the UPDATE; this path has no such
+/// window.
 pub async fn update_my_privacy(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
     Json(payload): Json<UpdatePrivacyPreferencesRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let current = db::users::get_privacy_preferences(&state.pool, auth.user_id)
-        .await
-        .db_ctx("update_my_privacy/get_current")?
-        .ok_or_else(|| AppError::bad_request("User not found"))?;
-
-    let prefs = db::users::PrivacyUpdate {
-        read_receipts_enabled: payload
-            .read_receipts_enabled
-            .unwrap_or(current.read_receipts_enabled),
-        allow_unencrypted_dm: false,
-        email_visible: payload.email_visible.unwrap_or(current.email_visible),
-        phone_visible: payload.phone_visible.unwrap_or(current.phone_visible),
-        email_discoverable: payload
-            .email_discoverable
-            .unwrap_or(current.email_discoverable),
-        phone_discoverable: payload
-            .phone_discoverable
-            .unwrap_or(current.phone_discoverable),
-        searchable: payload.searchable.unwrap_or(current.searchable),
-    };
-    let updated = db::users::update_privacy_preferences(&state.pool, auth.user_id, &prefs)
-        .await
-        .db_ctx("update_my_privacy")?;
+    let updated = db::users::update_privacy_preferences_partial(
+        &state.pool,
+        auth.user_id,
+        db::users::PrivacyPartial {
+            read_receipts_enabled: payload.read_receipts_enabled,
+            email_visible: payload.email_visible,
+            phone_visible: payload.phone_visible,
+            email_discoverable: payload.email_discoverable,
+            phone_discoverable: payload.phone_discoverable,
+            searchable: payload.searchable,
+        },
+    )
+    .await
+    .db_ctx("update_my_privacy")?
+    .ok_or_else(|| AppError::not_found("User not found"))?;
 
     Ok(Json(PrivacyPreferencesResponse {
         read_receipts_enabled: updated.read_receipts_enabled,
@@ -143,7 +142,7 @@ pub async fn get_profile(
     let profile = db::users::find_public_profile(&state.pool, user_id)
         .await
         .db_ctx("get_profile")?
-        .ok_or_else(|| AppError::bad_request("User not found"))?;
+        .ok_or_else(|| AppError::not_found("User not found"))?;
 
     Ok(Json(UserProfile {
         user_id: profile.id,
@@ -433,7 +432,7 @@ pub async fn change_password(
     let user = db::users::find_by_id(&state.pool, auth.user_id)
         .await
         .db_ctx("change_password/find_user")?
-        .ok_or_else(|| AppError::bad_request("User not found"))?;
+        .ok_or_else(|| AppError::not_found("User not found"))?;
 
     // Argon2 verify takes ~50-150ms of pure CPU. Without spawn_blocking it
     // stalls a tokio worker for the whole duration -- login/register already
@@ -462,6 +461,10 @@ pub async fn change_password(
     db::tokens::revoke_all_user_tokens(&state.pool, auth.user_id)
         .await
         .db_ctx("change_password/revoke_tokens")?;
+
+    // CR-4: also invalidate outstanding 15-minute access tokens so a
+    // compromised session is killed immediately, not at JWT TTL.
+    state.token_invalidator.invalidate(auth.user_id);
 
     Ok(Json(json!({ "status": "password_changed" })))
 }
@@ -722,14 +725,41 @@ pub async fn upload_avatar(
     ))
 }
 
+/// Build a weak ETag from the file's size + modification time.
+///
+/// `W/"<size>-<mtime_secs>"` — collision risk is "two different files with
+/// identical size and identical mtime in the same second", which a CDN /
+/// browser cache can tolerate. The strong-validator alternative would
+/// require hashing the bytes on every read; we'd rather avoid that for
+/// frequently-fetched assets like avatars.
+fn weak_etag(meta: &std::fs::Metadata) -> String {
+    let mtime_secs = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format!("W/\"{}-{}\"", meta.len(), mtime_secs)
+}
+
+/// `Cache-Control` value used for public, mostly-immutable media (avatars,
+/// uploaded images). 5 min fresh + 1 day stale-while-revalidate keeps the
+/// chat list snappy without making bust scenarios painful.
+const MEDIA_CACHE_CONTROL: &str = "public, max-age=300, stale-while-revalidate=86400";
+
 /// GET /api/users/:id/avatar
 ///
 /// Serves the avatar image with the correct Content-Type header.
 /// Public endpoint — no auth required (avatars are profile pictures).
 /// Returns 404 if no avatar is set.
+///
+/// TD-39: emits `Cache-Control` + a weak `ETag` derived from (size, mtime)
+/// and honors `If-None-Match` → 304. Cuts the typical chat-list render
+/// from 50 disk reads to ~0 once the cache warms up.
 pub async fn get_avatar(
     State(state): State<Arc<AppState>>,
     Path(user_id): Path<Uuid>,
+    headers: HeaderMap,
 ) -> Result<Response, AppError> {
     // Verify user has an avatar_url set
     let avatar_url = db::users::get_avatar_url(&state.pool, user_id)
@@ -755,15 +785,35 @@ pub async fn get_avatar(
     // Try to find the avatar file on disk
     for ext in &["jpg", "png", "webp", "gif"] {
         let disk_path = format!("./uploads/avatars/{}.{}", user_id, ext);
-        if let Ok(data) = fs::read(&disk_path).await {
-            let mime = mime_for_extension(ext);
-            let response = Response::builder()
-                .status(StatusCode::OK)
-                .header(CONTENT_TYPE, mime)
-                .body(Body::from(data))
-                .map_err(|e| AppError::internal(format!("Failed to build response: {e}")))?;
-            return Ok(response);
+        let Ok(meta) = fs::metadata(&disk_path).await else {
+            continue;
+        };
+        let etag = weak_etag(&meta);
+
+        // Honor If-None-Match → 304 Not Modified without reading the file.
+        if let Some(inm) = headers.get(IF_NONE_MATCH).and_then(|v| v.to_str().ok())
+            && etag_matches(inm, &etag)
+        {
+            return Response::builder()
+                .status(StatusCode::NOT_MODIFIED)
+                .header(CACHE_CONTROL, MEDIA_CACHE_CONTROL)
+                .header(ETAG, &etag)
+                .body(Body::empty())
+                .map_err(|e| AppError::internal(format!("Failed to build response: {e}")));
         }
+
+        let Ok(data) = fs::read(&disk_path).await else {
+            continue;
+        };
+        let mime = mime_for_extension(ext);
+        let response = Response::builder()
+            .status(StatusCode::OK)
+            .header(CONTENT_TYPE, mime)
+            .header(CACHE_CONTROL, MEDIA_CACHE_CONTROL)
+            .header(ETAG, &etag)
+            .body(Body::from(data))
+            .map_err(|e| AppError::internal(format!("Failed to build response: {e}")))?;
+        return Ok(response);
     }
 
     Err(AppError {
@@ -771,6 +821,25 @@ pub async fn get_avatar(
         message: "Avatar file not found on disk".to_string(),
         code: ErrorCode::NotFound,
         body: None,
+    })
+}
+
+/// Match an `If-None-Match` header value against our emitted ETag.
+///
+/// Honors the comma-separated list form (`"abc", "def"`) and the wildcard
+/// `*`. Comparison treats weak (`W/"x"`) and strong (`"x"`) forms as equal
+/// because we only ever emit weak validators.
+fn etag_matches(inm: &str, ours: &str) -> bool {
+    let normalize = |t: &str| {
+        t.trim()
+            .trim_start_matches("W/")
+            .trim_matches('"')
+            .to_string()
+    };
+    let ours_norm = normalize(ours);
+    inm.split(',').any(|tok| {
+        let t = tok.trim();
+        t == "*" || normalize(t) == ours_norm
     })
 }
 

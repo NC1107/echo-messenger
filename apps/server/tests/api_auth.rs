@@ -144,6 +144,98 @@ async fn refresh_token_revoked_returns_401() {
     );
 }
 
+/// TD-42: token theft must invalidate the **entire family**, including
+/// descendants the legitimate client has rotated to since the leaked token
+/// was originally issued. Chains T0 → T1 → T2 → T3, replays T0 (simulating a
+/// stolen old token), and asserts that the freshest descendant (T3) also
+/// cannot be used afterwards.
+#[tokio::test]
+async fn refresh_replay_revokes_entire_family_chain() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let username = common::unique_username("theftchain");
+
+    common::register(&client, &base, &username, "password123").await;
+    let login_body: serde_json::Value = client
+        .post(format!("{base}/api/auth/login"))
+        .json(&serde_json::json!({ "username": username, "password": "password123" }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    let t0 = login_body["refresh_token"].as_str().unwrap().to_string();
+
+    async fn rotate(client: &Client, base: &str, token: &str) -> String {
+        let body: serde_json::Value = client
+            .post(format!("{base}/api/auth/refresh"))
+            .json(&serde_json::json!({ "refresh_token": token }))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        body["refresh_token"]
+            .as_str()
+            .expect("rotated refresh_token in body")
+            .to_string()
+    }
+
+    let t1 = rotate(&client, &base, &t0).await;
+    let t2 = rotate(&client, &base, &t1).await;
+    let t3 = rotate(&client, &base, &t2).await;
+
+    assert_ne!(t0, t1);
+    assert_ne!(t1, t2);
+    assert_ne!(t2, t3);
+
+    // Stolen old token is replayed. Server flips the family-wide kill switch.
+    let theft = client
+        .post(format!("{base}/api/auth/refresh"))
+        .json(&serde_json::json!({ "refresh_token": t0 }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        theft.status().as_u16(),
+        401,
+        "replaying T0 must be detected as theft"
+    );
+
+    // The freshest descendant — which the legitimate client believes is
+    // still usable — must now also be rejected.
+    let cascade = client
+        .post(format!("{base}/api/auth/refresh"))
+        .json(&serde_json::json!({ "refresh_token": t3 }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        cascade.status().as_u16(),
+        401,
+        "post-theft replay must invalidate the entire family, including T3"
+    );
+
+    // Intermediate descendants were already consumed during normal rotation,
+    // so they 401 for a separate reason; assert anyway to lock the contract.
+    for (label, token) in [("t1", &t1), ("t2", &t2)] {
+        let resp = client
+            .post(format!("{base}/api/auth/refresh"))
+            .json(&serde_json::json!({ "refresh_token": token }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status().as_u16(),
+            401,
+            "intermediate descendant {label} must be invalid"
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // HttpOnly refresh-token cookie (#342)
 // ---------------------------------------------------------------------------

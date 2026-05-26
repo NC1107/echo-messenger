@@ -143,8 +143,9 @@ async fn get_bundle_returns_uploaded_data() {
     );
 }
 
+// TD-34: "no PreKey bundle found" is a not-found case (404), not a bad request (400).
 #[tokio::test]
-async fn get_bundle_no_keys_returns_400() {
+async fn get_bundle_no_keys_returns_404() {
     let base = common::spawn_server().await;
     let client = Client::new();
 
@@ -157,7 +158,7 @@ async fn get_bundle_no_keys_returns_400() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status().as_u16(), 400);
+    assert_eq!(resp.status().as_u16(), 404);
 }
 
 #[tokio::test]
@@ -208,6 +209,94 @@ async fn get_bundle_consumes_one_time_prekey() {
     assert!(
         body["one_time_prekey"].is_null(),
         "4th fetch should have no OTP left"
+    );
+}
+
+/// TD-40: concurrent `GET /api/keys/bundle/:uid` requests against the same
+/// victim must each consume a distinct one-time prekey. The same shape of
+/// race that `concurrent_accept_respects_max_uses_under_lock` locks down
+/// for the invite-link path — the OTP path's `UPDATE ... AND used = false`
+/// must give the same guarantee.
+#[tokio::test]
+async fn concurrent_get_bundle_consumes_distinct_otps() {
+    use std::collections::HashSet;
+
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (token_victim, uid_victim, _) =
+        common::register_and_login(&client, &base, "otprace_v").await;
+    let (token_reader, _, _) = common::register_and_login(&client, &base, "otprace_r").await;
+
+    const N: usize = 8;
+    common::upload_prekey_bundle(&client, &base, &token_victim, 0, N).await;
+
+    // Concurrent reads using the same reader JWT — server processes them
+    // in parallel, and the OTP-consume UPDATE is what we want to stress.
+    let base = std::sync::Arc::new(base);
+    let token_reader = std::sync::Arc::new(token_reader);
+    let uid_victim = std::sync::Arc::new(uid_victim);
+
+    let mut joins = Vec::with_capacity(N + 1);
+    for _ in 0..=N {
+        let base = base.clone();
+        let tok = token_reader.clone();
+        let uid = uid_victim.clone();
+        let client = client.clone();
+        joins.push(tokio::spawn(async move {
+            let resp = client
+                .get(format!("{base}/api/keys/bundle/{uid}"))
+                .header("Authorization", format!("Bearer {tok}"))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(resp.status().as_u16(), 200);
+            let body: Value = resp.json().await.unwrap();
+            body["one_time_prekey"]
+                .get("key_id")
+                .and_then(|v| v.as_i64())
+        }));
+    }
+
+    let mut seen: HashSet<i64> = HashSet::new();
+    let mut nulls = 0;
+    for j in joins {
+        match j.await.unwrap() {
+            Some(key_id) => {
+                assert!(
+                    seen.insert(key_id),
+                    "OTP key_id {key_id} returned to two concurrent readers — \
+                     same OTP consumed twice (TD-40 regression)",
+                );
+            }
+            None => nulls += 1,
+        }
+    }
+
+    // Exactly N of the N+1 concurrent reads see an OTP; the (N+1)th sees null.
+    assert_eq!(
+        seen.len(),
+        N,
+        "expected {N} distinct OTPs consumed, got {} (nulls={nulls})",
+        seen.len()
+    );
+    assert_eq!(
+        nulls, 1,
+        "exactly one of N+1 concurrent reads must see no OTP left"
+    );
+
+    // Follow-up: server still serves the bundle without OTP.
+    let resp = client
+        .get(format!("{base}/api/keys/bundle/{uid_victim}"))
+        .header("Authorization", format!("Bearer {token_victim}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert!(
+        body["one_time_prekey"].is_null(),
+        "all OTPs should be consumed after the race"
     );
 }
 
@@ -614,7 +703,7 @@ async fn device_0_legacy_fingerprint_still_enforced() {
 async fn reset_device_clears_only_that_device() {
     let base = common::spawn_server().await;
     let client = Client::new();
-    let (token, uid, _username) = common::register_and_login(&client, &base, "keyresetdev").await;
+    let (token, uid, username) = common::register_and_login(&client, &base, "keyresetdev").await;
 
     let bundle0 = common::upload_prekey_bundle(&client, &base, &token, 0, 0).await;
     common::upload_additional_device(&client, &base, &token, &bundle0, 1).await;
@@ -629,6 +718,12 @@ async fn reset_device_clears_only_that_device() {
         .unwrap();
     assert_eq!(resp.status().as_u16(), 204);
 
+    // CR-4: reset_device invalidates outstanding access tokens for this user
+    // (see auth::invalidation). Re-login to acquire a fresh JWT for the
+    // post-reset re-upload below; the original `token` predates the
+    // invalidation floor and would 401.
+    let (token, _uid) = common::login(&client, &base, &username, common::TEST_USER_PASSWORD).await;
+
     // Device 0 must still be reachable
     let (token_other, _, _) = common::register_and_login(&client, &base, "keyresetdevobs").await;
     let resp = client
@@ -639,14 +734,15 @@ async fn reset_device_clears_only_that_device() {
         .unwrap();
     assert_eq!(resp.status().as_u16(), 200, "device 0 must remain bound");
 
-    // Device 1 row was deleted by revoke_device; fetching its bundle 400s.
+    // Device 1 row was deleted by revoke_device; fetching its bundle 404s.
+    // TD-34: was 400 before the status-code remap.
     let resp = client
         .get(format!("{base}/api/keys/bundle/{uid}/1"))
         .header("Authorization", format!("Bearer {token_other}"))
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status().as_u16(), 400, "device 1 must be cleared");
+    assert_eq!(resp.status().as_u16(), 404, "device 1 must be cleared");
 
     // Device 1 can now bind a brand-new identity without conflicting with
     // device 0.
@@ -795,7 +891,7 @@ async fn revoke_device_removes_keys() {
         .unwrap();
     assert_eq!(resp.status().as_u16(), 204);
 
-    // Fetch device 1 bundle should fail
+    // Fetch device 1 bundle should fail — TD-34: now 404 (not-found) instead of 400.
     let (token_other, _, _) = common::register_and_login(&client, &base, "keyrevoth").await;
     let resp = client
         .get(format!("{base}/api/keys/bundle/{uid}/1"))
@@ -803,7 +899,7 @@ async fn revoke_device_removes_keys() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status().as_u16(), 400);
+    assert_eq!(resp.status().as_u16(), 404);
 }
 
 #[tokio::test]

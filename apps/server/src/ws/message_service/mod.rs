@@ -31,8 +31,8 @@ use routing::{lookup_reply_context, resolve_conversation};
 use storage::store_and_confirm;
 use types::{ParsedRecipientDeviceContents, RecipientDeviceContents};
 use validate::{
-    enforce_group_sender_membership, validate_conversation_security, validate_encrypted_payload,
-    validate_message_length,
+    enforce_dm_recipient_includes_peer, enforce_group_sender_membership,
+    validate_conversation_security, validate_encrypted_payload, validate_message_length,
 };
 
 // ── External API ─────────────────────────────────────────────────────────────
@@ -109,6 +109,20 @@ pub(super) async fn handle_send_message(
     if conv_security.is_encrypted
         && conv_kind == Some(ConversationKind::Group)
         && !enforce_group_sender_membership(state, sender_id, conv_id).await
+    {
+        return;
+    }
+
+    // TD-30: encrypted-DM recipient-inclusion gate. The shape validator
+    // already requires `recipient_device_contents` to be non-empty, but it
+    // doesn't check that the actual peer is in the map. Without this check
+    // a sender could populate only their own devices and let the fanout
+    // fallback deliver `legacy_msg` to the peer with whatever bytes pass
+    // the structural shape gate.
+    if conv_security.is_encrypted
+        && conv_kind == Some(ConversationKind::Direct)
+        && let Some(rdc) = recipient_device_contents.as_ref()
+        && !enforce_dm_recipient_includes_peer(state, sender_id, conv_id, rdc).await
     {
         return;
     }

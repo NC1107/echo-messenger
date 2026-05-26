@@ -40,21 +40,40 @@ pub async fn create_user(
     username: &str,
     password_hash: &str,
 ) -> Result<CreatedUser, sqlx::Error> {
-    // First-user bootstrap: when the users table is empty (and so by
-    // construction no admin exists yet), this signup becomes the operator.
-    // The `NOT EXISTS` subquery sees its snapshot inside the same statement
-    // as the INSERT, so even with two concurrent registrations against an
-    // empty table only one row sees an empty table -- the other observes
-    // the freshly inserted row and gets `is_admin = FALSE`.  Combined with
-    // the unique-username constraint this means a fresh DB deterministically
-    // gets exactly one admin from the registration path.
+    // TD-44: first-user bootstrap — by default the first registration on an
+    // empty users table is promoted to admin (the original behaviour, kept
+    // so a fresh self-host install can get its operator in two HTTP calls).
+    //
+    // Self-hosters who plan to open registration up to other users BEFORE
+    // promoting themselves should set `ECHO_BOOTSTRAP_ADMIN_USERNAME` to
+    // their intended operator name; that locks first-user promotion to a
+    // single specific username and prevents the "first random signup
+    // becomes a permanent admin" race that the audit flagged. When the env
+    // var is set and the registration does not match, the row is created
+    // as a regular user even if it would otherwise satisfy the empty-table
+    // condition.
+    //
+    // The original race-safety property (a single statement so only one
+    // concurrent INSERT can see the table empty) is preserved: the env-var
+    // match is evaluated client-side as `$3` and the snapshot inside the
+    // statement still picks at most one winner.
+    let bootstrap_username = std::env::var("ECHO_BOOTSTRAP_ADMIN_USERNAME").ok();
+    let matches_bootstrap = match bootstrap_username.as_deref() {
+        // When the env var is unset, retain legacy behaviour: any first
+        // signup is promoted. When it is set, only the exact-match
+        // username may be promoted.
+        None => true,
+        Some(expected) => expected == username,
+    };
+
     let row: (Uuid, bool) = sqlx::query_as(
         "INSERT INTO users (username, password_hash, is_admin) \
-         VALUES ($1, $2, (SELECT NOT EXISTS (SELECT 1 FROM users))) \
+         VALUES ($1, $2, $3 AND (SELECT NOT EXISTS (SELECT 1 FROM users))) \
          RETURNING id, is_admin",
     )
     .bind(username)
     .bind(password_hash)
+    .bind(matches_bootstrap)
     .fetch_one(pool)
     .await?;
 
@@ -311,14 +330,14 @@ pub async fn update_profile(
 
 /// Update a user's password hash.
 pub async fn update_password(
-    pool: &PgPool,
+    db: impl sqlx::PgExecutor<'_>,
     user_id: Uuid,
     password_hash: &str,
 ) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE users SET password_hash = $1 WHERE id = $2")
         .bind(password_hash)
         .bind(user_id)
-        .execute(pool)
+        .execute(db)
         .await?;
     Ok(())
 }
@@ -434,6 +453,59 @@ pub async fn update_privacy_preferences(
     .bind(prefs.searchable)
     .bind(user_id)
     .fetch_one(pool)
+    .await
+}
+
+/// TD-51: optional fields for [`update_privacy_preferences_partial`].
+#[derive(Debug, Default, Clone, Copy)]
+pub struct PrivacyPartial {
+    pub read_receipts_enabled: Option<bool>,
+    pub email_visible: Option<bool>,
+    pub phone_visible: Option<bool>,
+    pub email_discoverable: Option<bool>,
+    pub phone_discoverable: Option<bool>,
+    pub searchable: Option<bool>,
+}
+
+/// TD-51: partial-update privacy preferences in a single statement, using
+/// `COALESCE($new, column)` so unset fields keep their current value.
+/// Defeats the read-modify-write race the old `update_my_privacy` had —
+/// two concurrent PATCHes from different devices could lose fields between
+/// the SELECT and the UPDATE; this path has no such window.
+pub async fn update_privacy_preferences_partial(
+    pool: &PgPool,
+    user_id: Uuid,
+    partial: PrivacyPartial,
+) -> Result<Option<UserPrivacyRow>, sqlx::Error> {
+    let PrivacyPartial {
+        read_receipts_enabled,
+        email_visible,
+        phone_visible,
+        email_discoverable,
+        phone_discoverable,
+        searchable,
+    } = partial;
+    sqlx::query_as::<_, UserPrivacyRow>(
+        "UPDATE users \
+         SET read_receipts_enabled = COALESCE($1, read_receipts_enabled), \
+             email_visible          = COALESCE($2, email_visible), \
+             phone_visible          = COALESCE($3, phone_visible), \
+             email_discoverable     = COALESCE($4, email_discoverable), \
+             phone_discoverable     = COALESCE($5, phone_discoverable), \
+             searchable             = COALESCE($6, searchable) \
+         WHERE id = $7 \
+         RETURNING read_receipts_enabled, allow_unencrypted_dm, \
+                  email_visible, phone_visible, email_discoverable, phone_discoverable, \
+                  searchable",
+    )
+    .bind(read_receipts_enabled)
+    .bind(email_visible)
+    .bind(phone_visible)
+    .bind(email_discoverable)
+    .bind(phone_discoverable)
+    .bind(searchable)
+    .bind(user_id)
+    .fetch_optional(pool)
     .await
 }
 

@@ -74,6 +74,13 @@ CustomTransitionPage<void> _fadePage({
 
 /// Listenable that notifies GoRouter when auth state changes, without
 /// recreating the entire router instance.
+///
+/// TD-84: `Ref.listen` (as opposed to `WidgetRef.listenManual`) ties the
+/// listener lifetime to the owning provider. When `routerProvider` is
+/// invalidated, Riverpod tears the listener down automatically — there is
+/// no separate `ProviderSubscription` to track. We still override
+/// `dispose()` so future maintainers know the listener cleanup is
+/// delegated to Riverpod, not handled in this class.
 class _AuthNotifierListenable extends ChangeNotifier {
   _AuthNotifierListenable(Ref ref) {
     ref.listen(authProvider, (prev, next) => notifyListeners());

@@ -19,6 +19,14 @@ import 'avatar_utils.dart';
 /// tier (UX roadmap Phase 2).
 const double kConversationItemHeight = 68.0;
 
+/// TD-80: lifted out of `_applyMediaLabel` so the sidebar doesn't re-compile
+/// this RegExp on every conversation tile rebuild. The pattern matches a
+/// leading `[kind:URL]` marker optionally followed by a newline and caption,
+/// which is what the seed scripts emit for captioned attachments.
+final RegExp _mediaMarkerRegExp = RegExp(
+  r'^\[(img|video|file|voice):[^\]]+\]\s*\n?\s*',
+);
+
 /// Tighter height for the compact (Discord-style) density tier.
 /// Bumped from 52px to 56px to maintain buffer above 56px bottom tab bar.
 const double kConversationItemHeightCompact = 56.0;
@@ -227,10 +235,10 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
     // a caption (the seed scripts emit `[img:URL]\ncaption` for captioned
     // attachments).  The previous `^\[img:.+\]$` regex only matched bare
     // markers, so captioned messages leaked the raw `[img:...]` text into
-    // the conversation preview (#prod-2026-05-08).
-    final match = RegExp(
-      r'^\[(img|video|file|voice):[^\]]+\]\s*\n?\s*',
-    ).firstMatch(snippet);
+    // the conversation preview (#prod-2026-05-08). TD-80: regex itself
+    // lifted to a top-level final so the sidebar doesn't recompile it on
+    // every tile rebuild.
+    final match = _mediaMarkerRegExp.firstMatch(snippet);
     if (match == null) return snippet;
     final kind = match.group(1)!;
     final caption = snippet.substring(match.end).trim();

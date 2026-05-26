@@ -117,8 +117,11 @@ async fn get_group_returns_group_info() {
     assert_eq!(body["id"].as_str(), Some(group_id.as_str()));
 }
 
+// TD-34: NotMember now maps to 403 (Forbidden), not 401 (Unauthorized).
+// "Not a member of this conversation" is a permission failure, not an
+// authentication failure — the JWT is valid, the user just isn't allowed.
 #[tokio::test]
-async fn get_group_non_member_returns_401() {
+async fn get_group_non_member_returns_403() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let (token_owner, _) = register_and_login(&client, &base, "grpowner").await;
@@ -133,7 +136,7 @@ async fn get_group_non_member_returns_401() {
         .await
         .unwrap();
 
-    assert_eq!(resp.status().as_u16(), 401);
+    assert_eq!(resp.status().as_u16(), 403);
 }
 
 // ---------------------------------------------------------------------------

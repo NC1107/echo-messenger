@@ -45,6 +45,7 @@ use uuid::Uuid;
 /// (#1173).
 pub const REQUEST_ID_HEADER: &str = "x-request-id";
 
+use crate::auth::TokenInvalidator;
 use crate::metrics::MessageRateCounter;
 use crate::middleware::rate_limit;
 use crate::ws::hub::Hub;
@@ -69,6 +70,10 @@ pub struct AppState {
     /// "messages per second" tile (#681). Bumped from the WS relay path
     /// after each successful store-and-fanout.
     pub message_rate: Arc<MessageRateCounter>,
+    /// Per-user JWT `iat` floor (CR-4). Revocation events bump the floor
+    /// for the affected user, immediately invalidating every outstanding
+    /// 15-minute access token instead of waiting for the JWT TTL.
+    pub token_invalidator: TokenInvalidator,
 }
 
 /// Narrow view of [`AppState`] for the auth handlers (`register`, `login`,
@@ -87,6 +92,7 @@ pub struct AuthExtract {
     pub pool: PgPool,
     pub jwt_secret: String,
     pub ticket_store: TicketStore,
+    pub token_invalidator: TokenInvalidator,
 }
 
 impl FromRef<Arc<AppState>> for AuthExtract {
@@ -95,6 +101,7 @@ impl FromRef<Arc<AppState>> for AuthExtract {
             pool: state.pool.clone(),
             jwt_secret: state.jwt_secret.clone(),
             ticket_store: Arc::clone(&state.ticket_store),
+            token_invalidator: state.token_invalidator.clone(),
         }
     }
 }

@@ -1399,6 +1399,7 @@ async fn revoked_device_excluded_from_fanout() {
         common::register_and_login(&client, &base, "rev657_alice").await;
     let (bob_token, bob_id, bob_name) =
         common::register_and_login(&client, &base, "rev657_bob").await;
+    let bob_username = bob_name.clone();
 
     common::make_contacts(&client, &base, &alice_token, &bob_token, &bob_id, &bob_name).await;
 
@@ -1414,6 +1415,14 @@ async fn revoked_device_excluded_from_fanout() {
         .await
         .expect("revoke request failed");
     assert!(revoke_resp.status().is_success(), "revoke device 22 failed");
+
+    // CR-4: revoke_device bumps the per-user `min iat` invalidator, so the
+    // original `bob_token` minted before the revoke can fail subsequent
+    // AuthUser checks on slow CI runs where the iat second has rolled over.
+    // Re-login Bob to obtain a token whose iat is strictly newer than the
+    // invalidation floor before fetching WS tickets.
+    let (bob_token, _) =
+        common::login(&client, &base, &bob_username, common::TEST_USER_PASSWORD).await;
 
     // Alice connects on her device.
     let alice_ticket = common::get_ws_ticket_for_device(&client, &base, &alice_token, 1).await;

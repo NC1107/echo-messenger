@@ -4,10 +4,12 @@
 use axum::Json;
 use axum::extract::State;
 use axum::extract::rejection::JsonRejection;
+use axum::http::HeaderMap;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
 
 use crate::auth::middleware::AuthUser;
 use crate::auth::{jwt, password};
@@ -47,6 +49,57 @@ fn build_refresh_cookie(value: String) -> Cookie<'static> {
         .path("/api/auth")
         .max_age(time::Duration::seconds(REFRESH_COOKIE_MAX_AGE_SECS))
         .build()
+}
+
+/// TD-43: enforce an Origin-header check on the two cookie-credentialed
+/// endpoints (`/refresh` and `/logout`) so a malicious page served by an
+/// origin **not** in `CORS_ORIGINS` cannot fire a credentialed
+/// `fetch(..., {credentials: 'include'})` to forcibly rotate or kill the
+/// user's session.
+///
+/// Browsers send `Origin:` on all credentialed cross-origin fetches; same-
+/// origin requests typically send it too on POST. We accept the request
+/// only when `Origin` is either absent (non-browser clients like our
+/// mobile/desktop apps don't set it) or matches an entry in the parsed
+/// allow-list.
+fn allowed_origins() -> &'static [String] {
+    static LIST: OnceLock<Vec<String>> = OnceLock::new();
+    LIST.get_or_init(|| {
+        let raw = std::env::var("CORS_ORIGINS").unwrap_or_else(|_| {
+            "https://echo-messenger.us,https://web.echo-messenger.us,http://localhost:8081".into()
+        });
+        if raw.trim() == "*" {
+            // Wildcard CORS disables credentials anyway — no Origin check
+            // applies, leave empty so `validate_origin_for_credentialed` is
+            // a no-op.
+            return Vec::new();
+        }
+        raw.split(',')
+            .map(|s| s.trim().trim_end_matches('/').to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    })
+}
+
+/// Returns Err(AppError::forbidden) when the request carries an `Origin`
+/// header outside the allow-list. Absent header is allowed (mobile/desktop).
+fn validate_origin_for_credentialed(headers: &HeaderMap) -> Result<(), AppError> {
+    let Some(origin_val) = headers.get(axum::http::header::ORIGIN) else {
+        return Ok(());
+    };
+    let Ok(origin) = origin_val.to_str() else {
+        return Err(AppError::forbidden("Invalid Origin header"));
+    };
+    let normalised = origin.trim_end_matches('/');
+    let allow = allowed_origins();
+    if allow.is_empty() || allow.iter().any(|o| o == normalised) {
+        return Ok(());
+    }
+    tracing::warn!(
+        origin = %origin,
+        "rejected credentialed request from non-allowed Origin"
+    );
+    Err(AppError::forbidden("Origin not in credentialed allow-list"))
 }
 
 fn clear_refresh_cookie() -> Cookie<'static> {
@@ -262,6 +315,7 @@ pub async fn login(
 /// code path.
 pub async fn refresh(
     State(state): State<AuthExtract>,
+    headers: HeaderMap,
     jar: CookieJar,
     // `Result<Json<_>, _>` (not `Option<Json<_>>`): when the web client sends
     // `Content-Type: application/json` with a zero-length body, axum's
@@ -271,6 +325,10 @@ pub async fn refresh(
     // cookie is still readable and the request can succeed.
     body: Result<Json<RefreshRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
+    // TD-43: forbid credentialed cookie use from origins outside the
+    // allow-list. Absent Origin (mobile/desktop) passes through.
+    validate_origin_for_credentialed(&headers)?;
+
     // Cookie wins when both are present so the web client's HttpOnly cookie
     // can never be silently overridden by a malicious JSON body. Mobile/desktop
     // clients keep sending the token in the body and that path still works.
@@ -426,10 +484,17 @@ pub async fn refresh(
 
 pub async fn logout(
     State(state): State<AuthExtract>,
+    headers: HeaderMap,
     jar: CookieJar,
     auth_user: AuthUser,
 ) -> Result<impl IntoResponse, AppError> {
+    // TD-43: cookie-credentialed endpoint — bounce non-allowed Origins.
+    validate_origin_for_credentialed(&headers)?;
+
     db::tokens::revoke_all_user_tokens(&state.pool, auth_user.user_id).await?;
+    // CR-4: invalidate the access token immediately so it cannot be used
+    // for the remainder of its 15-minute TTL.
+    state.token_invalidator.invalidate(auth_user.user_id);
     let jar = jar.add(clear_refresh_cookie());
     // Convention: StatusCode first, then CookieJar, matching register/login.
     Ok((StatusCode::NO_CONTENT, jar))
@@ -482,25 +547,26 @@ pub async fn forgot_password(
             .await
             .is_ok()
         {
+            // SECURITY: never log the token. A token in the log stream is a
+            // 15-minute account-takeover oracle for anyone with log-read
+            // access (Loki, CloudWatch, syslog, dev workstation). Operators
+            // honor a reset by reading the `password_reset_tokens` table
+            // directly and delivering the token out-of-band.
             tracing::info!(
-                username = %body.username,
                 user_id = %user.id,
-                token = %token,
                 expires = %expires_at,
-                "[manual reset] User '{}' requested a password reset. \
-                 Token: {}. Expires: {}. \
-                 To honor: deliver this token to the user out-of-band \
-                 (e.g. direct message or support reply) so they can paste \
-                 it into the reset-password screen.",
-                body.username,
-                token,
-                expires_at,
+                "[manual reset] Password reset requested. \
+                 Read the token row from `password_reset_tokens` and \
+                 deliver it to the user out-of-band.",
             );
         }
     }
 
     // Always 200 -- do not reveal whether the username exists.
-    Ok(StatusCode::OK)
+    // TD-73: return a JSON body for consistency with the rest of the API;
+    // some HTTP clients (and older fetch wrappers) trip on an empty body
+    // when the response carries a Content-Type expectation.
+    Ok((StatusCode::OK, Json(serde_json::json!({"ok": true}))))
 }
 
 // ---------------------------------------------------------------------------
@@ -536,21 +602,36 @@ pub async fn reset_password(
         .await
         .map_err(|_| AppError::internal("Password hashing failed"))??;
 
-    db::users::update_password(&state.pool, row.user_id, &new_hash)
+    // All three writes must succeed or fail together: a partial apply lets
+    // the same reset token be replayed once the next write recovers.
+    let mut tx = state
+        .pool
+        .begin()
         .await
         .map_err(|_| AppError::internal("Database error"))?;
 
-    // Mark token consumed before revoking sessions so a crash between the
-    // two steps leaves the token unusable rather than sessions valid.
-    db::password_reset::consume_token(&state.pool, &body.token)
+    db::users::update_password(&mut *tx, row.user_id, &new_hash)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?;
+
+    db::password_reset::consume_token(&mut *tx, &body.token)
         .await
         .map_err(|_| AppError::internal("Database error"))?;
 
     // Revoke all existing refresh tokens so any active sessions are
     // invalidated -- the password change may be the result of a compromise.
-    db::tokens::revoke_all_user_tokens(&state.pool, row.user_id)
+    db::tokens::revoke_all_user_tokens(&mut *tx, row.user_id)
         .await
         .map_err(|_| AppError::internal("Database error"))?;
+
+    tx.commit()
+        .await
+        .map_err(|_| AppError::internal("Database error"))?;
+
+    // CR-4: invalidate outstanding 15-minute access tokens after the
+    // password change commits. Refresh tokens were already revoked inside
+    // the tx; this closes the access-token side of the same window.
+    state.token_invalidator.invalidate(row.user_id);
 
     tracing::info!(
         user_id = %row.user_id,
