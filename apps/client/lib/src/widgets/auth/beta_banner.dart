@@ -9,24 +9,22 @@ import '../../theme/echo_theme.dart';
 /// existing testers never got the warning either.
 ///
 /// Visual treatment: accent-tinted card, flask icon, all-caps heading,
-/// short body, and a tappable "Learn more" affordance. Subtle enough that
+/// short body, and an optional "Learn more" chevron. Subtle enough that
 /// it doesn't look like an error, prominent enough that it doesn't get
 /// scanned past.
 class BetaBanner extends StatelessWidget {
-  /// Optional URL opened by the "Learn more" link. When null, the link is
-  /// hidden so the banner degrades to a static notice. Default points to
-  /// the marketing site's beta page.
+  /// Optional URL opened by the "Learn more" link. When null, the chevron
+  /// is hidden so the banner degrades to a static notice — that's the
+  /// default until a real beta landing page exists.
   final Uri? learnMoreUri;
 
   const BetaBanner({super.key, this.learnMoreUri});
 
-  /// Default Learn-more URL for the production landing page. Pulled into a
-  /// factory rather than a const so unit tests can stub it.
+  /// Standard banner placement. Learn-more link is intentionally absent
+  /// until there's a real landing page to point at; pass `learnMoreUri`
+  /// explicitly to re-enable the chevron.
   factory BetaBanner.standard({Key? key}) {
-    return BetaBanner(
-      key: key,
-      learnMoreUri: Uri.parse('https://echo-messenger.us/beta'),
-    );
+    return BetaBanner(key: key);
   }
 
   @override
