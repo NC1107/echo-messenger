@@ -34,6 +34,7 @@ pub struct UserProfile {
     pub website: Option<String>,
     pub email: Option<String>,
     pub phone: Option<String>,
+    pub background_color: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -47,6 +48,7 @@ pub struct UpdateProfileRequest {
     pub website: Option<String>,
     pub email: Option<String>,
     pub phone: Option<String>,
+    pub background_color: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -156,6 +158,7 @@ pub async fn get_profile(
         website: profile.website,
         email: profile.email,
         phone: profile.phone,
+        background_color: profile.background_color,
         created_at: profile.created_at,
     }))
 }
@@ -231,6 +234,20 @@ pub async fn update_profile(
     {
         return Err(AppError::bad_request("Phone must be 30 characters or less"));
     }
+    if let Some(ref color) = body.background_color
+        && !color.is_empty()
+    {
+        // Strict #RRGGBB. Front-end constrains to a preset palette, but
+        // we re-validate so callers using the raw API can't inject CSS.
+        let valid = color.len() == 7
+            && color.starts_with('#')
+            && color[1..].chars().all(|c| c.is_ascii_hexdigit());
+        if !valid {
+            return Err(AppError::bad_request(
+                "background_color must be a #RRGGBB hex string",
+            ));
+        }
+    }
 
     // Normalize phone to E.164: strip all non-digit chars except leading +.
     let normalized_phone = body.phone.as_deref().map(|p| {
@@ -252,6 +269,7 @@ pub async fn update_profile(
         website: body.website.as_deref(),
         email: body.email.as_deref(),
         phone: normalized_phone.as_deref(),
+        background_color: body.background_color.as_deref(),
     };
     let profile = db::users::update_profile(&state.pool, auth.user_id, &fields)
         .await
@@ -269,6 +287,7 @@ pub async fn update_profile(
         website: profile.website,
         email: profile.email,
         phone: profile.phone,
+        background_color: profile.background_color,
         created_at: profile.created_at,
     }))
 }
