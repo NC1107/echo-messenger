@@ -19,6 +19,7 @@ import '../theme/echo_theme.dart';
 import '../utils/friendly_error.dart';
 import '../widgets/avatar_crop_dialog.dart';
 import '../widgets/echo_logo_icon.dart';
+import '../widgets/theme_thumbnail.dart';
 import '../widgets/window_chrome.dart';
 
 /// Shared preferences key that gates whether onboarding has been completed.
@@ -373,26 +374,11 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
                         color: context.textPrimary,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'About 90 seconds. Skip any step you don\'t need now '
-                      '— you can always come back from Settings.',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: context.textSecondary,
-                        height: 1.4,
-                      ),
-                    ),
                     const SizedBox(height: 32),
                     for (var i = 0; i < stepTitles.length; i++) ...[
                       _stepIndicatorRow(context, i, stepTitles[i]),
                       const SizedBox(height: 12),
                     ],
-                    const Spacer(),
-                    Text(
-                      'Step ${_currentPage + 1} of ${stepTitles.length}',
-                      style: TextStyle(fontSize: 12, color: context.textMuted),
-                    ),
                   ],
                 ),
               ),
@@ -421,7 +407,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
     final isDone = index < _currentPage;
     final dotColor = _resolveStepDotColor(context, isActive, isDone);
     final textColor = _resolveStepTextColor(context, isActive, isDone);
-    return Row(
+    final row = Row(
       children: [
         Container(
           width: 8,
@@ -429,15 +415,33 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
         ),
         const SizedBox(width: 12),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 13,
-            color: textColor,
-            fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              color: textColor,
+              fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+            ),
           ),
         ),
       ],
+    );
+    // Backwards-only navigation: the user can click any step they've
+    // already completed to jump back. Future steps stay un-clickable so a
+    // hurried user can't skip required setup.
+    if (!isDone) return row;
+    return Semantics(
+      button: true,
+      label: 'go back to $label',
+      child: InkWell(
+        onTap: () => _goToPage(index),
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+          child: row,
+        ),
+      ),
     );
   }
 
@@ -484,36 +488,11 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
     return SingleChildScrollView(
       child: Column(
         children: [
-          // Beta banner.  We don't want testers surprised when something
-          // breaks or when their account gets wiped before launch.  Subtle
-          // accent treatment -- not a scary red -- so it reads as info.
-          Container(
-            margin: const EdgeInsets.only(bottom: 20),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: context.accentLight,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: context.accent, width: 1),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.science_outlined, size: 16, color: context.accent),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Echo is in beta. Bugs and breakage are expected, and '
-                    'your data may be reset before the public release.',
-                    style: TextStyle(
-                      color: context.textMuted,
-                      fontSize: 12.5,
-                      height: 1.4,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          // Beta callout was moved to the login/register screens (see
+          // BetaBanner) so new users see it before signing up and returning
+          // testers see it on every login. Keeping it out of the wizard
+          // also lets the welcome step lead with the actual setup CTA
+          // instead of a doom warning.
           Text(
             'Welcome to Echo!',
             style: TextStyle(
@@ -522,12 +501,6 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
               fontWeight: FontWeight.w700,
               letterSpacing: -0.5,
             ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Set up your profile.',
-            style: TextStyle(color: context.textSecondary, fontSize: 14),
-            textAlign: TextAlign.center,
           ),
           const SizedBox(height: 20),
 
@@ -775,39 +748,29 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   // Theme picker page
   // ---------------------------------------------------------------------------
 
-  /// Data for one tappable theme card in the wizard. Mirrors the six themes
-  /// shown under Settings > Appearance so users see the same options.
-  static const List<({AppThemeSelection selection, String label, Color swatch})>
-  _wizardThemes = [
-    (
-      selection: AppThemeSelection.indigo,
-      label: 'Indigo',
-      swatch: Color(0xFF6366F1),
+  /// Themes surfaced in the onboarding picker. Reduced from the full set
+  /// (Indigo, Graphite, Sakura, High contrast still exist under Settings →
+  /// Appearance for users who want them) so first-run users see three
+  /// curated choices instead of six near-similar palettes.
+  ///
+  /// Each entry carries a rich `ThemeThumbnail`-compatible preview, so the
+  /// wizard renders the same mini chat-mockup the Settings picker uses
+  /// instead of a flat colour swatch.
+  static const List<_WizardThemeOption> _wizardThemes = [
+    _WizardThemeOption(
+      selection: AppThemeSelection.system,
+      label: 'System',
+      preview: null, // split dark/light preview
     ),
-    (
-      selection: AppThemeSelection.graphite,
-      label: 'Graphite',
-      swatch: Color(0xFF14B8A6),
-    ),
-    (
-      selection: AppThemeSelection.ember,
-      label: 'Ember',
-      swatch: Color(0xFFF59E0B),
-    ),
-    (
+    _WizardThemeOption(
       selection: AppThemeSelection.paper,
       label: 'Paper',
-      swatch: Color(0xFFF5EFE6),
+      preview: lightPreview,
     ),
-    (
-      selection: AppThemeSelection.sakura,
-      label: 'Sakura',
-      swatch: Color(0xFFF8B4C4),
-    ),
-    (
-      selection: AppThemeSelection.highContrast,
-      label: 'High contrast',
-      swatch: Color(0xFF000000),
+    _WizardThemeOption(
+      selection: AppThemeSelection.ember,
+      label: 'Ember',
+      preview: emberPreview,
     ),
   ];
 
@@ -835,31 +798,21 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           const SizedBox(height: 24),
           LayoutBuilder(
             builder: (context, constraints) {
-              // Choose the column count from the available width so the cards
-              // always read as a tidy grid instead of a cramped horizontal
-              // scroll. 540 covers the right pane of the desktop 2-pane
-              // wizard layout (≈ 576 px after padding).
-              final w = constraints.maxWidth;
-              final int cols;
-              if (w >= 540) {
-                cols = 3; // desktop pane → 2×3 grid
-              } else if (w >= 360) {
-                cols = 3; // narrow tablet / phone landscape
-              } else {
-                cols = 2; // phone portrait
-              }
+              // Three curated themes (system, paper, ember). Single row on
+              // anything wider than ~360 px, stacked column on small phones.
+              final cols = constraints.maxWidth >= 360 ? 3 : 1;
               return GridView.count(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 crossAxisCount: cols,
-                mainAxisSpacing: 12,
-                crossAxisSpacing: 12,
-                childAspectRatio: 1.1,
+                mainAxisSpacing: 14,
+                crossAxisSpacing: 14,
+                childAspectRatio: cols == 1 ? 1.8 : 0.95,
                 children: [
                   for (final t in _wizardThemes)
                     _WizardThemeCard(
                       label: t.label,
-                      swatch: t.swatch,
+                      preview: t.preview,
                       isSelected: current == t.selection,
                       onTap: () => ref
                           .read(themeProvider.notifier)
@@ -1111,43 +1064,30 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
     return SingleChildScrollView(
       child: Column(
         children: [
-          const SizedBox(height: 24),
-          Icon(Icons.lock_outline, size: 64, color: context.textMuted),
-          const SizedBox(height: 24),
+          const SizedBox(height: 48),
+          Icon(Icons.lock_outline, size: 72, color: context.accent),
+          const SizedBox(height: 28),
           Text(
-            'Your messages are private',
+            'Private by default',
             style: TextStyle(
               color: context.textPrimary,
               fontSize: 24,
               fontWeight: FontWeight.w700,
               letterSpacing: -0.5,
             ),
+            textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Text(
-              'Echo uses the Signal Protocol to encrypt your messages '
-              'end-to-end. Only you and the person you are talking to '
-              'can read them -- not even our servers can see the content.',
+              'Your messages are end-to-end encrypted. Only you and the '
+              "person you're talking to can read them — not us, not your "
+              'network, not anyone else.',
               style: TextStyle(
                 color: context.textSecondary,
                 fontSize: 14,
-                height: 1.5,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          const SizedBox(height: 24),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              'You can verify a contact\'s identity at any time '
-              'by comparing Safety Numbers in their profile.',
-              style: TextStyle(
-                color: context.textMuted,
-                fontSize: 13,
-                height: 1.5,
+                height: 1.55,
               ),
               textAlign: TextAlign.center,
             ),
@@ -1277,18 +1217,32 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   }
 }
 
-/// Compact theme card used by the onboarding wizard. Keeps the card private
-/// to this file rather than reaching into the private `_ThemeCard` widget in
-/// `appearance_section.dart`.
+/// Tuple describing one wizard theme card. `preview == null` means render
+/// the system "follow-OS" split preview instead of the regular mini chat.
+class _WizardThemeOption {
+  final AppThemeSelection selection;
+  final String label;
+  final ThemePreviewColors? preview;
+
+  const _WizardThemeOption({
+    required this.selection,
+    required this.label,
+    required this.preview,
+  });
+}
+
+/// Compact theme card used by the onboarding wizard. Renders the same
+/// rich mini chat preview the Settings → Appearance picker uses so users
+/// see actual sent/received bubble colours instead of a flat colour swatch.
 class _WizardThemeCard extends StatelessWidget {
   final String label;
-  final Color swatch;
+  final ThemePreviewColors? preview;
   final bool isSelected;
   final VoidCallback onTap;
 
   const _WizardThemeCard({
     required this.label,
-    required this.swatch,
+    required this.preview,
     required this.isSelected,
     required this.onTap,
   });
@@ -1299,45 +1253,40 @@ class _WizardThemeCard extends StatelessWidget {
       label: '$label theme',
       button: true,
       selected: isSelected,
-      child: SizedBox(
-        width: 96,
-        child: Material(
-          color: isSelected ? context.accentLight : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(10),
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: isSelected ? context.accent : context.border,
-                  width: isSelected ? 2 : 1,
+      child: Material(
+        color: isSelected ? context.accentLight : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isSelected ? context.accent : context.border,
+                width: isSelected ? 2 : 1,
+              ),
+            ),
+            child: Column(
+              children: [
+                AspectRatio(
+                  aspectRatio: 1.4,
+                  child: preview != null
+                      ? ThemeThumbnail(colors: preview!)
+                      : const SystemThemeThumbnail(),
                 ),
-              ),
-              child: Column(
-                children: [
-                  Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(
-                      color: swatch,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
+                const SizedBox(height: 10),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: isSelected ? context.accent : context.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    label,
-                    style: TextStyle(
-                      color: isSelected ? context.accent : context.textPrimary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
           ),
         ),
