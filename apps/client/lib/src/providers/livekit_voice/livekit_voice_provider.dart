@@ -301,6 +301,34 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
 
     _isJoining = true;
 
+    // Switching between voice channels across groups: tell the server we
+    // left the previous voice session BEFORE joining the new one. Without
+    // this the server keeps the old session row alive, fans out voice
+    // signaling for two channels to this client, and the UI references a
+    // disposed Room while the new one is mid-connect — crashes on switch.
+    final prevConvId = state.conversationId;
+    final prevChanId = state.channelId;
+    if (state.isActive &&
+        prevConvId != null &&
+        prevChanId != null &&
+        (prevConvId != conversationId || prevChanId != channelId)) {
+      try {
+        await ref
+            .read(channelsProvider.notifier)
+            .leaveVoiceChannel(prevConvId, prevChanId);
+      } catch (e) {
+        // leaveVoiceChannel already handles its own errors (returns false);
+        // catch is belt-and-suspenders for unexpected throws so the new
+        // join isn't blocked by a transient leave failure.
+        DebugLogService.instance.log(
+          LogLevel.warning,
+          'LiveKitVoice',
+          'leaveVoiceChannel($prevConvId/$prevChanId) before switch threw '
+              '(ignored): $e',
+        );
+      }
+    }
+
     // Await full teardown before new join: prevents EventChannel stream collision
     // (PlatformException "No active stream to cancel") on the LiveKit native side.
     await _teardownCurrent();
@@ -592,13 +620,30 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     }
   }
 
-  /// Disconnect from the LiveKit room and reset state.
+  /// Disconnect from the LiveKit room and reset state. Also clears the
+  /// server-side voice session row so the user doesn't appear stuck in the
+  /// lounge to other members.
   Future<void> leaveChannel() async {
+    final convId = state.conversationId;
+    final chanId = state.channelId;
     if (state.isActive) {
       SoundService().playVoiceLeave();
     }
     await _teardownCurrent();
     state = LiveKitVoiceState.empty;
+    if (convId != null && chanId != null) {
+      try {
+        await ref
+            .read(channelsProvider.notifier)
+            .leaveVoiceChannel(convId, chanId);
+      } catch (e) {
+        DebugLogService.instance.log(
+          LogLevel.warning,
+          'LiveKitVoice',
+          'leaveVoiceChannel($convId/$chanId) on leave threw (ignored): $e',
+        );
+      }
+    }
   }
 
   /// Access the LiveKit [Room] directly for advanced widget rendering
