@@ -324,6 +324,15 @@ async fn stream_chunk_to_disk(
     file.flush()
         .await
         .map_err(|e| AppError::internal(format!("Failed to flush chunk: {e}")))?;
+    // Force the OS to commit the buffered bytes to the page cache so the
+    // next chunk POST (which opens a fresh file handle) and `finalize`
+    // observe the complete content. Without this, slow CI runners can
+    // flake `chunks_append_in_order_and_finalize_returns_media_url` when
+    // finalize's `detect_mime_from_file` reads a short prefix or
+    // `fs::rename` races the in-flight write.
+    file.sync_all()
+        .await
+        .map_err(|e| AppError::internal(format!("Failed to sync chunk: {e}")))?;
     Ok(written)
 }
 
