@@ -150,6 +150,7 @@ async fn deliver_one_batch(
             reply_to_id: msg.reply_to_id,
             reply_to_content: msg.reply_to_content.clone(),
             reply_to_username: msg.reply_to_username.clone(),
+            thread_root_id: msg.thread_root_id,
             expires_at: None, // Offline delivery: expiry already passed if expired
             undecryptable,
         };

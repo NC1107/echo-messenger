@@ -39,6 +39,7 @@ pub(in crate::ws::message_service) struct NewMessageFields {
     pub(super) reply_to_id: Option<Uuid>,
     pub(super) reply_to_content: Option<String>,
     pub(super) reply_to_username: Option<String>,
+    pub(super) thread_root_id: Option<Uuid>,
     pub(super) expires_at: Option<DateTime<Utc>>,
 }
 
@@ -58,6 +59,7 @@ impl NewMessageFields {
                 reply_to_id,
                 reply_to_content,
                 reply_to_username,
+                thread_root_id,
                 expires_at,
                 undecryptable: _,
             } => Some(Self {
@@ -72,6 +74,7 @@ impl NewMessageFields {
                 reply_to_id: *reply_to_id,
                 reply_to_content: reply_to_content.clone(),
                 reply_to_username: reply_to_username.clone(),
+                thread_root_id: *thread_root_id,
                 expires_at: *expires_at,
             }),
             _ => None,
@@ -112,6 +115,7 @@ pub(in crate::ws::message_service) fn build_per_device_json(
         reply_to_id: fields.reply_to_id,
         reply_to_content: fields.reply_to_content.clone(),
         reply_to_username: fields.reply_to_username.clone(),
+        thread_root_id: fields.thread_root_id,
         expires_at: fields.expires_at,
         undecryptable: None,
     };

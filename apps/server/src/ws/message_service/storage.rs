@@ -190,6 +190,7 @@ pub(in crate::ws::message_service) async fn store_and_confirm(
     conv_ttl_seconds: Option<i32>,
     is_encrypted: bool,
     client_message_id: Option<Uuid>,
+    thread_root_id: Option<Uuid>,
 ) -> Option<db::messages::MessageRow> {
     let effective_ttl = resolve_effective_ttl(ttl_seconds, conv_ttl_seconds);
 
@@ -204,6 +205,7 @@ pub(in crate::ws::message_service) async fn store_and_confirm(
         reply_to_id,
         effective_ttl,
         client_message_id,
+        thread_root_id,
     )
     .await
     {

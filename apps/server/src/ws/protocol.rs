@@ -38,6 +38,12 @@ pub(super) enum ClientMessage {
         /// as a unique-constraint error so the sender can retry.
         #[serde(default)]
         client_message_id: Option<Uuid>,
+        /// Threads M2: when set, the row joins the thread rooted at the
+        /// given message id. The store path resolves to the parent's own
+        /// thread_root_id if non-null, so a reply-to-a-reply still
+        /// anchors to the original root (Slack-flat).
+        #[serde(default)]
+        thread_root_id: Option<Uuid>,
     },
     #[serde(rename = "typing")]
     Typing {
@@ -91,6 +97,13 @@ pub enum ServerMessage {
         reply_to_content: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         reply_to_username: Option<String>,
+        /// Threads M2: when set, this message is a thread reply and
+        /// belongs in the thread panel rooted at this id, not in the
+        /// main channel timeline. Old clients ignore unknown fields, so
+        /// the omission of this key for top-level messages keeps wire
+        /// compat.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        thread_root_id: Option<Uuid>,
         #[serde(skip_serializing_if = "Option::is_none")]
         expires_at: Option<DateTime<Utc>>,
         /// Set to `true` when the server cannot deliver per-device ciphertext

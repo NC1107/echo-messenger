@@ -52,6 +52,13 @@ class ChatMessage {
   final String? replyToId;
   final String? replyToContent;
   final String? replyToUsername;
+
+  /// Threads M2 (docs/threads-architecture.md): when non-null this message
+  /// belongs to the thread rooted at that id and is filtered out of the
+  /// main channel timeline. Old servers omit the field — treat as null
+  /// (back-compat: legacy replies stay in the main timeline).
+  final String? threadRootId;
+
   final int replyCount;
 
   /// Truncated content of the most-recent reply to this message, used for
@@ -118,6 +125,7 @@ class ChatMessage {
     this.replyToId,
     this.replyToContent,
     this.replyToUsername,
+    this.threadRootId,
     this.replyCount = 0,
     this.latestReplyPreview,
     this.lastReplyAt,
@@ -185,6 +193,7 @@ class ChatMessage {
       replyToId: json['reply_to_id'] as String?,
       replyToContent: json['reply_to_content'] as String?,
       replyToUsername: json['reply_to_username'] as String?,
+      threadRootId: json['thread_root_id'] as String?,
       replyCount: (json['reply_count'] as int?) ?? 0,
       latestReplyPreview: json['last_reply_snippet'] as String?,
       lastReplyAt: json['last_reply_at'] != null
@@ -337,6 +346,7 @@ class ChatMessage {
       'reply_to_id': replyToId,
       'reply_to_content': replyToContent,
       'reply_to_username': replyToUsername,
+      'thread_root_id': threadRootId,
       'reply_count': replyCount,
       'last_reply_snippet': latestReplyPreview,
       'last_reply_at': lastReplyAt?.toIso8601String(),
@@ -365,6 +375,7 @@ class ChatMessage {
     String? replyToId,
     String? replyToContent,
     String? replyToUsername,
+    Object? threadRootId = _sentinel,
     int? replyCount,
     Object? latestReplyPreview = _sentinel,
     Object? lastReplyAt = _sentinel,
@@ -390,6 +401,9 @@ class ChatMessage {
       replyToId: replyToId ?? this.replyToId,
       replyToContent: replyToContent ?? this.replyToContent,
       replyToUsername: replyToUsername ?? this.replyToUsername,
+      threadRootId: threadRootId == _sentinel
+          ? this.threadRootId
+          : threadRootId as String?,
       replyCount: replyCount ?? this.replyCount,
       latestReplyPreview: latestReplyPreview == _sentinel
           ? this.latestReplyPreview
@@ -431,6 +445,7 @@ class ChatMessage {
             replyToId == other.replyToId &&
             replyToContent == other.replyToContent &&
             replyToUsername == other.replyToUsername &&
+            threadRootId == other.threadRootId &&
             replyCount == other.replyCount &&
             latestReplyPreview == other.latestReplyPreview &&
             lastReplyAt == other.lastReplyAt &&
@@ -458,6 +473,7 @@ class ChatMessage {
     replyToId,
     replyToContent,
     replyToUsername,
+    threadRootId,
     replyCount,
     latestReplyPreview,
     lastReplyAt,

@@ -331,6 +331,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     String content, {
     String? conversationId,
     String? replyToId,
+    String? threadRootId,
   }) async {
     final cryptoState = ref.read(cryptoProvider);
     if (!cryptoState.isInitialized) {
@@ -368,6 +369,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
       recipientDeviceContents,
       conversationId: conversationId,
       replyToId: replyToId,
+      threadRootId: threadRootId,
     );
   }
 
@@ -466,6 +468,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     Map<String, Map<String, String>>? recipientDeviceContents, {
     String? conversationId,
     String? replyToId,
+    String? threadRootId,
   }) {
     final msg = <String, dynamic>{
       'type': 'send_message',
@@ -480,6 +483,9 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     }
     if (replyToId != null && replyToId.isNotEmpty) {
       msg['reply_to_id'] = replyToId;
+    }
+    if (threadRootId != null && threadRootId.isNotEmpty) {
+      msg['thread_root_id'] = threadRootId;
     }
 
     _channel?.sink.add(jsonEncode(msg));
@@ -562,6 +568,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     String content, {
     String? channelId,
     String? replyToId,
+    String? threadRootId,
   }) async {
     final conversation = ref
         .read(conversationsProvider)
@@ -598,6 +605,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
           clientMessageId: clientMessageId,
           channelId: channelId,
           replyToId: replyToId,
+          threadRootId: threadRootId,
         ),
       ),
     );
@@ -610,6 +618,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     required String? clientMessageId,
     required String? channelId,
     required String? replyToId,
+    required String? threadRootId,
   }) {
     final msg = <String, dynamic>{
       'type': 'send_message',
@@ -625,6 +634,9 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     }
     if (replyToId != null && replyToId.isNotEmpty) {
       msg['reply_to_id'] = replyToId;
+    }
+    if (threadRootId != null && threadRootId.isNotEmpty) {
+      msg['thread_root_id'] = threadRootId;
     }
     return msg;
   }

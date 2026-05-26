@@ -144,7 +144,9 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
         (s) => s.messagesForConversation(parent.conversationId),
       ),
     );
-    final replies = allMessages.where((m) => m.replyToId == parent.id).toList();
+    final replies = allMessages
+        .where((m) => m.threadRootId == parent.id || m.replyToId == parent.id)
+        .toList();
 
     // Scroll to bottom when a new reply arrives while the panel is open.
     // Use ref.listen to trigger the side-effect outside the build phase.
@@ -152,7 +154,9 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
       chatProvider.select(
         (s) => s
             .messagesForConversation(parent.conversationId)
-            .where((m) => m.replyToId == parent.id)
+            .where(
+              (m) => m.threadRootId == parent.id || m.replyToId == parent.id,
+            )
             .toList(),
       ),
       (prev, next) {

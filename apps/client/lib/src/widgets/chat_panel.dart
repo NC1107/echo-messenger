@@ -493,7 +493,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         serverUrl: serverUrl,
         authToken: authToken,
         onReply: (msg) {
-          ref.read(chatProvider.notifier).setReplyTo(msg);
+          // From the thread panel: this reply belongs in the thread, not
+          // the main timeline. asThread=true flips the WS send to carry
+          // thread_root_id.
+          ref.read(chatProvider.notifier).setReplyTo(msg, asThread: true);
           _chatInputBarKey.currentState?.requestInputFocus();
         },
       );
@@ -1042,7 +1045,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
             serverUrl: serverUrl,
             authToken: authToken,
             onReply: (msg) {
-              ref.read(chatProvider.notifier).setReplyTo(msg);
+              ref.read(chatProvider.notifier).setReplyTo(msg, asThread: true);
               _chatInputBarKey.currentState?.requestInputFocus();
             },
             onClose: () => setState(() => _threadParent = null),

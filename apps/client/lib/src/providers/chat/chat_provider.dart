@@ -105,8 +105,10 @@ class Chat extends _$Chat
   }
 
   /// Set the message being replied to (shown in the input bar).
-  void setReplyTo(ChatMessage message) {
-    state = state.copyWith(replyToMessage: message);
+  /// When [asThread] is true the resulting send will carry `thread_root_id`
+  /// so the reply lands only in the thread panel.
+  void setReplyTo(ChatMessage message, {bool asThread = false}) {
+    state = state.copyWith(replyToMessage: message, replyAsThread: asThread);
   }
 
   /// Clear the active reply.
@@ -123,6 +125,7 @@ class Chat extends _$Chat
     String? replyToId,
     String? replyToContent,
     String? replyToUsername,
+    String? threadRootId,
   }) {
     final pendingId = 'pending_${DateTime.now().millisecondsSinceEpoch}';
     // Use real username for symmetry; "You" only as a last-resort fallback.
@@ -140,6 +143,7 @@ class Chat extends _$Chat
       replyToId: replyToId,
       replyToContent: replyToContent,
       replyToUsername: replyToUsername,
+      threadRootId: threadRootId,
       failedContent: content, // preserve for retry if send times out
     );
     var newState = state.withMessage(msg);

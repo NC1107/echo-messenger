@@ -222,8 +222,12 @@ class ChatPanelController extends ChangeNotifier {
     } else {
       raw = chatState.messagesForConversation(conv.id);
     }
-    if (deletedForMeIds.isEmpty) return raw;
-    return raw.where((m) => !deletedForMeIds.contains(m.id)).toList();
+    // Threads M2: rows with thread_root_id set live only in the thread
+    // panel, never in the main channel timeline (docs/threads-architecture.md).
+    final visible = raw.where(
+      (m) => m.threadRootId == null && !deletedForMeIds.contains(m.id),
+    );
+    return identical(visible, raw) ? raw : visible.toList();
   }
 
   /// Apply channel + delete-for-me filters to a pre-fetched message list.
@@ -246,6 +250,8 @@ class ChatPanelController extends ChangeNotifier {
             (m.channelId == null || m.channelId!.isEmpty);
       });
     }
+    // Threads M2: keep thread replies out of the main timeline.
+    filtered = filtered.where((m) => m.threadRootId == null);
     if (deletedForMeIds.isNotEmpty) {
       filtered = filtered.where((m) => !deletedForMeIds.contains(m.id));
     }
