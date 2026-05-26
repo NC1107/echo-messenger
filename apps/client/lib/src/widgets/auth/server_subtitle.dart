@@ -50,25 +50,27 @@ class _ServerSubtitleState extends ConsumerState<ServerSubtitle> {
   @override
   Widget build(BuildContext context) {
     final host = _host(widget.serverUrl);
+    // Labeled outlined button so testers see the row is interactive (#1183).
+    // The previous low-contrast chevron subtitle was being missed, and beta
+    // testers landed on the maintainer's prod server by accident.
     return Semantics(
       button: true,
-      label: 'switch server',
-      child: InkWell(
-        borderRadius: BorderRadius.circular(4),
-        onTap: _showSwitchDialog,
-        child: Padding(
+      label: 'choose server',
+      child: OutlinedButton.icon(
+        onPressed: _showSwitchDialog,
+        icon: Icon(Icons.dns_outlined, size: 16, color: context.textSecondary),
+        label: Text(
+          'Connect to server: $host',
+          style: TextStyle(color: context.textSecondary, fontSize: 12),
+          overflow: TextOverflow.ellipsis,
+        ),
+        style: OutlinedButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Server: $host',
-                style: TextStyle(color: context.textMuted, fontSize: 12),
-              ),
-              const SizedBox(width: 2),
-              Icon(Icons.chevron_right, size: 14, color: context.textMuted),
-            ],
-          ),
+          minimumSize: const Size(0, 32),
+          side: BorderSide(color: context.border),
+          foregroundColor: context.textSecondary,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
       ),
     );
