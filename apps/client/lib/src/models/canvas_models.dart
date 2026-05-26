@@ -161,14 +161,29 @@ class AvatarPosition {
   final double x;
   final double y;
 
+  /// Scale factor applied to the rendered avatar / video tile. 1.0 = the
+  /// historical default size; bounded by [minScale] / [maxScale] in the
+  /// canvas controller. Broadcast over the same `avatar_move` WS event so
+  /// the server does not need a new event kind.
+  final double scale;
+
+  static const double minScale = 0.5;
+  static const double maxScale = 5.0;
+
   const AvatarPosition({
     required this.userId,
     required this.x,
     required this.y,
+    this.scale = 1.0,
   });
 
-  AvatarPosition copyWith({double? x, double? y}) =>
-      AvatarPosition(userId: userId, x: x ?? this.x, y: y ?? this.y);
+  AvatarPosition copyWith({double? x, double? y, double? scale}) =>
+      AvatarPosition(
+        userId: userId,
+        x: x ?? this.x,
+        y: y ?? this.y,
+        scale: scale ?? this.scale,
+      );
 }
 
 // ---------------------------------------------------------------------------

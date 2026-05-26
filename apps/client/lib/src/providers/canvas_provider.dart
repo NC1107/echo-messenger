@@ -321,10 +321,18 @@ class CanvasController extends _$CanvasController {
   // -------------------------------------------------------------------------
 
   /// Called while the user is dragging their avatar.  Updates local state
-  /// immediately and queues a throttled WS broadcast.
+  /// immediately and queues a throttled WS broadcast. The current scale is
+  /// preserved.
   void moveLocalAvatar(String userId, CanvasPoint pos) {
+    final existing = state.avatarPositions[userId];
+    final scale = existing?.scale ?? 1.0;
     final updated = Map<String, AvatarPosition>.from(state.avatarPositions);
-    updated[userId] = AvatarPosition(userId: userId, x: pos.x, y: pos.y);
+    updated[userId] = AvatarPosition(
+      userId: userId,
+      x: pos.x,
+      y: pos.y,
+      scale: scale,
+    );
     state = state.copyWith(avatarPositions: updated);
 
     _pendingAvatar = (userId: userId, pos: pos);
@@ -342,10 +350,57 @@ class CanvasController extends _$CanvasController {
       return;
     }
     _pendingAvatar = null;
+    final existing = state.avatarPositions[pending.userId];
     _sendCanvasEvent('avatar_move', {
       'user_id': pending.userId,
       'x': pending.pos.x,
       'y': pending.pos.y,
+      'scale': existing?.scale ?? 1.0,
+    });
+  }
+
+  /// Called while the user is dragging an avatar's resize handle. Same
+  /// throttling as [moveLocalAvatar] — broadcasts ride the existing
+  /// `avatar_move` channel, server is passthrough.
+  void resizeAvatar(String userId, double scale) {
+    final clamped = scale.clamp(
+      AvatarPosition.minScale,
+      AvatarPosition.maxScale,
+    );
+    final existing = state.avatarPositions[userId];
+    final pos = existing != null
+        ? CanvasPoint(x: existing.x, y: existing.y)
+        : const CanvasPoint(x: 0.5, y: 0.5);
+    final updated = Map<String, AvatarPosition>.from(state.avatarPositions);
+    updated[userId] = AvatarPosition(
+      userId: userId,
+      x: pos.x,
+      y: pos.y,
+      scale: clamped,
+    );
+    state = state.copyWith(avatarPositions: updated);
+
+    _pendingAvatar = (userId: userId, pos: pos);
+    _avatarThrottle ??= Timer.periodic(
+      const Duration(milliseconds: 50),
+      (_) => _flushAvatarMove(),
+    );
+  }
+
+  /// Flushes the pending avatar resize immediately on pointer-up.
+  void commitAvatarResize(String userId) {
+    _avatarThrottle?.cancel();
+    _avatarThrottle = null;
+    _pendingAvatar = null;
+
+    if (_channelId == null) return;
+    final existing = state.avatarPositions[userId];
+    if (existing == null) return;
+    _sendCanvasEvent('avatar_move', {
+      'user_id': userId,
+      'x': existing.x,
+      'y': existing.y,
+      'scale': existing.scale,
     });
   }
 
@@ -355,13 +410,21 @@ class CanvasController extends _$CanvasController {
     _avatarThrottle = null;
     _pendingAvatar = null;
 
+    final existing = state.avatarPositions[userId];
+    final scale = existing?.scale ?? 1.0;
     final updated = Map<String, AvatarPosition>.from(state.avatarPositions);
-    updated[userId] = AvatarPosition(userId: userId, x: pos.x, y: pos.y);
+    updated[userId] = AvatarPosition(
+      userId: userId,
+      x: pos.x,
+      y: pos.y,
+      scale: scale,
+    );
     state = state.copyWith(avatarPositions: updated);
     _sendCanvasEvent('avatar_move', {
       'user_id': userId,
       'x': pos.x,
       'y': pos.y,
+      'scale': scale,
     });
   }
 
@@ -465,11 +528,21 @@ class CanvasController extends _$CanvasController {
       case 'avatar_move':
         final x = (payload['x'] as num?)?.toDouble() ?? 0.5;
         final y = (payload['y'] as num?)?.toDouble() ?? 0.5;
+        // Older clients won't send `scale`; preserve the prior value (or
+        // default to 1.0) so a move from an old build doesn't reset the
+        // size that a newer participant just resized.
+        final existing = state.avatarPositions[fromUserId];
+        final rawScale = (payload['scale'] as num?)?.toDouble();
+        final scale = (rawScale ?? existing?.scale ?? 1.0).clamp(
+          AvatarPosition.minScale,
+          AvatarPosition.maxScale,
+        );
         final updated = Map<String, AvatarPosition>.from(state.avatarPositions);
         updated[fromUserId] = AvatarPosition(
           userId: fromUserId,
           x: x.clamp(0.0, 1.0),
           y: y.clamp(0.0, 1.0),
+          scale: scale,
         );
         state = state.copyWith(avatarPositions: updated);
     }
