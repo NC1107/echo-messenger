@@ -102,6 +102,37 @@ class InlineReactionsHeader extends ContextMenuHeader {
   final VoidCallback onOpenFullPicker;
 }
 
+/// Per-participant volume slider header used by the voice-lounge member
+/// context menu. Shows the participant's display name, current percent,
+/// and a draggable 0–200% slider. `onChanged` fires on drag (cheap UI
+/// update); `onChangeEnd` commits the value to the WebRTC track.
+class VolumeSliderHeader extends ContextMenuHeader {
+  const VolumeSliderHeader({
+    required this.title,
+    required this.initialValue,
+    required this.onChanged,
+    required this.onChangeEnd,
+    this.enabled = true,
+    this.disabledTooltip,
+  });
+
+  /// Display name shown above the slider.
+  final String title;
+
+  /// Initial value in [0.0, 2.0] — 1.0 is 100% (system default).
+  final double initialValue;
+
+  /// Called continuously while dragging. Visual-only.
+  final ValueChanged<double> onChanged;
+
+  /// Called once when the user releases the thumb. Commit point.
+  final ValueChanged<double> onChangeEnd;
+
+  /// When false the slider greys out and shows [disabledTooltip].
+  final bool enabled;
+  final String? disabledTooltip;
+}
+
 /// Resolved menu tree for one target. Built from a target by the
 /// per-target registries (see `actions/*_actions_registry.dart`,
 /// added in PRs 2-4).

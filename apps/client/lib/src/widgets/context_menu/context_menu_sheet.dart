@@ -107,7 +107,75 @@ class _ContextMenuSheetState extends State<_ContextMenuSheet> {
   Widget _renderHeader(BuildContext context, ContextMenuHeader header) {
     return switch (header) {
       InlineReactionsHeader h => _InlineReactionsRow(header: h),
+      VolumeSliderHeader h => _SheetVolumeSliderRow(header: h),
     };
+  }
+}
+
+class _SheetVolumeSliderRow extends StatefulWidget {
+  const _SheetVolumeSliderRow({required this.header});
+  final VolumeSliderHeader header;
+
+  @override
+  State<_SheetVolumeSliderRow> createState() => _SheetVolumeSliderRowState();
+}
+
+class _SheetVolumeSliderRowState extends State<_SheetVolumeSliderRow> {
+  late double _value = widget.header.initialValue;
+
+  @override
+  Widget build(BuildContext context) {
+    final percent = (_value * 100).round();
+    final disabled = !widget.header.enabled;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  widget.header.title,
+                  style: TextStyle(
+                    color: context.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Text(
+                '$percent%',
+                style: TextStyle(
+                  color: disabled ? context.textMuted : context.textSecondary,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+          Slider(
+            value: _value.clamp(0.0, 2.0),
+            min: 0,
+            max: 2,
+            activeColor: context.accent,
+            inactiveColor: context.border,
+            onChanged: disabled
+                ? null
+                : (v) {
+                    setState(() => _value = v);
+                    widget.header.onChanged(v);
+                  },
+            onChangeEnd: disabled ? null : widget.header.onChangeEnd,
+          ),
+          if (disabled && widget.header.disabledTooltip != null)
+            Text(
+              widget.header.disabledTooltip!,
+              style: TextStyle(color: context.textMuted, fontSize: 12),
+            ),
+        ],
+      ),
+    );
   }
 }
 
