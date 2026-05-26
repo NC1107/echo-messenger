@@ -89,9 +89,19 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   /// (vertex mesh + draggable pucks) is opt-in via the dock toggle.
   bool _spotlightMode = true;
 
+  /// Pan + zoom controller for the canvas. Identity = 1x, no offset.
+  /// The lounge background sits OUTSIDE this transform so zoom/pan only
+  /// moves the canvas content (Figma-style); the bg stays fixed.
+  late final TransformationController _viewport;
+
+  /// Visibility flag for the reset-view button. Tracks whether the
+  /// transform differs from identity (any zoom or pan applied).
+  bool _viewportTransformed = false;
+
   @override
   void initState() {
     super.initState();
+    _viewport = TransformationController()..addListener(_onViewportChanged);
     // Breadcrumb fires post-joinChannel: missing = crash in joinChannel; present-but-alone = crash in build.
     final voiceLk = ref.read(livekitVoiceProvider);
     DebugLogService.instance.log(
@@ -106,12 +116,26 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
 
   @override
   void dispose() {
+    _viewport
+      ..removeListener(_onViewportChanged)
+      ..dispose();
     DebugLogService.instance.log(
       LogLevel.info,
       'VoiceLoungeUI',
       'VoiceLoungeScreen disposed',
     );
     super.dispose();
+  }
+
+  void _onViewportChanged() {
+    final isIdentity = _viewport.value.isIdentity();
+    if (isIdentity == _viewportTransformed) {
+      setState(() => _viewportTransformed = !isIdentity);
+    }
+  }
+
+  void _resetViewport() {
+    _viewport.value = Matrix4.identity();
   }
 
   String? _buildAvatarUrl() {
@@ -723,6 +747,31 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     );
   }
 
+  /// Reset-view affordance shown only when the canvas is zoomed or panned.
+  /// Returns the canvas transform to identity (1x, no offset).
+  Widget _buildResetViewButton(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Reset canvas zoom',
+      child: Material(
+        color: Colors.black54,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: _resetViewport,
+          child: const Padding(
+            padding: EdgeInsets.all(8),
+            child: Icon(
+              Icons.fit_screen_outlined,
+              size: 18,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   /// Small circular icon button that opens the background-picker menu.  This
   /// is the ONE settings entry-point for the customizable voice-lounge
   /// background feature.
@@ -814,7 +863,16 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       Positioned(
         top: 16,
         right: 16,
-        child: _buildBackgroundPickerButton(context),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_viewportTransformed && !_spotlightMode) ...[
+              _buildResetViewButton(context),
+              const SizedBox(width: 8),
+            ],
+            _buildBackgroundPickerButton(context),
+          ],
+        ),
       ),
     ]);
   }
@@ -853,7 +911,16 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       Positioned(
         top: 60,
         right: 12,
-        child: _buildBackgroundPickerButton(context),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_viewportTransformed && !_spotlightMode) ...[
+              _buildResetViewButton(context),
+              const SizedBox(width: 8),
+            ],
+            _buildBackgroundPickerButton(context),
+          ],
+        ),
       ),
     ]);
   }
@@ -978,12 +1045,29 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       ],
     );
 
+    // Figma-style zoom + pan. Bg stays fixed because _buildBackground sits in
+    // a separate scaffold layer underneath this widget. Pan is disabled while
+    // drawing so single-pointer drags become strokes, not viewport pans.
+    // Pinch + ctrl-scroll still zoom regardless.
+    final viewportContent = _spotlightMode
+        ? mergedContent
+        : InteractiveViewer(
+            transformationController: _viewport,
+            minScale: 0.5,
+            maxScale: 4.0,
+            panEnabled: !_isDrawing,
+            scaleEnabled: true,
+            trackpadScrollCausesScale: true,
+            boundaryMargin: const EdgeInsets.all(double.infinity),
+            child: mergedContent,
+          );
+
     return OrientationBuilder(
       builder: (context, orientation) {
         if (orientation == Orientation.landscape) {
           return _buildLandscapeLayout(
             context,
-            mergedContent,
+            viewportContent,
             dock,
             conversationId,
             channelName,
@@ -992,7 +1076,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
         }
         return _buildPortraitLayout(
           context,
-          mergedContent,
+          viewportContent,
           dock,
           conversationId,
           channelName,
