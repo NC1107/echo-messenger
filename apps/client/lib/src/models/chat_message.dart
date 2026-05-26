@@ -26,6 +26,13 @@ bool _listEquals<T>(List<T> a, List<T> b) {
   return true;
 }
 
+/// TD-79: lazy `DateTime.parse` cache keyed by `ChatMessage` identity. Used
+/// only by [ChatMessage.parsedTimestamp]; declared outside the class so the
+/// class stays `const`-constructible.
+final Expando<DateTime> _parsedTimestampCache = Expando<DateTime>(
+  'ChatMessage.parsedTimestamp',
+);
+
 class ChatMessage {
   /// System event messages use this as fromUserId.
   static const systemUserId = '__system__';
@@ -64,6 +71,27 @@ class ChatMessage {
 
   /// True if this is a system event (call history, key reset, etc.)
   bool get isSystemEvent => fromUserId == systemUserId;
+
+  /// TD-79: lazily-parsed [timestamp] used by message-grouping helpers in
+  /// `chat_message_list.dart`. Each `_buildMessageAtIndex` invocation
+  /// previously called `DateTime.parse` against both the prior and next
+  /// neighbour's `String` timestamp — for a 30-row viewport that's ~120
+  /// parses per repaint. Caching the parsed value on the message itself
+  /// turns repeated parses into a single shared instance.
+  ///
+  /// The cache lives in a static [Expando] so `ChatMessage` stays a
+  /// `const`-constructible value class; the parse only fires the first
+  /// time any consumer asks for it and the result is keyed by message
+  /// identity. Falls back to a sentinel epoch on parse failure so callers
+  /// don't need to handle a nullable.
+  DateTime get parsedTimestamp {
+    final cached = _parsedTimestampCache[this];
+    if (cached != null) return cached;
+    final parsed =
+        DateTime.tryParse(timestamp) ?? DateTime.fromMillisecondsSinceEpoch(0);
+    _parsedTimestampCache[this] = parsed;
+    return parsed;
+  }
 
   const ChatMessage({
     required this.id,

@@ -52,8 +52,9 @@ async fn get_own_profile_returns_200() {
     assert_eq!(body["user_id"].as_str(), Some(user_id.as_str()));
 }
 
+// TD-34: not-found now returns 404 instead of 400.
 #[tokio::test]
-async fn get_unknown_profile_returns_400() {
+async fn get_unknown_profile_returns_404() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let (token, _) = setup_user(&client, &base, "profunk").await;
@@ -66,7 +67,7 @@ async fn get_unknown_profile_returns_400() {
         .await
         .unwrap();
 
-    assert_eq!(resp.status().as_u16(), 400);
+    assert_eq!(resp.status().as_u16(), 404);
 }
 
 // ---------------------------------------------------------------------------

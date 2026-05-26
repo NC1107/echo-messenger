@@ -411,7 +411,7 @@ pub async fn delete_message(
     let conversation_id = db::messages::delete_message(&state.pool, message_id, auth.user_id)
         .await
         .db_ctx("delete_message")?
-        .ok_or_else(|| AppError::bad_request("Message not found or you are not the sender"))?;
+        .ok_or_else(|| AppError::not_found("Message not found or you are not the sender"))?;
 
     // Broadcast to conversation members via WebSocket
     crate::ws::broadcast::broadcast_to_conversation(
@@ -462,7 +462,7 @@ pub async fn edit_message(
         db::messages::get_message_conversation_security(&state.pool, message_id, auth.user_id)
             .await
             .db_ctx("edit_message/security lookup")?
-            .ok_or_else(|| AppError::bad_request("Message not found or you are not the sender"))?;
+            .ok_or_else(|| AppError::not_found("Message not found or you are not the sender"))?;
     if convo_meta.is_encrypted {
         tracing::warn!(
             user_id = %auth.user_id,
@@ -479,7 +479,7 @@ pub async fn edit_message(
         db::messages::edit_message(&state.pool, message_id, auth.user_id, &body.content)
             .await
             .db_ctx("edit_message")?
-            .ok_or_else(|| AppError::bad_request("Message not found or you are not the sender"))?;
+            .ok_or_else(|| AppError::not_found("Message not found or you are not the sender"))?;
 
     // Broadcast to conversation members via WebSocket
     let member_ids = db::groups::get_conversation_member_ids(&state.pool, conversation_id)
@@ -533,7 +533,7 @@ pub async fn get_thread_replies(
 
     let conversation_id = parent
         .map(|(cid,)| cid)
-        .ok_or_else(|| AppError::bad_request("Message not found"))?;
+        .ok_or_else(|| AppError::not_found("Message not found"))?;
 
     let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
         .await
@@ -839,7 +839,7 @@ pub async fn pin_message(
             .await
             .db_ctx("pin_message")?
             .ok_or_else(|| {
-                AppError::bad_request("Message not found or does not belong to this conversation")
+                AppError::not_found("Message not found or does not belong to this conversation")
             })?;
 
     // Look up pinner's username for the broadcast event
@@ -915,7 +915,7 @@ pub async fn unpin_message(
         .await
         .db_ctx("unpin_message")?
         .ok_or_else(|| {
-            AppError::bad_request("Message not found, not pinned, or wrong conversation")
+            AppError::not_found("Message not found, not pinned, or wrong conversation")
         })?;
 
     // Broadcast to conversation members via WebSocket

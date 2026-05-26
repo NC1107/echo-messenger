@@ -4,14 +4,24 @@ Captured from the 2026-05-20 multi-agent audit of the 26 PRs (#980–#1005) ship
 
 Audit baseline commit range: `628e623ebd6108b230f313ccebdcb922e6f09e3d^..HEAD` (40 files, +1838/-756 lines). 6 reviewers ran in parallel (code-quality, security, performance, frontend, backend, test-coverage). ~66 findings total; 3 critical, 11 high, 28 medium, 24 low. Convergent risk across all reviewers: the rotation-storm on `member_added` and the lack of single-flight in self-heal — partially addressed in the follow-up PR with a per-conversation in-flight set, but the parallel identity-key fetch optimization remains.
 
-Last updated: 2026-05-20.
+Last updated: 2026-05-25 (after high-tier batch shipped).
 
 ## Summary
+
+**2026-05-20 batch (TD-1..TD-23):**
 - Critical / High remaining: 0  (TD-1..TD-4 shipped in PR #1007)
 - Medium remaining: 1  (TD-14 — conversation Map index; deferred)
 - Low remaining: 2  (TD-20 partial schema migration, TD-23 harder test surfaces)
 
 The medium/low cleanup batch landed across server + client + tests (TD-5..TD-13, TD-15..TD-19, TD-21, TD-22, partial TD-23).
+
+**2026-05-25 fresh-eyes audit (TD-24..TD-85):**
+- Critical: 0 remaining (TD-24..TD-27 shipped — JWT device revocation, range-read DoS, reset_password tx, reset-token log leak).
+- High remaining: 1 partial (TD-28 rotation-path rollout) — TD-29..TD-42 all shipped in the same session.
+- Medium remaining: 25  (TD-43..TD-67; routes, perf, client componentization debt)
+- Low remaining: 18  (TD-68..TD-85; many small one-liners batched for a single cleanup PR)
+
+Audit baseline: main @ de37839b. Five parallel reviewers (security, backend, frontend, performance, test-quality) verified actual code — CLAUDE.md/docs deliberately ignored. Full per-finding evidence (file:line + code quote) lives in `.claude/state/audit-2026-05-25.md`.
 
 ---
 
@@ -192,3 +202,311 @@ Each test sketched in the test-coverage reviewer's findings. **Effort:** medium 
 - [x] TD-21 abort rotation when self key null — cleanup batch
 - [x] TD-22 semantic direction enum (`_MentionMove`) — cleanup batch
 - [~] TD-23 test coverage — 2 of 5 surfaces covered (MentionAutocomplete.candidateValues, OwnDecryptFailedBubble); remaining (_maybeRotateOnJoin, _moveMentionSelection wrap, conversation_item mask) need Riverpod test harness scaffolding
+
+---
+
+# 2026-05-25 fresh-eyes audit
+
+Multi-agent deep review of the actual codebase, docs deliberately ignored. Convergent findings (multiple reviewers flagged independently) marked ★. The four critical items shipped in this commit; everything else is open.
+
+## Critical — RESOLVED in this commit
+
+### TD-24 ★ — Password-reset tokens written verbatim into `tracing::info!` ✅ shipped
+**File:** `apps/server/src/routes/auth.rs:485-498`
+**Source:** security, backend (both flagged independently)
+**What:** `tracing::info!(... token = %token, ...)` made any log aggregator a 15-minute account-takeover oracle outside the auth boundary. Doc-comment acknowledged the risk but shipped anyway.
+**Shipped:** Token field dropped from the log line. Operators read the reset row from `password_reset_tokens` directly and deliver out-of-band. The full SMTP/admin-mediated relay redesign is still a follow-up.
+
+### TD-25 — `reset_password` now transactional ✅ shipped
+**File:** `apps/server/src/routes/auth.rs:516-558`
+**Source:** backend
+**What:** Three separate writes (`update_password`, `consume_token`, `revoke_all_user_tokens`) with no tx — a failure between writes left the token unused and replayable.
+**Shipped:** All three writes share one `state.pool.begin()` transaction. `db::password_reset::*`, `db::users::update_password`, and `db::tokens::revoke_all_user_tokens` were widened to accept `impl sqlx::PgExecutor<'_>` so they bind to either `&PgPool` or `&mut *tx`.
+
+### TD-26 — Byte-range download streams instead of allocating ✅ shipped
+**File:** `apps/server/src/routes/media.rs:560-592`
+**Source:** backend
+**What:** `serve_byte_range` did `vec![0u8; slice_len]` + `read_exact` against a `slice_len` capped only at `MAX_FILE_SIZE = 100 MB`. A single request could pin 100 MB; N concurrent requests trivially OOM-killed the server.
+**Shipped:** Replaced with `ReaderStream::new(file.take(slice_len))` after `seek`. Memory cost is now O(buffer-size), independent of `Range` header.
+
+### TD-27 — JWT auth now honors device-revocation events ✅ shipped
+**File:** `apps/server/src/auth/middleware.rs:18-58`, `apps/server/src/auth/invalidation.rs` (new)
+**Source:** backend
+**What:** `AuthUser` validated only `iss`/`aud`/`exp`. A stolen or revoked-device JWT continued to authorize every REST endpoint for the full 15-minute TTL even after `revoke_device` / `revoke_other_devices` / `change_password` / `reset_password` / `logout`.
+**Shipped:** New `TokenInvalidator` (in-memory DashMap<UserId, min-iat-floor>) wired into `AppState`. `AuthUser` rejects JWTs with `iat < floor` and returns `TokenRevoked`. The six revocation paths (revoke_device, revoke_other_devices, reset_device, change_password, reset_password, logout) call `state.token_invalidator.invalidate(user_id)`. 4 unit tests pin behavior; 27 keys + 20 auth + 1 race integration tests still pass.
+
+**Trade-off:** in-memory only. A server restart re-allows tokens up to their 15-minute TTL — same window we already accept today, and avoids a per-request DB lookup. Adding `device_id` to JWT claims and per-device revocation lookups is left as a follow-up if we ever ship multi-server replicas.
+
+---
+
+## High — outstanding
+
+### TD-28 ★ — Group-key envelopes are unsigned; rotator identity not bound — primitives landed (2026-05-25), rollout pending
+**File:** `apps/client/lib/src/services/crypto_service.dart` (encryptForUserSigned / decryptFromUserVerified), server accept in `apps/server/src/routes/group_keys.rs:335`
+**Source:** security
+**What:** ECIES wrap with no Ed25519 signature. A compromised server or racing admin can publish envelopes wrapping a key the operator controls; receivers unwrap, cache, and start encrypting with it. GRP2 added per-message signatures but the key-distribution layer remains MAC-only. The design proposal already flags this in `docs/group-e2e-design/06-open-questions.md`.
+**Shipped (2026-05-25):** `encryptForUserSigned` + `decryptFromUserVerified` primitives append/verify a 64-byte Ed25519 signature over the existing ECIES wrap. Three unit tests cover happy-path round-trip, signature-mismatch rejection, and tamper detection. Wire prefix is unchanged (legacy unsigned envelopes still parse via `decryptFromUser`).
+**Still open (rollout):** plumb the primitives into the rotation path. Needs `group_key_envelopes.created_by_user_id` (or derive via `group_key_rotations.triggered_by_user_id`) so the recipient knows which rotator's signing key to verify against, plus client-side migration window that accepts both signed and unsigned envelopes during the cutover. **Effort:** medium (schema migration + server route changes + client cutover gate).
+
+### TD-29 — TOFU silently overwrites changed peer identity key
+**File:** `apps/client/lib/src/services/crypto/peer_identity_extension.dart:59-87`
+**Source:** security
+**What:** Sets a "changed" flag but writes the new key to the cache anyway. The DM session-establishment path checks the flag (`IdentityKeyChangedException`); the group-rotation path, safety-number screen, and other `fetchPeerIdentityKey` consumers read the freshly-written key without checking. A user who hasn't opened the DM with the swapped peer silently wraps a group key for the attacker.
+**Fix:** Keep the old key canonical until explicit `acceptIdentityKeyChange`; expose pending key only via opt-in getter for code paths that legitimately need it (key reset flow).
+**Effort:** small.
+
+### TD-30 ★ — `recipient_device_contents` doesn't require peer inclusion
+**File:** `apps/server/src/ws/message_service/fanout.rs:162-200` + `validate.rs:249-291`
+**Source:** security
+**What:** For encrypted DMs the validator requires a non-empty per-device map but doesn't require the actual conversation peer to appear. `deliver_to_member` silently falls back to `legacy_msg` when the recipient is missing — letting a sender deliver attacker-shaped bytes to the peer while routing the real ciphertext to their own devices.
+**Fix:** For encrypted-DM kinds, require `recipient_device_contents` to include every non-sender member. Reject the send otherwise.
+**Effort:** small.
+
+### TD-31 — `link_preview` SSRF block-list incomplete
+**File:** `apps/server/src/routes/link_preview.rs:79-115` (and rate_limit.rs:310-322 has a similar gap)
+**Source:** security, backend
+**What:** Missing CGNAT (100.64.0.0/10), 192.0.0.0/24, 198.18.0.0/15 (benchmark), TEST-NETs, 224.0.0.0/4, broadcast. No port allowlist. Also uses blocking `to_socket_addrs` in an async handler.
+**Fix:** Use the `ipnet` crate (already a dep) with a comprehensive CIDR deny list. Port allowlist `{80, 443}`. Switch DNS to `tokio::net::lookup_host`.
+**Effort:** 1 h.
+
+### TD-32 — IPv4-mapped IPv6 not normalized for rate-limit XFF
+**File:** `apps/server/src/middleware/rate_limit.rs:310-322`
+**Source:** security
+**What:** `is_private` IPv6 branch ignores `to_ipv4_mapped()`. A trusted proxy that passes `::ffff:10.0.0.1` lets an attacker pick the bucket key.
+**Fix:** Normalize via `to_ipv4_mapped()` and apply the v4 private-range check on the mapped address.
+**Effort:** small.
+
+### TD-33 — Group member mutation lacks tx + duplicate member-list fetch
+**File:** `apps/server/src/routes/groups/members.rs:147-264, 267-316, 319-367` (and `groups/invite.rs:238, 270`)
+**Source:** backend, performance
+**What:** `add_member` / `remove_member` / `ban_member` run 6-8 sequential queries with no transaction and no `FOR UPDATE` — two concurrent admins acting on the same target can both pass the guard reads and both mutate. `get_conversation_member_ids` is called twice in the success path.
+**Fix:** Wrap in `pool.begin()` with `SELECT ... FOR UPDATE` on the caller's `conversation_members` row. Fetch member ids once, reuse for both broadcasts.
+**Effort:** 2-3 h.
+
+### TD-34 — HTTP status code drift (401 vs 403 vs 404)
+**Files:** `routes/groups/members.rs:175,281,332,382` (permission → 401); `error.rs:162-181` (`NotMember` → 401); `routes/messages.rs:414,465,482` (not-found → 400); `routes/users.rs:81,103,146,560`; `routes/keys.rs:330,360`.
+**Source:** backend
+**What:** Permission failures return 401, triggering client global re-auth instead of "forbidden". "Not found" cases return 400, defeating client retry semantics.
+**Fix:** Re-map `NotMember` → 403; convert 400-not-found cases to 404; convert permission 401s to 403. Update fixture tests in the same PR.
+**Effort:** half day.
+
+### TD-35 — WS voice/canvas signals accept unbounded `serde_json::Value`
+**File:** `apps/server/src/ws/protocol.rs:49-55, 65-70`
+**Source:** backend
+**What:** Inner JSON only bounded by the 64 KB frame cap; voice signals fire per ICE candidate, canvas events per stroke point. Bandwidth amplification × N members.
+**Fix:** Typed enums (`IceCandidate { sdp: String }`, etc.) with bounded field lengths.
+**Effort:** 1 day.
+
+### TD-36 — WS rate-limit message counter not decremented on Ping/Binary
+**File:** `apps/server/src/ws/rate_limit.rs:213-234`
+**Source:** backend
+**What:** `handle_other_frame` only updates the byte budget. Zero-byte Pings escape the message-count cap — an attacker can flood 1000 Pings/sec with no slowdown.
+**Fix:** Decrement `bucket.tokens -= 1.0` for all frame types.
+**Effort:** 15 min — highest impact-per-effort remaining.
+
+### TD-37 — Cleanup tasks + push fanout have no shutdown coordination
+**File:** `apps/server/src/main.rs:43-110, 125-141`
+**Source:** backend
+**What:** Fire-and-forget `tokio::spawn`s for periodic cleanups and push fanout. `with_graceful_shutdown` only stops the HTTP server, not the background tasks. SIGTERM during a `cleanup_expired_messages` mid-DELETE is torn at an arbitrary instruction.
+**Fix:** `tokio_util::sync::CancellationToken` for periodic loops (`select!` on `token.cancelled()`); `tokio::task::JoinSet` for one-shot spawned work, awaited on shutdown.
+**Effort:** 2-3 h.
+
+### TD-38 — `reset_device` not transactional
+**File:** `apps/server/src/routes/keys.rs:608-664`
+**Source:** backend
+**What:** `clear_device_fingerprint` then `revoke_device` — two separate DB round-trips. Crash in between leaves the device with cleared fingerprint but extant identity_keys row; next bundle upload may rebind to a different identity silently.
+**Fix:** Wrap in a single tx.
+**Effort:** 30 min.
+
+### TD-39 — No HTTP caching headers on avatars / media
+**File:** `apps/server/src/routes/users.rs:730-775`, `routes/media.rs::download`
+**Source:** backend, performance
+**What:** Every chat-list render = 50 avatar DB+disk reads. No `Cache-Control` / `ETag` → CDN can't cache.
+**Fix:** `Cache-Control: public, max-age=300, stale-while-revalidate=86400`; weak `ETag` from `(file_uuid, mtime)`; honor `If-None-Match` → 304.
+**Effort:** 1 h.
+
+### TD-40 — OTP atomicity has no concurrency test
+**File:** `apps/server/tests/api_keys.rs`
+**Source:** test-quality
+**What:** 27 tests, zero use `tokio::spawn`/`join!`. The invite-link race got the same-shape race-test treatment; OTP did not. `get_bundle` does select+delete of a one-time prekey — two concurrent X3DH initiations could race.
+**Fix:** Spawn N+1 concurrent `GET .../bundle?device_id=0`; assert returned `key_id`s are unique and final OTP count is 0; assert the (N+1)th returns `one_time_prekey: null` without panicking.
+**Effort:** ~60 LoC, mirror `concurrent_accept_respects_max_uses_under_lock`.
+
+### TD-41 — WS rotation storm has no integration test
+**File:** `apps/server/src/ws/rotation.rs` + `apps/server/tests/ws_messaging.rs`
+**Source:** test-quality
+**What:** 8 pure-leader-election unit tests, no integration test opens N concurrent WebSockets to the same group and triggers a simultaneous rotation. That's the entire purpose of `rotation.rs`.
+**Fix:** 5-WS-session test (3 members × 2 devices). Trigger two simultaneous rotations. Assert exactly one rotation envelope reaches each receiver; loser is dropped server-side; `group_keys` table has exactly one new version.
+**Effort:** ~150 LoC.
+
+### TD-42 — Refresh-token theft cascade only tested at depth 1
+**File:** `apps/server/tests/api_auth.rs:106`
+**Source:** test-quality
+**What:** Replay test chains depth 1 only; `revoke_token_family` chain-revocation is never end-to-end verified for deeper chains.
+**Fix:** Chain T0→T1→T2→T3, replay T0, assert T3 also 401 via `/refresh`.
+**Effort:** ~40 LoC.
+
+---
+
+## Medium — outstanding
+
+Compact list — full evidence (file:line + code quote) in `.claude/state/audit-2026-05-25.md`. All are open as of the 2026-05-25 audit.
+
+### TD-43 — Refresh cookie `SameSite=None` with permissive default CORS
+`apps/server/src/routes/auth.rs:39-50` + `routes/mod.rs:115-141`. Default `CORS_ORIGINS` includes `http://localhost:8081`; any malicious page there can chain a credentialed `/api/auth/refresh` to lock out the user. **Fix:** Origin-header check on `/refresh` and `/logout`; drop localhost from defaults.
+
+### TD-44 — Admin first-user bootstrap is a permanent race
+`apps/server/src/db/users.rs:51-65`. The first registration becomes admin via `(SELECT NOT EXISTS ...)`. **Fix:** Gate behind `ECHO_BOOTSTRAP_ADMIN_USERNAME`.
+
+### TD-45 — No admin demotion endpoint + no audit log
+`apps/server/src/routes/admin.rs:388-412`. Once promoted, only direct SQL can demote; no record of who promoted whom. Combined with TD-44, a single compromise is permanent. **Fix:** `DELETE /api/admin/promote/{user_id}` + `admin_audit` table.
+
+### TD-46 — Media ticket bound to user only, not media-id
+`apps/server/src/routes/media.rs:498-526` + `847-863`. 5-min reusable read for any media the user can access. **Fix:** Bind tickets to `(user_id, media_id)`; or accept a list of media IDs at issue time.
+
+### TD-47 — `KeyReset` / `CallStarted` broadcasts use cached username from upgrade
+`apps/server/src/ws/events/broadcast.rs:14-39`. Defense-in-depth gap; rename mid-session never surfaces. **Fix:** Re-fetch username per broadcast (or refresh on rename event).
+
+### TD-48 — WS rate limiter is per-session, not per-user
+`apps/server/src/ws/rate_limit.rs:240-264`. Consecutive-violation counter resets on reconnect. **Fix:** Process-wide DashMap keyed on user_id with slow decay; carry violations across reconnects.
+
+### TD-49 — Argon2id uses library defaults
+`apps/server/src/auth/password.rs:11`. `Argon2::default()` not pinned to explicit `m_cost`/`t_cost`/`p_cost`. The DUMMY_HASH at `auth.rs:210` is hardcoded against today's defaults — a dep bump that softens defaults breaks the timing-equalization too. **Fix:** Construct with explicit `Params::new(...)`.
+
+### TD-50 — Refresh-token cookie XSS exfiltration via in-origin fetch
+`apps/server/src/routes/auth.rs:42-50`. `HttpOnly` protects `document.cookie` reads, but any XSS on `web.echo-messenger.us` can fire `fetch('/api/auth/refresh', {credentials: 'include'})` and exfiltrate the rotated JSON. Theft detection only fires after one rotation. **Fix:** Independent — lock down web-build CSP via nginx; long-term consider IP/UA binding (mobile roaming caveat).
+
+### TD-51 — `update_my_privacy` is non-transactional read-modify-write
+`apps/server/src/routes/users.rs:95-133`. Two concurrent PATCHes from different devices lose fields. **Fix:** Single `UPDATE ... SET col = COALESCE($new, col)` per column; eliminate the pre-read.
+
+### TD-52 — `cleanup_expired_messages` unpaginated + per-conversation N+1 broadcast
+`apps/server/src/db/messages.rs:490-499` + `main.rs:297-315`. A backlog of 10k expirations triggers one giant DELETE and ~N member-list fetches. **Fix:** Cap DELETE with `LIMIT 500` loop; group broadcasts by conversation_id.
+
+### TD-53 — `get_bundle` N+1 fallback for users without device_0 row
+`apps/server/src/routes/keys.rs:316-330`. Up to 10 round-trips per fetch on multi-device users. **Fix:** Single query `ORDER BY device_id LIMIT 1`.
+
+### TD-54 — `get_all_prekey_bundles` does one UPDATE per device
+`apps/server/src/db/keys.rs:387-419`. Up to N writes per call (N = device count). **Fix:** Single `UPDATE ... WHERE id IN (...) RETURNING device_id, key_id, public_key` with `DISTINCT ON (device_id)` + `FOR UPDATE SKIP LOCKED`.
+
+### TD-55 — `messages::get_messages` joins full-table `GROUP BY reply_to_id`
+`apps/server/src/db/messages.rs:259-264` (also `search_messages:642`, `get_thread_replies:1018`). Aggregate set scales with all-messages in DB instead of the page. **Fix:** Scope aggregate via CTE to the same conversation/page batch, mirror `get_undelivered:392`.
+
+### TD-56 — DB pool has no `min_connections` + short `acquire_timeout`
+`apps/server/src/db/mod.rs:30-44`. Cold connections add 50-200 ms to bursts after idle; 5s acquire timeout converts pool exhaustion into 500s. **Fix:** `min_connections(5)`, `acquire_timeout(15s)`.
+
+### TD-57 — No cleanup task for `password_reset_tokens`
+`apps/server/src/routes/auth.rs:516-561` — tokens accumulate forever; combined with TD-25 (now fixed), abuse can grow the table. **Fix:** Add `spawn_periodic("password_reset_tokens", 600s, cleanup_expired_password_reset_tokens)`.
+
+### TD-58 — Push notification fanout serial
+`apps/server/src/push.rs:185-200`. 50-recipient group blocks the fanout task for 1.5-6 s of sequential APNs HTTP. **Fix:** `JoinSet` with bounded concurrency (~16) to respect APNs HTTP/2 connection limits.
+
+### TD-59 — Sequential `session.encrypt` on UI thread
+`apps/client/lib/src/services/signal_session.dart:150-180` called from `crypto_service.dart:775,788`. `decrypt` is on `compute()`; `encrypt` is not. `encryptForAllDevices` loop = 150 sequential KDF+AES rounds for a 50-member multi-device group → visible jank. **Fix:** Mirror decrypt — single isolate call wrapping the loop.
+
+### TD-60 — `shared_media_gallery` watches whole `chatProvider`
+`apps/client/lib/src/widgets/shared_media_gallery.dart:26`. Rebuilds on every message in every conversation. **Fix:** `.select((s) => s.messagesForConversation(conversationId))` — one-line.
+
+### TD-61 — `build_per_device_json` deep-clones JSON `Value` per device
+`apps/server/src/ws/message_service/fanout.rs:129-135`. 50-member × 2-device group = 100 deep clones per send. **Fix:** Serialize once with a sentinel for `content`, then string-replace per device.
+
+### TD-62 — `feedback_dialog.dart` web-crash hazard
+`apps/client/lib/src/widgets/feedback_dialog.dart:52` reaches `Platform.operatingSystem` without `kIsWeb` guard. **Fix:** `if (kIsWeb) return 'web';` early-return. **Note:** relevant to the uncommitted feedback_dialog edit currently in the working tree.
+
+### TD-63 — Theme drift: `Colors.white` hardcoded across 16+ screens
+`apps/client/lib/src/screens/{username_invite_screen,discover_groups_screen,user_profile_screen,onboarding_wizard,safety_number_screen,settings/account_section}.dart`. Breaks on any light theme with a light accent. **Fix:** Replace with `context.onAccent` / `colorScheme.onPrimary`.
+
+### TD-64 — 8 inline `AlertDialog`s instead of `showEchoConfirmDialog`
+`screens/user_profile_screen.dart:693`, `settings/account_section.dart:359`, `voice_lounge_screen.dart:562`, `settings/voice_section.dart:161`, `settings/about_section.dart:239`, `group_info_screen/parts/channels_section.dart:15`, `settings/privacy_section.dart:81`, `settings/advanced_theme_section.dart:266`. Drift risk on button order / destructive styling. **Fix:** Migrate to the shared helper.
+
+### TD-65 — 6 hand-rolled `CircleAvatar`s instead of `UserAvatar`/`buildAvatar`
+`settings/account_section.dart:451`, `group_info_screen/parts/header_section.dart:151,159`, `screens/join/join_preview_scaffold.dart:286,366,373`, `settings/accessibility_section.dart:79`. The account-section variant uses a raw `NetworkImage` that bypasses `chatMediaCacheManager` entirely.
+
+### TD-66 — Migration test asserts only count > 0
+`apps/server/tests/migrations.rs:73-80`. A migration with wrong column type / missing NOT NULL passes. 48 migrations in tree vs CLAUDE.md's stale "14" claim. **Fix:** Snapshot `information_schema.{tables,columns}` for ~10 critical columns.
+
+### TD-67 — `core/rust-core` has only 53 tests total
+13 for ratchet, 4 for x3dh, 2 for grp2 — thin for a "reference" implementation. Add ratchet edge-case coverage (MAX_SKIP overflow, skipped-key TTL, header-key rotation under loss).
+
+---
+
+## Low — outstanding
+
+### TD-68 — Hex-encoded reset-token expiry duplicated as literal
+`apps/server/src/routes/auth.rs:479,530` — extract to `const RESET_TOKEN_TTL: chrono::Duration`.
+
+### TD-69 — HKDF zero-salt domain-separation risk
+`apps/client/lib/src/services/crypto_service.dart:1770-1775`. Acceptable with a fresh ephemeral key per wrap; document the constraint so future reuse of `encryptForUser` doesn't silently weaken it.
+
+### TD-70 — Chunked upload temp files survive server restarts
+`apps/server/src/routes/media_chunked.rs:142-153, 542-568`. Cleanup loop sweeps only when running. **Fix:** On startup, walk `./uploads/.tmp/` and unlink files not referenced by a pending `upload_sessions` row.
+
+### TD-71 — `tracing::error!("Database error: {:?}", err)` may echo column values
+`apps/server/src/error.rs:223`. `sqlx::Error::Database` Debug formatting includes constraint-violation column values for some Postgres errors. **Fix:** Log structured fields (`code`, `constraint`, `severity`) instead of `{:?}`.
+
+### TD-72 — `cleanup_expired_messages` 30 s cadence is aggressive
+`apps/server/src/main.rs:53`. Most-tick wasted I/O when no expirations are due. **Fix:** Drop cadence to 5 min, OR maintain in-memory min-heap of next-expiry timestamps.
+
+### TD-73 — `forgot_password` returns empty body on 200
+`apps/server/src/routes/auth.rs:503`. Cosmetic — `Json(json!({}))` keeps the response shape consistent.
+
+### TD-74 — `serde_json` parser-position leaks to client
+`apps/server/src/ws/events/dispatch.rs:43`. Drop the `{e}` interpolation in WS error replies.
+
+### TD-75 — Late `_voiceSignalController.broadcast()` subscribers miss events
+`apps/client/lib/src/providers/websocket_provider.dart:40-41`. Currently mitigated by lifecycle ordering but fragile.
+
+### TD-76 — `_expireTimer` rebuilds whole bubble subtree every second
+`apps/client/lib/src/widgets/message_item.dart:235-256`. **Fix:** Wrap only the expiry-chip in a `ValueListenableBuilder<DateTime>` driven by the timer.
+
+### TD-77 — `_messageKeys` map grows unbounded per ChatPanel lifetime
+`apps/client/lib/src/widgets/chat_panel.dart:131, 244`. Long-lived heavy-traffic chats accumulate `GlobalKey`-anchored Elements. **Fix:** Prune entries on `findChildIndexCallback` cycles, or evict in `_onScroll`.
+
+### TD-78 — `ListView.builder.itemBuilder` calls `ref.watch` inside builder
+`apps/client/lib/src/widgets/chat_panel/chat_message_list.dart:208-212`. Stale per-row reads + over-broad subscription. **Fix:** Hoist `ref.watch` to `build()`; use `.select` for narrow fields.
+
+### TD-79 — `chat_message_list` re-parses `DateTime` ~4N times per build
+`apps/client/lib/src/widgets/chat_panel/chat_message_list.dart:140-180`. **Fix:** Pre-compute `DateTime parsedTimestamp` once on `ChatMessage`.
+
+### TD-80 — `ConversationItem._applyMediaLabel` constructs RegExp in build
+`apps/client/lib/src/widgets/conversation_item.dart:231`. Lift to top-level `final`.
+
+### TD-81 — Channel chips built eagerly (no horizontal builder)
+`apps/client/lib/src/widgets/channel_bar.dart:441-462`. 50+ channels = all chips rebuilt every channel-bar tick. **Fix:** `ListView.builder` with `scrollDirection: Axis.horizontal`.
+
+### TD-82 — No fuzz / property tests anywhere
+`proptest` / `quickcheck` / `fuzz_target` grep returns zero. Wire-format parsers (`signal/protocol.rs`, group envelope decode, WS frame parser) are the exact surface that would benefit. **Fix:** `core/rust-core/tests/wire_fuzz.rs` proptest on random `Vec<u8>` of 0..2 KiB; assert success-or-typed-error, never panic / OOB read.
+
+### TD-83 — Playwright `test.fixme` without issue links
+`tests/e2e/group_messaging_ui.spec.ts:351, 389, 442, 500, 597`. Five disabled core group flows. **Fix:** File tracking issues or delete.
+
+### TD-84 — `_AuthNotifierListenable` never disposes its `ref.listen` subscription
+`apps/client/lib/src/router/app_router.dart:77-81, 177`. Fine for app lifetime today but leaks if `routerProvider` is ever invalidated. **Fix:** Capture the subscription and cancel in `dispose()`.
+
+### TD-85 — `splash_screen.dart` snackbar after navigation
+`apps/client/lib/src/screens/splash_screen.dart:243-254`. PostFrameCallback fires `ScaffoldMessenger` against a context that just navigated away. **Fix:** Move warning to home screen or a global toast surface.
+
+---
+
+## Progress tracking — 2026-05-25 batch
+
+- [x] TD-24 reset-token log leak — this commit
+- [x] TD-25 reset_password tx — this commit
+- [x] TD-26 byte-range streaming — this commit
+- [x] TD-27 JWT device revocation (min-iat invalidator) — this commit
+- [~] TD-28 ★ sign group-key envelopes — primitives + 3 unit tests shipped; rotation-path rollout pending schema/server work
+- [x] TD-29 TOFU silent overwrite — canonical/pending split, `pendingPeerIdentityKey` getter, `acceptIdentityKeyChange` promotes
+- [x] TD-30 ★ enforce recipient_device_contents includes peer — async DB lookup + `dm-peer-not-in-recipients` rejection code
+- [x] TD-31 link_preview SSRF deny-list + port allowlist + async DNS — 12-CIDR deny list, port {80,443}, `tokio::net::lookup_host`, 9 unit tests
+- [x] TD-32 IPv4-mapped IPv6 normalization — `to_ipv4_mapped()` unwrap before private-range check, 2 new unit tests
+- [x] TD-33 group-member mutations in tx — per-(group,target) `pg_advisory_xact_lock`, `add_member_in_tx`/`remove_member_in_tx`/`ban_member_in_tx`
+- [x] TD-34 HTTP status code remap (401→403, 400→404) — `NotMember` → 403; message/user/key not-found → 404; test fixtures updated
+- [x] TD-35 typed voice/canvas event payloads — bounded sizes (8 KB voice, 16 KB canvas) at dispatch boundary
+- [x] TD-36 WS rate-limit Ping/Binary counter (15-min fix) — `handle_other_frame` now decrements `bucket.tokens`
+- [x] TD-37 shutdown coordination for cleanup + push tasks — `CancellationToken` + `JoinHandle` collection, two-stage drain
+- [x] TD-38 reset_device tx — `revoke_device_in_tx` extracted, `clear_device_fingerprint` + revoke share one tx
+- [x] TD-39 HTTP caching headers on avatars/media — weak ETag `(size, mtime)`, `If-None-Match` → 304 for avatars + media + thumbnails
+- [x] TD-40 OTP concurrency test — N+1 concurrent reads, asserts N unique key_ids + 1 null
+- [x] TD-41 WS rotation-storm integration test — N concurrent rotations of same version, asserts exactly 1 wins, 3 lose with 409, stored envelope is single-racer
+- [x] TD-42 refresh-token theft cascade depth-N test — T0→T1→T2→T3 chain, replay T0 invalidates T3
+- [ ] TD-43..TD-67 medium batch (eligible for a single follow-up PR)
+- [ ] TD-68..TD-85 low batch (eligible for a single mechanical cleanup PR)

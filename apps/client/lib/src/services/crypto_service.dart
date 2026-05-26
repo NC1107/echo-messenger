@@ -50,6 +50,15 @@ class CryptoService {
   static const _sessionPrefix = 'echo_signal_session_';
   static const _peerIdentityPrefix = 'echo_peer_identity_';
   static const _peerIdentityChangedPrefix = 'echo_peer_identity_changed_';
+
+  /// TD-29: when TOFU detects a changed peer identity, the *new* key is
+  /// stashed here instead of clobbering the canonical
+  /// `_peerIdentityPrefix` slot. Callers that need the freshly-fetched key
+  /// (e.g. group-key rotation needs to wrap against the server's current
+  /// answer, even if not yet trusted) can opt-in via
+  /// [pendingPeerIdentityKey]. The canonical slot only moves forward when
+  /// [acceptIdentityKeyChange] is called explicitly.
+  static const _peerIdentityPendingPrefix = 'echo_peer_identity_pending_';
   static const _otpPrivatePrefix = 'echo_otp_private_';
   static const _signedPrekeyCreatedAtPref = 'echo_signed_prekey_created_at';
   static const _signedPrekeyPreviousPref = 'echo_signed_prekey_previous';
@@ -1190,6 +1199,9 @@ class CryptoService {
     // it's re-fetched with the new bundle on next session establishment.
     await store.delete('$_peerIdentityPrefix$peerUserId');
     await store.delete('$_peerIdentityChangedPrefix$peerUserId');
+    // TD-29: also drop the pending-identity slot so the next fetch starts
+    // from a clean TOFU state instead of resurrecting a stale "new" key.
+    await store.delete('$_peerIdentityPendingPrefix$peerUserId');
   }
 
   /// Reset all keys: clear server fingerprint, delete local keys, regenerate,
@@ -1227,7 +1239,8 @@ class CryptoService {
       if (key.startsWith(_sessionPrefix) ||
           key.startsWith(_otpPrivatePrefix) ||
           key.startsWith(_peerIdentityPrefix) ||
-          key.startsWith(_peerIdentityChangedPrefix)) {
+          key.startsWith(_peerIdentityChangedPrefix) ||
+          key.startsWith(_peerIdentityPendingPrefix)) {
         await store.delete(key);
       }
     }
@@ -1357,6 +1370,7 @@ class CryptoService {
       if (key.startsWith(_sessionPrefix) ||
           key.startsWith(_peerIdentityPrefix) ||
           key.startsWith(_peerIdentityChangedPrefix) ||
+          key.startsWith(_peerIdentityPendingPrefix) ||
           key.startsWith(_otpPrivatePrefix)) {
         await store.delete(key);
       }
@@ -1788,6 +1802,97 @@ class CryptoService {
     wire.setRange(44 + ct.length, wire.length, mac);
 
     return base64Encode(wire);
+  }
+
+  /// TD-28: signed variant of [encryptForUser]. The plaintext wrap is the
+  /// same as the unsigned form; we append a 64-byte Ed25519 signature
+  /// computed over `eph_pub || nonce || ct || tag` using the rotator's
+  /// Ed25519 sender-signing key.
+  ///
+  /// Wire: base64(ephemeral_pub(32) || nonce(12) || ct || tag(16) || sig(64))
+  ///
+  /// Recipients verify with [decryptFromUserVerified] against a freshly
+  /// fetched signing public key for the claimed rotator. Without this,
+  /// nothing in the wire commits to the rotator's identity and a malicious
+  /// server / racing admin can publish substitute envelopes.
+  Future<String> encryptForUserSigned(
+    Uint8List plaintext,
+    Uint8List recipientPublicKeyBytes,
+  ) async {
+    if (_identityKeyPair == null) await init();
+    if (_signingKeyPair == null) {
+      throw StateError(
+        'TD-28: encryptForUserSigned requires a signing key — call init() first',
+      );
+    }
+
+    // Wrap (same shape as encryptForUser).
+    final unsignedB64 = await encryptForUser(
+      plaintext,
+      recipientPublicKeyBytes,
+    );
+    final unsignedWire = Uint8List.fromList(base64Decode(unsignedB64));
+
+    // Sign the wire prefix that the recipient will verify.
+    final sig = await _ed25519.sign(unsignedWire, keyPair: _signingKeyPair!);
+    final sigBytes = Uint8List.fromList(sig.bytes);
+    if (sigBytes.length != 64) {
+      throw StateError(
+        'unexpected Ed25519 signature length: ${sigBytes.length}',
+      );
+    }
+
+    final signedWire = Uint8List(unsignedWire.length + 64);
+    signedWire.setRange(0, unsignedWire.length, unsignedWire);
+    signedWire.setRange(unsignedWire.length, signedWire.length, sigBytes);
+    return base64Encode(signedWire);
+  }
+
+  /// TD-28: verify-then-unwrap counterpart to [encryptForUserSigned].
+  ///
+  /// Verifies the trailing 64-byte Ed25519 signature against
+  /// [senderSigningPublicKey] over the unsigned-prefix bytes, then unwraps
+  /// the same way [decryptFromUser] does. Throws when the signature is
+  /// missing (legacy unsigned envelope) or invalid.
+  ///
+  /// Callers that need to accept legacy unsigned envelopes during a
+  /// migration window can fall back to [decryptFromUser] only after
+  /// confirming a verified signed envelope is genuinely unavailable —
+  /// otherwise the audit's substitution attack still applies.
+  Future<Uint8List> decryptFromUserVerified(
+    String ciphertextB64,
+    Uint8List senderSigningPublicKey,
+  ) async {
+    if (_identityKeyPair == null) await init();
+
+    final wire = Uint8List.fromList(base64Decode(ciphertextB64));
+    // Minimum: 32 + 12 + 16 + 64 (sig)
+    if (wire.length < 32 + 12 + 16 + 64) {
+      throw FormatException(
+        'encryptForUserSigned ciphertext too short: ${wire.length} bytes',
+      );
+    }
+
+    final sigStart = wire.length - 64;
+    final unsignedWire = wire.sublist(0, sigStart);
+    final sigBytes = wire.sublist(sigStart);
+
+    final signerPub = SimplePublicKey(
+      senderSigningPublicKey,
+      type: KeyPairType.ed25519,
+    );
+    final valid = await _ed25519.verify(
+      unsignedWire,
+      signature: Signature(sigBytes, publicKey: signerPub),
+    );
+    if (!valid) {
+      throw const FormatException(
+        'TD-28: group-key envelope signature failed verification',
+      );
+    }
+
+    // Reuse the unsigned-decrypt path on the prefix.
+    return decryptFromUser(base64Encode(unsignedWire));
   }
 
   /// Decrypt data that was encrypted with [encryptForUser] using our identity

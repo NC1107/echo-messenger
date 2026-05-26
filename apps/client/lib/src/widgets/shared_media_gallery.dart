@@ -23,11 +23,16 @@ class SharedMediaGallery extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final chatState = ref.watch(chatProvider);
+    // TD-60: subscribe only to *this* conversation's message list, not the
+    // whole `ChatState`. Before, opening this screen and idling on any other
+    // conversation rebuilt the gallery (and every CachedNetworkImage tile)
+    // on every inbound message system-wide.
+    final messages = ref.watch(
+      chatProvider.select((s) => s.messagesForConversation(conversationId)),
+    );
     final serverUrl = ref.watch(serverUrlProvider);
     final authToken = ref.watch(authProvider.select((s) => s.token)) ?? '';
     final mediaTicket = ref.watch(mediaTicketProvider);
-    final messages = chatState.messagesForConversation(conversationId);
 
     // Collect media items from all cached messages
     final mediaItems = <_MediaItem>[];

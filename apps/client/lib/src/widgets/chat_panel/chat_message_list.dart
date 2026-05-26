@@ -137,24 +137,16 @@ class ChatMessageList extends ConsumerWidget {
     return msg.content.startsWith('[system:');
   }
 
-  static bool _withinGroupingWindow(String ts1, String ts2) {
-    try {
-      final dt1 = DateTime.parse(ts1);
-      final dt2 = DateTime.parse(ts2);
-      return dt2.difference(dt1).inMinutes.abs() < 5;
-    } catch (_) {
-      return false;
-    }
+  // TD-79: helpers take the cached `parsedTimestamp` directly so each call
+  // is O(1) lookup instead of a fresh `DateTime.parse` per neighbour. For a
+  // 30-row viewport this drops ~120 parses per repaint to zero on warm
+  // messages.
+  static bool _withinGroupingWindow(DateTime dt1, DateTime dt2) {
+    return dt2.difference(dt1).inMinutes.abs() < 5;
   }
 
-  static bool _differentDay(String ts1, String ts2) {
-    try {
-      final d1 = DateTime.parse(ts1);
-      final d2 = DateTime.parse(ts2);
-      return d1.year != d2.year || d1.month != d2.month || d1.day != d2.day;
-    } catch (_) {
-      return false;
-    }
+  static bool _differentDay(DateTime d1, DateTime d2) {
+    return d1.year != d2.year || d1.month != d2.month || d1.day != d2.day;
   }
 
   // ---- Build helpers -----------------------------------------------------
@@ -167,12 +159,16 @@ class ChatMessageList extends ConsumerWidget {
     }
 
     final needsDateDivider =
-        i == 0 || _differentDay(messages[i - 1].timestamp, msg.timestamp);
+        i == 0 ||
+        _differentDay(messages[i - 1].parsedTimestamp, msg.parsedTimestamp);
 
     final showHeader =
         i == 0 ||
         messages[i - 1].fromUserId != msg.fromUserId ||
-        !_withinGroupingWindow(messages[i - 1].timestamp, msg.timestamp);
+        !_withinGroupingWindow(
+          messages[i - 1].parsedTimestamp,
+          msg.parsedTimestamp,
+        );
 
     final isLastInGroup =
         i == messages.length - 1 ||

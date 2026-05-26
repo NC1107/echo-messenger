@@ -5,7 +5,7 @@ use axum::http::request::Parts;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::error::AppError;
+use crate::error::{AppError, ErrorCode};
 use crate::routes::AppState;
 
 use super::jwt;
@@ -36,6 +36,20 @@ impl FromRequestParts<Arc<AppState>> for AuthUser {
 
         let user_id = Uuid::parse_str(&claims.sub)
             .map_err(|_| AppError::unauthorized("Invalid user ID in token"))?;
+
+        // CR-4: reject tokens whose `iat` predates the user's last
+        // revocation event (device revoke, password change, "log out
+        // everywhere"). Closes the 15-minute access-token window where a
+        // revoked credential continued to authorize every REST call.
+        if !state
+            .token_invalidator
+            .is_token_valid(user_id, claims.iat as i64)
+        {
+            return Err(AppError::with_code(
+                ErrorCode::TokenRevoked,
+                "Access token has been revoked",
+            ));
+        }
 
         // Light up the `user_id` slot reserved by the per-request tracing
         // span (see `routes::create_router`). The TraceLayer span is opened

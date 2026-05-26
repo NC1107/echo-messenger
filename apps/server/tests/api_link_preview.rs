@@ -162,11 +162,13 @@ async fn loopback_ip_rejected() {
     let client = Client::new();
     let (token, _, _) = common::register_and_login(&client, &base, "lp_loopback").await;
 
+    // TD-31 added a port allowlist {80, 443}; use the default port so the
+    // request reaches the IP-private check that this test is asserting.
     let resp = post_link_preview(
         &client,
         &base,
         &token,
-        &serde_json::json!({"url": "http://127.0.0.1:8080/evil"}),
+        &serde_json::json!({"url": "http://127.0.0.1/evil"}),
     )
     .await;
 

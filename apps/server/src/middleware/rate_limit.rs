@@ -307,16 +307,24 @@ pub fn reset_password_limiter(trusted_proxies: Arc<Vec<IpNet>>) -> RateLimiter {
 }
 
 /// Check whether an IP is in a private/reserved range (RFC 1918, link-local, ULA).
+///
+/// TD-32: IPv4-mapped IPv6 (`::ffff:10.0.0.1`) must be unwrapped before the
+/// v4 private-range check. Without this, a trusted proxy that passes the
+/// mapped form lets an attacker choose the rate-limit bucket key.
 fn is_private(ip: IpAddr) -> bool {
     match ip {
-        IpAddr::V4(v4) => v4.is_private() || v4.is_link_local(),
+        IpAddr::V4(v4) => v4.is_private() || v4.is_link_local() || v4.is_loopback(),
         IpAddr::V6(v6) => {
+            // Unwrap IPv4-mapped IPv6 first: ::ffff:0:0/96 wraps a real v4.
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return v4.is_private() || v4.is_link_local() || v4.is_loopback();
+            }
             // ULA: fc00::/7 (first byte 0xFC or 0xFD)
             let first_segment = v6.segments()[0];
             let is_ula = (first_segment & 0xfe00) == 0xfc00;
             // Link-local: fe80::/10
             let is_link_local = (first_segment & 0xffc0) == 0xfe80;
-            is_ula || is_link_local
+            is_ula || is_link_local || v6.is_loopback()
         }
     }
 }
@@ -423,6 +431,40 @@ mod tests {
         assert!(!is_private(IpAddr::V6(Ipv6Addr::new(
             0x2001, 0xdb8, 0, 0, 0, 0, 0, 1
         ))));
+    }
+
+    #[test]
+    fn test_is_private_ipv4_mapped_ipv6() {
+        // TD-32: ::ffff:10.0.0.1 must be treated as the private v4 10.0.0.1.
+        // Without unwrapping, a trusted proxy passing the mapped form would
+        // let an attacker pick the rate-limit bucket key.
+        let mapped_private = IpAddr::V6(Ipv4Addr::new(10, 0, 0, 1).to_ipv6_mapped());
+        assert!(
+            is_private(mapped_private),
+            "::ffff:10.0.0.1 must be private"
+        );
+
+        let mapped_loopback = IpAddr::V6(Ipv4Addr::new(127, 0, 0, 1).to_ipv6_mapped());
+        assert!(
+            is_private(mapped_loopback),
+            "::ffff:127.0.0.1 must be private (loopback)"
+        );
+
+        let mapped_link_local = IpAddr::V6(Ipv4Addr::new(169, 254, 1, 1).to_ipv6_mapped());
+        assert!(
+            is_private(mapped_link_local),
+            "::ffff:169.254.x.x must be private (link-local)"
+        );
+
+        // Mapped public IPv4 must still be public.
+        let mapped_public = IpAddr::V6(Ipv4Addr::new(8, 8, 8, 8).to_ipv6_mapped());
+        assert!(!is_private(mapped_public), "::ffff:8.8.8.8 must be public");
+    }
+
+    #[test]
+    fn test_is_private_ipv6_loopback() {
+        // ::1 (loopback) was previously not detected; tightened with TD-32.
+        assert!(is_private(IpAddr::V6(Ipv6Addr::LOCALHOST)));
     }
 
     /// Helper: build a request with ConnectInfo set to the given address.

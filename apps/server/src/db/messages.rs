@@ -487,12 +487,24 @@ pub async fn mark_device_delivered_batch(
 ///
 /// Returns the (id, conversation_id) pairs that were deleted so the caller
 /// can broadcast `message_expired` events to online users.
+///
+/// TD-52: paginated. Without the LIMIT, a backlog (downtime + many TTL'd
+/// messages) would build an arbitrarily large RETURNING list in memory and
+/// trigger a per-conversation member fetch loop downstream. The caller
+/// invokes this in a `while !empty` loop so a 10 000-message backlog is
+/// drained in batches without blowing the heap.
 pub async fn cleanup_expired_messages(pool: &PgPool) -> Result<Vec<(Uuid, Uuid)>, sqlx::Error> {
+    const BATCH: i64 = 500;
     let rows: Vec<(Uuid, Uuid)> = sqlx::query_as(
         "DELETE FROM messages \
-         WHERE expires_at IS NOT NULL AND expires_at <= NOW() \
+         WHERE id IN ( \
+             SELECT id FROM messages \
+             WHERE expires_at IS NOT NULL AND expires_at <= NOW() \
+             LIMIT $1 \
+         ) \
          RETURNING id, conversation_id",
     )
+    .bind(BATCH)
     .fetch_all(pool)
     .await?;
     Ok(rows)

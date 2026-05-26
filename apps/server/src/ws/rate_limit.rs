@@ -207,8 +207,8 @@ async fn handle_text_frame(
     false
 }
 
-/// Process a non-text, non-close frame: count bytes against the byte-rate
-/// bucket to prevent abuse via binary/ping/pong floods.
+/// Process a non-text, non-close frame: count both message-count AND bytes
+/// so zero-byte ping/pong floods can't bypass the per-frame cap.
 /// Returns `true` when the receive loop should break.
 fn handle_other_frame(
     msg: &WsMessage,
@@ -216,11 +216,11 @@ fn handle_other_frame(
     user_id: Uuid,
     bucket: &mut BucketState,
 ) -> bool {
-    let cost = non_text_byte_cost(msg);
-    if cost == 0.0 {
-        return false;
-    }
-    if bucket.byte_tokens < cost {
+    // TD-36: every binary/ping/pong frame consumes one message token. Without
+    // this check an attacker can blast 1000 zero-byte pings per second; the
+    // byte bucket sees 0 cost and never throttles, but each frame still
+    // triggers a tokio wakeup + axum parse + dispatch round.
+    if bucket.tokens < 1.0 {
         return record_violation(
             state,
             user_id,
@@ -228,6 +228,18 @@ fn handle_other_frame(
             MAX_CONSECUTIVE_VIOLATIONS,
         );
     }
+
+    let cost = non_text_byte_cost(msg);
+    if cost > bucket.byte_tokens {
+        return record_violation(
+            state,
+            user_id,
+            &mut bucket.consecutive_violations,
+            MAX_CONSECUTIVE_VIOLATIONS,
+        );
+    }
+
+    bucket.tokens -= 1.0;
     bucket.byte_tokens -= cost;
     bucket.consecutive_violations = 0;
     false

@@ -183,6 +183,110 @@ async fn upload_group_key_duplicate_version_returns_409() {
     assert_eq!(resp.status().as_u16(), 409);
 }
 
+/// TD-41: rotation-storm correctness. The whole point of `ws::rotation`'s
+/// server-led leader election is that even when multiple online admins /
+/// devices race to rotate the same group key, only one upload of the new
+/// version can succeed; the rest fall back to `getGroupKey` and converge on
+/// the winning envelope set. The safety floor for the race is the
+/// `(conversation_id, key_version)` UNIQUE constraint on `group_keys`.
+///
+/// This test fires N concurrent `POST /api/groups/:id/keys` requests at the
+/// same `key_version` and asserts exactly **one** wins (201) while every
+/// other request observes the conflict (409) — never two 201s, never an
+/// inconsistent envelope set.
+#[tokio::test]
+async fn concurrent_upload_group_key_same_version_one_wins() {
+    use std::collections::HashSet;
+    use std::sync::Arc;
+
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (owner_token, owner_id, _) = common::register_and_login(&client, &base, "gkstorm").await;
+    let group_id = common::create_group(&client, &base, &owner_token, "GKStorm").await;
+
+    let base = Arc::new(base);
+    let owner_token = Arc::new(owner_token);
+    let group_id = Arc::new(group_id);
+    let owner_id = Arc::new(owner_id);
+
+    // Race 4 concurrent uploads of `key_version = 1`. With the storm-control
+    // we expect exactly one 201, three 409s, no torn writes.
+    const RACERS: usize = 4;
+    let mut joins = Vec::with_capacity(RACERS);
+    for i in 0..RACERS {
+        let base = base.clone();
+        let token = owner_token.clone();
+        let client = client.clone();
+        let owner_id = owner_id.clone();
+        let group_id = group_id.clone();
+        joins.push(tokio::spawn(async move {
+            let body = serde_json::json!({
+                "key_version": 1,
+                "envelopes": [
+                    {
+                        "user_id": &*owner_id,
+                        "encrypted_key": format!("envelope-from-racer-{i}")
+                    }
+                ]
+            });
+            let resp = client
+                .post(format!("{base}/api/groups/{group_id}/keys"))
+                .header("Authorization", format!("Bearer {token}"))
+                .json(&body)
+                .send()
+                .await
+                .unwrap();
+            resp.status().as_u16()
+        }));
+    }
+
+    let mut statuses: Vec<u16> = Vec::with_capacity(RACERS);
+    for j in joins {
+        statuses.push(j.await.unwrap());
+    }
+
+    let ok_count = statuses.iter().filter(|s| **s == 201).count();
+    let conflict_count = statuses.iter().filter(|s| **s == 409).count();
+
+    assert_eq!(
+        ok_count, 1,
+        "exactly one concurrent rotation must succeed (got statuses {statuses:?})"
+    );
+    assert_eq!(
+        conflict_count,
+        RACERS - 1,
+        "all losing racers must observe 409 (got statuses {statuses:?})"
+    );
+
+    // Each racer wrote a distinguishable envelope payload — verify the
+    // server kept exactly one envelope set, not a torn mix.
+    let resp = client
+        .get(format!("{base}/api/groups/{group_id}/keys/latest"))
+        .header("Authorization", format!("Bearer {owner_token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["key_version"].as_i64(),
+        Some(1),
+        "stored version must be 1"
+    );
+
+    // The owner's envelope payload must match a single racer's signature.
+    let stored_envelope = body["encrypted_key"]
+        .as_str()
+        .expect("encrypted_key string");
+    assert!(
+        stored_envelope.starts_with("envelope-from-racer-"),
+        "stored envelope must come from one of the racers, got: {stored_envelope}"
+    );
+    // Sanity: we only stored one envelope per recipient at this version.
+    // `_seen` is just for parity with the multi-recipient mental model.
+    let _seen: HashSet<&str> = std::iter::once(stored_envelope).collect();
+}
+
 // ---------------------------------------------------------------------------
 // Retrieval
 // ---------------------------------------------------------------------------

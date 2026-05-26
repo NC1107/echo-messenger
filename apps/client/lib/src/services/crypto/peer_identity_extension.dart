@@ -51,39 +51,77 @@ extension CryptoServicePeerIdentity on CryptoService {
 
   /// Store a peer's identity key with Trust-On-First-Use (TOFU) semantics.
   ///
-  /// - First encounter: stores the key.
+  /// - First encounter: stores the key in the canonical slot.
   /// - Same key: no-op.
-  /// - Different key: logs a warning via [DebugLogService] and persists a
-  ///   flag (`_peerIdentityChangedPrefix + peerId`) for UI to surface later.
-  ///   The new key is stored so future sessions use the latest key.
+  /// - Different key (TD-29): keep the canonical slot **untouched**, write
+  ///   the new key to a separate pending slot, and raise the change flag.
+  ///   The DM session-establishment path already throws
+  ///   `IdentityKeyChangedException` on the flag, but other consumers
+  ///   (group-key rotation, safety-number display) were previously reading
+  ///   the freshly-overwritten cache without ever checking the flag — that
+  ///   silently trusted the new (possibly MITM) key. Now they must either
+  ///   read the canonical slot (default) or explicitly opt-in via
+  ///   [pendingPeerIdentityKey].
   Future<void> _storePeerIdentityKeyTofu(
     String peerUserId,
     String newKeyB64,
   ) async {
     final store = SecureKeyStore.instance;
-    final storeKey = '${CryptoService._peerIdentityPrefix}$peerUserId';
-    final existing = await store.read(storeKey);
+    final canonicalKey = '${CryptoService._peerIdentityPrefix}$peerUserId';
+    final existing = await store.read(canonicalKey);
 
-    if (existing != null && existing != newKeyB64) {
-      DebugLogService.instance.log(
-        LogLevel.warning,
-        'Crypto',
-        'TOFU: identity key changed for peer $peerUserId -- '
-            'possible key reset or MITM. Old prefix: '
-            '${existing.substring(0, min(8, existing.length))}..., '
-            'new prefix: '
-            '${newKeyB64.substring(0, min(8, newKeyB64.length))}...',
-      );
-      debugPrint('[Crypto] WARNING: peer $peerUserId identity key changed!');
-      // Persist a flag so the UI can surface a warning banner later.
-      await store.write(
-        '${CryptoService._peerIdentityChangedPrefix}$peerUserId',
-        DateTime.now().toIso8601String(),
-      );
+    if (existing == null) {
+      // First contact — trust on first use.
+      await store.write(canonicalKey, newKeyB64);
+      return;
     }
 
-    // Store the (possibly new) key so future sessions use the latest.
-    await store.write(storeKey, newKeyB64);
+    if (existing == newKeyB64) {
+      // Same key, nothing to do. Clear any stale pending entry if one
+      // exists (it can be left behind if the peer reverts a key reset).
+      await store.delete(
+        '${CryptoService._peerIdentityPendingPrefix}$peerUserId',
+      );
+      return;
+    }
+
+    // Key has changed: keep canonical, write pending, raise flag.
+    DebugLogService.instance.log(
+      LogLevel.warning,
+      'Crypto',
+      'TOFU: identity key changed for peer $peerUserId -- '
+          'possible key reset or MITM. Old prefix: '
+          '${existing.substring(0, min(8, existing.length))}..., '
+          'new prefix: '
+          '${newKeyB64.substring(0, min(8, newKeyB64.length))}... '
+          'Canonical cache left intact until acceptIdentityKeyChange().',
+    );
+    debugPrint('[Crypto] WARNING: peer $peerUserId identity key changed!');
+    await store.write(
+      '${CryptoService._peerIdentityPendingPrefix}$peerUserId',
+      newKeyB64,
+    );
+    await store.write(
+      '${CryptoService._peerIdentityChangedPrefix}$peerUserId',
+      DateTime.now().toIso8601String(),
+    );
+  }
+
+  /// Returns the *pending* identity key the server most recently advertised
+  /// for [peerUserId], if the canonical (trusted) key differs. Used by code
+  /// paths that legitimately need the new key without overriding TOFU — for
+  /// instance, the explicit "accept identity-key change" UI flow, or a
+  /// safety-number screen that wants to display the new fingerprint
+  /// alongside the trusted one.
+  ///
+  /// Returns null when there is no pending change.
+  Future<Uint8List?> pendingPeerIdentityKey(String peerUserId) async {
+    final store = SecureKeyStore.instance;
+    final pending = await store.read(
+      '${CryptoService._peerIdentityPendingPrefix}$peerUserId',
+    );
+    if (pending == null) return null;
+    return Uint8List.fromList(base64Decode(pending));
   }
 
   /// Check whether a peer's identity key has changed since first contact.
@@ -106,23 +144,27 @@ extension CryptoServicePeerIdentity on CryptoService {
   /// Explicitly trust the peer's new identity key after the user has
   /// reviewed (or chosen to skip reviewing) the safety number.
   ///
-  /// This is the explicit counterpart to the previously-silent overwrite
-  /// in TOFU: it clears the change flag, persists [newIdentityKeyB64] (or,
-  /// if `null`, leaves whatever was last written by TOFU in place), and
-  /// drops any cached/persisted Signal session for the peer so the next
-  /// outbound message triggers a fresh X3DH against the trusted key.
-  /// (#580)
+  /// TD-29: TOFU no longer overwrites the canonical cache silently, so this
+  /// path now promotes the pending key (whatever TOFU stashed when the
+  /// change was detected) to canonical. Callers can still override by
+  /// passing an explicit [newIdentityKeyB64].
+  ///
+  /// Always clears the change flag and drops the persisted Signal session
+  /// keyed to the old identity so the next send re-runs X3DH against the
+  /// freshly-trusted key. (#580)
   Future<void> acceptIdentityKeyChange(
     String peerUserId, {
     String? newIdentityKeyB64,
   }) async {
     final store = SecureKeyStore.instance;
-    if (newIdentityKeyB64 != null) {
-      await store.write(
-        '${CryptoService._peerIdentityPrefix}$peerUserId',
-        newIdentityKeyB64,
-      );
+    final canonicalKey = '${CryptoService._peerIdentityPrefix}$peerUserId';
+    final pendingKey = '${CryptoService._peerIdentityPendingPrefix}$peerUserId';
+
+    final promote = newIdentityKeyB64 ?? await store.read(pendingKey);
+    if (promote != null) {
+      await store.write(canonicalKey, promote);
     }
+    await store.delete(pendingKey);
     await store.delete(
       '${CryptoService._peerIdentityChangedPrefix}$peerUserId',
     );

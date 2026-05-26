@@ -185,9 +185,9 @@ async fn add_member_non_admin_private_group_returns_401() {
     assert_eq!(resp.status().as_u16(), 401);
 }
 
-/// Target user does not exist → 400.
+/// Target user does not exist → 404. TD-34.
 #[tokio::test]
-async fn add_member_nonexistent_user_returns_400() {
+async fn add_member_nonexistent_user_returns_404() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let (owner_token, _, _) = common::register_and_login(&client, &base, "amnx_own").await;
@@ -202,7 +202,7 @@ async fn add_member_nonexistent_user_returns_400() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status().as_u16(), 400);
+    assert_eq!(resp.status().as_u16(), 404);
 }
 
 /// Target user is already a member → 409.

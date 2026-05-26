@@ -74,10 +74,13 @@ pub async fn revoke_token_family(pool: &PgPool, family_id: Uuid) -> Result<(), s
     Ok(())
 }
 
-pub async fn revoke_all_user_tokens(pool: &PgPool, user_id: Uuid) -> Result<(), sqlx::Error> {
+pub async fn revoke_all_user_tokens(
+    db: impl sqlx::PgExecutor<'_>,
+    user_id: Uuid,
+) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE refresh_tokens SET revoked = true WHERE user_id = $1 AND revoked = false")
         .bind(user_id)
-        .execute(pool)
+        .execute(db)
         .await?;
     Ok(())
 }

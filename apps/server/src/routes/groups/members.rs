@@ -15,6 +15,29 @@ use crate::ws::typing_service::invalidate_member_cache;
 
 use super::super::AppState;
 
+/// TD-33: per-(group, target) advisory lock taken at the top of every member
+/// mutation tx. Two `(i32, i32)`-keyed advisory locks serialise concurrent
+/// admins targeting the same user in the same conversation without ever
+/// blocking unrelated mutations. The two `hashtext` slots are derived from
+/// the UUID strings so the lock identity is stable across reconnects.
+///
+/// We use the `(i32, i32)` form of `pg_advisory_xact_lock` so the two halves
+/// of the key live in 64 bits without 32-bit truncation that
+/// `hashtextextended` would force. Released automatically at tx end.
+async fn acquire_member_lock(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    group_id: Uuid,
+    target_user_id: Uuid,
+) -> Result<(), AppError> {
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))")
+        .bind(group_id.to_string())
+        .bind(target_user_id.to_string())
+        .execute(&mut **tx)
+        .await
+        .db_ctx("acquire_member_lock")?;
+    Ok(())
+}
+
 /// Rotate the group key after a member loses access.
 ///
 /// On encrypted groups, bump the conversation's `key_version`, purge every
@@ -144,20 +167,36 @@ async fn broadcast_member_system_message(
 }
 
 /// POST /api/groups/:id/members -- Add a member to a group.
+///
+/// TD-33: the mutation runs inside a single transaction protected by a
+/// per-(group, target) `pg_advisory_xact_lock` so two concurrent admins
+/// cannot both read "user is not yet a member" and both insert. The lock
+/// also serialises against [`remove_member`] / [`ban_member`] on the same
+/// pair, so toggling can't be observed mid-flight by either operator.
 pub async fn add_member(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
     Path(group_id): Path<Uuid>,
     Json(body): Json<super::types::AddMemberRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    // Verify target user exists (cheap read; outside the tx is fine).
+    let user_exists = db::users::find_by_id(&state.pool, body.user_id)
+        .await
+        .db_ctx("add_member/find_user")?
+        .ok_or_else(|| AppError::not_found("User not found"))?;
+
+    let mut tx = state.pool.begin().await.db_ctx("add_member/begin_tx")?;
+
+    acquire_member_lock(&mut tx, group_id, body.user_id).await?;
+
     // Verify caller is a member and get their role
-    let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
+    let caller_role = db::groups::get_member_role(&mut *tx, group_id, auth.user_id)
         .await
         .db_ctx("add_member/get_caller_role")?
         .ok_or_else(|| AppError::with_code(ErrorCode::NotMember, "Not a member of this group"))?;
 
     // Verify it's a group conversation
-    let kind = db::groups::get_conversation_kind(&state.pool, group_id)
+    let kind = db::groups::get_conversation_kind(&mut *tx, group_id)
         .await
         .db_ctx("add_member/get_conversation_kind")?;
 
@@ -166,7 +205,7 @@ pub async fn add_member(
     }
 
     // For private groups, only owner or admin can add members
-    let is_public = db::groups::is_public(&state.pool, group_id)
+    let is_public = db::groups::is_public(&mut *tx, group_id)
         .await
         .db_ctx("add_member/is_public")?;
 
@@ -177,17 +216,8 @@ pub async fn add_member(
         ));
     }
 
-    // Verify target user exists
-    let user_exists = db::users::find_by_id(&state.pool, body.user_id)
-        .await
-        .db_ctx("add_member/find_user")?;
-
-    if user_exists.is_none() {
-        return Err(AppError::bad_request("User not found"));
-    }
-
     // Check if target user is banned
-    let banned = db::groups::is_banned(&state.pool, group_id, body.user_id)
+    let banned = db::groups::is_banned(&mut *tx, group_id, body.user_id)
         .await
         .db_ctx("add_member/is_banned")?;
     if banned {
@@ -195,7 +225,7 @@ pub async fn add_member(
     }
 
     // Check if already an active member
-    let already_member = db::groups::is_member(&state.pool, group_id, body.user_id)
+    let already_member = db::groups::is_member(&mut *tx, group_id, body.user_id)
         .await
         .db_ctx("add_member/is_member")?;
     if already_member {
@@ -205,7 +235,7 @@ pub async fn add_member(
         ));
     }
 
-    let added = db::groups::add_member(&state.pool, group_id, body.user_id)
+    let added = db::groups::add_member_in_tx(&mut tx, group_id, body.user_id)
         .await
         .db_ctx("add_member/insert")?;
 
@@ -216,20 +246,26 @@ pub async fn add_member(
         ));
     }
 
+    // Fetch the canonical member list once inside the tx. Previously this
+    // happened twice (once for the `member_added` broadcast and once for
+    // the system-message broadcast); the duplicate fetch could even
+    // observe a stale list when other mutations raced.
+    let all_members = db::groups::get_conversation_member_ids(&mut *tx, group_id)
+        .await
+        .unwrap_or_default();
+
+    tx.commit().await.db_ctx("add_member/commit")?;
+
     invalidate_member_cache(group_id);
 
     // Notify existing members that someone was added so their member list
     // updates in real time without a manual refresh (#660).
-    let new_user = user_exists.unwrap(); // already checked is_some above
-    let existing_members = db::groups::get_conversation_member_ids(&state.pool, group_id)
-        .await
-        .unwrap_or_default();
     let event = serde_json::json!({
         "type": "member_added",
         "conversation_id": group_id,
         "user_id": body.user_id,
-        "username": new_user.username,
-        "avatar_url": new_user.avatar_url,
+        "username": user_exists.username,
+        "avatar_url": user_exists.avatar_url,
         "role": "member",
     });
     if let Ok(s) = serde_json::to_string(&event) {
@@ -237,25 +273,22 @@ pub async fn add_member(
         // loadConversations call after the HTTP 200.
         state
             .hub
-            .broadcast_json(&existing_members, &s, Some(body.user_id));
+            .broadcast_json(&all_members, &s, Some(body.user_id));
     }
 
     // Persist a system message and broadcast as new_message so all members see
     // an in-chat "X joined" pill in real time (#663).
     let sentinel = format!(
         "__system__:member_joined:{}:{}",
-        body.user_id, new_user.username
+        body.user_id, user_exists.username
     );
-    let all_members = db::groups::get_conversation_member_ids(&state.pool, group_id)
-        .await
-        .unwrap_or_default();
     broadcast_member_system_message(
         &state,
         group_id,
         body.user_id,
         &sentinel,
         body.user_id,
-        &new_user.username,
+        &user_exists.username,
         &all_members,
     )
     .await;
@@ -264,13 +297,22 @@ pub async fn add_member(
 }
 
 /// DELETE /api/groups/:id/members/:user_id -- Remove a member from a group.
+///
+/// TD-33: caller-role read, target-role read, and the soft-delete all share
+/// one transaction protected by [`acquire_member_lock`], so two concurrent
+/// admin actions on the same (group, target) pair can't both observe the
+/// pre-mutation state.
 pub async fn remove_member(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
     Path((group_id, target_user_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
+    let mut tx = state.pool.begin().await.db_ctx("remove_member/begin_tx")?;
+
+    acquire_member_lock(&mut tx, group_id, target_user_id).await?;
+
     // Verify caller is a member and get their role
-    let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
+    let caller_role = db::groups::get_member_role(&mut *tx, group_id, auth.user_id)
         .await
         .db_ctx("remove_member/get_caller_role")?
         .ok_or_else(|| AppError::with_code(ErrorCode::NotMember, "Not a member of this group"))?;
@@ -285,7 +327,7 @@ pub async fn remove_member(
 
     // Prevent removing the owner
     if target_user_id != auth.user_id {
-        let target_role = db::groups::get_member_role(&state.pool, group_id, target_user_id)
+        let target_role = db::groups::get_member_role(&mut *tx, group_id, target_user_id)
             .await
             .db_ctx("remove_member/get_target_role")?;
         if target_role.as_deref().and_then(Role::from_str_opt) == Some(Role::Owner) {
@@ -293,13 +335,15 @@ pub async fn remove_member(
         }
     }
 
-    let removed = db::groups::remove_member(&state.pool, group_id, target_user_id)
+    let removed = db::groups::remove_member_in_tx(&mut tx, group_id, target_user_id)
         .await
         .db_ctx("remove_member/delete")?;
 
     if !removed {
         return Err(AppError::bad_request("User is not a member of this group"));
     }
+
+    tx.commit().await.db_ctx("remove_member/commit")?;
 
     invalidate_member_cache(group_id);
 
@@ -316,12 +360,19 @@ pub async fn remove_member(
 }
 
 /// POST /api/groups/:id/ban/:user_id -- Ban a member from a group.
+///
+/// TD-33: guard reads + soft-delete + banned_members upsert share one tx
+/// protected by [`acquire_member_lock`].
 pub async fn ban_member(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
     Path((group_id, target_user_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
+    let mut tx = state.pool.begin().await.db_ctx("ban_member/begin_tx")?;
+
+    acquire_member_lock(&mut tx, group_id, target_user_id).await?;
+
+    let caller_role = db::groups::get_member_role(&mut *tx, group_id, auth.user_id)
         .await
         .db_ctx("ban_member/get_caller_role")?
         .ok_or_else(|| AppError::with_code(ErrorCode::NotMember, "Not a member of this group"))?;
@@ -334,7 +385,7 @@ pub async fn ban_member(
     }
 
     // Prevent banning the owner or peers of equal rank
-    let target_role = db::groups::get_member_role(&state.pool, group_id, target_user_id)
+    let target_role = db::groups::get_member_role(&mut *tx, group_id, target_user_id)
         .await
         .db_ctx("ban_member/get_target_role")?;
     let target_role_enum = target_role
@@ -348,9 +399,11 @@ pub async fn ban_member(
         return Err(AppError::bad_request("Only the group owner can ban admins"));
     }
 
-    db::groups::ban_member(&state.pool, group_id, target_user_id, auth.user_id)
+    db::groups::ban_member_in_tx(&mut tx, group_id, target_user_id, auth.user_id)
         .await
         .db_ctx("ban_member/insert")?;
+
+    tx.commit().await.db_ctx("ban_member/commit")?;
 
     invalidate_member_cache(group_id);
 

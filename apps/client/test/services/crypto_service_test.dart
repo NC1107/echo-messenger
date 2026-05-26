@@ -705,4 +705,126 @@ void main() {
       },
     );
   });
+
+  // TD-28: group-key envelope signing (rotator identity binding).
+  //
+  // The unsigned envelope (encryptForUser) has no commitment to the
+  // rotator's identity — a compromised server or racing admin could
+  // substitute envelopes wrapping a key they control. The signed
+  // counterpart (encryptForUserSigned + decryptFromUserVerified) appends an
+  // Ed25519 signature that recipients verify against the rotator's
+  // sender-signing public key.
+  group('TD-28 signed group-key envelopes', () {
+    test(
+      'round-trips through encryptForUserSigned / decryptFromUserVerified',
+      () async {
+        // Single instance acting as both rotator and recipient: wrap for our
+        // own identity key, then verify+decrypt. The security property under
+        // test is the signature verification, not the cross-instance ECDH
+        // wiring (which is exercised by the production rotation path).
+        final crypto = CryptoService(serverUrl: 'http://localhost:8080');
+        crypto.setToken('test-token');
+        await crypto.init();
+
+        final ownPub = await crypto.getIdentityPublicKey();
+        expect(ownPub, isNotNull);
+
+        final plaintext = Uint8List.fromList(
+          utf8.encode('group key payload bytes'),
+        );
+        final signedEnvelope = await crypto.encryptForUserSigned(
+          plaintext,
+          ownPub!,
+        );
+
+        final signingPub = await crypto.signingKeyPair!.extractPublicKey();
+        final roundtrip = await crypto.decryptFromUserVerified(
+          signedEnvelope,
+          Uint8List.fromList(signingPub.bytes),
+        );
+        expect(roundtrip, equals(plaintext));
+      },
+    );
+
+    test('rejects an envelope signed by a different rotator', () async {
+      final realRotator = CryptoService(serverUrl: 'http://localhost:8080');
+      realRotator.setToken('real-rotator');
+      await realRotator.init();
+
+      final attacker = CryptoService(serverUrl: 'http://localhost:8080');
+      attacker.setToken('attacker');
+      SecureKeyStore.instance = FakeSecureKeyStore();
+      await attacker.init();
+
+      final recipientPub = await realRotator.getIdentityPublicKey();
+      expect(recipientPub, isNotNull);
+
+      // Attacker signs an envelope wrapping their own substitute key.
+      final substituteKey = Uint8List.fromList(
+        List<int>.generate(32, (i) => i),
+      );
+      final envelope = await attacker.encryptForUserSigned(
+        substituteKey,
+        recipientPub!,
+      );
+
+      // Recipient expects the REAL rotator's signing key; verification
+      // must fail.
+      final realPub = await realRotator.signingKeyPair!.extractPublicKey();
+      Object? caught;
+      try {
+        await attacker.decryptFromUserVerified(
+          envelope,
+          Uint8List.fromList(realPub.bytes),
+        );
+      } catch (e) {
+        caught = e;
+      }
+      expect(
+        caught,
+        isA<FormatException>(),
+        reason: 'mismatched signer must reject before unwrap',
+      );
+    });
+
+    test('rejects a tampered envelope body', () async {
+      final rotator = CryptoService(serverUrl: 'http://localhost:8080');
+      rotator.setToken('rotator');
+      await rotator.init();
+
+      final recipientPub = await rotator.getIdentityPublicKey();
+      expect(recipientPub, isNotNull);
+
+      final plaintext = Uint8List.fromList(utf8.encode('payload'));
+      final envelopeB64 = await rotator.encryptForUserSigned(
+        plaintext,
+        recipientPub!,
+      );
+
+      // Flip one byte in the ciphertext region (middle of the wire,
+      // before the trailing 64-byte signature).
+      final wire = Uint8List.fromList(base64Decode(envelopeB64));
+      expect(wire.length, greaterThan(32 + 12 + 16 + 64));
+      final flipIdx = wire.length - 64 - 8;
+      wire[flipIdx] ^= 0xff;
+      final tamperedB64 = base64Encode(wire);
+
+      final signingPub = await rotator.signingKeyPair!.extractPublicKey();
+      Object? caught;
+      try {
+        await rotator.decryptFromUserVerified(
+          tamperedB64,
+          Uint8List.fromList(signingPub.bytes),
+        );
+      } catch (e) {
+        caught = e;
+      }
+      expect(
+        caught,
+        isA<FormatException>(),
+        reason:
+            'tampering with the wire after signing must trip Ed25519 verify',
+      );
+    });
+  });
 }

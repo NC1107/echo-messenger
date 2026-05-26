@@ -169,8 +169,9 @@ async fn add_reaction_non_member_returns_401() {
     assert_eq!(resp.status().as_u16(), 401);
 }
 
+// TD-34: not-found cases now return 404 instead of 400.
 #[tokio::test]
-async fn add_reaction_invalid_message_returns_400() {
+async fn add_reaction_invalid_message_returns_404() {
     let base = common::spawn_server().await;
     let (client, alice_token, _, _, _, _) = setup_dm_with_message(&base).await;
 
@@ -183,7 +184,7 @@ async fn add_reaction_invalid_message_returns_400() {
         .await
         .unwrap();
 
-    assert_eq!(resp.status().as_u16(), 400);
+    assert_eq!(resp.status().as_u16(), 404);
 }
 
 // ---------------------------------------------------------------------------

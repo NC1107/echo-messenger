@@ -181,13 +181,28 @@ pub async fn notify_offline_users(
         return;
     }
 
+    // TD-58: fan out APNs pushes concurrently with a bounded semaphore so a
+    // 50-recipient group doesn't serialise N×50–200 ms HTTP RTTs in one
+    // tokio task. APNs HTTP/2 connections support multiple streams so 16
+    // concurrent sends per call is well within their per-connection budget
+    // and keeps the latency under ~1 s for typical group sizes.
+    use futures_util::stream::StreamExt;
     let pool = pool.clone();
-    for (user_id, token, platform) in &tokens {
-        if platform.as_str() == "apns" {
+    const PUSH_FANOUT_CONCURRENCY: usize = 16;
+    futures_util::stream::iter(tokens.into_iter().filter_map(|(uid, tok, plat)| {
+        if plat.as_str() == "apns" {
+            Some((uid, tok))
+        } else {
+            None
+        }
+    }))
+    .for_each_concurrent(PUSH_FANOUT_CONCURRENCY, |(user_id, token)| {
+        let pool = pool.clone();
+        async move {
             send_apns_push(ApnsPushParams {
                 pool: &pool,
-                user_id: *user_id,
-                device_token: token,
+                user_id,
+                device_token: &token,
                 sender_username,
                 content,
                 is_encrypted,
@@ -196,7 +211,8 @@ pub async fn notify_offline_users(
             })
             .await;
         }
-    }
+    })
+    .await;
 }
 
 struct ApnsPushParams<'a> {

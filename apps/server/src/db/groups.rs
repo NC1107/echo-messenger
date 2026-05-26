@@ -3,6 +3,7 @@
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::PgPool;
+use sqlx::postgres::PgConnection;
 use uuid::Uuid;
 
 /// Hard cap on the number of members returned by `get_group_members`.
@@ -318,7 +319,7 @@ pub async fn get_group_members(
 
 /// Check if a user is a member of a conversation.
 pub async fn is_member(
-    pool: &PgPool,
+    db: impl sqlx::PgExecutor<'_>,
     conversation_id: Uuid,
     user_id: Uuid,
 ) -> Result<bool, sqlx::Error> {
@@ -328,14 +329,14 @@ pub async fn is_member(
     )
     .bind(conversation_id)
     .bind(user_id)
-    .fetch_one(pool)
+    .fetch_one(db)
     .await?;
     Ok(row.0)
 }
 
 /// Get a member's role in a conversation. Returns None if not a member.
 pub async fn get_member_role(
-    pool: &PgPool,
+    db: impl sqlx::PgExecutor<'_>,
     group_id: Uuid,
     user_id: Uuid,
 ) -> Result<Option<String>, sqlx::Error> {
@@ -345,7 +346,7 @@ pub async fn get_member_role(
     )
     .bind(group_id)
     .bind(user_id)
-    .fetch_optional(pool)
+    .fetch_optional(db)
     .await?;
     Ok(row.map(|(role,)| role))
 }
@@ -356,9 +357,13 @@ pub async fn get_member_role(
 /// reactivated, and `false` when the user is already an active member.
 /// Increments `member_count` on the conversation when a row is actually written
 /// (#640).
-pub async fn add_member(pool: &PgPool, group_id: Uuid, user_id: Uuid) -> Result<bool, sqlx::Error> {
-    let mut tx = pool.begin().await?;
-
+/// Insert a member + bump conversation member_count inside an externally
+/// managed transaction. See [`add_member`] for the self-contained variant.
+pub async fn add_member_in_tx(
+    conn: &mut PgConnection,
+    group_id: Uuid,
+    user_id: Uuid,
+) -> Result<bool, sqlx::Error> {
     let result = sqlx::query(
         "INSERT INTO conversation_members (conversation_id, user_id, role) \
          VALUES ($1, $2, 'member') \
@@ -368,17 +373,23 @@ pub async fn add_member(pool: &PgPool, group_id: Uuid, user_id: Uuid) -> Result<
     )
     .bind(group_id)
     .bind(user_id)
-    .execute(&mut *tx)
+    .execute(&mut *conn)
     .await?;
 
     let added = result.rows_affected() > 0;
     if added {
         sqlx::query("UPDATE conversations SET member_count = member_count + 1 WHERE id = $1")
             .bind(group_id)
-            .execute(&mut *tx)
+            .execute(&mut *conn)
             .await?;
     }
 
+    Ok(added)
+}
+
+pub async fn add_member(pool: &PgPool, group_id: Uuid, user_id: Uuid) -> Result<bool, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let added = add_member_in_tx(&mut tx, group_id, user_id).await?;
     tx.commit().await?;
     Ok(added)
 }
@@ -387,13 +398,13 @@ pub async fn add_member(pool: &PgPool, group_id: Uuid, user_id: Uuid) -> Result<
 ///
 /// Decrements `member_count` on the conversation when a row is actually
 /// soft-deleted (#640).
-pub async fn remove_member(
-    pool: &PgPool,
+/// Soft-delete a member + decrement member_count inside an externally
+/// managed transaction. See [`remove_member`] for the self-contained variant.
+pub async fn remove_member_in_tx(
+    conn: &mut PgConnection,
     group_id: Uuid,
     user_id: Uuid,
 ) -> Result<bool, sqlx::Error> {
-    let mut tx = pool.begin().await?;
-
     let result = sqlx::query(
         "UPDATE conversation_members \
          SET is_removed = true, removed_at = NOW() \
@@ -401,7 +412,7 @@ pub async fn remove_member(
     )
     .bind(group_id)
     .bind(user_id)
-    .execute(&mut *tx)
+    .execute(&mut *conn)
     .await?;
 
     let removed = result.rows_affected() > 0;
@@ -411,10 +422,20 @@ pub async fn remove_member(
              SET member_count = GREATEST(member_count - 1, 0) WHERE id = $1",
         )
         .bind(group_id)
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
     }
 
+    Ok(removed)
+}
+
+pub async fn remove_member(
+    pool: &PgPool,
+    group_id: Uuid,
+    user_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let removed = remove_member_in_tx(&mut tx, group_id, user_id).await?;
     tx.commit().await?;
     Ok(removed)
 }
@@ -442,12 +463,12 @@ where
 
 /// Get the kind of a conversation.
 pub async fn get_conversation_kind(
-    pool: &PgPool,
+    db: impl sqlx::PgExecutor<'_>,
     conversation_id: Uuid,
 ) -> Result<Option<String>, sqlx::Error> {
     let row: Option<(String,)> = sqlx::query_as("SELECT kind FROM conversations WHERE id = $1")
         .bind(conversation_id)
-        .fetch_optional(pool)
+        .fetch_optional(db)
         .await?;
     Ok(row.map(|(kind,)| kind))
 }
@@ -552,10 +573,10 @@ pub async fn delete_group(
 }
 
 /// Check if a group is public.
-pub async fn is_public(pool: &PgPool, group_id: Uuid) -> Result<bool, sqlx::Error> {
+pub async fn is_public(db: impl sqlx::PgExecutor<'_>, group_id: Uuid) -> Result<bool, sqlx::Error> {
     let row: Option<(bool,)> = sqlx::query_as("SELECT is_public FROM conversations WHERE id = $1")
         .bind(group_id)
-        .fetch_optional(pool)
+        .fetch_optional(db)
         .await?;
     Ok(row.map(|(p,)| p).unwrap_or(false))
 }
@@ -653,14 +674,14 @@ pub async fn update_group_description(
 ///
 /// Decrements `member_count` when the membership row is actually soft-deleted
 /// (#640).
-pub async fn ban_member(
-    pool: &PgPool,
+/// Ban a member inside an externally managed transaction.
+/// See [`ban_member`] for the self-contained variant.
+pub async fn ban_member_in_tx(
+    conn: &mut PgConnection,
     group_id: Uuid,
     user_id: Uuid,
     banned_by: Uuid,
 ) -> Result<bool, sqlx::Error> {
-    let mut tx = pool.begin().await?;
-
     // Remove from conversation_members (soft-delete)
     let removed = sqlx::query(
         "UPDATE conversation_members SET is_removed = true, removed_at = NOW() \
@@ -668,7 +689,7 @@ pub async fn ban_member(
     )
     .bind(group_id)
     .bind(user_id)
-    .execute(&mut *tx)
+    .execute(&mut *conn)
     .await?;
 
     if removed.rows_affected() > 0 {
@@ -677,7 +698,7 @@ pub async fn ban_member(
              SET member_count = GREATEST(member_count - 1, 0) WHERE id = $1",
         )
         .bind(group_id)
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
     }
 
@@ -690,22 +711,37 @@ pub async fn ban_member(
     .bind(group_id)
     .bind(user_id)
     .bind(banned_by)
-    .execute(&mut *tx)
+    .execute(&mut *conn)
     .await?;
 
-    tx.commit().await?;
     Ok(result.rows_affected() > 0)
 }
 
+pub async fn ban_member(
+    pool: &PgPool,
+    group_id: Uuid,
+    user_id: Uuid,
+    banned_by: Uuid,
+) -> Result<bool, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let banned = ban_member_in_tx(&mut tx, group_id, user_id, banned_by).await?;
+    tx.commit().await?;
+    Ok(banned)
+}
+
 /// Check if a user is banned from a group.
-pub async fn is_banned(pool: &PgPool, group_id: Uuid, user_id: Uuid) -> Result<bool, sqlx::Error> {
+pub async fn is_banned(
+    db: impl sqlx::PgExecutor<'_>,
+    group_id: Uuid,
+    user_id: Uuid,
+) -> Result<bool, sqlx::Error> {
     let row: (bool,) = sqlx::query_as(
         "SELECT EXISTS(SELECT 1 FROM banned_members \
          WHERE conversation_id = $1 AND user_id = $2)",
     )
     .bind(group_id)
     .bind(user_id)
-    .fetch_one(pool)
+    .fetch_one(db)
     .await?;
     Ok(row.0)
 }

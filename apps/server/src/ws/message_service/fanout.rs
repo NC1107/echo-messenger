@@ -85,21 +85,24 @@ impl NewMessageFields {
 /// re-serializing the same message for every member in the fanout loop.
 /// Outer key is `recipient_user_id`, inner is `device_id -> WsMessage`.
 ///
-/// Serialization is hoisted out of the fanout loop:
-/// 1. Serialize a `ServerMessage::NewMessage` with empty content into a
-///    `serde_json::Value` once — this respects all `skip_serializing_if`
-///    attributes and preserves the exact wire format.
-/// 2. Per device, clone the Value, set only the `content` field, and call
-///    `to_string` once.
-/// 3. Store as `WsMessage::Text` (Bytes-backed) so hub clones inside the
-///    fanout loop are O(1) — no string copying per recipient.
+/// TD-61: serialise the invariant portion **once** as a String around a
+/// content-shaped sentinel, then per device splice the JSON-encoded
+/// ciphertext between the resulting prefix/suffix slices. The previous
+/// implementation called `base_value.clone()` per device, which walked the
+/// 8-field Object tree and string-cloned every leaf — for a 50-member ×
+/// 3-device group that's 150 deep clones per fanout. Sentinel-splice is
+/// O(devices × ciphertext_len) with no extra allocations beyond the final
+/// `WsMessage::Text` buffer.
 pub(in crate::ws::message_service) fn build_per_device_json(
     fields: &NewMessageFields,
     recipient_device_contents: &ParsedRecipientDeviceContents,
 ) -> HashMap<Uuid, Vec<(i32, WsMessage)>> {
-    // Serialize the invariant portion once via serde so skip_serializing_if
-    // is respected for optional fields (channel_id, reply_to_*, expires_at,
-    // undecryptable). The `content` field is replaced per device below.
+    // Sentinel chosen so it cannot collide with any legitimate string in the
+    // serialized JSON: includes characters that would be JSON-escaped, plus
+    // a per-call UUID. Anchored to a fixed, unmistakable prefix so a future
+    // reader can grep for it.
+    let sentinel = format!("__ECHO_CONTENT_PLACEHOLDER_{}__", Uuid::new_v4());
+
     let base_msg = ServerMessage::NewMessage {
         message_id: fields.message_id,
         from_user_id: fields.from_user_id,
@@ -107,7 +110,7 @@ pub(in crate::ws::message_service) fn build_per_device_json(
         from_username: fields.from_username.clone(),
         conversation_id: fields.conversation_id,
         channel_id: fields.channel_id,
-        content: String::new(),
+        content: sentinel.clone(),
         timestamp: fields.timestamp,
         reply_to_id: fields.reply_to_id,
         reply_to_content: fields.reply_to_content.clone(),
@@ -115,9 +118,21 @@ pub(in crate::ws::message_service) fn build_per_device_json(
         expires_at: fields.expires_at,
         undecryptable: None,
     };
-    let Ok(base_value) = serde_json::to_value(&base_msg) else {
+
+    let Ok(serialized) = serde_json::to_string(&base_msg) else {
         return HashMap::new();
     };
+
+    // The sentinel was a String and goes through JSON string-escape, so the
+    // exact substring to match is `"<sentinel>"`. The sentinel never
+    // contains any character requiring escape (only ASCII alphanumerics +
+    // `_`), so we can rely on a direct surround-with-quotes match.
+    let sentinel_quoted = format!("\"{sentinel}\"");
+    let Some(pos) = serialized.find(&sentinel_quoted) else {
+        return HashMap::new();
+    };
+    let prefix = &serialized[..pos];
+    let suffix = &serialized[pos + sentinel_quoted.len()..];
 
     recipient_device_contents
         .by_user
@@ -126,12 +141,15 @@ pub(in crate::ws::message_service) fn build_per_device_json(
             let entries: Vec<(i32, WsMessage)> = devices
                 .iter()
                 .filter_map(|(did, ciphertext)| {
-                    // Clone the invariant Value and mutate only `content`.
-                    let mut val = base_value.clone();
-                    val["content"] = serde_json::Value::String(ciphertext.clone());
-                    let json = serde_json::to_string(&val).ok()?;
-                    // Wrap as WsMessage::Text (Bytes) once; fanout clones are O(1).
-                    Some((*did, WsMessage::Text(json.into())))
+                    // JSON-encode the ciphertext string in isolation, then
+                    // concat into the pre-built prefix/suffix.
+                    let ct_json = serde_json::to_string(ciphertext).ok()?;
+                    let mut frame =
+                        String::with_capacity(prefix.len() + ct_json.len() + suffix.len());
+                    frame.push_str(prefix);
+                    frame.push_str(&ct_json);
+                    frame.push_str(suffix);
+                    Some((*did, WsMessage::Text(frame.into())))
                 })
                 .collect();
             (*recipient_id, entries)

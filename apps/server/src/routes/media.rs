@@ -5,7 +5,8 @@ use axum::body::Body;
 use axum::extract::{Multipart, Path, Query, State};
 use axum::http::StatusCode;
 use axum::http::header::{
-    ACCEPT_RANGES, CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, RANGE,
+    ACCEPT_RANGES, CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE,
+    ETAG, IF_NONE_MATCH, RANGE,
 };
 use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
@@ -556,7 +557,54 @@ fn extract_user_id(
     Err(AppError::unauthorized("Missing authentication"))
 }
 
+/// TD-39: `Cache-Control` for downloaded media. ACL-gated and pinned to a
+/// specific file UUID, so a long max-age + stale-while-revalidate is safe.
+/// Combined with the ETag below this turns repeated chat-list renders into
+/// 304 responses instead of full streams.
+const MEDIA_CACHE_CONTROL: &str = "private, max-age=86400, stale-while-revalidate=86400";
+
+/// Build a weak ETag from the file's size + mtime — see `users::weak_etag`
+/// for rationale.
+fn media_weak_etag(meta: &std::fs::Metadata) -> String {
+    let mtime_secs = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format!("W/\"{}-{}\"", meta.len(), mtime_secs)
+}
+
+/// Match an `If-None-Match` header value against our emitted ETag.
+fn media_etag_matches(inm: &str, ours: &str) -> bool {
+    let normalize = |t: &str| {
+        t.trim()
+            .trim_start_matches("W/")
+            .trim_matches('"')
+            .to_string()
+    };
+    let ours_norm = normalize(ours);
+    inm.split(',').any(|tok| {
+        let t = tok.trim();
+        t == "*" || normalize(t) == ours_norm
+    })
+}
+
+/// Build a `304 Not Modified` response carrying the cache headers but no body.
+fn not_modified_response(etag: &str) -> Result<Response, AppError> {
+    Response::builder()
+        .status(StatusCode::NOT_MODIFIED)
+        .header(CACHE_CONTROL, MEDIA_CACHE_CONTROL)
+        .header(ETAG, etag)
+        .body(Body::empty())
+        .map_err(|e| AppError::internal(format!("Failed to build response: {e}")))
+}
+
 /// Serve a satisfiable byte range response.
+///
+/// Streams the requested slice instead of buffering it. Reading the full
+/// `Range` into a `Vec<u8>` made a single request able to pin ~MAX_FILE_SIZE
+/// of RAM (up to 100 MB) — an easy OOM-DoS for any authenticated user.
 async fn serve_byte_range(
     disk_path: &str,
     start: u64,
@@ -564,6 +612,7 @@ async fn serve_byte_range(
     total_size: u64,
     mime_type: &str,
     disposition: &str,
+    etag: &str,
 ) -> Result<Response, AppError> {
     let slice_len = end - start + 1;
     let mut file = fs::File::open(disk_path).await.map_err(|e| {
@@ -574,11 +623,8 @@ async fn serve_byte_range(
         tracing::error!("Failed to seek media file: {e}");
         AppError::internal("Failed to read media")
     })?;
-    let mut buf = vec![0u8; slice_len as usize];
-    file.read_exact(&mut buf).await.map_err(|e| {
-        tracing::error!("Failed to read media slice: {e}");
-        AppError::internal("Failed to read media")
-    })?;
+
+    let stream = ReaderStream::new(file.take(slice_len));
 
     Response::builder()
         .status(StatusCode::PARTIAL_CONTENT)
@@ -587,7 +633,9 @@ async fn serve_byte_range(
         .header(ACCEPT_RANGES, "bytes")
         .header(CONTENT_LENGTH, slice_len)
         .header(CONTENT_RANGE, format!("bytes {start}-{end}/{total_size}"))
-        .body(Body::from(buf))
+        .header(CACHE_CONTROL, MEDIA_CACHE_CONTROL)
+        .header(ETAG, etag)
+        .body(Body::from_stream(stream))
         .map_err(|e| AppError::internal(format!("Failed to build response: {e}")))
 }
 
@@ -597,6 +645,7 @@ async fn serve_full_file(
     total_size: u64,
     mime_type: &str,
     disposition: &str,
+    etag: &str,
 ) -> Result<Response, AppError> {
     let file = fs::File::open(disk_path).await.map_err(|e| {
         tracing::error!("Failed to open media file {}: {}", disk_path, e);
@@ -615,6 +664,8 @@ async fn serve_full_file(
         .header(CONTENT_DISPOSITION, disposition)
         .header(ACCEPT_RANGES, "bytes")
         .header(CONTENT_LENGTH, total_size)
+        .header(CACHE_CONTROL, MEDIA_CACHE_CONTROL)
+        .header(ETAG, etag)
         .body(Body::from_stream(stream))
         .map_err(|e| AppError::internal(format!("Failed to build response: {e}")))
 }
@@ -674,6 +725,15 @@ pub async fn download(
         }
     })?;
     let total_size = metadata.len();
+    let etag = media_weak_etag(&metadata);
+
+    // TD-39: short-circuit on If-None-Match before opening the file. Avoids
+    // both the disk read and the ReaderStream allocation for the cached path.
+    if let Some(inm) = headers.get(IF_NONE_MATCH).and_then(|v| v.to_str().ok())
+        && media_etag_matches(inm, &etag)
+    {
+        return not_modified_response(&etag);
+    }
 
     // Sanitize filename: strip characters that could break Content-Disposition header
     let safe_filename: String = row
@@ -701,6 +761,7 @@ pub async fn download(
                     total_size,
                     &row.mime_type,
                     &disposition,
+                    &etag,
                 )
                 .await;
             }
@@ -716,7 +777,7 @@ pub async fn download(
     }
 
     // No Range header — stream the full file without buffering it into RAM.
-    serve_full_file(&disk_path, total_size, &row.mime_type, &disposition).await
+    serve_full_file(&disk_path, total_size, &row.mime_type, &disposition, &etag).await
 }
 
 /// GET /api/media/:id/thumb
@@ -780,6 +841,22 @@ pub async fn download_thumb(
     }
 
     let thumb_path = format!("./uploads/{}.thumb.jpg", row.id);
+
+    // TD-39: stat first so we can answer 304 without reading the file body.
+    let metadata = fs::metadata(&thumb_path).await.map_err(|_| AppError {
+        status: StatusCode::NOT_FOUND,
+        message: "Thumbnail not available".to_string(),
+        code: ErrorCode::NotFound,
+        body: None,
+    })?;
+    let etag = media_weak_etag(&metadata);
+
+    if let Some(inm) = headers.get(IF_NONE_MATCH).and_then(|v| v.to_str().ok())
+        && media_etag_matches(inm, &etag)
+    {
+        return not_modified_response(&etag);
+    }
+
     let data = fs::read(&thumb_path).await.map_err(|_| AppError {
         status: StatusCode::NOT_FOUND,
         message: "Thumbnail not available".to_string(),
@@ -791,6 +868,8 @@ pub async fn download_thumb(
         .status(StatusCode::OK)
         .header(CONTENT_TYPE, "image/jpeg")
         .header(CONTENT_LENGTH, data.len() as u64)
+        .header(CACHE_CONTROL, MEDIA_CACHE_CONTROL)
+        .header(ETAG, &etag)
         .body(Body::from(data))
         .map_err(|e| AppError::internal(format!("Failed to build response: {e}")))
 }

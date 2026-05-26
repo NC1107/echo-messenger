@@ -48,7 +48,7 @@ pub async fn add_reaction(
     let conversation_id = db::reactions::get_message_conversation_id(&state.pool, message_id)
         .await
         .db_ctx("add_reaction/get_conversation")?
-        .ok_or_else(|| AppError::bad_request("Message not found"))?;
+        .ok_or_else(|| AppError::not_found("Message not found"))?;
 
     // Verify membership
     let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
@@ -99,7 +99,7 @@ pub async fn remove_reaction(
     let conversation_id = db::reactions::get_message_conversation_id(&state.pool, message_id)
         .await
         .db_ctx("remove_reaction/get_conversation")?
-        .ok_or_else(|| AppError::bad_request("Message not found"))?;
+        .ok_or_else(|| AppError::not_found("Message not found"))?;
 
     // Verify membership
     let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
@@ -159,7 +159,7 @@ pub async fn mark_read(
     let privacy = db::users::get_privacy_preferences(&state.pool, auth.user_id)
         .await
         .db_ctx("mark_read/get_privacy")?
-        .ok_or_else(|| AppError::bad_request("User not found"))?;
+        .ok_or_else(|| AppError::not_found("User not found"))?;
 
     if !privacy.read_receipts_enabled {
         return Ok(Json(serde_json::json!({

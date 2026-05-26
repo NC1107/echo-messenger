@@ -38,76 +38,135 @@ async fn main() {
         ticket_store: Arc::new(dashmap::DashMap::new()),
         media_tickets: Arc::new(dashmap::DashMap::new()),
         message_rate: Arc::new(echo_server::metrics::MessageRateCounter::new()),
+        token_invalidator: echo_server::auth::TokenInvalidator::new(),
     });
 
+    // TD-37: cooperative shutdown token. Every periodic task takes a clone
+    // and exits on `cancelled()`; the main task awaits all handles in the
+    // shutdown path so DELETE/UPDATE batches finish cleanly instead of being
+    // torn at an arbitrary instruction by tokio runtime drop.
+    let shutdown_token = tokio_util::sync::CancellationToken::new();
+    let mut periodic_handles: Vec<tokio::task::JoinHandle<()>> = Vec::new();
+
     // Per-task cleanup loops with panic recovery; cadence per task.
-    spawn_periodic("voice_sessions", std::time::Duration::from_secs(60), {
-        let pool = pool.clone();
-        let hub = hub.clone();
-        move || {
+    periodic_handles.push(spawn_periodic(
+        "voice_sessions",
+        std::time::Duration::from_secs(60),
+        shutdown_token.clone(),
+        {
             let pool = pool.clone();
             let hub = hub.clone();
-            async move { cleanup_stale_voice_sessions(&pool, &hub).await }
-        }
-    });
-    spawn_periodic("expired_messages", std::time::Duration::from_secs(30), {
-        let pool = pool.clone();
-        let hub = hub.clone();
-        move || {
+            move || {
+                let pool = pool.clone();
+                let hub = hub.clone();
+                async move { cleanup_stale_voice_sessions(&pool, &hub).await }
+            }
+        },
+    ));
+    periodic_handles.push(spawn_periodic(
+        "expired_messages",
+        std::time::Duration::from_secs(30),
+        shutdown_token.clone(),
+        {
             let pool = pool.clone();
             let hub = hub.clone();
-            async move { cleanup_expired_messages(&pool, &hub).await }
-        }
-    });
-    spawn_periodic("expired_tokens", std::time::Duration::from_secs(600), {
-        let pool = pool.clone();
-        move || {
+            move || {
+                let pool = pool.clone();
+                let hub = hub.clone();
+                async move { cleanup_expired_messages(&pool, &hub).await }
+            }
+        },
+    ));
+    periodic_handles.push(spawn_periodic(
+        "expired_tokens",
+        std::time::Duration::from_secs(600),
+        shutdown_token.clone(),
+        {
             let pool = pool.clone();
-            async move { cleanup_expired_tokens(&pool).await }
-        }
-    });
-    spawn_periodic("used_prekeys", std::time::Duration::from_secs(600), {
-        let pool = pool.clone();
-        move || {
+            move || {
+                let pool = pool.clone();
+                async move { cleanup_expired_tokens(&pool).await }
+            }
+        },
+    ));
+    // TD-57: reap password-reset tokens hourly so the table doesn't grow
+    // under brute-force abuse.
+    periodic_handles.push(spawn_periodic(
+        "password_reset_tokens",
+        std::time::Duration::from_secs(3600),
+        shutdown_token.clone(),
+        {
             let pool = pool.clone();
-            async move { cleanup_used_prekeys(&pool).await }
-        }
-    });
-    spawn_periodic("empty_groups", std::time::Duration::from_secs(300), {
-        let pool = pool.clone();
-        move || {
+            move || {
+                let pool = pool.clone();
+                async move { cleanup_expired_password_reset_tokens(&pool).await }
+            }
+        },
+    ));
+    periodic_handles.push(spawn_periodic(
+        "used_prekeys",
+        std::time::Duration::from_secs(600),
+        shutdown_token.clone(),
+        {
             let pool = pool.clone();
-            async move { cleanup_empty_groups(&pool).await }
-        }
-    });
-    spawn_periodic("orphan_media", std::time::Duration::from_secs(3600), {
-        let pool = pool.clone();
-        move || {
+            move || {
+                let pool = pool.clone();
+                async move { cleanup_used_prekeys(&pool).await }
+            }
+        },
+    ));
+    periodic_handles.push(spawn_periodic(
+        "empty_groups",
+        std::time::Duration::from_secs(300),
+        shutdown_token.clone(),
+        {
             let pool = pool.clone();
-            async move { cleanup_orphan_media_files(&pool).await }
-        }
-    });
+            move || {
+                let pool = pool.clone();
+                async move { cleanup_empty_groups(&pool).await }
+            }
+        },
+    ));
+    periodic_handles.push(spawn_periodic(
+        "orphan_media",
+        std::time::Duration::from_secs(3600),
+        shutdown_token.clone(),
+        {
+            let pool = pool.clone();
+            move || {
+                let pool = pool.clone();
+                async move { cleanup_orphan_media_files(&pool).await }
+            }
+        },
+    ));
     // Sweep abandoned chunked-upload sessions hourly (#556).  Idle window is
     // 24 h so a user who closed their laptop overnight can still resume.
-    spawn_periodic("stale_uploads", std::time::Duration::from_secs(3600), {
-        let pool = pool.clone();
-        move || {
+    periodic_handles.push(spawn_periodic(
+        "stale_uploads",
+        std::time::Duration::from_secs(3600),
+        shutdown_token.clone(),
+        {
             let pool = pool.clone();
-            async move {
-                echo_server::routes::media_chunked::cleanup_stale_uploads(&pool, 24 * 60 * 60).await
+            move || {
+                let pool = pool.clone();
+                async move {
+                    echo_server::routes::media_chunked::cleanup_stale_uploads(&pool, 24 * 60 * 60)
+                        .await
+                }
             }
-        }
-    });
+        },
+    ));
 
     // Evict stale entries from the typing_service membership/member-ID/conv-kind
     // caches; without this, entries accumulate unboundedly on long-running servers.
-    spawn_periodic(
+    periodic_handles.push(spawn_periodic(
         "cache_sweep",
         std::time::Duration::from_secs(300),
+        shutdown_token.clone(),
         || async {
             ws::typing_service::sweep_expired_caches();
         },
-    );
+    ));
 
     let app = routes::create_router(state, config.trusted_proxies);
 
@@ -121,13 +180,23 @@ async fn main() {
         .await
         .expect("Failed to bind");
 
-    // Graceful shutdown via Ctrl+C
+    // Graceful shutdown via Ctrl+C — TD-37.
+    //
+    // Two-stage drain: (1) cancel the background-task token so periodic
+    // loops finish their current batch and exit; (2) let axum complete
+    // in-flight HTTP/WS responses via `with_graceful_shutdown`. After axum
+    // returns we await every periodic handle so the process only exits
+    // once each cleanup task is fully resolved.
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
-    tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.ok();
-        tracing::info!("Shutting down gracefully...");
-        shutdown_tx.send(()).ok();
-    });
+    {
+        let shutdown_token = shutdown_token.clone();
+        tokio::spawn(async move {
+            tokio::signal::ctrl_c().await.ok();
+            tracing::info!("Shutting down gracefully...");
+            shutdown_token.cancel();
+            shutdown_tx.send(()).ok();
+        });
+    }
 
     axum::serve(
         listener,
@@ -138,11 +207,31 @@ async fn main() {
     })
     .await
     .expect("Server error");
+
+    // axum has stopped accepting new requests and drained in-flight ones;
+    // also ensure the background cleanup loops are fully wound down before
+    // the process exits.
+    shutdown_token.cancel();
+    for handle in periodic_handles {
+        if let Err(e) = handle.await {
+            tracing::warn!("periodic task join error during shutdown: {e}");
+        }
+    }
 }
 
-/// Periodic task with panic recovery. `make_fut` is a stateless re-creator;
-/// captured `Arc` clones make `AssertUnwindSafe` sound.
-fn spawn_periodic<F, Fut>(name: &'static str, period: std::time::Duration, mut make_fut: F)
+/// Periodic task with panic recovery and cooperative shutdown.
+///
+/// `make_fut` is a stateless re-creator; captured `Arc` clones make
+/// `AssertUnwindSafe` sound. The loop exits when `shutdown` fires so SIGTERM
+/// no longer tears DELETE statements at arbitrary instructions (TD-37). The
+/// returned `JoinHandle` is collected by `main` so we can await all
+/// outstanding periodic tasks during graceful shutdown.
+fn spawn_periodic<F, Fut>(
+    name: &'static str,
+    period: std::time::Duration,
+    shutdown: tokio_util::sync::CancellationToken,
+    mut make_fut: F,
+) -> tokio::task::JoinHandle<()>
 where
     F: FnMut() -> Fut + Send + 'static,
     Fut: std::future::Future<Output = ()> + Send + 'static,
@@ -154,13 +243,28 @@ where
         // server boot, when the pool may still be warming.
         interval.tick().await;
         loop {
-            interval.tick().await;
+            tokio::select! {
+                biased;
+                _ = shutdown.cancelled() => {
+                    tracing::debug!(task = name, "periodic task shutting down");
+                    return;
+                }
+                _ = interval.tick() => {}
+            }
+
+            // Inside the tick, also race the work future against shutdown so
+            // we don't begin a fresh DELETE/UPDATE batch when the operator is
+            // already trying to bring the server down.
             let fut = make_fut();
-            // catch_unwind requires Unpin; box-pin the future so we can
-            // call AssertUnwindSafe + catch_unwind on it.
-            let result = std::panic::AssertUnwindSafe(Box::pin(fut))
-                .catch_unwind()
-                .await;
+            let work = std::panic::AssertUnwindSafe(Box::pin(fut)).catch_unwind();
+            let result = tokio::select! {
+                biased;
+                _ = shutdown.cancelled() => {
+                    tracing::debug!(task = name, "periodic task shutting down mid-batch");
+                    return;
+                }
+                r = work => r,
+            };
             if let Err(panic) = result {
                 tracing::error!(
                     task = name,
@@ -173,7 +277,7 @@ where
                 );
             }
         }
-    });
+    })
 }
 
 /// Remove voice sessions not updated within 2 minutes and broadcast leave events.
@@ -262,6 +366,32 @@ async fn cleanup_expired_tokens(pool: &PgPool) {
     }
 }
 
+/// TD-57: reap expired password-reset tokens (used or unused) so the table
+/// doesn't grow unboundedly under brute-force abuse. The 24-hour cliff is
+/// loose enough that any pending support flow has finished; consumed
+/// tokens are also pruned by `used_at` so we don't keep a permanent record
+/// of every reset request.
+async fn cleanup_expired_password_reset_tokens(pool: &PgPool) {
+    let result = sqlx::query(
+        "DELETE FROM password_reset_tokens \
+         WHERE expires_at < now() - interval '24 hours' \
+            OR used_at IS NOT NULL",
+    )
+    .execute(pool)
+    .await;
+
+    match result {
+        Ok(r) if r.rows_affected() > 0 => {
+            tracing::info!(
+                "Cleaned {} expired/consumed password-reset tokens",
+                r.rows_affected()
+            );
+        }
+        Err(e) => tracing::warn!("Password-reset token cleanup error: {e}"),
+        _ => {}
+    }
+}
+
 /// Remove consumed one-time prekeys that are no longer needed.
 async fn cleanup_used_prekeys(pool: &PgPool) {
     let result = sqlx::query("DELETE FROM one_time_prekeys WHERE used = true")
@@ -279,39 +409,67 @@ async fn cleanup_used_prekeys(pool: &PgPool) {
 
 /// Delete messages whose `expires_at` has passed and broadcast `message_expired`
 /// events to all online members of each affected conversation.
+///
+/// TD-52: batched + member-list cached per-conversation. The DB query
+/// returns up to 500 expirations at a time; we re-invoke it in a loop
+/// until empty so a 10 000-message backlog drains without holding the
+/// whole list in memory. Per-conversation member fetches are now cached
+/// for the duration of one sweep — previously a 1 000-message group
+/// expiry triggered 1 000 identical SELECTs.
 async fn cleanup_expired_messages(pool: &PgPool, hub: &ws::hub::Hub) {
-    let expired = match db::messages::cleanup_expired_messages(pool).await {
-        Ok(rows) => rows,
-        Err(e) => {
-            tracing::warn!("Expired message cleanup error: {e}");
-            return;
+    let mut total = 0usize;
+    loop {
+        let expired = match db::messages::cleanup_expired_messages(pool).await {
+            Ok(rows) => rows,
+            Err(e) => {
+                tracing::warn!("Expired message cleanup error: {e}");
+                return;
+            }
+        };
+
+        if expired.is_empty() {
+            break;
         }
-    };
+        let batch_len = expired.len();
+        total += batch_len;
 
-    if expired.is_empty() {
-        return;
-    }
+        // Group by conversation_id so each member-list fetch happens once
+        // per conversation per batch.
+        let mut by_conv: std::collections::HashMap<uuid::Uuid, Vec<uuid::Uuid>> =
+            std::collections::HashMap::new();
+        for (message_id, conversation_id) in expired {
+            by_conv.entry(conversation_id).or_default().push(message_id);
+        }
 
-    tracing::info!("Cleaned {} expired messages", expired.len());
-
-    for (message_id, conversation_id) in expired {
-        // Notify all online members of the conversation.
-        let member_ids = match db::groups::get_conversation_member_ids(pool, conversation_id).await
-        {
-            Ok(ids) => ids,
-            Err(_) => continue,
-        };
-
-        let event = ServerMessage::MessageExpired {
-            message_id,
-            conversation_id,
-        };
-        if let Ok(json) = serde_json::to_string(&event) {
-            let msg = WsMessage::Text(json.as_str().into());
-            for member_id in &member_ids {
-                hub.send_to(member_id, msg.clone());
+        for (conversation_id, message_ids) in by_conv {
+            let member_ids =
+                match db::groups::get_conversation_member_ids(pool, conversation_id).await {
+                    Ok(ids) => ids,
+                    Err(_) => continue,
+                };
+            for message_id in message_ids {
+                let event = ServerMessage::MessageExpired {
+                    message_id,
+                    conversation_id,
+                };
+                if let Ok(json) = serde_json::to_string(&event) {
+                    let msg = WsMessage::Text(json.as_str().into());
+                    for member_id in &member_ids {
+                        hub.send_to(member_id, msg.clone());
+                    }
+                }
             }
         }
+
+        // Smaller backlogs finish in one batch; bail out of the loop early
+        // so we don't busy-poll an empty query right after.
+        if batch_len < 500 {
+            break;
+        }
+    }
+
+    if total > 0 {
+        tracing::info!("Cleaned {total} expired messages");
     }
 }
 

@@ -130,9 +130,10 @@ async fn leave_group_last_member_auto_deletes() {
     );
 }
 
-/// A user who is not a group member gets 401 when trying to leave.
+/// A user who is not a group member gets 403 when trying to leave.
+/// TD-34: NotMember is a permission failure, not an auth failure.
 #[tokio::test]
-async fn leave_group_non_member_returns_401() {
+async fn leave_group_non_member_returns_403() {
     let base = common::spawn_server().await;
     let client = Client::new();
 
@@ -147,7 +148,7 @@ async fn leave_group_non_member_returns_401() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status().as_u16(), 401, "non-member leave should 401");
+    assert_eq!(resp.status().as_u16(), 403, "non-member leave should 403");
 }
 
 // ---------------------------------------------------------------------------

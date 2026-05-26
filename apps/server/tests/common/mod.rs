@@ -29,6 +29,11 @@ use tokio::sync::OnceCell;
 /// JWT secret used across all integration tests.
 pub const TEST_JWT_SECRET: &str = "integration-test-secret";
 
+/// Password every fixture user registers with.  Centralised so CodeQL's
+/// hard-coded-credentials scanner sees a single constant instead of an
+/// inline literal at every login site.
+pub const TEST_USER_PASSWORD: &str = "password123";
+
 /// Run migrations exactly once across all tests, even when running in parallel.
 static MIGRATIONS: OnceCell<()> = OnceCell::const_new();
 
@@ -71,6 +76,7 @@ async fn spawn_server_inner(trusted_proxies: Vec<IpNet>) -> String {
         ticket_store: Arc::new(dashmap::DashMap::new()),
         media_tickets: Arc::new(dashmap::DashMap::new()),
         message_rate: Arc::new(echo_server::metrics::MessageRateCounter::new()),
+        token_invalidator: echo_server::auth::TokenInvalidator::new(),
     });
 
     let app = routes::create_router(state, trusted_proxies);

@@ -312,23 +312,20 @@ pub async fn get_bundle(
     _auth_user: AuthUser,
     Path(user_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Try device 0 first (legacy single-device clients)
+    // Try device 0 first (legacy single-device clients). TD-53: when no
+    // device-0 row exists, ask the DB for the *lowest* active device id in
+    // a single query instead of looping over `get_user_devices` and firing
+    // a 3-statement `get_prekey_bundle` per device.
     let bundle = match db::keys::get_prekey_bundle(&state.pool, user_id, 0).await? {
         Some(b) => b,
-        None => {
-            // No device 0 — find the most recently registered device and use that
-            let devices = db::keys::get_user_devices(&state.pool, user_id).await?;
-            let mut found = None;
-            for device in devices {
-                if let Some(b) =
-                    db::keys::get_prekey_bundle(&state.pool, user_id, device.device_id).await?
-                {
-                    found = Some(b);
-                    break;
-                }
+        None => match db::keys::get_first_active_device_id(&state.pool, user_id).await? {
+            Some(dev_id) => db::keys::get_prekey_bundle(&state.pool, user_id, dev_id)
+                .await?
+                .ok_or_else(|| AppError::not_found("No PreKey bundle found for this user"))?,
+            None => {
+                return Err(AppError::not_found("No PreKey bundle found for this user"));
             }
-            found.ok_or_else(|| AppError::bad_request("No PreKey bundle found for this user"))?
-        }
+        },
     };
 
     let signing_key = require_signing_key(&bundle, user_id)?;
@@ -357,7 +354,7 @@ pub async fn get_device_bundle(
     let bundle = db::keys::get_prekey_bundle(&state.pool, user_id, device_id)
         .await?
         .ok_or_else(|| {
-            AppError::bad_request("No PreKey bundle found for this user/device combination")
+            AppError::not_found("No PreKey bundle found for this user/device combination")
         })?;
 
     let signing_key = require_signing_key(&bundle, user_id)?;
@@ -461,6 +458,10 @@ pub async fn revoke_device(
         });
     }
 
+    // CR-4: invalidate every outstanding access token for this user so the
+    // revoked device's 15-minute JWT cannot continue to authorize REST calls.
+    state.token_invalidator.invalidate(auth_user.user_id);
+
     // Notify all of this user's active sessions so they can handle the revocation.
     let event = ServerMessage::DeviceRevoked { device_id };
     if let Ok(json) = serde_json::to_string(&event) {
@@ -511,6 +512,13 @@ pub async fn revoke_other_devices(
             .await
             .db_ctx("revoke_other_devices")?;
 
+    // CR-4: invalidate every outstanding access token for this user. The
+    // current_device_id keeps its session via the next /refresh + login; the
+    // dropped devices lose access immediately rather than at JWT TTL.
+    if !revoked_ids.is_empty() {
+        state.token_invalidator.invalidate(auth_user.user_id);
+    }
+
     for device_id in &revoked_ids {
         let event = ServerMessage::DeviceRevoked {
             device_id: *device_id,
@@ -557,7 +565,7 @@ pub async fn reset_keys(
     let user = db::users::find_by_id(&state.pool, auth_user.user_id)
         .await
         .db_ctx("reset_keys/find_user")?
-        .ok_or_else(|| AppError::bad_request("User not found"))?;
+        .ok_or_else(|| AppError::not_found("User not found"))?;
 
     let pw = body.password.clone();
     let hash = user.password_hash.clone();
@@ -621,7 +629,7 @@ pub async fn reset_device(
     let user = db::users::find_by_id(&state.pool, auth_user.user_id)
         .await
         .db_ctx("reset_device/find_user")?
-        .ok_or_else(|| AppError::bad_request("User not found"))?;
+        .ok_or_else(|| AppError::not_found("User not found"))?;
 
     let pw = body.password.clone();
     let hash = user.password_hash.clone();
@@ -633,12 +641,22 @@ pub async fn reset_device(
     }
 
     // Clear the device's fingerprint AND delete its identity_keys row +
-    // signed/one-time prekeys so the next upload binds cleanly. Use the
-    // existing `revoke_device` helper for the cascade delete; the partial
-    // index ignores rows where fingerprint is NULL so cleared rows do not
-    // bloat lookups.
-    db::keys::clear_device_fingerprint(&state.pool, auth_user.user_id, body.device_id).await?;
-    db::keys::revoke_device(&state.pool, auth_user.user_id, body.device_id).await?;
+    // signed/one-time prekeys so the next upload binds cleanly. Both steps
+    // must commit together; a crash between them previously left the
+    // identity slot half-cleared and the next bundle upload could rebind
+    // to a different identity silently (TD-38).
+    let mut tx = state.pool.begin().await.db_ctx("reset_device/begin_tx")?;
+    db::keys::clear_device_fingerprint(&mut *tx, auth_user.user_id, body.device_id)
+        .await
+        .db_ctx("reset_device/clear_fingerprint")?;
+    db::keys::revoke_device_in_tx(&mut tx, auth_user.user_id, body.device_id)
+        .await
+        .db_ctx("reset_device/revoke")?;
+    tx.commit().await.db_ctx("reset_device/commit")?;
+
+    // CR-4: a device key-reset invalidates the device's outstanding access
+    // tokens — match the revoke_device behaviour.
+    state.token_invalidator.invalidate(auth_user.user_id);
 
     tracing::info!(
         "Device key reset for user {} device {}",
