@@ -57,17 +57,27 @@ class MembersPanel extends ConsumerWidget {
     final isOwner = myRole == 'owner';
     final canRemove = isOwner || myRole == 'admin';
 
-    // Group by role; presence stays surfaced via the per-row dot + activity line.
+    // Group by presence (Discord pattern). Self always counts as online —
+    // we don't broadcast our own status to ourselves. Role pill stays on
+    // the row so owner/admin is still readable; the role split was
+    // burying online members below offline ones in large groups.
     int sortByName(ConversationMember a, ConversationMember b) =>
         a.username.toLowerCase().compareTo(b.username.toLowerCase());
 
-    final owners = members.where((m) => m.role == 'owner').toList()
-      ..sort(sortByName);
-    final admins = members.where((m) => m.role == 'admin').toList()
-      ..sort(sortByName);
-    final regulars =
-        members.where((m) => m.role != 'owner' && m.role != 'admin').toList()
-          ..sort(sortByName);
+    bool isMemberOnline(ConversationMember m) {
+      if (m.userId == myUserId) return true;
+      return ref.watch(
+        userPresenceProvider(m.userId).select((p) => p.isOnline),
+      );
+    }
+
+    final online = <ConversationMember>[];
+    final offline = <ConversationMember>[];
+    for (final m in members) {
+      (isMemberOnline(m) ? online : offline).add(m);
+    }
+    online.sort(sortByName);
+    offline.sort(sortByName);
 
     final items = <_MemberListItem>[];
     void addGroup(String headerLabel, List<ConversationMember> roster) {
@@ -78,9 +88,8 @@ class MembersPanel extends ConsumerWidget {
       }
     }
 
-    addGroup('Owner · ${owners.length}', owners);
-    addGroup('Admins · ${admins.length}', admins);
-    addGroup('Members · ${regulars.length}', regulars);
+    addGroup('Online — ${online.length}', online);
+    addGroup('Offline — ${offline.length}', offline);
 
     return Container(
       width: width,

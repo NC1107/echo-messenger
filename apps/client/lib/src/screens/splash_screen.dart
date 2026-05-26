@@ -253,16 +253,12 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     if (isCompact) {
       return Scaffold(
         backgroundColor: Colors.transparent,
-        body: ClipRRect(
-          borderRadius: BorderRadius.circular(EchoRadii.lg),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: context.mainBg,
-              border: Border.all(color: context.border),
-              borderRadius: BorderRadius.circular(EchoRadii.lg),
-            ),
-            child: body,
+        body: DecoratedBox(
+          decoration: BoxDecoration(
+            color: context.mainBg,
+            border: Border.all(color: context.border),
           ),
+          child: body,
         ),
       );
     }
@@ -300,16 +296,12 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       // Transparent Scaffold + rounded clip: floating card on transparent compositors, squared elsewhere.
       return Scaffold(
         backgroundColor: Colors.transparent,
-        body: ClipRRect(
-          borderRadius: BorderRadius.circular(EchoRadii.lg),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: context.mainBg,
-              border: Border.all(color: context.border),
-              borderRadius: BorderRadius.circular(EchoRadii.lg),
-            ),
-            child: body,
+        body: DecoratedBox(
+          decoration: BoxDecoration(
+            color: context.mainBg,
+            border: Border.all(color: context.border),
           ),
+          child: body,
         ),
       );
     }
@@ -630,28 +622,6 @@ class _UpdatePromptBody extends ConsumerWidget {
           Text(
             'Downloading… ${(update.downloadProgress * 100).toInt()}%',
             style: TextStyle(fontSize: 12, color: context.textMuted),
-          ),
-          const SizedBox(height: 6),
-          // Escape hatch: Skip is disabled while downloading, so otherwise the user is stuck.
-          Semantics(
-            button: true,
-            label: 'Cancel update download',
-            child: TextButton.icon(
-              onPressed: () =>
-                  ref.read(updateProvider.notifier).cancelDownload(),
-              icon: const Icon(Icons.close, size: 14),
-              label: const Text('Cancel download'),
-              style: TextButton.styleFrom(
-                foregroundColor: context.textSecondary,
-                textStyle: const TextStyle(fontSize: 12),
-                minimumSize: Size.zero,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 4,
-                ),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-            ),
           ),
         ],
       );

@@ -156,7 +156,8 @@ void main() {
         );
         await tester.pump();
 
-        expect(find.text('(edited)'), findsWidgets);
+        // Slack-style pill now reads as "edited" instead of "(edited)".
+        expect(find.text('edited'), findsWidgets);
       });
     });
 

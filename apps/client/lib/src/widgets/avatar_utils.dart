@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
+import '../providers/theme_provider.dart' show AvatarShape;
 import '../services/media_cache_service.dart';
 
 /// Resolves a relative avatar path (e.g. `/api/users/123/avatar`) into a full
@@ -17,6 +18,9 @@ String? resolveAvatarUrl(String? relativeUrl, String serverUrl) {
 }
 
 /// Shared avatar builder used across conversation panel widgets.
+/// [shape] controls circle vs Slack-style rounded square; defaults to circle
+/// so legacy call sites stay unchanged. Callers that want the user's pref
+/// pass `ref.watch(avatarShapeProvider)`.
 Widget buildAvatar({
   String? imageUrl,
   required String name,
@@ -24,45 +28,78 @@ Widget buildAvatar({
   Color? bgColor,
   Widget? fallbackIcon,
   String? authToken,
+  AvatarShape shape = AvatarShape.circle,
 }) {
-  final fallback = CircleAvatar(
-    radius: radius,
-    backgroundColor: bgColor ?? avatarColor(name),
-    child:
-        fallbackIcon ??
-        Text(
-          name.isNotEmpty ? name[0].toUpperCase() : '?',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: radius * 0.8,
-            fontWeight: FontWeight.w600,
-          ),
+  // Slack uses ~4 px corner radius on its 36 px avatars (~11% of diameter).
+  final squareRadius = radius * 2 * 0.18;
+  final isSquare = shape == AvatarShape.roundedSquare;
+
+  final fallbackContent =
+      fallbackIcon ??
+      Text(
+        name.isNotEmpty ? name[0].toUpperCase() : '?',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: radius * 0.8,
+          fontWeight: FontWeight.w600,
         ),
-  );
+      );
+
+  final fallback = isSquare
+      ? Container(
+          width: radius * 2,
+          height: radius * 2,
+          decoration: BoxDecoration(
+            color: bgColor ?? avatarColor(name),
+            borderRadius: BorderRadius.circular(squareRadius),
+          ),
+          alignment: Alignment.center,
+          child: fallbackContent,
+        )
+      : CircleAvatar(
+          radius: radius,
+          backgroundColor: bgColor ?? avatarColor(name),
+          child: fallbackContent,
+        );
 
   if (imageUrl != null && imageUrl.isNotEmpty) {
-    // Decode at 3× display size (covers retina DPR) so 1024² avatars don't sit in RAM as 1024² bitmaps.
     final memCacheWidth = (radius * 2 * 3).ceil();
-    return ClipOval(
-      key: ValueKey(imageUrl),
-      child: SizedBox(
-        width: radius * 2,
-        height: radius * 2,
-        child: CachedNetworkImage(
-          imageUrl: imageUrl,
-          cacheKey: stableMediaCacheKey(imageUrl),
-          cacheManager: chatMediaCacheManager,
-          memCacheWidth: memCacheWidth,
-          fit: BoxFit.cover,
-          fadeInDuration: Duration.zero,
-          fadeOutDuration: Duration.zero,
-          placeholder: (_, _) => fallback,
-          errorWidget: (_, _, _) => fallback,
-        ),
-      ),
-    );
+    final clipper = isSquare
+        ? ClipRRect(
+            key: ValueKey(imageUrl),
+            borderRadius: BorderRadius.circular(squareRadius),
+            child: _avatarImage(imageUrl, radius, memCacheWidth, fallback),
+          )
+        : ClipOval(
+            key: ValueKey(imageUrl),
+            child: _avatarImage(imageUrl, radius, memCacheWidth, fallback),
+          );
+    return clipper;
   }
   return fallback;
+}
+
+Widget _avatarImage(
+  String imageUrl,
+  double radius,
+  int memCacheWidth,
+  Widget fallback,
+) {
+  return SizedBox(
+    width: radius * 2,
+    height: radius * 2,
+    child: CachedNetworkImage(
+      imageUrl: imageUrl,
+      cacheKey: stableMediaCacheKey(imageUrl),
+      cacheManager: chatMediaCacheManager,
+      memCacheWidth: memCacheWidth,
+      fit: BoxFit.cover,
+      fadeInDuration: Duration.zero,
+      fadeOutDuration: Duration.zero,
+      placeholder: (_, _) => fallback,
+      errorWidget: (_, _, _) => fallback,
+    ),
+  );
 }
 
 /// Deterministic color from a name string.

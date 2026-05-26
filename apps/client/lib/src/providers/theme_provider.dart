@@ -166,6 +166,37 @@ class UIDensityNotifier extends _$UIDensityNotifier {
 }
 
 // ---------------------------------------------------------------------------
+// Avatar shape (Slack rounded-square vs default circle)
+// ---------------------------------------------------------------------------
+
+const _kAvatarShapeKey = 'echo_avatar_shape';
+
+enum AvatarShape { circle, roundedSquare }
+
+@Riverpod(keepAlive: true)
+class AvatarShapeNotifier extends _$AvatarShapeNotifier {
+  @override
+  AvatarShape build() {
+    _load();
+    return AvatarShape.circle;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_kAvatarShapeKey);
+    if (raw == 'roundedSquare') state = AvatarShape.roundedSquare;
+  }
+
+  Future<void> setShape(AvatarShape shape) async {
+    state = shape;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kAvatarShapeKey, shape.name);
+  }
+}
+
+final avatarShapeProvider = avatarShapeNotifierProvider;
+
+// ---------------------------------------------------------------------------
 // Custom color overrides: user-selectable primary and accent (issue #613)
 // ---------------------------------------------------------------------------
 

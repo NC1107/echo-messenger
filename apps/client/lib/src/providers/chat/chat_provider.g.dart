@@ -6,9 +6,28 @@ part of 'chat_provider.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$chatHash() => r'ac4dcf761ef68f89384758856b08abc43529b677';
+String _$chatHash() => r'45133000fa99f0f0ed964e5a322fd7e4c46c056a';
 
-/// See also [Chat].
+/// Owns the per-conversation message list, the optimistic-send pipeline
+/// (with 15s retry timers + reply-count bookkeeping), and the public API
+/// the rest of the app reaches through `chatProvider`.
+///
+/// File layout (god-module split tracker #770):
+/// - This file: notifier facade — timer map, `build`, hot-path send /
+///   confirm / retry, status updates, reply state, `clear`.
+/// - `chat_state.dart` (part): the immutable [ChatState] data class
+///   plus placeholder-content constants and the `withMessage` /
+///   `withSyncRestored` / `withSignatureFailureCleared` transitions.
+/// - `chat_reactions.dart` (part): add/remove reaction.
+/// - `chat_history.dart` (part): cache load, paginated REST fetch, 1:1
+///   + group decrypt pipeline.
+/// - `chat_edits.dart` (part): edits, soft-deletes, read sweeps, pin
+///   toggles, forward helper.
+/// - `chat_recovery.dart` (part): banner-driven recovery actions
+///   (reset session, refresh group key, dismiss signature failure)
+///   and the system-event injector.
+///
+/// Copied from [Chat].
 @ProviderFor(Chat)
 final chatProvider = NotifierProvider<Chat, ChatState>.internal(
   Chat.new,

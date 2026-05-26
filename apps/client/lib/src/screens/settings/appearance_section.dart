@@ -195,6 +195,36 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
               .setDensity(UIDensity.compact),
         ),
         const SizedBox(height: 32),
+        Text(
+          'Avatar shape',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 16),
+        _LayoutOption(
+          label: 'Circle',
+          subtitle: 'Default — Discord/iMessage style',
+          icon: Icons.circle_outlined,
+          isSelected: ref.watch(avatarShapeProvider) == AvatarShape.circle,
+          onTap: () => ref
+              .read(avatarShapeProvider.notifier)
+              .setShape(AvatarShape.circle),
+        ),
+        const SizedBox(height: 8),
+        _LayoutOption(
+          label: 'Rounded square',
+          subtitle: 'Slack-style softened squares',
+          icon: Icons.crop_square_rounded,
+          isSelected:
+              ref.watch(avatarShapeProvider) == AvatarShape.roundedSquare,
+          onTap: () => ref
+              .read(avatarShapeProvider.notifier)
+              .setShape(AvatarShape.roundedSquare),
+        ),
+        const SizedBox(height: 32),
         // Channel layout — top chip bar vs Slack/Discord vertical column.
         // The toggle only affects desktop wide layouts; narrow viewports
         // always render the bar because a column doesn't fit on phones.

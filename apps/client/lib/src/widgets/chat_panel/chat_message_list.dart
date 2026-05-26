@@ -14,6 +14,7 @@ import 'date_divider.dart';
 import 'empty_message_placeholder.dart';
 import 'system_timeline_message.dart';
 import 'unread_divider.dart';
+import 'welcome_card.dart';
 
 /// Message-list section of [ChatPanel]. Renders the skeleton while
 /// history is loading, an empty-state placeholder when there are no
@@ -170,11 +171,16 @@ class ChatMessageList extends ConsumerWidget {
 
     final messageKey = messageKeys.putIfAbsent(msg.id, () => GlobalKey());
 
+    // Genuine start of conversation: i==0 AND we've loaded everything
+    // older. Otherwise i==0 just means "top of the loaded slice" and a
+    // welcome card would be a lie.
+    final isStart = i == 0 && !hasMoreHistory;
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (needsDateDivider)
-          DateDivider(timestamp: msg.timestamp, isStartOfConversation: i == 0),
+        if (isStart) WelcomeCard(conversation: conv, myUserId: myUserId),
+        if (needsDateDivider && !isStart) DateDivider(timestamp: msg.timestamp),
         if (showUnreadDivider) UnreadDivider(count: unreadBoundaryCount),
         AnimatedContainer(
           key: messageKey,
@@ -193,6 +199,7 @@ class ChatMessageList extends ConsumerWidget {
             senderAvatarUrl: senderAvatarUrl,
             layout: ref.watch(messageLayoutProvider),
             density: ref.watch(uiDensityProvider),
+            avatarShape: ref.watch(avatarShapeProvider),
             hideUndecryptable: ref
                 .watch(accessibilityProvider)
                 .hideUndecryptable,
