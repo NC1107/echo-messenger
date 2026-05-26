@@ -3,6 +3,7 @@ library;
 
 import 'dart:ui' show ImageFilter;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -56,15 +57,14 @@ class FloatingDock extends ConsumerWidget {
     return Center(
       child: ClipRRect(
         borderRadius: BorderRadius.circular(32),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+        // 24x24 BackdropFilter is one of CanvasKit/Firefox's worst hot
+        // paths. Skip the blur on web; surface tint at 0.88 alpha already
+        // reads as glass without the per-frame offscreen rasterise.
+        child: _MaybeBlur(
+          sigma: 24,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              // Was hard-coded `Color(0xE01C1C1E)` — the same RGB as
-              // `EchoTheme.surface` with an 0xE0 (≈88%) alpha for the
-              // backdrop-blurred glass effect. Pull from the token so light
-              // theme and any future surface re-skin pick this up.
               color: context.surface.withValues(alpha: 0.88),
               borderRadius: BorderRadius.circular(32),
               border: Border.all(color: context.border),
@@ -401,6 +401,24 @@ class DrawingToolsPanel extends StatelessWidget {
         ],
       ),
       clipBehavior: Clip.antiAlias,
+      child: child,
+    );
+  }
+}
+
+/// BackdropFilter wrapper that skips the blur on web. CanvasKit's
+/// Gaussian blur composites an offscreen GPU buffer per frame; on
+/// Firefox/NVIDIA EGL that's enough to stall the lounge.
+class _MaybeBlur extends StatelessWidget {
+  final double sigma;
+  final Widget child;
+  const _MaybeBlur({required this.sigma, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    if (kIsWeb) return child;
+    return BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
       child: child,
     );
   }
