@@ -182,18 +182,16 @@ test.describe('Group Creation UI Flow', () => {
     await page.waitForTimeout(300);
     await ss(page, '03-form-filled');
 
-    // Step 6: Verify visibility toggle -- Private should be selected by default
-    // The SegmentedButton renders 'Private' and 'Public' as accessible buttons.
-    const privateBtn = page.getByRole('button', { name: /private/i });
-    const publicBtn = page.getByRole('button', { name: /public/i });
-    await expect(privateBtn).toBeVisible({ timeout: 3000 });
-    await expect(publicBtn).toBeVisible({ timeout: 3000 });
-
-    // Toggle to Public then back to Private to verify interactability
-    await publicBtn.click();
+    // Step 6: Verify visibility toggle — the Private/Public SegmentedButton
+    // was replaced with a single "Private group" SwitchListTile that reads
+    // consistently with the E2E toggle directly below it. Default is ON
+    // (private); toggling off makes the group public.
+    const privateTile = page.getByText('Private group').first();
+    await expect(privateTile).toBeVisible({ timeout: 3000 });
+    await privateTile.click();
     await page.waitForTimeout(500);
     await ss(page, '04-toggled-public');
-    await privateBtn.click();
+    await privateTile.click();
     await page.waitForTimeout(500);
     console.log('  Visibility toggle works');
 
