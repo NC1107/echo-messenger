@@ -35,6 +35,7 @@ pub struct UserProfile {
     pub email: Option<String>,
     pub phone: Option<String>,
     pub background_color: Option<String>,
+    pub location: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -49,6 +50,7 @@ pub struct UpdateProfileRequest {
     pub email: Option<String>,
     pub phone: Option<String>,
     pub background_color: Option<String>,
+    pub location: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -159,6 +161,7 @@ pub async fn get_profile(
         email: profile.email,
         phone: profile.phone,
         background_color: profile.background_color,
+        location: profile.location,
         created_at: profile.created_at,
     }))
 }
@@ -248,6 +251,13 @@ pub async fn update_profile(
             ));
         }
     }
+    if let Some(ref loc) = body.location
+        && loc.len() > 80
+    {
+        return Err(AppError::bad_request(
+            "Location must be 80 characters or less",
+        ));
+    }
 
     // Normalize phone to E.164: strip all non-digit chars except leading +.
     let normalized_phone = body.phone.as_deref().map(|p| {
@@ -270,6 +280,7 @@ pub async fn update_profile(
         email: body.email.as_deref(),
         phone: normalized_phone.as_deref(),
         background_color: body.background_color.as_deref(),
+        location: body.location.as_deref(),
     };
     let profile = db::users::update_profile(&state.pool, auth.user_id, &fields)
         .await
@@ -288,6 +299,7 @@ pub async fn update_profile(
         email: profile.email,
         phone: profile.phone,
         background_color: profile.background_color,
+        location: profile.location,
         created_at: profile.created_at,
     }))
 }

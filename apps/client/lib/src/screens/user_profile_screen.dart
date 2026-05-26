@@ -7,10 +7,13 @@ import 'package:http/http.dart' as http;
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../providers/auth_provider.dart';
+import '../providers/chat_provider.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
+import '../providers/livekit_voice/livekit_voice_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/user_presence_provider.dart';
+import '../providers/websocket_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/presence.dart';
@@ -53,6 +56,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
   String? _email;
   String? _phone;
   String? _backgroundColor;
+  String? _location;
   bool _isContact = false;
 
   @override
@@ -94,6 +98,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
           _email = data['email'] as String?;
           _phone = data['phone'] as String?;
           _backgroundColor = data['background_color'] as String?;
+          _location = data['location'] as String?;
           _isLoading = false;
         });
       } else {
@@ -413,19 +418,61 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
     );
   }
 
-  /// Status message line (if set).
+  /// Status pill: `● Online · {status text}`. Driven by the user's
+  /// presence (from userPresenceProvider) and the optional status_text
+  /// the user can set. Renders as a small chip below the identity block
+  /// regardless of whether status_text is set — the presence label
+  /// alone is informative.
   Widget _buildStatusSection() {
-    if (_statusMessage == null || _statusMessage!.isEmpty) {
-      return const SizedBox.shrink();
+    final isSelf = widget.userId == ref.read(authProvider).userId;
+    final UserPresence presence;
+    if (isSelf) {
+      final myStatus = ref.watch(authProvider.select((s) => s.presenceStatus));
+      presence = UserPresence(status: myStatus, isOnline: true);
+    } else {
+      presence = ref.watch(userPresenceProvider(widget.userId));
     }
+    final dotColor = presenceColor(
+      presence.status,
+      isOnline: presence.isOnline,
+    );
+    final label = presenceLabel(presence.status, isOnline: presence.isOnline);
+    final hasStatus =
+        _statusMessage != null && _statusMessage!.trim().isNotEmpty;
+    final pillText = hasStatus ? '$label · ${_statusMessage!.trim()}' : label;
     return Padding(
-      padding: const EdgeInsets.only(top: 6),
-      child: Text(
-        _statusMessage!,
-        style: TextStyle(
-          color: context.textSecondary,
-          fontSize: 13,
-          fontStyle: FontStyle.italic,
+      padding: const EdgeInsets.only(top: 8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: context.surfaceHover,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: context.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: dotColor,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                pillText,
+                style: TextStyle(
+                  color: context.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -482,16 +529,41 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
         ),
         const SizedBox(height: 8),
       ],
-      if (_timezone != null && _timezone!.isNotEmpty) ...[
+      // Joined location row: "🌐 Berlin · UTC+1 · 09:47 local". Each
+      // half is optional; we render the row as long as at least one of
+      // location / timezone is present, joined with " · ".
+      if (_buildLocationLine() != null) ...[
         _iconRow(
-          icon: Icons.schedule,
+          icon: Icons.public,
           iconColor: context.textMuted,
-          text: 'Local time: ${_formatLocalTime(_timezone!)} ($_timezone)',
+          text: _buildLocationLine()!,
           textColor: context.textMuted,
         ),
         const SizedBox(height: 8),
       ],
     ];
+  }
+
+  /// Compose the location/timezone/local-time line. Returns null when
+  /// neither `location` nor `timezone` is set so the row is skipped.
+  String? _buildLocationLine() {
+    final parts = <String>[];
+    if (_location != null && _location!.trim().isNotEmpty) {
+      parts.add(_location!.trim());
+    }
+    if (_timezone != null && _timezone!.isNotEmpty) {
+      final offsetMin = _ianaOffsetMinutes[_timezone!];
+      if (offsetMin != null) {
+        final h = offsetMin ~/ 60;
+        final m = (offsetMin % 60).abs();
+        final sign = h >= 0 ? '+' : '';
+        parts.add(
+          m == 0 ? 'UTC$sign$h' : 'UTC$sign$h:${m.toString().padLeft(2, '0')}',
+        );
+      }
+      parts.add('${_formatLocalTime(_timezone!)} local');
+    }
+    return parts.isEmpty ? null : parts.join(' · ');
   }
 
   Widget _iconRow({
@@ -585,9 +657,9 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: _openSafetyNumber,
-                  icon: const Icon(Icons.security_outlined, size: 18),
-                  label: const Text('Safety Number'),
+                  onPressed: _isStartingDm ? null : _startVoiceFromProfile,
+                  icon: const Icon(Icons.call_outlined, size: 18),
+                  label: const Text('Voice'),
                   style: OutlinedButton.styleFrom(
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
@@ -597,6 +669,21 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _openSafetyNumber,
+              icon: const Icon(Icons.security_outlined, size: 18),
+              label: const Text('Safety Number'),
+              style: OutlinedButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
           ),
           const SizedBox(height: 8),
           SizedBox(
@@ -658,6 +745,52 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
       ToastService.show(
         context,
         'Could not start conversation',
+        type: ToastType.error,
+      );
+    } finally {
+      if (mounted) setState(() => _isStartingDm = false);
+    }
+  }
+
+  /// Get-or-create the DM with this user, then start a LiveKit voice
+  /// call against it. Reuses the conv.id as both conversationId and
+  /// channelId — the DM convention used by chat_header_bar's voice
+  /// affordance.
+  Future<void> _startVoiceFromProfile() async {
+    if (_isStartingDm) return;
+    final voiceState = ref.read(livekitVoiceProvider);
+    if (voiceState.isActive) {
+      ToastService.show(
+        context,
+        'Already in a voice call.',
+        type: ToastType.info,
+      );
+      return;
+    }
+    setState(() => _isStartingDm = true);
+    try {
+      final conv = await ref
+          .read(conversationsProvider.notifier)
+          .getOrCreateDm(widget.userId, _username);
+      if (!mounted) return;
+      await ref
+          .read(livekitVoiceProvider.notifier)
+          .joinChannel(conversationId: conv.id, channelId: conv.id);
+      ref.read(websocketProvider.notifier).sendCallStarted(conv.id);
+      ref
+          .read(chatProvider.notifier)
+          .addSystemEvent(conv.id, 'Voice call started');
+      if (!mounted) return;
+      if (Navigator.canPop(context)) Navigator.pop(context);
+      context.go('/home?conversation=${conv.id}');
+    } on DmException catch (e) {
+      if (!mounted) return;
+      ToastService.show(context, e.message, type: ToastType.error);
+    } catch (e) {
+      if (!mounted) return;
+      ToastService.show(
+        context,
+        'Could not start voice call',
         type: ToastType.error,
       );
     } finally {

@@ -126,6 +126,7 @@ pub struct UserProfileRow {
     pub email: Option<String>,
     pub phone: Option<String>,
     pub background_color: Option<String>,
+    pub location: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -171,7 +172,7 @@ pub async fn search_users(
          timezone, pronouns, website, \
          CASE WHEN email_visible THEN email ELSE NULL END AS email, \
          CASE WHEN phone_visible THEN phone ELSE NULL END AS phone, \
-         background_color, created_at \
+         background_color, location, created_at \
          FROM users \
          WHERE id != $2 AND searchable = true AND ( \
            username ILIKE $1 ESCAPE '\\' \
@@ -257,7 +258,7 @@ pub async fn find_public_profile(
          timezone, pronouns, website, \
          CASE WHEN email_visible THEN email ELSE NULL END AS email, \
          CASE WHEN phone_visible THEN phone ELSE NULL END AS phone, \
-         background_color, created_at \
+         background_color, location, created_at \
          FROM users WHERE id = $1",
     )
     .bind(user_id)
@@ -276,6 +277,7 @@ pub struct ProfileUpdate<'a> {
     pub email: Option<&'a str>,
     pub phone: Option<&'a str>,
     pub background_color: Option<&'a str>,
+    pub location: Option<&'a str>,
 }
 
 /// Update profile fields for a user. Only non-null fields are updated.
@@ -295,10 +297,11 @@ pub async fn update_profile(
          website = CASE WHEN $7 IS NULL THEN website ELSE NULLIF($7, '') END, \
          email = CASE WHEN $8 IS NULL THEN email ELSE NULLIF($8, '') END, \
          phone = CASE WHEN $9 IS NULL THEN phone ELSE NULLIF($9, '') END, \
-         background_color = CASE WHEN $10 IS NULL THEN background_color ELSE NULLIF($10, '') END \
+         background_color = CASE WHEN $10 IS NULL THEN background_color ELSE NULLIF($10, '') END, \
+         location = CASE WHEN $11 IS NULL THEN location ELSE NULLIF($11, '') END \
          WHERE id = $1 \
          RETURNING id, username, display_name, avatar_url, bio, status_message, \
-                  timezone, pronouns, website, email, phone, background_color, created_at",
+                  timezone, pronouns, website, email, phone, background_color, location, created_at",
     )
     .bind(user_id)
     .bind(fields.display_name)
@@ -310,6 +313,7 @@ pub async fn update_profile(
     .bind(fields.email)
     .bind(fields.phone)
     .bind(fields.background_color)
+    .bind(fields.location)
     .fetch_one(pool)
     .await
 }
