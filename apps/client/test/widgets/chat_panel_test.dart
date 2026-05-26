@@ -209,8 +209,11 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.text('Hello there!'), findsOneWidget);
-      expect(find.text('Hi alice!'), findsOneWidget);
+      // Compact density inlines the IRC-style header into the body
+      // RichText (`HH:MM Name body…`), so plain `find.text` no longer
+      // matches the body alone — use textContaining instead.
+      expect(find.textContaining('Hello there!'), findsOneWidget);
+      expect(find.textContaining('Hi alice!'), findsOneWidget);
     });
 
     testWidgets('loading indicator shows when loading history', (tester) async {
