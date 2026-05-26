@@ -75,12 +75,14 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
   final _bioController = TextEditingController();
   final _pronounsController = TextEditingController();
   final _timezoneController = TextEditingController();
+  final _locationController = TextEditingController();
   final _websiteController = TextEditingController();
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
   final _phoneDigitsController = TextEditingController();
   _CountryCode _selectedCountry = _countries.first; // US +1
   bool _profileLoaded = false;
+  String? _backgroundColor;
   bool _saving = false;
 
   // Password change
@@ -102,6 +104,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     _currentPasswordController.dispose();
     _newPasswordController.dispose();
     _timezoneController.dispose();
+    _locationController.dispose();
     _websiteController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
@@ -141,6 +144,8 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
           _emailController.text = data['email'] as String? ?? '';
           _phoneController.text = data['phone'] as String? ?? '';
           _parsePhoneIntoComponents(data['phone'] as String? ?? '');
+          _backgroundColor = data['background_color'] as String?;
+          _locationController.text = data['location'] as String? ?? '';
           _profileLoaded = true;
           _profileError = false;
         });
@@ -172,6 +177,8 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
         'website': _websiteController.text,
         'email': _emailController.text,
         'phone': phoneValue,
+        'background_color': _backgroundColor ?? '',
+        'location': _locationController.text,
       };
 
       final resp = await ref
@@ -664,6 +671,8 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
           const SizedBox(height: 12),
           _buildPronounsField(),
           const SizedBox(height: 12),
+          _buildBackgroundColorPicker(),
+          const SizedBox(height: 12),
           _profileField(
             controller: _bioController,
             label: 'Bio',
@@ -673,6 +682,13 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
           ),
           const SizedBox(height: 12),
           _buildTimezoneDropdown(),
+          const SizedBox(height: 12),
+          _profileField(
+            controller: _locationController,
+            label: 'Location',
+            hint: 'City, region — shown on your profile',
+            maxLength: 80,
+          ),
           const SizedBox(height: 12),
           _profileField(
             controller: _websiteController,
@@ -764,6 +780,55 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
   bool get _isCustomPronoun =>
       _pronounsController.text.isNotEmpty &&
       !_pronounOptions.contains(_pronounsController.text);
+
+  /// Curated profile-banner palette. Each entry shows behind the avatar
+  /// on the user-profile sheet. Validated server-side as #RRGGBB so we
+  /// just send the hex string; tap an already-selected swatch to clear.
+  static const List<({String label, String hex})> _bgPalette = [
+    (label: 'Indigo', hex: '#4F46E5'),
+    (label: 'Sky', hex: '#0EA5E9'),
+    (label: 'Emerald', hex: '#10B981'),
+    (label: 'Amber', hex: '#F59E0B'),
+    (label: 'Rose', hex: '#F43F5E'),
+    (label: 'Fuchsia', hex: '#D946EF'),
+    (label: 'Slate', hex: '#475569'),
+  ];
+
+  Widget _buildBackgroundColorPicker() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6, left: 4),
+          child: Text(
+            'Profile background',
+            style: TextStyle(
+              color: context.textSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final entry in _bgPalette)
+              _BgSwatch(
+                hex: entry.hex,
+                label: entry.label,
+                selected: _backgroundColor == entry.hex,
+                onTap: () => setState(() {
+                  _backgroundColor = _backgroundColor == entry.hex
+                      ? null
+                      : entry.hex;
+                }),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
 
   Widget _buildPronounsField() {
     final currentValue = _pronounsController.text;
@@ -1174,6 +1239,49 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 12,
           vertical: 10,
+        ),
+      ),
+    );
+  }
+}
+
+class _BgSwatch extends StatelessWidget {
+  final String hex;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _BgSwatch({
+    required this.hex,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final value = int.tryParse(hex.substring(1), radix: 16);
+    final color = value == null ? Colors.grey : Color(0xFF000000 | value);
+    return Semantics(
+      label: '$label background${selected ? " (selected)" : ""}',
+      button: true,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: selected ? context.textPrimary : Colors.transparent,
+              width: 2,
+            ),
+          ),
+          child: selected
+              ? const Icon(Icons.check, size: 18, color: Colors.white)
+              : null,
         ),
       ),
     );
