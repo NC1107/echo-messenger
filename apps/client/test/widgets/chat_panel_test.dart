@@ -209,8 +209,17 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.text('Hello there!'), findsOneWidget);
-      expect(find.text('Hi alice!'), findsOneWidget);
+      // Compact density inlines the IRC-style header into the body
+      // RichText (`HH:MM Name body…`). Flutter 3.44+ requires
+      // findRichText: true for textContaining to walk RichText spans.
+      expect(
+        find.textContaining('Hello there!', findRichText: true),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Hi alice!', findRichText: true),
+        findsOneWidget,
+      );
     });
 
     testWidgets('loading indicator shows when loading history', (tester) async {
