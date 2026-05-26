@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/server_url_provider.dart';
@@ -11,6 +10,7 @@ import '../theme/echo_theme.dart';
 import '../utils/version_utils.dart';
 import '../widgets/auth/auth_layout.dart';
 import '../widgets/auth/auth_scaffold_chrome.dart';
+import '../widgets/auth/beta_banner.dart';
 import '../widgets/auth/server_subtitle.dart';
 import '../widgets/echo_logo_icon.dart';
 import '../widgets/window_chrome.dart';
@@ -138,6 +138,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          // Beta callout (moved here from onboarding) so a
+                          // brand-new user sees it before signing up and a
+                          // returning tester sees it on every login.
+                          BetaBanner.standard(),
                           _buildUsernameField(),
                           const SizedBox(height: EchoSpacing.lg),
                           _buildPasswordField(),
@@ -156,34 +160,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                               child: const Text('Forgot password?'),
                             ),
                           ),
-                          // Divider + label visually separates the recovery
-                          // affordance ("Forgot password?") from the
-                          // create-account CTA so they don't read as one
-                          // stacked block of links.
-                          Padding(
-                            padding: const EdgeInsets.symmetric(
-                              vertical: EchoSpacing.sm,
-                              horizontal: EchoSpacing.xl,
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(child: Divider(color: context.border)),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: EchoSpacing.md,
-                                  ),
-                                  child: Text(
-                                    'New here?',
-                                    style: TextStyle(
-                                      color: context.textMuted,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ),
-                                Expanded(child: Divider(color: context.border)),
-                              ],
-                            ),
-                          ),
                           // TextButton + Text already produce a
                           // button-role accessibility node named "Create an
                           // account" — wrapping in another Semantics
@@ -196,23 +172,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                               foregroundColor: context.textSecondary,
                             ),
                             child: const Text('Create an account'),
-                          ),
-                          // Last-resort escape hatch for testers stuck at
-                          // auth (#1174). The in-app feedback dialog needs
-                          // login, so a stuck user can't reach it; a
-                          // mailto: works without a session.
-                          TextButton(
-                            onPressed: () => launchUrl(
-                              Uri.parse(
-                                'mailto:admin@echo-messenger.us'
-                                '?subject=Echo%20support%3A%20trouble%20signing%20in',
-                              ),
-                            ),
-                            style: TextButton.styleFrom(
-                              foregroundColor: context.textMuted,
-                              textStyle: const TextStyle(fontSize: 12),
-                            ),
-                            child: const Text('Trouble signing in?'),
                           ),
                         ],
                       ),

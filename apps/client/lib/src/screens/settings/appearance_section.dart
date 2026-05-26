@@ -6,6 +6,7 @@ import '../../providers/channel_layout_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../theme/echo_theme.dart';
 import '../../widgets/settings_panel_scaffold.dart';
+import '../../widgets/theme_thumbnail.dart';
 import 'advanced_theme_section.dart';
 
 /// SharedPreferences key for GIF autoplay setting.
@@ -15,94 +16,9 @@ import 'advanced_theme_section.dart';
 /// exported here so the key stays a single source of truth.
 const kGifAutoplayKey = 'gif_autoplay_enabled';
 
-/// Preview color data for rendering a miniature theme thumbnail.
-class _ThemePreviewColors {
-  final Color sidebarBg;
-  final Color mainBg;
-  final Color sentBubble;
-  final Color recvBubble;
-  final Color accent;
-  final Color border;
-  final Color textPrimary;
-  final Color textSecondary;
-
-  const _ThemePreviewColors({
-    required this.sidebarBg,
-    required this.mainBg,
-    required this.sentBubble,
-    required this.recvBubble,
-    required this.accent,
-    required this.border,
-    required this.textPrimary,
-    required this.textSecondary,
-  });
-}
-
-const _darkPreview = _ThemePreviewColors(
-  sidebarBg: EchoTheme.sidebarBg,
-  mainBg: EchoTheme.mainBg,
-  sentBubble: EchoTheme.sentBubble,
-  recvBubble: EchoTheme.recvBubble,
-  accent: EchoTheme.accent,
-  border: EchoTheme.border,
-  textPrimary: EchoTheme.textPrimary,
-  textSecondary: EchoTheme.textSecondary,
-);
-
-const _lightPreview = _ThemePreviewColors(
-  sidebarBg: EchoTheme.lightSidebarBg,
-  mainBg: EchoTheme.lightMainBg,
-  sentBubble: EchoTheme.lightSentBubble,
-  recvBubble: EchoTheme.lightRecvBubble,
-  accent: EchoTheme.paperAccent,
-  border: EchoTheme.lightBorder,
-  textPrimary: EchoTheme.lightTextPrimary,
-  textSecondary: EchoTheme.lightTextSecondary,
-);
-
-const _graphitePreview = _ThemePreviewColors(
-  sidebarBg: EchoTheme.graphiteSidebarBg,
-  mainBg: EchoTheme.graphiteMainBg,
-  sentBubble: EchoTheme.graphiteSentBubble,
-  recvBubble: EchoTheme.graphiteRecvBubble,
-  accent: EchoTheme.graphiteAccent,
-  border: EchoTheme.graphiteBorder,
-  textPrimary: EchoTheme.graphiteTextPrimary,
-  textSecondary: EchoTheme.graphiteTextSecondary,
-);
-
-const _emberPreview = _ThemePreviewColors(
-  sidebarBg: EchoTheme.emberSidebarBg,
-  mainBg: EchoTheme.emberMainBg,
-  sentBubble: EchoTheme.emberSentBubble,
-  recvBubble: EchoTheme.emberRecvBubble,
-  accent: EchoTheme.emberAccent,
-  border: EchoTheme.emberBorder,
-  textPrimary: EchoTheme.emberTextPrimary,
-  textSecondary: EchoTheme.emberTextSecondary,
-);
-
-const _sakuraPreview = _ThemePreviewColors(
-  sidebarBg: EchoTheme.sakuraSidebarBg,
-  mainBg: EchoTheme.sakuraMainBg,
-  sentBubble: EchoTheme.sakuraSentBubble,
-  recvBubble: EchoTheme.sakuraRecvBubble,
-  accent: EchoTheme.sakuraAccent,
-  border: EchoTheme.sakuraBorder,
-  textPrimary: EchoTheme.sakuraTextPrimary,
-  textSecondary: EchoTheme.sakuraTextSecondary,
-);
-
-const _highContrastPreview = _ThemePreviewColors(
-  sidebarBg: Color(0xFF0A0A0A),
-  mainBg: Color(0xFF000000),
-  sentBubble: Color(0xFF7C9BFF),
-  recvBubble: Color(0xFF000000),
-  accent: Color(0xFF7C9BFF),
-  border: Color(0xFF8A8A8A),
-  textPrimary: Color(0xFFFFFFFF),
-  textSecondary: Color(0xFFCCCCCC),
-);
+// Theme-preview palettes + thumbnail widgets moved to
+// `widgets/theme_thumbnail.dart` so the onboarding wizard can share the
+// same rich miniature instead of rendering a flat colour swatch.
 
 class AppearanceSection extends ConsumerStatefulWidget {
   const AppearanceSection({super.key});
@@ -129,37 +45,37 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
         selection: AppThemeSelection.indigo,
         label: 'Indigo',
         subtitle: 'Default accent',
-        preview: _darkPreview,
+        preview: darkPreview,
       ),
       _ThemeCardData(
         selection: AppThemeSelection.graphite,
         label: 'Graphite',
         subtitle: 'Teal on cool black',
-        preview: _graphitePreview,
+        preview: graphitePreview,
       ),
       _ThemeCardData(
         selection: AppThemeSelection.ember,
         label: 'Ember',
         subtitle: 'Amber on warm black',
-        preview: _emberPreview,
+        preview: emberPreview,
       ),
       _ThemeCardData(
         selection: AppThemeSelection.paper,
         label: 'Paper',
         subtitle: 'Warm off-white',
-        preview: _lightPreview,
+        preview: lightPreview,
       ),
       _ThemeCardData(
         selection: AppThemeSelection.sakura,
         label: 'Sakura',
         subtitle: 'Soft pink pastels',
-        preview: _sakuraPreview,
+        preview: sakuraPreview,
       ),
       _ThemeCardData(
         selection: AppThemeSelection.highContrast,
         label: 'High contrast',
         subtitle: 'WCAG AAA accessibility',
-        preview: _highContrastPreview,
+        preview: highContrastPreview,
       ),
     ];
 
@@ -415,7 +331,7 @@ class _ThemeCardData {
   final String subtitle;
 
   /// Null means "system" -- renders a split dark/light preview.
-  final _ThemePreviewColors? preview;
+  final ThemePreviewColors? preview;
 
   const _ThemeCardData({
     required this.selection,
@@ -474,8 +390,8 @@ class _ThemeCard extends StatelessWidget {
                       height: 90,
                       width: double.infinity,
                       child: data.preview != null
-                          ? _ThemeThumbnail(colors: data.preview!)
-                          : _SystemThemeThumbnail(),
+                          ? ThemeThumbnail(colors: data.preview!)
+                          : const SystemThemeThumbnail(),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -524,287 +440,6 @@ class _ThemeCard extends StatelessWidget {
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Miniature theme preview: sidebar strip + chat area with message bubbles
-// ---------------------------------------------------------------------------
-
-class _ThemeThumbnail extends StatelessWidget {
-  final _ThemePreviewColors colors;
-
-  const _ThemeThumbnail({required this.colors});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: colors.border, width: 0.5),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(5.5),
-        child: Row(
-          children: [
-            // Sidebar strip (30%)
-            Expanded(
-              flex: 30,
-              child: Container(
-                color: colors.sidebarBg,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Tiny sidebar items
-                    const SizedBox(height: 10),
-                    _sidebarLine(colors.textSecondary, 0.5, 18),
-                    const SizedBox(height: 6),
-                    _sidebarLine(colors.accent, 0.8, 22),
-                    const SizedBox(height: 6),
-                    _sidebarLine(colors.textSecondary, 0.3, 16),
-                    const SizedBox(height: 6),
-                    _sidebarLine(colors.textSecondary, 0.3, 14),
-                  ],
-                ),
-              ),
-            ),
-            // Divider line
-            Container(width: 0.5, color: colors.border),
-            // Chat area (70%)
-            Expanded(
-              flex: 70,
-              child: Container(
-                color: colors.mainBg,
-                // vertical: 6 (was 8). The container is locked to 90 px
-                // by the SizedBox above; with 8-px top + 8-px bottom plus
-                // the header strip + four bubbles + three spacers the
-                // Column overflowed by ~3 px (widget tests had to drain
-                // the parent-data exception). 6/6 keeps the same visual
-                // and stops the overflow.
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Header bar hint
-                    Container(
-                      height: 3,
-                      width: 30,
-                      margin: const EdgeInsets.only(bottom: 10),
-                      decoration: BoxDecoration(
-                        color: colors.textPrimary.withValues(alpha: 0.3),
-                        borderRadius: BorderRadius.circular(1.5),
-                      ),
-                    ),
-                    // Received message bubble (left)
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Container(
-                        width: 42,
-                        height: 14,
-                        decoration: BoxDecoration(
-                          color: colors.recvBubble,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    // Received message bubble (left, shorter)
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Container(
-                        width: 30,
-                        height: 10,
-                        decoration: BoxDecoration(
-                          color: colors.recvBubble,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    // Sent message bubble (right)
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Container(
-                        width: 38,
-                        height: 14,
-                        decoration: BoxDecoration(
-                          color: colors.sentBubble,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    // Sent message bubble (right, shorter)
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Container(
-                        width: 28,
-                        height: 10,
-                        decoration: BoxDecoration(
-                          color: colors.sentBubble,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _sidebarLine(Color color, double opacity, double width) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 6),
-      child: Container(
-        height: 3,
-        width: width,
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: opacity),
-          borderRadius: BorderRadius.circular(1.5),
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// System theme preview: split dark / light halves
-// ---------------------------------------------------------------------------
-
-class _SystemThemeThumbnail extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: EchoTheme.border, width: 0.5),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(5.5),
-        child: Row(
-          children: [
-            // Dark half
-            Expanded(
-              child: Container(
-                color: EchoTheme.mainBg,
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Sidebar hint
-                    Container(
-                      height: 3,
-                      width: 20,
-                      margin: const EdgeInsets.only(bottom: 8),
-                      decoration: BoxDecoration(
-                        color: EchoTheme.textSecondary.withValues(alpha: 0.5),
-                        borderRadius: BorderRadius.circular(1.5),
-                      ),
-                    ),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Container(
-                        width: 26,
-                        height: 10,
-                        decoration: BoxDecoration(
-                          color: EchoTheme.recvBubble,
-                          borderRadius: BorderRadius.circular(3),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Container(
-                        width: 22,
-                        height: 10,
-                        decoration: BoxDecoration(
-                          color: EchoTheme.sentBubble,
-                          borderRadius: BorderRadius.circular(3),
-                        ),
-                      ),
-                    ),
-                    const Spacer(),
-                    // Moon icon hint
-                    Center(
-                      child: Icon(
-                        Icons.dark_mode,
-                        size: 14,
-                        color: EchoTheme.textSecondary.withValues(alpha: 0.6),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            // Divider
-            Container(width: 0.5, color: EchoTheme.border),
-            // Light half
-            Expanded(
-              child: Container(
-                color: EchoTheme.lightMainBg,
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Sidebar hint
-                    Container(
-                      height: 3,
-                      width: 20,
-                      margin: const EdgeInsets.only(bottom: 8),
-                      decoration: BoxDecoration(
-                        color: EchoTheme.lightTextSecondary.withValues(
-                          alpha: 0.5,
-                        ),
-                        borderRadius: BorderRadius.circular(1.5),
-                      ),
-                    ),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Container(
-                        width: 26,
-                        height: 10,
-                        decoration: BoxDecoration(
-                          color: EchoTheme.lightRecvBubble,
-                          borderRadius: BorderRadius.circular(3),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Container(
-                        width: 22,
-                        height: 10,
-                        decoration: BoxDecoration(
-                          color: EchoTheme.lightSentBubble,
-                          borderRadius: BorderRadius.circular(3),
-                        ),
-                      ),
-                    ),
-                    const Spacer(),
-                    // Sun icon hint
-                    Center(
-                      child: Icon(
-                        Icons.light_mode,
-                        size: 14,
-                        color: EchoTheme.lightTextSecondary.withValues(
-                          alpha: 0.6,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
         ),
       ),
     );
