@@ -52,6 +52,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
   String? _website;
   String? _email;
   String? _phone;
+  String? _backgroundColor;
   bool _isContact = false;
 
   @override
@@ -92,6 +93,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
           _website = data['website'] as String?;
           _email = data['email'] as String?;
           _phone = data['phone'] as String?;
+          _backgroundColor = data['background_color'] as String?;
           _isLoading = false;
         });
       } else {
@@ -302,34 +304,68 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
       isOnline: presence.isOnline,
     );
 
+    // Discord/Slack-style banner: a thin colored band behind the top of
+    // the profile sheet that the avatar overlaps. Uses the user's
+    // background_color when set (validated server-side as #RRGGBB);
+    // otherwise reads as transparent and looks like a normal sheet.
+    final bannerColor = _parseHexColor(_backgroundColor);
+
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+      padding: EdgeInsets.zero,
       child: Column(
         children: [
-          Container(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: ringColor, width: 3),
-            ),
-            padding: const EdgeInsets.all(3),
-            child: buildAvatar(
-              name: _username,
-              radius: 52,
-              imageUrl: fullAvatarUrl,
+          if (bannerColor != null)
+            Container(height: 96, color: bannerColor)
+          else
+            const SizedBox(height: 32),
+          Transform.translate(
+            offset: Offset(0, bannerColor != null ? -52 : 0),
+            child: Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: ringColor, width: 3),
+                color: context.surface,
+              ),
+              padding: const EdgeInsets.all(3),
+              child: buildAvatar(
+                name: _username,
+                radius: 52,
+                imageUrl: fullAvatarUrl,
+              ),
             ),
           ),
-          const SizedBox(height: 16),
-          _buildNameSection(),
-          _buildStatusSection(),
-          const SizedBox(height: 12),
-          _buildBioSection(),
-          ..._buildContactDetailRows(),
-          _buildMemberSinceRow(),
-          const SizedBox(height: 28),
-          _buildActionButton(),
+          // Pull the rest of the content up so it doesn't gap-out under
+          // the negative-offset avatar.
+          Transform.translate(
+            offset: Offset(0, bannerColor != null ? -36 : 0),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Column(
+                children: [
+                  const SizedBox(height: 16),
+                  _buildNameSection(),
+                  _buildStatusSection(),
+                  const SizedBox(height: 12),
+                  _buildBioSection(),
+                  ..._buildContactDetailRows(),
+                  _buildMemberSinceRow(),
+                  const SizedBox(height: 28),
+                  _buildActionButton(),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  /// Parse a #RRGGBB hex string into a Color, returning null on any
+  /// parse failure so a bad backend value can't crash the sheet.
+  Color? _parseHexColor(String? hex) {
+    if (hex == null || hex.length != 7 || !hex.startsWith('#')) return null;
+    final v = int.tryParse(hex.substring(1), radix: 16);
+    return v == null ? null : Color(0xFF000000 | v);
   }
 
   /// Display name + username + pronouns header section.
