@@ -16,6 +16,7 @@ import '../providers/livekit_voice/livekit_voice_provider.dart';
 import '../providers/screen_share_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/voice_lounge_background_provider.dart';
+import '../providers/voice_lounge_fullscreen_provider.dart';
 import '../providers/voice_settings_provider.dart';
 import '../services/debug_log_service.dart';
 import '../services/pip_controller.dart';
@@ -119,6 +120,13 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     _viewport
       ..removeListener(_onViewportChanged)
       ..dispose();
+    // Clear fullscreen so the user doesn't return to an immersive HomeScreen
+    // (no sidebar / no title bar) the next time they open the lounge.
+    Future.microtask(() {
+      if (ref.read(voiceLoungeFullscreenProvider)) {
+        ref.read(voiceLoungeFullscreenProvider.notifier).state = false;
+      }
+    });
     DebugLogService.instance.log(
       LogLevel.info,
       'VoiceLoungeUI',
@@ -747,6 +755,35 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     );
   }
 
+  /// Fullscreen-immersive toggle. Pressing this hides the HomeScreen
+  /// sidebar / members panel / title bar and the lounge's own header,
+  /// leaving only the canvas + dock. Pressing again restores them.
+  Widget _buildFullscreenButton(BuildContext context) {
+    final isFull = ref.watch(voiceLoungeFullscreenProvider);
+    return Semantics(
+      button: true,
+      label: isFull ? 'Exit fullscreen lounge' : 'Enter fullscreen lounge',
+      child: Material(
+        color: Colors.black54,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: () => ref
+              .read(voiceLoungeFullscreenProvider.notifier)
+              .update((v) => !v),
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Icon(
+              isFull ? Icons.fullscreen_exit : Icons.fullscreen,
+              size: 18,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   /// Reset-view affordance shown only when the canvas is zoomed or panned.
   /// Returns the canvas transform to identity (1x, no offset).
   Widget _buildResetViewButton(BuildContext context) {
@@ -844,28 +881,31 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     String channelName,
     int totalParticipants,
   ) {
+    final isFull = ref.watch(voiceLoungeFullscreenProvider);
     return _buildLoungeScaffold(context, [
       Positioned.fill(child: _buildBackground(context)),
-      // 64 px reserves top strip for header badge + background picker (top:16 + ~32 px + gap).
       Column(
         children: [
-          const SizedBox(height: 64),
+          SizedBox(height: isFull ? 0 : 64),
           Expanded(child: contentArea),
         ],
       ),
       ..._buildSubmenuFollowers(conversationId),
       Positioned(bottom: 16, left: 0, right: 0, child: dock),
-      Positioned(
-        top: 16,
-        left: 60,
-        child: _buildHeaderBadge(context, channelName, totalParticipants),
-      ),
+      if (!isFull)
+        Positioned(
+          top: 16,
+          left: 60,
+          child: _buildHeaderBadge(context, channelName, totalParticipants),
+        ),
       Positioned(
         top: 16,
         right: 16,
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            _buildFullscreenButton(context),
+            const SizedBox(width: 8),
             if (_viewportTransformed && !_spotlightMode) ...[
               _buildResetViewButton(context),
               const SizedBox(width: 8),
@@ -886,34 +926,33 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     String channelName,
     int totalParticipants,
   ) {
+    final isFull = ref.watch(voiceLoungeFullscreenProvider);
     return _buildLoungeScaffold(context, [
       Positioned.fill(child: _buildBackground(context)),
       Column(
         children: [
-          LoungeHeader(
-            channelName: channelName,
-            participantCount: totalParticipants,
-            onBackToChat: widget.onBackToChat,
-            // The eye toggle in the header controls HomeScreen's
-            // right-side group-members panel — not the participant grid.
-            membersSidebarCollapsed: !widget.membersPanelVisible,
-            onToggleMembers: widget.onToggleMembersPanel,
-          ),
+          if (!isFull)
+            LoungeHeader(
+              channelName: channelName,
+              participantCount: totalParticipants,
+              onBackToChat: widget.onBackToChat,
+              membersSidebarCollapsed: !widget.membersPanelVisible,
+              onToggleMembers: widget.onToggleMembersPanel,
+            ),
           Expanded(child: contentArea),
-          // Space for the floating dock
           const SizedBox(height: 80),
         ],
       ),
       ..._buildSubmenuFollowers(conversationId),
       Positioned(bottom: 16, left: 0, right: 0, child: dock),
-      // Pushed below the LoungeHeader (48 + 12 margin) so it doesn't
-      // overlap the eye-toggle / back-to-chat controls.
       Positioned(
-        top: 60,
+        top: isFull ? 16 : 60,
         right: 12,
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            _buildFullscreenButton(context),
+            const SizedBox(width: 8),
             if (_viewportTransformed && !_spotlightMode) ...[
               _buildResetViewButton(context),
               const SizedBox(width: 8),
