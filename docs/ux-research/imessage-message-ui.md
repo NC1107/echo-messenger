@@ -31,3 +31,16 @@ iMessage shows a **large centered group avatar cluster** (overlapping member ava
 
 ## 10. First-of-Day / First-of-Group Divider
 Critically, **iMessage does not show a "Today" label** for the current day's first message — the assumption is that the most recent message is from today. The first divider you see is for the **previous** day ("Yesterday") once you scroll up past today's messages, then day-of-week ("Monday"), then full date for older. The first message of a new sender-run within the same time window gets only the sender label (§3), not a divider. **Translates well** and saves vertical space versus Slack/Discord's always-on day headers — recommend we adopt this rule rather than mirror Slack.
+
+## 11. Density / Compactness Controls
+- iMessage does **not** expose a Cozy / Compact toggle the way Slack and Discord do. Density on iOS/macOS is controlled at the OS level: the system Dynamic Type setting scales text up/down, and Reduce Motion / Reduce Transparency adjust the bubble feel.
+- Bubble vertical rhythm is fixed: ~2 px gap within a same-sender run, ~8–10 px between senders. The app's "compactness" comes entirely from the run-length grouping logic + Dynamic Type — there is no separate density preset.
+- macOS Messages uses a tighter list-row look (smaller avatars, less inter-row padding) by default than iOS, but neither offers a user-facing preference.
+- **Translation to Echo:** treat density as an Echo-side preset rather than something iMessage informs directly. The lesson is that *good defaults* matter more than offering a toggle — iMessage hits a single tight default and lives with it.
+
+## 12. Channel Navigation (Sidebar vs Top Bar)
+- iMessage has **no concept of channels** within a conversation. Each conversation (1:1 or group) is a single message stream — there is no "general" / "voice" / "off-topic" sub-channel split. The left sidebar lists *conversations*, not channels within a conversation.
+- The closest analogue is iOS's per-conversation **details pane** (tap the conversation header), which surfaces attachments, links, and shared photos — adjacent to the message stream but not navigation.
+- **Translation to Echo:** because iMessage is single-stream, none of its message-UI patterns depend on whether channels are presented as a left sidebar or top tabs. The grouping, divider, and timestamp behaviour all work identically regardless of the channel-nav choice. If Echo chooses top-tab channels (like the screenshot showing `general | lounge` at the top), the message stream below those tabs can lift iMessage's patterns 1:1.
+
+**Summary:** the channel-nav choice (left sidebar vs top tabs) does not affect any of the message-list patterns documented above from iMessage.

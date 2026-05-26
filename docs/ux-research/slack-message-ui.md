@@ -43,3 +43,27 @@ Floats at the **top-right** of the message row on hover, slightly overlapping th
 
 ### Design reasoning summary
 Slack's choices optimise for **scannability of long, dense channel histories**: small avatars, aggressive grouping, no bubbles, and hover-revealed chrome keep the signal-to-noise ratio high. The rounded-square avatar is brand identity, not function. Threads sidestep the "long reply derails the channel" problem without fragmenting into sub-channels. For our app, the highest-leverage borrowings are: (a) 5-minute author grouping with hover-timestamp follow-ups, (b) Compact density theme, (c) rounded-square avatar option, (d) symmetric self-vs-other rendering.
+
+## 12. Density / Compactness Controls
+Slack exposes density as a single binary toggle, not a multi-tier picker. It lives under **Preferences → Themes → Compact** as a plain checkbox — there is no "Cozy / Normal / Compact" three-way selector. The two states are:
+
+- **Cozy (default):** 36 px rounded-square avatar in the left gutter, the sender's display name rendered **bold on its own header line** above the body, generous ~12-14 px row padding, and a multi-line body that wraps naturally below the header. This is the layout the rest of this document describes by default.
+- **Compact:** avatar shrinks to 20 px, the header (name + timestamp) collapses **inline with the body** as a single IRC-style line — conceptually identical to Discord's Compact mode — and row padding drops to ~4-6 px vertical. Follow-up messages in a 5-minute group still suppress the avatar entirely; the gutter just gets narrower to match the smaller avatar width. No indentation is introduced past the gutter.
+
+Crucially, **both modes preserve the same 5-minute same-author grouping rule** (§4). Compact does not change *what* groups; it only changes the chrome around each group. Names also stay **bold in both modes** — neither Slack nor Discord ever de-emphasises the sender label, which is the reader's primary scan anchor.
+
+**Translation to Echo:** Echo's existing Cozy / Normal / Compact tri-state is denser than Slack's binary, but where Slack and Discord agree, Echo should match: scale only padding and avatar size between tiers, and never touch the grouping logic, the bold-name treatment, or the gutter-alignment of follow-ups. Treat density as a chrome-only knob.
+
+## 13. Channel Navigation (Sidebar vs Top Bar)
+Slack's signature shell is a two-column **left sidebar**: a 60 px workspace-picker rail on the far left, then a ~240 px channel sidebar with collapsible sections (**Channels**, **Direct messages**, **Apps**). Channels are listed as `#channel-name` with mute/unread weight applied to the label. The whole channel sidebar can be collapsed to icon-only.
+
+Slack has **no built-in voice channels** in the Discord sense. Voice calls live as **Huddles**, launched from inside a channel and surfaced as a floating dock pinned to the bottom of the sidebar. There is no "voice channel" as a navigable node in Slack's tree — voice is an action you take *within* a text channel, not a sibling of it.
+
+**What in the message UI actually depends on the sidebar?** Almost nothing. List virtualization, 5-minute grouping, the hover toolbar, threading, reactions, date dividers, and the bubbleless row layout are all **sidebar-agnostic** — they're properties of the message column, not the shell around it. Two coupling points worth flagging:
+
+- The **"New messages" red divider** (§8) is part of the message list and survives identically across sidebar-shell or top-tab-shell layouts.
+- Slack's **Threads** tab is a top-level sidebar entry (not per-channel), so it *is* sidebar-coupled — but Echo has no threads at MVP, so this isn't load-bearing for the patterns Echo is borrowing now.
+
+Echo's existing top-tab channel layout (visible in the reference screenshot: `general | lounge` tabs at the top, with voice rendered as a sibling channel rather than a Huddle dock) **does not break** any Slack message-list pattern Echo wants to borrow.
+
+**Summary:** the channel-nav choice (sidebar vs top tabs) does **not** affect the message-list patterns Echo should borrow from Slack.

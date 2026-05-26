@@ -55,6 +55,34 @@ On message hover, a floating chip strip appears at the **top-right of the row, s
 
 Caveat from Discord's own users: the toolbar can occlude the inline reply-preview chip when hovering a reply, which is a known issue — worth designing around (e.g. shifting the toolbar down a few pixels when a reply preview is present).
 
+## 11. Density / Compactness Controls
+
+Discord exposes density as a first-class user preference: **Settings → Text & Images → Message Display** offers exactly two modes, **Cozy** (default) and **Compact**. There's no third tier and no per-channel override — the choice is account-global. Discord treats this as one of its core accessibility/comfort knobs, not a hidden power-user toggle.
+
+What actually changes between the two modes:
+
+- **Cozy:** 40 px circular avatars in the left gutter, the author name + long-form timestamp render on their own header line above the body, message bodies wrap as multi-line blocks, and each row carries roughly 16 px of vertical padding. Follow-up messages in a group omit the avatar but keep the indent — hovering the row reveals a dim short-form timestamp (`2:14 PM`) in the avatar column. The result feels conversational and breathes.
+- **Compact:** IRC-style single-line layout. The author name and timestamp render **inline with the body** (`2:14 PM DisplayName body text…`), avatars shrink to ~16-20 px (and only render on the first row of a group), vertical padding drops to roughly 4 px, and follow-ups lose the indented gutter — every row reads as a single horizontal line wherever possible.
+
+Crucially, **grouping logic is unchanged across modes**. The 7-minute same-author window still collapses runs into groups in Compact; only the padding and typography scale. This separation matters: density is a presentation concern, grouping is a semantic one.
+
+**Translation to Echo:** Echo's three-tier (Cozy / Normal / Compact) is a fine evolution — Normal sits between Discord's two modes and gives users a middle ground Discord doesn't ship. The principle to mirror is Discord's: only padding + avatar size scale with the density setting, never the grouping rules.
+
+## 12. Channel Navigation (Sidebar vs Top Bar)
+
+Discord's signature layout is a **four-column desktop shell**: a 72 px server-picker rail on the far left, a 240 px channel sidebar listing channels for the selected server, the message stream in the flex middle, and a collapsible 240 px member list on the right. Channels are grouped under collapsible category headers (`Text Channels`, `Voice Channels`, plus any custom categories the server admin defines) inside the channel sidebar.
+
+Voice channels live in the **same sidebar** as text channels — they're a different *type* of channel, not a separate area of the app. Joining a voice channel doesn't navigate away: the text-channel UI stays visible above a small voice dock that appears at the bottom of the sidebar. This keeps voice ambient rather than modal.
+
+**What in the message UI actually depends on the sidebar?** Almost nothing. The message-row layout, hover toolbar, grouping rules, reaction chips, reply previews, day/unread dividers, and welcome card are all identical regardless of whether channels live on a sidebar or top tabs. The only sidebar-coupled affordances are:
+
+- The "Above unread messages" jump-to indicator (works the same in either layout — it's anchored to the message list, not the sidebar)
+- Drag-to-rearrange channels (a sidebar-only affordance, but unrelated to message rendering)
+
+Echo's top-tab pattern (visible in the current screenshot: `general | lounge` tabs across the top of the channel) is **legitimate** — many chat products use it, and Microsoft Teams runs a hybrid (left rail for teams, top tabs for channels within a team). The message-UI guidance from this document applies regardless of which navigation shape Echo lands on.
+
+Summary: channel-nav choice (sidebar vs top tabs) does **not** affect the message-list patterns Echo should borrow from Discord.
+
 ---
 
 ## Sources
