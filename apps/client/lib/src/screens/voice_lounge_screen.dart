@@ -1088,16 +1088,22 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     // a separate scaffold layer underneath this widget. Pan is disabled while
     // drawing so single-pointer drags become strokes, not viewport pans.
     // Pinch + ctrl-scroll still zoom regardless.
+    //
+    // boundaryMargin: a finite-but-generous extent gives users room to
+    // arrange tiles past the visible viewport without ever scrolling into
+    // the void past the canvas edge. Infinity here meant the bordered
+    // canvas rectangle could be panned far off-screen, exposing the
+    // background and making the boundary line jarringly obvious.
     final viewportContent = _spotlightMode
         ? mergedContent
         : InteractiveViewer(
             transformationController: _viewport,
-            minScale: 0.5,
+            minScale: 0.6,
             maxScale: 4.0,
             panEnabled: !_isDrawing,
             scaleEnabled: true,
             trackpadScrollCausesScale: true,
-            boundaryMargin: const EdgeInsets.all(double.infinity),
+            boundaryMargin: const EdgeInsets.all(600),
             child: mergedContent,
           );
 

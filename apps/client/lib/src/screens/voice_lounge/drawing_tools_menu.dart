@@ -83,7 +83,7 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 240,
+      width: 280,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -287,42 +287,29 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
               ),
             ],
           ),
+          const SizedBox(height: 4),
+          // Icon-only export row. Three text labels at this menu width
+          // wrapped onto two lines ("PN G", "Sav e", "Loa d") — tooltips
+          // carry the affordance instead.
           Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Expanded(
-                child: TextButton.icon(
-                  onPressed: () => _exportPng(context),
-                  icon: const Icon(Icons.image_outlined, size: 16),
-                  label: const Text('PNG'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: context.textSecondary,
-                    textStyle: const TextStyle(fontSize: 12),
-                  ),
-                ),
+              _ExportIconButton(
+                icon: Icons.image_outlined,
+                tooltip: 'Export canvas as PNG',
+                onTap: () => _exportPng(context),
               ),
-              const SizedBox(width: 4),
-              Expanded(
-                child: TextButton.icon(
-                  onPressed: () => _exportJson(context),
-                  icon: const Icon(Icons.save_alt_outlined, size: 16),
-                  label: const Text('Save'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: context.textSecondary,
-                    textStyle: const TextStyle(fontSize: 12),
-                  ),
-                ),
+              const SizedBox(width: 12),
+              _ExportIconButton(
+                icon: Icons.save_alt_outlined,
+                tooltip: 'Save snapshot to JSON',
+                onTap: () => _exportJson(context),
               ),
-              const SizedBox(width: 4),
-              Expanded(
-                child: TextButton.icon(
-                  onPressed: () => _importJson(context),
-                  icon: const Icon(Icons.upload_file_outlined, size: 16),
-                  label: const Text('Load'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: context.textSecondary,
-                    textStyle: const TextStyle(fontSize: 12),
-                  ),
-                ),
+              const SizedBox(width: 12),
+              _ExportIconButton(
+                icon: Icons.upload_file_outlined,
+                tooltip: 'Load snapshot from JSON',
+                onTap: () => _importJson(context),
               ),
             ],
           ),
@@ -624,6 +611,39 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Compact icon-only button used for the canvas snapshot row. Carries the
+/// affordance label as a tooltip so the menu doesn't have to grow wider to
+/// fit "Save / Load / PNG" text on every locale + density combo.
+class _ExportIconButton extends StatelessWidget {
+  const _ExportIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkResponse(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          onTap();
+        },
+        radius: 22,
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Icon(icon, size: 18, color: context.textSecondary),
         ),
       ),
     );
