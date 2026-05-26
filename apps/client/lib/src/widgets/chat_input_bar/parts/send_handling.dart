@@ -200,9 +200,7 @@ extension _SendHandling on ChatInputBarState {
           replyToUsername: replyTo?.fromUsername,
         );
 
-    // Soft tactile feedback + send chime once the message is committed
-    // locally. The platform haptic is a no-op on desktop and respects
-    // the OS-level system-haptics setting on iOS.
+    // Haptic + chime on local commit (desktop no-op; iOS respects system-haptics setting).
     HapticFeedback.lightImpact();
     SoundService().playMessageSent().ignore();
 
@@ -271,9 +269,7 @@ extension _SendHandling on ChatInputBarState {
     final text = _messageController.text;
     final cursorPos = _messageController.selection.baseOffset;
 
-    // No selection (-1) means the field has never been focused; bail out
-    // before insertMention's no-op path so we don't dismiss the picker
-    // without inserting anything (would be a silent UX failure).
+    // cursorPos < 0 = field never focused; bail before silently dismissing the picker.
     if (cursorPos < 0) return;
 
     _messageController.value = insertMention(

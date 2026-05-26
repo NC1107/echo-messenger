@@ -36,10 +36,7 @@ class AppTheme extends _$AppTheme {
     return AppThemeSelection.indigo;
   }
 
-  /// Legacy-string migration table. The 9 -> 6 palette reduction renamed
-  /// `dark` -> `indigo`, `light` -> `paper`, collapsed `highContrast{Dark,Light}`
-  /// into a single `highContrast`, and removed `neon` / `aurora`. Any value
-  /// not in [AppThemeSelection.values] by name is migrated silently here.
+  /// Legacy-string migration for the 9→6 palette reduction (silent).
   static AppThemeSelection _migrateLegacy(String? value) => switch (value) {
     'paper' => AppThemeSelection.paper,
     'indigo' => AppThemeSelection.indigo,
@@ -64,9 +61,7 @@ class AppTheme extends _$AppTheme {
     final value = prefs.getString(_kThemeKey);
     final migrated = _migrateLegacy(value);
     state = migrated;
-    // One-shot write-back: if the persisted string isn't already the new
-    // canonical name, normalise it so subsequent loads skip the migration
-    // path and a manual prefs-file inspection shows the new value.
+    // Write-back canonical name so subsequent loads skip migration.
     if (value != migrated.name) {
       await prefs.setString(_kThemeKey, migrated.name);
     }
@@ -121,12 +116,8 @@ class MessageLayoutNotifier extends _$MessageLayoutNotifier {
   }
 }
 
-/// Aliases preserving the legacy provider symbols used by existing call
-/// sites and tests. Riverpod codegen derives the provider name from the
-/// notifier class name; we keep `class AppTheme` (not `Theme`, which would
-/// collide with Flutter's Material `Theme`) and `class MessageLayoutNotifier`
-/// (not `MessageLayout`, which is the enum), then re-export the historical
-/// short names.
+/// Aliases preserving legacy provider symbols; classes are named to avoid
+/// colliding with Material `Theme` and the `MessageLayout` enum.
 final themeProvider = appThemeProvider;
 final messageLayoutProvider = messageLayoutNotifierProvider;
 final uiDensityProvider = uIDensityNotifierProvider;
@@ -145,9 +136,7 @@ class UIDensityNotifier extends _$UIDensityNotifier {
   @override
   UIDensity build() {
     _load();
-    // Today's effective default is compact: MessageLayoutNotifier defaults
-    // to MessageLayout.compact, which currently shrinks the sidebar.  Match
-    // that here so brand-new users (no prefs at all) see no behavior change.
+    // Compact matches MessageLayoutNotifier's compact default (sidebar parity).
     return UIDensity.compact;
   }
 
@@ -155,11 +144,7 @@ class UIDensityNotifier extends _$UIDensityNotifier {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_kUiDensityKey);
     if (raw == null) {
-      // First read after upgrade.  If the user explicitly chose a
-      // non-compact MessageLayout (bubbles or plain), their sidebar
-      // was rendering at the spacious 68px height — preserve that by
-      // setting density to normal.  Otherwise keep the build() default
-      // (compact), matching today's behavior.
+      // Upgrade migration: preserve spacious sidebar for non-compact legacy layout.
       final legacy = prefs.getString(_kMessageLayoutKey);
       if (legacy != null && legacy != 'compact') {
         state = UIDensity.normal;

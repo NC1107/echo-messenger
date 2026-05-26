@@ -38,9 +38,7 @@ class RetryRow extends StatelessWidget {
           const SizedBox(width: 6),
           const Flexible(
             child: Text(
-              // Unified failure label across voice + text. Retry / Delete
-              // sit right next to this text, so the previous "Tap to retry"
-              // suffix was redundant. See F-030 in the 2026-05-19 UI audit.
+              // Unified label; "Tap to retry" suffix dropped since buttons sit alongside (F-030).
               "Couldn't send",
               style: TextStyle(
                 fontSize: 12,

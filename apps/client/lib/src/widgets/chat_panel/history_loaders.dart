@@ -68,9 +68,7 @@ _HistoryAuth? _resolveAuth(WidgetRef ref, Conversation conv) {
       : null;
   groupCrypto?.setToken(token);
 
-  // For 1:1 DMs, pass the crypto service so encrypted messages can be
-  // decrypted. Without this, `_decryptIfNeeded` sees crypto==null and
-  // shows "[Encrypted history]" instead of the actual message content.
+  // Pass crypto for 1:1 DM decrypt; without it `_decryptIfNeeded` shows "[Encrypted history]".
   final cryptoState = ref.read(cryptoProvider);
   final crypto = (!conv.isGroup && cryptoState.isInitialized)
       ? ref.read(cryptoServiceProvider)
@@ -120,11 +118,7 @@ void loadOlderMessages({
   required ChatPanelController controller,
 }) {
   final chatState = ref.read(chatProvider);
-  // Use the channel-aware helpers — the underlying maps key by
-  // `conversationId:channelId` (or `conversationId:` for the unchanneled
-  // group root), so a raw lookup by `conv.id` always missed in
-  // channelized groups, hiding active history loads and triggering
-  // duplicate paginate requests (#510).
+  // Channel-aware helpers (maps keyed by conv:channel) — raw conv.id lookup misses on channelized groups (#510).
   if (chatState.isLoadingHistory(conv.id, channelId: selectedTextChannelId) ||
       !chatState.conversationHasMore(
         conv.id,
@@ -142,9 +136,7 @@ void loadOlderMessages({
       : chatState.messagesForConversation(conv.id);
   if (messages.isEmpty) return;
 
-  // Use the oldest channel-scoped non-system message as the pagination
-  // cursor — see `ChatPanelController.paginationCursor` for the
-  // `#prod-2026-05-08` rationale.
+  // Oldest channel-scoped non-system msg as cursor (see ChatPanelController.paginationCursor / #prod-2026-05-08).
   final oldestTimestamp = controller.paginationCursor(messages).timestamp;
   final a = _resolveAuth(ref, conv);
   if (a == null) return;
@@ -278,9 +270,7 @@ Future<void> jumpToReplyQuote(JumpToReplyQuoteParams params) async {
     return;
   }
 
-  // Slow path: paginate older history until the target appears or
-  // `hasMore` flips to false.  Cap to 30 rounds (~1500 msgs at 50/round)
-  // so a stale or removed parent can't spin forever.
+  // Paginate older history until target or !hasMore; cap 30 rounds (~1500 msgs) so a removed parent can't spin.
   final a = _resolveAuth(ref, conv);
   if (a == null) return;
 

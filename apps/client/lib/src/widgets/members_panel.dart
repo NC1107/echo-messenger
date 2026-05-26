@@ -57,9 +57,7 @@ class MembersPanel extends ConsumerWidget {
     final isOwner = myRole == 'owner';
     final canRemove = isOwner || myRole == 'admin';
 
-    // Slice 7: group members by role (OWNER / ADMIN / MEMBERS) instead of
-    // online/offline. Online presence is still surfaced as a subtle dot
-    // and "online"/"away" activity line within each row.
+    // Group by role; presence stays surfaced via the per-row dot + activity line.
     int sortByName(ConversationMember a, ConversationMember b) =>
         a.username.toLowerCase().compareTo(b.username.toLowerCase());
 
@@ -100,10 +98,7 @@ class MembersPanel extends ConsumerWidget {
             ),
             child: Align(
               alignment: Alignment.centerLeft,
-              // The conversation header already shows "<N> members" as a
-              // subtitle (chat_header_bar.dart). Repeating the count on the
-              // right-rail header was redundant; keep the count off this
-              // surface and just label what the panel is.
+              // Chat header already shows "<N> members"; just label the panel here.
               child: Text(
                 'Members',
                 style: TextStyle(

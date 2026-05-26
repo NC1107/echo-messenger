@@ -158,9 +158,7 @@ class _ToolbarButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Use the Echo muted colour when the extension is present (production),
-    // fall back to the Material icon colour so the widget renders in plain
-    // MaterialApp test harnesses without throwing.
+    // Fall back to Material icon colour so plain MaterialApp test harnesses don't throw.
     final iconColor =
         Theme.of(context).extension<EchoColorExtension>()?.textMuted ??
         Theme.of(context).iconTheme.color;

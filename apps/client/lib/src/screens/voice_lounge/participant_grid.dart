@@ -225,11 +225,7 @@ class ParticipantGrid extends StatelessWidget {
     }
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Aim for a tile that's a comfortable ~220 px wide on desktop; the
-        // grid then naturally widens to fill ultrawide viewports rather than
-        // capping at 3 columns the way the old portrait/landscape heuristic
-        // did. Clamped to [2, 6] so tiny widths still get a 2-up layout and
-        // we never shrink avatars into illegibility on 4K monitors.
+        // ~220 px target tile; clamp [2, 6] so phones still get 2-up and 4K stays legible.
         const targetTileWidth = 220.0;
         final crossAxisCount = (constraints.maxWidth / targetTileWidth)
             .floor()
@@ -415,15 +411,7 @@ class _ParticipantTileState extends State<ParticipantTile> {
             clipBehavior: Clip.antiAlias,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(15),
-              // RepaintBoundary isolates the tile so audio-level rebuilds
-              // (~10 Hz) don't cascade into sibling tiles.
-              //
-              // BackdropFilter is desktop/mobile only. On web, CanvasKit
-              // composites the 12×12 Gaussian blur into an offscreen GPU
-              // texture every frame per tile — on Firefox/NVIDIA EGL that
-              // can saturate the CanvasRenderer thread and stall the
-              // lounge. The opaque `context.surface @ 0.30` underneath is
-              // enough on web without the blur.
+              // RepaintBoundary isolates ~10 Hz audio-level rebuilds; blur skipped on web (CanvasKit perf).
               child: RepaintBoundary(
                 child: _MaybeBackdropBlur(
                   enabled: !kIsWeb,

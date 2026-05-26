@@ -117,26 +117,19 @@ async fn deliver_one_batch(
             .await
             .unwrap_or_default();
 
-    // Messages that have a per-device row for SOME device of this user but not
-    // for the connecting device are undecryptable on this device. Distinguishing
-    // this from "no per-device fanout at all" (groups, plaintext, legacy rows)
-    // prevents shipping the wrong wire and permanently losing the message.
+    // Distinguish "per-device fanout exists but not for this device" from "no
+    // per-device fanout" so we ship the right wire (undecryptable vs canonical).
     let has_any_device_row =
         db::messages::message_ids_with_any_device_content(&state.pool, &all_ids, user_id)
             .await
             .unwrap_or_default();
 
-    // Track only IDs that the hub actually accepted into the recipient's
-    // outbound queue. Marking a message delivered without confirmed enqueue
-    // loses it if the queue was full or the socket had just closed.
+    // Only IDs the hub actually accepted — confirmed enqueue prevents loss.
     let mut delivered_ids: Vec<Uuid> = Vec::with_capacity(undelivered.len());
     let mut delivered_msgs: Vec<&db::messages::MessageWithSender> =
         Vec::with_capacity(undelivered.len());
-    // #584: per-device ledger — ALL frames that were successfully enqueued
-    // (decryptable AND undecryptable placeholders) must be recorded so this
-    // device doesn't see them again on the next reconnect.  messages.delivered
-    // stays false for undecryptable frames so sibling devices can still pick
-    // them up, but the per-device ledger prevents re-replay to THIS device.
+    // #584: ledger records ALL enqueued frames (including undecryptable
+    // placeholders) so this device doesn't re-replay them.
     let mut ledger_ids: Vec<Uuid> = Vec::with_capacity(undelivered.len());
 
     for msg in &undelivered {
@@ -176,11 +169,8 @@ async fn deliver_one_batch(
             continue;
         }
         if undecryptable.unwrap_or(false) {
-            // Don't mark messages.delivered = true: another device of the same
-            // user may still have a per-device row and should be able to replay
-            // it.  But DO record into the per-device ledger so this device
-            // doesn't re-receive the same undecryptable placeholder on the next
-            // reconnect (#584).
+            // #584: don't flip messages.delivered (sibling devices may still
+            // replay), but ledger this device so it stops re-receiving.
             tracing::warn!(
                 message_id = %msg.id,
                 user_id = %user_id,

@@ -14,15 +14,10 @@ part of '../../home_screen.dart';
 /// extend behaviour via mixins that share the same library scope.
 mixin _HomeScreenLifecycleMixin
     on ConsumerState<HomeScreen>, _HomeScreenActionsMixin {
-  // `_self` is provided by `_HomeScreenActionsMixin` (the `on` clause
-  // guarantees it's in scope); used throughout to reach private fields
-  // declared on `_HomeScreenState`.
+  // `_self` is provided by `_HomeScreenActionsMixin` for reaching private parent fields.
 
   Future<void> _initData() async {
-    // 1. Initialize crypto (awaited -- must complete before anything else).
-    // SplashScreen calls initAndUploadKeys() during auto-login, so this is
-    // typically a no-op (CryptoNotifier guards against double-init internally).
-    // The guard below avoids the async round-trip in the common case.
+    // 1. Init crypto — usually a no-op (Splash already called it); guard avoids the async round-trip.
     final cryptoState = ref.read(cryptoProvider);
     if (!cryptoState.isInitialized) {
       final cryptoNotifier = ref.read(cryptoProvider.notifier);
@@ -61,23 +56,13 @@ mixin _HomeScreenLifecycleMixin
     // 5. Load privacy preferences used for read-receipt/plaintext behavior.
     await ref.read(privacyProvider.notifier).load();
 
-    // 6. Check for app updates.  Awaited so step 6b can read the
-    // resulting release-notes body and decide whether to show the
-    // What's New modal — without await the body isn't populated yet
-    // and the modal silently skips.  Cached path is sync (≤ 1ms);
-    // network path is a single 10s-timeout GET so worst-case impact
-    // on home-screen first paint is bounded.
+    // 6. Check updates — awaited so 6b sees the release-notes body. Network path bounded 10s.
     await ref.read(updateProvider.notifier).check();
 
-    // 6b. Show the What's New modal once per upgrade.  No-op on fresh
-    // install (releaseNotesProvider bootstraps last_shown = appVersion
-    // so first launch never surfaces a changelog).
+    // 6b. Show What's New once per upgrade; no-op on fresh install.
     await _showWhatsNewIfNeeded();
 
-    // 7b. Init system tray (desktop only; no-op on web/mobile). The
-    // "Check for updates" menu item routes through _handleTrayCheckForUpdates
-    // so the tray service stays UI-agnostic and the toast surfaces here
-    // where we have a BuildContext.
+    // 7b. Init system tray (desktop only); tray-triggered toasts need a BuildContext here.
     unawaited(
       TrayService.instance.init(onCheckForUpdates: _handleTrayCheckForUpdates),
     );
@@ -110,19 +95,14 @@ mixin _HomeScreenLifecycleMixin
     final update = ref.read(updateProvider);
     if (update.updateAvailable) {
       if (update.dismissed) {
-        // User previously dismissed the banner for this version; the
-        // explicit re-check is their signal that they actually want to
-        // see it again, so surface a toast that points back at the
-        // version (the banner stays hidden until the cache rolls).
+        // User dismissed the banner — explicit re-check signals they want to see it again, so toast.
         ToastService.show(
           context,
           'Update available: v${update.latestVersion}',
           type: ToastType.info,
         );
       }
-      // Otherwise the persistent update banner already shows "vX is
-      // available" with Update/Download/Later actions — a transient
-      // toast on top of it would be redundant noise.
+      // Otherwise the persistent banner already shows the version; a toast would be redundant.
       return;
     }
     ToastService.show(
@@ -134,9 +114,7 @@ mixin _HomeScreenLifecycleMixin
 
   Future<void> _showWhatsNewIfNeeded() async {
     if (!mounted) return;
-    // Force AsyncNotifier.build() to run before reading .value — the
-    // first read of an AsyncNotifierProvider returns AsyncLoading; we
-    // need the resolved snapshot.
+    // Force AsyncNotifier.build() before reading .value (first read is AsyncLoading).
     await ref.read(releaseNotesProvider.future);
     if (!mounted) return;
     await maybeShowWhatsNew(

@@ -443,9 +443,7 @@ pub async fn edit_message(
     Path(message_id): Path<Uuid>,
     Json(body): Json<EditMessageRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Reject empty *and* whitespace-only edits.  Without the trim, a
-    // user could replace a real message with `"   "` and surface a
-    // blank bubble in the timeline.
+    // Trim before the empty-check so `"   "` doesn't surface a blank bubble.
     if body.content.trim().is_empty() {
         return Err(AppError::bad_request("Content cannot be empty"));
     }
@@ -453,11 +451,8 @@ pub async fn edit_message(
         return Err(AppError::bad_request("Content too long"));
     }
 
-    // Edits on encrypted conversations would broadcast plaintext to every
-    // member, breaking E2E confidentiality. Reject up front and surface a 409
-    // so the client can hide / disable the edit affordance.
-    // TODO: once per-device ciphertext fanout for edits is implemented,
-    // replace this guard with the proper edit-with-ciphertext path.
+    // Edits on encrypted conversations would broadcast plaintext — reject with
+    // 409 until per-device ciphertext fanout for edits lands (TODO).
     let convo_meta =
         db::messages::get_message_conversation_security(&state.pool, message_id, auth.user_id)
             .await
@@ -593,9 +588,7 @@ pub async fn search_messages(
         ));
     }
 
-    // Server-side full-text search is meaningless on encrypted conversations:
-    // the content column holds ciphertext, so matches would be false positives
-    // and the server should not attempt to index or scan E2E-encrypted content.
+    // Server-side search on encrypted conversations would scan ciphertext.
     let security = db::messages::get_conversation_security(&state.pool, conversation_id)
         .await
         .db_ctx("search_messages/security")?;

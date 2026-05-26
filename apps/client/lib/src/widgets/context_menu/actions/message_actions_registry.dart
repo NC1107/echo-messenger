@@ -55,15 +55,7 @@ ContextMenuSection _primarySection(MessageTarget t) {
         icon: Icons.forward_outlined,
         onTap: t.onForward,
       ),
-    // Discoverable "Add reaction" entry for right-click. The four-emoji
-    // inline header is fast for power users but isn't labeled, so casual
-    // users miss it entirely (validated on prod). Keeping the inline
-    // header *and* this row gives both audiences a path:
-    //   - inline header: one-click pick of the four most-recent emojis
-    //   - this row:      jumps straight into the full picker
-    // Hidden when the message is encrypted-unreadable (no reactions on
-    // a "[Could not decrypt…]" bubble) or when the parent didn't wire
-    // a reactions callback.
+    // Labeled "Add reaction" complements the unlabeled inline emoji header that casual users miss.
     if (!t.isEncryptedUnreadable && t.onOpenFullPicker != null)
       ContextMenuAction(
         label: 'Add reaction',
@@ -75,9 +67,7 @@ ContextMenuSection _primarySection(MessageTarget t) {
 }
 
 ContextMenuSection _utilitySection(MessageTarget t) {
-  // Pin/unpin and save/unsave are mutually exclusive — only one
-  // variant is wired at any moment, so we just expose whichever
-  // callback the caller provided.
+  // Pin/unpin and save/unsave are mutually exclusive — only the wired callback is exposed.
   final pinRow = _pinRow(t);
   final saveRow = _saveRow(t);
 

@@ -56,11 +56,7 @@ impl FromRequestParts<Arc<AppState>> for AdminUser {
             return Err(AppError::forbidden("Admin access required").into_response());
         }
 
-        // Re-auth window: the same JWT used for normal API calls is fine
-        // for admin endpoints only when it was minted recently.  Stale
-        // tokens get 401 with the `reauth_required` indicator so the
-        // client can prompt for the password without forcing a full
-        // logout.
+        // Admin endpoints require a recent token; stale → 401 reauth_required.
         if !admin_token_is_fresh(parts, &state.jwt_secret) {
             return Err(reauth_required_response());
         }
@@ -121,21 +117,15 @@ pub async fn get_stats(
     State(state): State<Arc<AppState>>,
     _admin: AdminUser,
 ) -> Result<impl IntoResponse, AppError> {
-    // One round trip per metric keeps the SQL readable.  All seven scans
-    // hit indexed columns (`identity_keys.last_seen`, `messages.created_at`,
-    // `feedback.status` / `created_at`) so even on a busy server the
-    // dashboard load stays cheap; we can fold this into one CTE later if
-    // it shows up in slow-query logs.
+    // One query per metric — all hit indexed columns; fold into a CTE later
+    // if it shows up in slow-query logs.
     let (users_total,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users")
         .fetch_one(&state.pool)
         .await
         .db_ctx("admin/users_total")?;
 
-    // "Active in last 24h" approximates presence via the MAX(last_seen)
-    // across each user's device fingerprints in `identity_keys`. That's
-    // the column the WS hub bumps on every connect (`update_last_seen`
-    // in `db::keys`). Users with no devices fall back to `created_at`
-    // so brand-new sign-ups still count for the first 24h.
+    // Presence via MAX(identity_keys.last_seen); brand-new users with no
+    // devices fall back to `created_at` so they still count for 24h.
     let (users_active_24h,): (i64,) = sqlx::query_as(
         "SELECT COUNT(*) FROM users u \
          WHERE COALESCE( \
@@ -161,11 +151,8 @@ pub async fn get_stats(
             .await
             .db_ctx("admin/groups_total")?;
 
-    // Hub-level counter: the WS hub keeps one DashMap entry per connected
-    // device, but we can't reach that map from a thread-state extractor
-    // without lifetime gymnastics.  Use the DB's view instead -- it
-    // approximates "currently online" via identity_keys.last_seen within
-    // the last 90 seconds.
+    // DB approximation of "online" (last 90s) since reaching the hub DashMap
+    // from a state extractor needs lifetime gymnastics.
     let (online_devices,): (i64,) = sqlx::query_as(
         "SELECT COUNT(*) FROM identity_keys \
          WHERE last_seen > NOW() - INTERVAL '90 seconds'",
@@ -231,9 +218,7 @@ pub async fn list_feedback(
     _admin: AdminUser,
     Query(q): Query<ListFeedbackQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Whitelist status values to keep the predicate sargable against the
-    // `feedback_status_created_at_idx` index.  Anything else 400s rather
-    // than silently returning an empty page.
+    // Whitelist keeps the predicate sargable against the status index.
     if !matches!(q.status.as_str(), "open" | "triaged" | "closed") {
         return Err(AppError::bad_request(
             "status must be one of: open, triaged, closed",

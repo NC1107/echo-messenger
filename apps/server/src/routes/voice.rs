@@ -70,10 +70,7 @@ pub async fn generate_token(
     state: State<Arc<AppState>>,
     Json(body): Json<TokenRequest>,
 ) -> Result<Json<TokenResponse>, AppError> {
-    // Look up the username so LiveKit participants display human-readable
-    // names instead of UUIDs.  The identity field doubles as the display
-    // name inside LiveKit, so using the username here means the client no
-    // longer has to race a post-connect `setName` call.
+    // Username doubles as the LiveKit display name; avoids a setName race.
     let user = db::users::find_by_id(&state.pool, auth.user_id)
         .await
         .db_ctx("looking up user for voice token")?
@@ -82,21 +79,15 @@ pub async fn generate_token(
     let username = user.username;
     let identity = body.identity.unwrap_or_else(|| username.clone());
 
-    // The provided identity must be either the username or the user_id.
-    // This prevents impersonation while still allowing legacy clients that
-    // send the UUID.
+    // Identity must be the username or user_id — prevents impersonation.
     if identity != username && identity != auth.user_id.to_string() {
         return Err(AppError::bad_request(
             "Identity must match authenticated user",
         ));
     }
 
-    // Security: derive the LiveKit room name from the conversation the caller
-    // claims membership of, then check membership against THAT same value.
-    // Earlier code accepted a separate `body.room` that was used as the JWT
-    // claim while membership was checked against `conversation_id`, so a
-    // member of conv A could request `{room: "<victim>", conversation_id: "<A>"}`
-    // and receive a token granting access to the victim's room.
+    // SECURITY: room name derives from the SAME conversation the membership
+    // check runs against; the old `body.room` allowed cross-room escalation.
     let conversation_id_str = body.conversation_id.or(body.channel_id).ok_or_else(|| {
         AppError::bad_request("conversation_id or channel_id is required for voice token")
     })?;
@@ -153,9 +144,7 @@ pub async fn generate_token(
         AppError::internal("Failed to generate voice token")
     })?;
 
-    // Optional explicit URL — lets ops redirect to a managed LiveKit or a
-    // non-default subdomain without a client release.  When unset the client
-    // falls back to deriving `wss://livekit.<server-host>`.
+    // Optional override; client falls back to `wss://livekit.<server-host>`.
     let url = std::env::var("LIVEKIT_URL")
         .ok()
         .filter(|u| !u.trim().is_empty());

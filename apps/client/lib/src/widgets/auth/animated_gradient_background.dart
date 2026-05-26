@@ -27,9 +27,7 @@ class _AnimatedGradientBackgroundState
     with SingleTickerProviderStateMixin {
   AnimationController? _controller;
 
-  // Three gradient colour pairs the animation cycles through.
-  // Each entry is [begin-accent-stop, end-accent-stop]; the dark background
-  // is always present as the dominant colour so saturation stays very low.
+  // Each entry is [begin-accent, end-accent]; dark mainBg dominates so saturation stays low.
   static const _stops = [
     [Color(0xFF0D0D2B), Color(0xFF0A0A0B)], // blue-leaning -> mainBg
     [Color(0xFF0B0B1F), Color(0xFF0F0A1A)], // indigo-leaning -> purple tint
@@ -74,13 +72,7 @@ class _AnimatedGradientBackgroundState
     // Re-check reduce-motion at build time so live changes apply.
     final reduceMotion = ref.watch(accessibilityProvider).reducedMotion;
 
-    // Capture the controller in a local so the AnimatedBuilder closure binds
-    // to a non-null reference even if `_controller` is later nulled out by
-    // `_maybeStartController` (e.g. user toggles reduce-motion while a tick
-    // microtask is already in flight). Without this capture the builder body
-    // re-read `_controller!.value` on every tick and threw
-    // "Null check operator used on a null value" from inside the framework
-    // microtask loop. See #915.
+    // Capture local so AnimatedBuilder closure doesn't NPE if reduce-motion toggle nulls _controller mid-tick (#915).
     final controller = _controller;
     if (reduceMotion || controller == null) {
       return const _StaticGradient();

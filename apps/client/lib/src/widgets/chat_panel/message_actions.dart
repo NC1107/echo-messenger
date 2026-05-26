@@ -106,10 +106,7 @@ Future<void> sendForwardedMessage(
             .firstOrNull;
         peerUserId = peer?.userId ?? '';
       } else {
-        // Look up the default text channel so the optimistic message has the
-        // same channelId that the server will return in message_sent.
-        // Without this, _replacePendingMessage's channelId filter never
-        // matches and the pending message times out to failed.
+        // Default text channel id needed so _replacePendingMessage's filter matches message_sent (otherwise → timeout/failed).
         final channels = ref.read(channelsProvider).channelsFor(target.id);
         channelId = channels.where((c) => c.isText).firstOrNull?.id;
       }

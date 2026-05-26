@@ -20,23 +20,9 @@ use super::AuthExtract;
 
 // ---------------------------------------------------------------------------
 // Refresh token cookie helpers
-//
-// The web client stores the refresh token in an HttpOnly + Secure +
-// SameSite=None cookie scoped to `/api/auth`. Mobile/desktop continue to
-// receive the token in the JSON body for backward compatibility. `/refresh`
-// accepts either; cookie wins when both are present.
-//
-// SameSite=None (relaxed from Strict in Phase 2 of the domain migration,
-// #1063) is required because the web build lives at `web.echo-messenger.us`
-// while the API lives at `us-east.echo-messenger.us` — Strict cookies are
-// dropped on the cross-site fetch. The remaining CSRF surface is bounded:
-// only `/api/auth/refresh` and `/api/auth/logout` read the cookie, and the
-// credentialed-CORS allow-list (explicit origins in `CORS_ORIGINS`, see
-// `routes/mod.rs`) prevents a malicious origin from reading the response.
-// Worst case is a forced session rotation or logout — annoying, not
-// credential-stealing. A proper CSRF token (double-submit cookie pattern)
-// is a post-beta hardening item.
 // ---------------------------------------------------------------------------
+// SameSite=None is required across the web↔API origin split (#1063); CSRF is
+// bounded by the credentialed-CORS allow-list (see `routes/mod.rs`).
 
 const REFRESH_COOKIE_NAME: &str = "echo_refresh";
 const REFRESH_COOKIE_MAX_AGE_SECS: i64 = 7 * 24 * 60 * 60;
@@ -69,9 +55,7 @@ fn allowed_origins() -> &'static [String] {
             "https://echo-messenger.us,https://web.echo-messenger.us,http://localhost:8081".into()
         });
         if raw.trim() == "*" {
-            // Wildcard CORS disables credentials anyway — no Origin check
-            // applies, leave empty so `validate_origin_for_credentialed` is
-            // a no-op.
+            // Wildcard CORS disables credentials → no Origin check applies.
             return Vec::new();
         }
         raw.split(',')
@@ -255,11 +239,8 @@ pub async fn login(
     jar: CookieJar,
     Json(body): Json<AuthRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Pre-computed Argon2id hash of a random string. Used when the requested
-    // user does not exist so that the response latency is indistinguishable
-    // from a wrong-password attempt (prevents username enumeration via timing).
-    // The 32-byte output (43 base64 chars) matches Argon2::default() output
-    // length to avoid measurable timing differences in the finalization pass.
+    // Dummy hash used when the user is missing so login latency does not leak
+    // username existence; output length matches Argon2::default().
     const DUMMY_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$bm9uZXhpc3RlbnQ$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
     let maybe_user = db::users::find_by_username(&state.pool, &body.username).await?;
@@ -317,21 +298,16 @@ pub async fn refresh(
     State(state): State<AuthExtract>,
     headers: HeaderMap,
     jar: CookieJar,
-    // `Result<Json<_>, _>` (not `Option<Json<_>>`): when the web client sends
-    // `Content-Type: application/json` with a zero-length body, axum's
-    // `Option<Json<T>>` extractor errors out before we get to look at the
-    // cookie, and the user gets logged out on every page refresh. With
-    // `Result<...>` we receive the rejection in-band and ignore it -- the
-    // cookie is still readable and the request can succeed.
+    // `Result<Json<_>, _>` not `Option<Json<_>>`: an empty body would otherwise
+    // reject before we read the cookie and log the web client out on refresh.
     body: Result<Json<RefreshRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
     // TD-43: forbid credentialed cookie use from origins outside the
     // allow-list. Absent Origin (mobile/desktop) passes through.
     validate_origin_for_credentialed(&headers)?;
 
-    // Cookie wins when both are present so the web client's HttpOnly cookie
-    // can never be silently overridden by a malicious JSON body. Mobile/desktop
-    // clients keep sending the token in the body and that path still works.
+    // Cookie wins over body so a malicious JSON body cannot override the
+    // web client's HttpOnly cookie; mobile/desktop continue to send via body.
     let cookie_token = jar
         .get(REFRESH_COOKIE_NAME)
         .map(|c| c.value().to_string())
@@ -400,9 +376,8 @@ pub async fn refresh(
         ));
     }
 
-    // Sentinel revoke: only one transaction can flip `revoked` from false to
-    // true.  If `fetch_optional` returns `None`, another request beat us to
-    // it — treat as concurrent reuse and revoke the family.
+    // Sentinel revoke: only one tx can flip `revoked` false→true; `None`
+    // means a concurrent reuse — family-revoke.
     let revoked: Option<(uuid::Uuid,)> = sqlx::query_as::<_, (uuid::Uuid,)>(
         "UPDATE refresh_tokens SET revoked = true \
          WHERE id = $1 AND revoked = false RETURNING id",
@@ -457,9 +432,7 @@ pub async fn refresh(
 
     let access_token = jwt::create_token(row.user_id, &state.jwt_secret)?;
 
-    // Re-read is_admin from the canonical row so promotion / demotion that
-    // happens between login and refresh propagates to the client on its
-    // next 15-minute access-token roll.
+    // Re-read is_admin so promotion/demotion propagates on the next refresh.
     let (is_admin,): (bool,) = sqlx::query_as("SELECT is_admin FROM users WHERE id = $1")
         .bind(row.user_id)
         .fetch_one(&state.pool)
@@ -547,11 +520,8 @@ pub async fn forgot_password(
             .await
             .is_ok()
         {
-            // SECURITY: never log the token. A token in the log stream is a
-            // 15-minute account-takeover oracle for anyone with log-read
-            // access (Loki, CloudWatch, syslog, dev workstation). Operators
-            // honor a reset by reading the `password_reset_tokens` table
-            // directly and delivering the token out-of-band.
+            // SECURITY: never log the token — log access would equal account
+            // takeover. Operators read it from `password_reset_tokens` directly.
             tracing::info!(
                 user_id = %user.id,
                 expires = %expires_at,
@@ -562,10 +532,8 @@ pub async fn forgot_password(
         }
     }
 
-    // Always 200 -- do not reveal whether the username exists.
-    // TD-73: return a JSON body for consistency with the rest of the API;
-    // some HTTP clients (and older fetch wrappers) trip on an empty body
-    // when the response carries a Content-Type expectation.
+    // Always 200 — do not reveal whether the username exists. TD-73: JSON body
+    // (not empty) keeps fetch wrappers happy with the Content-Type expectation.
     Ok((StatusCode::OK, Json(serde_json::json!({"ok": true}))))
 }
 
@@ -628,9 +596,8 @@ pub async fn reset_password(
         .await
         .map_err(|_| AppError::internal("Database error"))?;
 
-    // CR-4: invalidate outstanding 15-minute access tokens after the
-    // password change commits. Refresh tokens were already revoked inside
-    // the tx; this closes the access-token side of the same window.
+    // CR-4: invalidate outstanding access tokens too (refresh tokens were
+    // revoked inside the tx above).
     state.token_invalidator.invalidate(row.user_id);
 
     tracing::info!(

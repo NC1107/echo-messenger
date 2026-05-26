@@ -76,9 +76,7 @@ pub struct AddMemberRequest {
 pub struct UpdateGroupRequest {
     pub title: Option<String>,
     pub description: Option<String>,
-    // DO NOT add `is_encrypted` here. See the doc-comment on
-    // `CreateGroupRequest::is_encrypted`. The test below enforces the
-    // invariant at compile time so this stays catchable on CI.
+    // DO NOT add `is_encrypted` here (TD-7); the lockdown test below enforces.
 }
 
 #[cfg(test)]
@@ -93,18 +91,14 @@ mod update_group_request_lockdown {
     /// security-reviewed. See TD-7 in TECHNICAL_DEBT.md.
     #[test]
     fn is_encrypted_is_silently_dropped() {
-        // serde defaults to `deny_unknown_fields = false`, so unknown keys
-        // are dropped on parse. This deserialization MUST succeed and MUST
-        // NOT carry the encryption flag anywhere downstream.
+        // Unknown `is_encrypted` MUST be silently dropped (not propagated).
         let parsed: UpdateGroupRequest = serde_json::from_value(json!({
             "title": "x",
             "is_encrypted": true,
         }))
         .expect("title-only update should still deserialize");
         assert_eq!(parsed.title.as_deref(), Some("x"));
-        // No is_encrypted field on the struct — proven by virtue of this
-        // file compiling. Touch the other fields to keep the assertion
-        // intentional rather than smoke-test.
+        // No is_encrypted field — compile-time proof; assert intentionally.
         assert!(parsed.description.is_none());
     }
 }

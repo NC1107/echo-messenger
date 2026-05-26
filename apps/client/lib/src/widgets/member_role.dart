@@ -59,10 +59,7 @@ class MemberRoleBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     if (role != 'owner' && role != 'admin') return const SizedBox.shrink();
     final isOwner = role == 'owner';
-    // Reserve amber (EchoTheme.warning) for actual warnings — away
-    // presence, "Experimental" feature pills, etc. Owner gets the
-    // brighter `accentHover` accent variant so it still reads as
-    // distinct from Admin's `accent` at lower alpha.
+    // Owner uses accentHover (not amber) — amber is reserved for actual warnings.
     final bgColor = isOwner
         ? EchoTheme.accentHover.withValues(alpha: 0.22)
         : context.accent.withValues(alpha: 0.15);

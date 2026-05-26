@@ -1,11 +1,3 @@
-// Message-list rendering extracted from ChatPanel (round 2 refactor).
-//
-// Pure mechanical extraction: no behavior change. Owns the
-// skeleton/empty-state/list-with-scrollbar AnimatedSwitcher and the
-// per-row build logic (date dividers, unread divider, grouping windows,
-// system timeline rows). The parent ChatPanel still owns the
-// ScrollController (which drives the floating-date pill / new-messages
-// pill) and passes it down.
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
@@ -137,10 +129,7 @@ class ChatMessageList extends ConsumerWidget {
     return msg.content.startsWith('[system:');
   }
 
-  // TD-79: helpers take the cached `parsedTimestamp` directly so each call
-  // is O(1) lookup instead of a fresh `DateTime.parse` per neighbour. For a
-  // 30-row viewport this drops ~120 parses per repaint to zero on warm
-  // messages.
+  // TD-79: use cached `parsedTimestamp` to avoid re-parsing per neighbour on repaint.
   static bool _withinGroupingWindow(DateTime dt1, DateTime dt2) {
     return dt2.difference(dt1).inMinutes.abs() < 5;
   }
@@ -219,10 +208,7 @@ class ChatMessageList extends ConsumerWidget {
                 ? onDeleteFailed
                 : onConfirmDelete,
             onRetry: msg.status == MessageStatus.failed ? onRetryMessage : null,
-            // #582: editing on an encrypted conversation would broadcast
-            // plaintext to every member, breaking E2E. Until per-device
-            // ciphertext fanout for edits ships, suppress the affordance
-            // entirely on encrypted conversations. Server enforces with 409.
+            // #582: suppress edit on encrypted convs — would broadcast plaintext until per-device edit fanout ships.
             onEdit: conv.isEncrypted ? null : onEnterEditMode,
             onReply: onReply,
             onViewThread: onOpenThread,
@@ -249,16 +235,8 @@ class ChatMessageList extends ConsumerWidget {
       child: ListView.builder(
         controller: scrollController,
         padding: const EdgeInsets.only(bottom: 16),
-        // Pre-build ~one viewport of off-screen messages on each side so that
-        // momentum scrolling doesn't flash blank space while items mount. The
-        // Flutter default of 250 is too tight for chat where rows include
-        // images, reactions, and reply quotes that each take a frame to lay
-        // out. Tuned conservatively to keep memory in check on long histories.
-        //
-        // Flutter 3.41+ renames this to scrollCacheExtent. We keep the old
-        // name + ignore the deprecation so the build works against both the
-        // pinned SDK (3.41.x) and any local dev SDK that still predates the
-        // rename. Drop the ignore once .flutter-version moves above 3.41.9.
+        // 600 (vs default 250) keeps momentum scrolling from flashing blank rows.
+        // Flutter 3.41+ renames to scrollCacheExtent; drop ignore when .flutter-version > 3.41.9.
         // ignore: deprecated_member_use
         cacheExtent: 600,
         itemCount: messages.length + 1,

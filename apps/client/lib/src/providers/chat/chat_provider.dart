@@ -66,10 +66,7 @@ class Chat extends _$Chat
       _sendTimeouts.clear();
     });
 
-    // Plumb the GroupCryptoService 410-Gone callback into chat state.
-    // When the server reports "no envelope for this user at the latest
-    // version", flip the `groupsNeedingRotation` flag so the
-    // EncryptionStatusBanner surfaces the "Refresh key" affordance.
+    // 410-Gone callback → groupsNeedingRotation flag → EncryptionStatusBanner.
     final groupCrypto = ref.read(groupCryptoServiceProvider);
     void handler(String conversationId) {
       state = state.withGroupRotationNeeded(conversationId);
@@ -77,7 +74,7 @@ class Chat extends _$Chat
 
     groupCrypto.onGroupNeedsRotation = handler;
     ref.onDispose(() {
-      // Only detach if no later build installed its own handler.
+      // Only detach if a later build hasn't installed its own handler.
       if (identical(groupCrypto.onGroupNeedsRotation, handler)) {
         groupCrypto.onGroupNeedsRotation = null;
       }
@@ -89,17 +86,10 @@ class Chat extends _$Chat
   @override
   String get _serverUrl => ref.read(serverUrlProvider);
 
-  /// Add a single message to state. When [bumpReplyCount] is true (the live
-  /// WS path) and the message is a reply, the parent's `replyCount` is
-  /// incremented optimistically. Historical seeders (e.g. the thread panel's
-  /// `/replies` fetch) pass false because the parent's count already reflects
-  /// the server-authoritative total -- bumping again would inflate the badge
-  /// every time the panel was opened (#919).
+  /// (#919) Optimistic reply-count bump only when [bumpReplyCount] is true
+  /// (live WS); historical seeders pass false to avoid double-counting.
   void addMessage(ChatMessage msg, {bool bumpReplyCount = true}) {
-    // Detect duplicate-by-id BEFORE withMessage runs so we don't double-bump
-    // when the server echoes a message we've already counted (e.g. a group
-    // sender receiving their own broadcast back). withMessage dedups by id
-    // but _incrementReplyCount used to run regardless.
+    // Dedup-by-id BEFORE withMessage so server echoes don't double-bump.
     final alreadyKnown =
         state._messageIdIndex[msg.conversationId]?.contains(msg.id) ?? false;
 
@@ -135,9 +125,7 @@ class Chat extends _$Chat
     String? replyToUsername,
   }) {
     final pendingId = 'pending_${DateTime.now().millisecondsSinceEpoch}';
-    // Use the user's own username so their message renders symmetrically
-    // with everyone else's (no asymmetric "You" label). Falls back to the
-    // generic "You" only if the username somehow isn't loaded yet.
+    // Use real username for symmetry; "You" only as a last-resort fallback.
     final myName = ref.read(authProvider).username ?? 'You';
     final msg = ChatMessage(
       id: pendingId,
@@ -167,9 +155,9 @@ class Chat extends _$Chat
     _sendTimeouts.remove(pendingId)?.cancel();
     // Start a 15-second timeout — if no confirmSent() arrives, mark failed.
     _sendTimeouts[pendingId] = Timer(const Duration(seconds: 15), () {
-      // Atomically remove: if already cancelled by confirmSent(), skip.
+      // Atomic remove: skip if confirmSent() already cancelled it.
       final removed = _sendTimeouts.remove(pendingId);
-      if (removed == null) return; // timer was already cancelled
+      if (removed == null) return;
       _transitionToFailed(conversationId, pendingId, content);
     });
   }
@@ -257,10 +245,8 @@ class Chat extends _$Chat
     String? channelId,
     DateTime? expiresAt,
   }) {
-    // Replace the most recent pending/sending message in this conversation
-    // with the server-assigned ID so that delivery receipts can match it.
-    // Only clone the affected conversation's list; other entries stay
-    // reference-equal so Riverpod selectors for unaffected convs don't rebuild.
+    // Replace pending ID with server ID so delivery receipts match.
+    // Clone only the affected conv; other selectors stay reference-equal.
     final messages = state.messagesByConversation[conversationId];
     if (messages != null) {
       final (replacedPendingId, updatedMessages) = _replacePendingMessage(
@@ -343,10 +329,7 @@ class Chat extends _$Chat
     final messages = state.messagesByConversation[conversationId];
     if (messages == null) return;
 
-    // Detect transitions involving a failed reply so we can keep the parent
-    // replyCount in sync with the optimistic-bump bookkeeping (#830):
-    //   failed -> sending  (user retried)  : re-increment parent
-    //   sending|sent|... -> failed         : decrement parent (e.g. ws send threw)
+    // (#830) Keep parent replyCount in sync on failed↔retried transitions.
     ChatMessage? before;
     final idx = messages.indexWhere((m) => m.id == messageId);
     if (idx != -1) before = messages[idx];
@@ -396,9 +379,8 @@ class Chat extends _$Chat
       _sendTimeouts.remove(m.id)?.cancel();
     }
 
-    // Remove the conversation entry from both maps via full copies (removal
-    // cannot be expressed with spread syntax); this path is infrequent
-    // (leave/clear) so the cost is acceptable.
+    // Full copy required for removal (spread can't express it); leave/clear
+    // path is infrequent, cost acceptable.
     final newConvMap = Map<String, List<ChatMessage>>.from(
       state.messagesByConversation,
     )..remove(conversationId);

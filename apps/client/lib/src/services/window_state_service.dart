@@ -30,15 +30,9 @@ class WindowStateService {
   /// (no visible jump when the window grows).
   static const Offset _kTopLeftAnchor = Offset(40, 40);
 
-  /// Maximum allowed drift (in logical pixels) between the position we
-  /// requested via [setPosition] and the position the compositor actually
-  /// applied. When the drift exceeds this value we fall back to [center()].
-  ///
-  /// Wayland compositors that run with an XWayland fallback sometimes honour
-  /// `setPosition` on the first call but then silently undo it; compositors
-  /// without X11 support always ignore it. 200 px is large enough that a
-  /// compositor applying DPI scaling won't false-positive, but small enough to
-  /// catch the typical "window stayed at (0,0)" failure mode.
+  /// Drift tolerance (px) between requested and applied position; exceeding
+  /// triggers center() fallback. 200px catches "stuck at (0,0)" without
+  /// false-positives from DPI scaling.
   static const double _kPositionDriftTolerance = 200.0;
 
   /// True on a desktop platform where `window_manager` is supported.
@@ -100,16 +94,11 @@ class WindowStateService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final size = await windowManager.getSize();
-      // Do not persist geometry while the window is in the small splash state.
-      // The splash is 320×440; the minimum restore size is 720×480. Any window
-      // smaller than those thresholds means we are still in (or were left in)
-      // the splash phase and the coordinates would corrupt the next launch.
+      // Don't persist splash geometry — would corrupt next-launch restore.
       if (size.width < 720.0 || size.height < 480.0) return;
       await prefs.setDouble(_kWidthKey, size.width);
       await prefs.setDouble(_kHeightKey, size.height);
-      // On Wayland, getPosition() returns compositor-local coordinates that
-      // don't map to global screen position. Skip saving x/y to prevent bogus
-      // values from corrupting the next restore.
+      // Wayland's getPosition is compositor-local; skip x/y to avoid bogus restore.
       if (!isWaylandSession) {
         try {
           final pos = await windowManager.getPosition();
@@ -146,38 +135,29 @@ class WindowStateService {
       final prefs = await SharedPreferences.getInstance();
       final width = prefs.getDouble(_kWidthKey) ?? defaultSize.width;
       final height = prefs.getDouble(_kHeightKey) ?? defaultSize.height;
-      // Clamp to sensible minimums so a stale 100x100 setting can't render
-      // a useless window.
+      // Clamp so a stale tiny setting can't render an unusable window.
       final size = Size(
         width.clamp(720.0, 10000.0),
         height.clamp(480.0, 10000.0),
       );
       await windowManager.setSize(size);
 
-      // On Wayland, setPosition is a compositor no-op. Skip position restore
-      // and let the compositor decide where to place the window.
+      // Wayland: skip position restore (compositor owns placement).
       if (!isWaylandSession) {
-        // Restore saved (x, y) only when both axes land inside at least one
-        // connected display. A multi-monitor disconnect or resolution change
-        // can park a previously valid coordinate off-screen.
+        // Only restore when (x, y) lands inside a connected display.
         final savedX = prefs.getDouble(_kXKey);
         final savedY = prefs.getDouble(_kYKey);
         if (savedX != null &&
             savedY != null &&
             await _isOnScreen(savedX, savedY, size)) {
           await windowManager.setPosition(Offset(savedX, savedY));
-          // Safety-net drift check: verify the compositor actually applied the
-          // position. If the window drifted by more than the tolerance (e.g.
-          // XWayland or a non-standard compositor silently ignored the hint),
-          // fall back to center() so the window is always visible.
+          // Drift check: fall back to center() if compositor ignored the hint.
           await _centerIfDrifted(savedX, savedY);
           return;
         }
       }
 
-      // Wayland, first-launch, or no valid saved position: let the compositor
-      // decide placement. center() handles multi-monitor work-area quirks
-      // better than hand-computing the offset.
+      // No valid saved position: center() handles multi-monitor quirks.
       try {
         await windowManager.center();
       } catch (_) {
@@ -214,20 +194,8 @@ class WindowStateService {
     }
   }
 
-  /// True when at least 100 px of the window's top-left corner stays inside
-  /// ANY connected display's work area, so the user can always grab the
-  /// integrated title bar to drag the window back into view.
-  ///
-  /// Previously this checked only the PRIMARY display, which caused false
-  /// positives (or negatives) when:
-  ///   - the window was on a secondary monitor,
-  ///   - a monitor was unplugged between sessions (saved coord from the
-  ///     now-gone display would fail the primary-only check and fall back to
-  ///     center — correct, but the inverse was also possible: a coord that was
-  ///     off the primary but within the secondary was wrongly rejected).
-  ///
-  /// Now we iterate all displays and accept the coordinate if it falls inside
-  /// any one of them.
+  /// True when ≥100 px of the window's top-left stays inside ANY connected
+  /// display's work area (covers secondary monitors and disconnects).
   static Future<bool> _isOnScreen(double x, double y, Size size) async {
     try {
       final displays = await screenRetriever.getAllDisplays();
@@ -251,11 +219,8 @@ class WindowStateService {
     }
   }
 
-  /// Keep the update prompt in the same chromeless 320×440 window the
-  /// splash uses, so the two screens read as the same surface and the
-  /// swap stays seamless. Previously this widened the window to 400×520,
-  /// which left a visible band of empty space around the centred card
-  /// because the splash background is transparent at the OS level.
+  /// Keep update prompt at splash size (320×440) so the swap is seamless;
+  /// resizing left transparent OS-level gaps around the centred card.
   static Future<void> enterUpdatePrompt() async {
     if (!_isDesktop) return;
     try {
@@ -282,20 +247,15 @@ class WindowStateService {
     try {
       await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
       await windowManager.setSize(const Size(320, 440));
-      // Make the window background transparent so the splash card's
-      // rounded corners blend into the desktop instead of being framed
-      // by a rectangular OS surface.
+      // Transparent bg so splash card's rounded corners aren't framed by OS chrome.
       try {
         await windowManager.setBackgroundColor(const Color(0x00000000));
         await windowManager.setHasShadow(false);
       } catch (_) {
         // Transparency is best-effort; not every compositor supports it.
       }
-      // Anchor the splash near the top-left of the primary display so the
-      // post-splash window (which restores to a saved position OR the same
-      // top-left anchor) doesn't visibly jump on first launch. Wayland/X11
-      // compositors can apply the size change asynchronously, so we set
-      // the position again on the next frame as a safety net.
+      // Anchor near top-left so post-splash growth doesn't visibly jump.
+      // Re-apply next frame as safety net for async compositor size changes.
       await windowManager.setPosition(_kTopLeftAnchor);
       await Future<void>.delayed(const Duration(milliseconds: 16));
       await windowManager.setPosition(_kTopLeftAnchor);

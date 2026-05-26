@@ -198,9 +198,7 @@ class MessageTarget extends ContextMenuTarget {
   final VoidCallback? onDelete;
   final VoidCallback? onCopyId;
 
-  // Inline reactions header — null disables the header even when
-  // !isEncryptedUnreadable, useful for forwarded-message bubbles that
-  // shouldn't accept reactions at all.
+  // Null disables header even when !isEncryptedUnreadable (e.g. forwarded bubbles reject reactions).
   final void Function(String emoji)? onPickReaction;
   final VoidCallback? onOpenFullPicker;
   final List<String> recentReactions;

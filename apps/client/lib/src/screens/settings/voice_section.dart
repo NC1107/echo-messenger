@@ -227,13 +227,7 @@ class _VoiceVideoSectionState extends ConsumerState<VoiceVideoSection> {
     if (_devicesLoaded) return;
     _devicesLoaded = true;
 
-    // TestFlight build 500 crashed on iOS 26.5 with
-    // -[__NSDictionaryM isEqualToString:]: unrecognized selector
-    // when opening this screen. The exception is native (Objective-C
-    // runtime), but the trigger is this Dart -> flutter_webrtc call.
-    // Capture step-by-step breadcrumbs so the next reproduction leaves
-    // forensic data in the on-disk debug log instead of a stripped
-    // stack with no context.
+    // TestFlight 500 crashed iOS 26.5 with isEqualToString: in flutter_webrtc; breadcrumbs for next repro.
     DebugLogService.instance.log(
       LogLevel.info,
       'VoiceSettings',
@@ -276,10 +270,7 @@ class _VoiceVideoSectionState extends ConsumerState<VoiceVideoSection> {
           cameras.add({'id': d.deviceId, 'name': label});
         }
       }
-      // If the plugin returned nothing for a kind, keep a sentinel so the
-      // dropdown is never blank. Distinguish "zero devices enumerated"
-      // (Linux PulseAudio unavailable / sandboxed) from "devices returned
-      // but none matched this kind" (e.g. a server with no webcam).
+      // Keep a sentinel when empty so dropdowns aren't blank; distinguish no-enum vs no-matching-kind.
       final noEnum = devices.isEmpty;
       if (inputs.isEmpty) {
         inputs.add({
@@ -316,10 +307,7 @@ class _VoiceVideoSectionState extends ConsumerState<VoiceVideoSection> {
             '${outputs.length} out / ${cameras.length} cam',
       );
     } catch (e, st) {
-      // Persist the error so we can see it on the next launch even if
-      // the app crashed afterward. The previous bare `catch (_) {}`
-      // swallowed everything including the type-confusion that may
-      // precede the native isEqualToString: crash.
+      // Persist the error: bare `catch (_)` swallowed the type-confusion preceding the native crash.
       DebugLogService.instance.log(
         LogLevel.error,
         'VoiceSettings',
@@ -684,10 +672,7 @@ class _CameraPreviewState extends State<_CameraPreview> {
   }
 
   Future<void> _restart() async {
-    // Only attempt a restart once the renderer has been initialized — a
-    // device-id change that races initialize() would otherwise call
-    // _startStream() against an uninitialized renderer and throw a
-    // StateError on some webrtc plugin versions.
+    // Skip if renderer not yet initialised — device-id change racing init() throws StateError.
     if (!_rendererInitialized) return;
     await _stopStream();
     await _startStream();
@@ -753,21 +738,13 @@ class _CameraPreviewState extends State<_CameraPreview> {
 
   @override
   void dispose() {
-    // dispose() must be synchronous; fire-and-forget of _stopStream() left
-    // the camera hardware live on Android until the next GC. Instead, stop
-    // tracks synchronously here so the OS camera indicator clears the
-    // moment the widget unmounts. The async stream/renderer dispose
-    // futures are issued unawaited in the correct order.
+    // Sync dispose: async stop() left the Android camera live until GC, with the OS indicator on.
     _generation++;
     final stream = _stream;
     final rendererInitialized = _rendererInitialized;
     _stream = null;
     _rendererInitialized = false;
-    // Guard the srcObject clear — the underlying RTCVideoRenderer throws
-    // "Call initialize before setting the stream" if dispose() fires
-    // without the renderer ever having been initialised (the settings
-    // screen mounts the preview widget but the user never opened the
-    // camera step). Skip the clear if there was no init.
+    // RTCVideoRenderer throws on srcObject=null without init; skip the clear when uninitialised.
     if (rendererInitialized) {
       _renderer.srcObject = null;
     }

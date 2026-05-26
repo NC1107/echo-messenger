@@ -65,16 +65,11 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
       (_) => _cleanupTyping(),
     );
 
-    // Re-bind the websocket whenever the active server URL changes (#PR-2).
-    // We listen inside `build()`, so the subscription lasts as long as the
-    // notifier itself (matches the legacy constructor's lifetime).
+    // (#PR-2) Re-bind WS on server URL change; old origin must not see any frames.
     ref.listen<String>(serverUrlProvider, (previous, next) {
       if (previous == next) return;
-      // Always tear down the existing socket; the old origin must not see
-      // any further frames from this client.
       disconnect();
-      // Reconnect only if we still have an authenticated session.  The login
-      // flow will call `connect()` itself once auth completes.
+      // Login flow calls connect() itself if not yet authenticated.
       if (ref.read(authProvider).isLoggedIn) {
         connect();
       }
@@ -142,9 +137,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     final token = ref.read(authProvider).token;
     if (token == null) return;
 
-    // Cancel any pending reconnect timer before establishing a fresh
-    // connection — otherwise a queued backoff fire can race the manual
-    // connect and end up with two parallel channels (#830).
+    // (#830) Cancel pending reconnect — backoff fire would race connect into 2 channels.
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
 
@@ -164,9 +157,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
   }
 
   Future<void> _connectWithTicketOrFallback() async {
-    // Guard against concurrent reconnect calls that can create parallel channels.
-    // Channel is nulled in onDone/onError, so a non-null channel means we're
-    // actively connected or mid-connect.
+    // Non-null channel = active or mid-connect; prevents parallel channels.
     if (_channel != null) {
       return;
     }
@@ -195,9 +186,8 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     try {
       _channel = WebSocketChannel.connect(uri);
     } catch (e) {
-      // WebSocketChannel.connect can throw synchronously (e.g., invalid URI
-      // on web, mixed-content ws:// from https origin). Don't leave
-      // isConnected=true without a valid channel.
+      // WebSocketChannel.connect can throw sync (invalid URI on web, mixed-content);
+      // don't leave isConnected=true without a channel.
       debugPrint('[WebSocket] connect() threw: $e');
       DebugLogService.instance.log(
         LogLevel.error,
@@ -217,8 +207,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
       'Connected to $wsBase',
     );
 
-    // Reload conversations now that WebSocket is connected -- ensures the
-    // list is up-to-date even if the initial REST call raced with connection.
+    // Reload conversations in case initial REST raced with the WS connect.
     ref.read(conversationsProvider.notifier).loadConversations();
 
     _lastMessageTime = DateTime.now();
@@ -227,8 +216,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     _subscription = _channel!.stream.listen(
       (data) => _onMessage(data as String),
       onDone: () {
-        // Null out channel/subscription so _connectWithTicketOrFallback
-        // guard passes on the next reconnect attempt.
+        // Null these so the guard in _connectWithTicketOrFallback passes next time.
         _subscription = null;
         _channel = null;
         DebugLogService.instance.log(
@@ -236,8 +224,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
           'WebSocket',
           'Connection closed (onDone)',
         );
-        // Mark all peers offline on disconnect; reconnect will deliver a
-        // fresh presence_list snapshot that reconciles actual state (#436).
+        // (#436) Mark peers offline; reconnect's presence_list reconciles.
         clearOnlineUsers();
         state = state.copyWith(isConnected: false);
         _scheduleReconnect();
@@ -298,8 +285,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     _reconnectAttempts++;
     state = state.copyWith(reconnectAttempts: _reconnectAttempts);
 
-    // First reconnect is normal after a connection drop -- only log repeated
-    // failures so the debug log stays clean.
+    // Skip log on first reconnect (normal after drop); only log retries.
     if (_reconnectAttempts > 1) {
       debugLog(
         'Reconnecting in ${delayMs}ms '
@@ -363,8 +349,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
       await ref.read(cryptoProvider.notifier).retryKeyUpload();
     }
 
-    // Per-user device IDs collide across users (sender device 1 vs recipient
-    // device 1), so per-recipient maps are kept separate end-to-end (#522).
+    // (#522) Device IDs collide across users; keep per-recipient maps separate.
     final result = await _encryptMessageForSend(toUserId, content);
     if (result.payload == null) {
       _addFailedMessage(
@@ -586,10 +571,8 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     final isEncrypted = conversation?.isEncrypted ?? false;
 
     final String payload;
-    // GRP2 wires bind (conversation_id, message_id) into the sender
-    // signature, so when we pick the GRP2 path we have to mint the
-    // message_id BEFORE encrypting and tell the server to respect it.
-    // GRP1 paths leave this null and the server keeps minting its own.
+    // GRP2 binds (conv_id, msg_id) into the signature, so we mint msg_id
+    // pre-encrypt; GRP1 leaves null and server mints.
     String? clientMessageId;
     if (isEncrypted) {
       final encrypted = await _encryptForGroupSend(
@@ -634,9 +617,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
       'content': payload,
     };
     if (clientMessageId != null) {
-      // Only set when we minted it for a GRP2 send. Server's
-      // SendMessage handler honours this id when storing the
-      // message; without it the server falls back to gen_random_uuid().
+      // Only set for GRP2 sends; server honours this id when storing.
       msg['client_message_id'] = clientMessageId;
     }
     if (channelId != null && channelId.isNotEmpty) {
@@ -678,10 +659,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
       }
       final (_, keyBase64) = keyResult;
 
-      // Phase 2D dispatch: GRP2 if the cached envelope's
-      // min_wire_version pins us there, GRP1 otherwise. Old groups
-      // and groups whose rotator hasn't upgraded yet stay on GRP1
-      // until the next rotation bumps them.
+      // Phase 2D dispatch: GRP2 only when envelope's min_wire_version pins it.
       final minWireVersion =
           groupCrypto.cachedMinWireVersion(conversationId) ?? 1;
       if (minWireVersion >= 2) {
@@ -721,14 +699,8 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
       return keyResult;
     }
 
-    // Self-heal: if there's no usable key and the sender is the
-    // group's admin/owner, the wedged envelope is theirs to rotate.
-    // Run seedInitialGroupKey (which probes /keys/latest and bumps
-    // past the existing version) and retry the fetch. This rescues
-    // the most common stuck case — an owner whose group was wedged
-    // by an earlier client and who would otherwise see "Message
-    // may not have been delivered" forever, with no banner to tap
-    // because send-failures don't bump the receive-failure counter.
+    // Self-heal: owner/admin re-seeds wedged envelope (send-failures don't
+    // bump receive-failure counter so banner never fires otherwise).
     if (!_isAdminOrOwnerOf(conversation)) {
       return null;
     }
@@ -738,11 +710,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     );
     await ref.read(cryptoProvider.notifier).seedInitialGroupKey(conversationId);
     keyResult = await groupCrypto.getGroupKey(conversationId);
-    // TD-5: if seedInitialGroupKey lost a 409 race the local
-    // cache may still be empty even though the server now has
-    // a fresh key version. Force a network refetch before we
-    // give up, so a rotation won-elsewhere doesn't bounce the
-    // sender into the failed-message retry loop.
+    // TD-5: force fetch in case seedInitialGroupKey lost a 409 race.
     keyResult ??= await groupCrypto.fetchGroupKey(conversationId);
     return keyResult;
   }
@@ -769,10 +737,8 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     final crypto = ref.read(cryptoServiceProvider);
     final signingKey = crypto.signingKeyPair;
     if (signingKey == null) {
-      // Identity signing key isn't loaded yet (mid-init). Refuse
-      // to fall back to GRP1 because the envelope is pinned to
-      // GRP2 — that would just bounce off the receiver's
-      // min_wire_version guard. Surface as a typed failure.
+      // No signing key yet (mid-init); GRP1 fallback would bounce off receiver's
+      // min_wire_version guard, so fail typed instead.
       _addFailedMessage(
         '',
         _friendlyEncryptionError('Signing key unavailable for GRP2 send'),
@@ -947,8 +913,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     final myUserId = ref.read(authProvider).userId ?? '';
     handleServerMessage(json, myUserId);
 
-    // If the handler flagged session_replaced, disconnect cleanly and do NOT
-    // auto-reconnect -- the other session is the active one.
+    // session_replaced: disconnect, do NOT auto-reconnect (other session is active).
     if (state.wasReplaced) {
       _heartbeatTimer?.cancel();
       _heartbeatTimer = null;

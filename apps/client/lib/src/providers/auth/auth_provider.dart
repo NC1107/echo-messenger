@@ -62,10 +62,7 @@ class AuthState {
     this.isAdmin = false,
   });
 
-  // @S107: copyWith mirrors the AuthState constructor; refactoring to a param
-  // object would break the idiomatic `state = state.copyWith(field: value)`
-  // pattern used throughout the codebase. Each named param maps 1:1 to an
-  // immutable field on AuthState.
+  // S107: copyWith mirrors AuthState 1:1; param-object would break call sites.
   AuthState copyWith({
     bool? isLoggedIn,
     String? userId,
@@ -77,8 +74,7 @@ class AuthState {
     bool? isLoading,
     String? presenceStatus,
     bool? onboardingCompleted,
-    // Use the sentinel pattern so callers can explicitly clear statusText to
-    // null without copyWith silently keeping the previous value.
+    // Sentinel distinguishes "not passed" from "explicit null".
     Object? statusText = _kKeep,
     bool? isAdmin,
   }) {
@@ -152,11 +148,8 @@ class AuthNotifier extends _$AuthNotifier
   Future<void> register(String username, String password) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      // On web we MUST use the credentialed BrowserClient so the
-      // HttpOnly Set-Cookie refresh-token response header is actually stored
-      // by the browser. Without `withCredentials = true` the cookie is
-      // silently dropped from a CORS response and the user gets logged out
-      // on the next page refresh (#929).
+      // (#929) Credentialed BrowserClient required so HttpOnly Set-Cookie
+      // is actually stored across CORS responses.
       final client = buildHttpClient();
       final http.Response response;
       try {
@@ -174,9 +167,7 @@ class AuthNotifier extends _$AuthNotifier
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final accessToken = data['access_token'] as String;
-        // Server may or may not return refresh_token (backward compat).
-        // On web the token arrives as a Set-Cookie header handled by the
-        // browser; we deliberately ignore the body value to avoid storing it.
+        // Web: ignore body refresh_token; cookie path stores it via Set-Cookie.
         final refreshToken = kIsWeb ? null : data['refresh_token'] as String?;
         final userId = data['user_id'] as String;
         final isAdmin = data['is_admin'] as bool? ?? false;
@@ -204,9 +195,7 @@ class AuthNotifier extends _$AuthNotifier
           final data = jsonDecode(response.body) as Map<String, dynamic>;
           final code = data['code'] as String?;
           final serverMsg = data['error'] as String?;
-          // The most common signup-failure case deserves a friendlier
-          // toast than the server's literal 'Username already taken' —
-          // testers expect something they could plausibly act on (#1176).
+          // (#1176) Friendlier signup-collision copy than server's literal string.
           if (response.statusCode == 409 && code == 'username-taken') {
             errorMsg = 'That username is taken — try another.';
           } else if (serverMsg != null && serverMsg.isNotEmpty) {
@@ -228,11 +217,8 @@ class AuthNotifier extends _$AuthNotifier
   Future<void> login(String username, String password) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      // On web we MUST use the credentialed BrowserClient so the
-      // HttpOnly Set-Cookie refresh-token response header is actually stored
-      // by the browser. Without `withCredentials = true` the cookie is
-      // silently dropped from a CORS response and the user gets logged out
-      // on the next page refresh (#929).
+      // (#929) Credentialed BrowserClient required so HttpOnly Set-Cookie
+      // is actually stored across CORS responses.
       final client = buildHttpClient();
       final http.Response response;
       try {
@@ -250,8 +236,7 @@ class AuthNotifier extends _$AuthNotifier
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final accessToken = data['access_token'] as String;
-        // On web the refresh token arrives as a Set-Cookie header managed by
-        // the browser; ignore the body value to avoid storing it in JS memory.
+        // Web: ignore body refresh_token (cookie owns it; never store in JS memory).
         final refreshToken = kIsWeb ? null : data['refresh_token'] as String?;
         final userId = data['user_id'] as String;
         final avatarUrl = data['avatar_url'] as String?;
@@ -278,11 +263,8 @@ class AuthNotifier extends _$AuthNotifier
         // Start background service to keep WebSocket alive on mobile
         BackgroundService.instance.start();
       } else {
-        // Default to the status-code-driven copy so a 5xx never reads as a
-        // credentials problem. If the server returned a JSON `error` field
-        // AND we're in the credentials range (401/403), prefer the server
-        // copy (e.g. "Account locked"); otherwise the user-friendly status
-        // string wins.
+        // Status-driven copy by default; prefer server's 401/403 error string
+        // when present (e.g. "Account locked").
         String errorMsg = friendlyLoginError(statusCode: response.statusCode);
         if (response.statusCode == 401 || response.statusCode == 403) {
           try {
@@ -307,10 +289,7 @@ class AuthNotifier extends _$AuthNotifier
     state = state.copyWith(avatarUrl: url);
   }
 
-  /// Set of presence status values accepted by the server. Keeping the
-  /// client honest here avoids sending garbage that the server would just
-  /// reject with a 400 -- and protects callers that build the string from
-  /// user input or enum conversions.
+  /// Presence values accepted by the server (avoids 400 on enum/user input).
   static const _validPresenceStatuses = <String>{
     'online',
     'away',
@@ -385,8 +364,7 @@ class AuthNotifier extends _$AuthNotifier
     final origin = serverUrl ?? _serverUrl;
     final accessToken = state.token;
 
-    // Best-effort remote logout. On web this is the only way to clear the
-    // HttpOnly refresh cookie. On native it revokes the refresh-token row.
+    // Best-effort remote logout (clears HttpOnly cookie on web, revokes row on native).
     try {
       final client = buildHttpClient();
       try {
@@ -438,19 +416,9 @@ class AuthNotifier extends _$AuthNotifier
   @visibleForTesting
   Future<bool> refreshAccessTokenForTest({bool sendBody = true}) {
     if (!sendBody) {
-      // Temporarily null out the refresh token in state so _doRefreshAccessToken
-      // takes the kIsWeb-equivalent branch where no body field is included.
-      // We snapshot and restore so the test container stays consistent.
+      // Simulate web (no-body) branch to verify body contract in isolation.
       final saved = state;
-      state = state.copyWith(
-        isLoggedIn: true,
-        token: saved.token,
-        // refreshToken omitted so it stays as the current value in copyWith.
-        // Instead we manipulate _doRefreshAccessToken by patching state.
-      );
-      // Use the internal method directly -- it will see null refreshToken and
-      // on non-web that normally returns false.  For this test we override
-      // the guard so we can verify the body contract in isolation.
+      state = state.copyWith(isLoggedIn: true, token: saved.token);
       return _doRefreshAccessTokenNoBody();
     }
     return _doRefreshAccessToken();

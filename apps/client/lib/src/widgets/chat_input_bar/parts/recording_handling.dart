@@ -60,10 +60,7 @@ extension _RecordingHandling on ChatInputBarState {
         path: path,
       );
     } catch (e) {
-      // record's iOS / Android backends can throw on session-init failures
-      // (audio session in use by another app, codec unavailable, etc.).
-      // Without surfacing this, the user just saw nothing happen when they
-      // tried to record (#554).
+      // Surface session-init failures (audio busy, codec missing) — previously failed silently (#554).
       debugPrint('[ChatInput] _recorder.start failed: $e');
       if (mounted) {
         ToastService.show(
@@ -135,9 +132,7 @@ extension _RecordingHandling on ChatInputBarState {
       final bytes = await file.readAsBytes();
       _recordingAmplitudes.clear();
 
-      // Reject empty / near-empty recordings rather than uploading a
-      // 0-byte file that the server will reject anyway. The threshold is
-      // generous — even a 100ms aac frame is hundreds of bytes (#554).
+      // Reject <256B (server rejects 0-byte; 100ms aac is hundreds of bytes) (#554).
       if (bytes.length < 256) {
         if (mounted) {
           ToastService.show(

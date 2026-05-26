@@ -112,14 +112,7 @@ mixin _ConversationPanelListRendererMixin
       );
     }
 
-    // No conversations yet — show onboarding guidance.
-    //
-    // On wide (desktop / tablet) layouts the main pane already renders its
-    // own \"No conversation selected\" empty state with Add-contact /
-    // Browse-groups CTAs, so duplicating the same panel in the sidebar
-    // gives first-time users two identical pieces of guidance side by
-    // side. Suppress the sidebar copy in that case and leave the column
-    // visually empty; the main pane carries the affordance.
+    // Wide layouts already show the empty-state CTAs in the main pane; suppress sidebar duplicate.
     final isMobile = MediaQuery.sizeOf(context).width < 600;
     if (!isMobile) {
       return const SizedBox.shrink();
@@ -209,10 +202,7 @@ mixin _ConversationPanelListRendererMixin
       color: context.accent,
       child: Scrollbar(
         thumbVisibility: defaultTargetPlatform != TargetPlatform.iOS,
-        // Wrap the list in SlidableAutoCloseBehavior so opening a second row's
-        // swipe-action panel automatically closes any previously-open one —
-        // matches the iOS Mail / Messages pattern. Without this wrapper each
-        // Slidable is independent and several rows can sit half-open at once.
+        // SlidableAutoCloseBehavior closes other open swipe rows (iOS Mail pattern).
         child: SlidableAutoCloseBehavior(
           child: ListView.builder(
             physics: const AlwaysScrollableScrollPhysics(),

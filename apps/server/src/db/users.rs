@@ -40,28 +40,12 @@ pub async fn create_user(
     username: &str,
     password_hash: &str,
 ) -> Result<CreatedUser, sqlx::Error> {
-    // TD-44: first-user bootstrap — by default the first registration on an
-    // empty users table is promoted to admin (the original behaviour, kept
-    // so a fresh self-host install can get its operator in two HTTP calls).
-    //
-    // Self-hosters who plan to open registration up to other users BEFORE
-    // promoting themselves should set `ECHO_BOOTSTRAP_ADMIN_USERNAME` to
-    // their intended operator name; that locks first-user promotion to a
-    // single specific username and prevents the "first random signup
-    // becomes a permanent admin" race that the audit flagged. When the env
-    // var is set and the registration does not match, the row is created
-    // as a regular user even if it would otherwise satisfy the empty-table
-    // condition.
-    //
-    // The original race-safety property (a single statement so only one
-    // concurrent INSERT can see the table empty) is preserved: the env-var
-    // match is evaluated client-side as `$3` and the snapshot inside the
-    // statement still picks at most one winner.
+    // TD-44: first-user bootstrap. By default any first signup is promoted;
+    // setting `ECHO_BOOTSTRAP_ADMIN_USERNAME` pins promotion to that exact
+    // username. Single-statement INSERT preserves race-safety either way.
     let bootstrap_username = std::env::var("ECHO_BOOTSTRAP_ADMIN_USERNAME").ok();
     let matches_bootstrap = match bootstrap_username.as_deref() {
-        // When the env var is unset, retain legacy behaviour: any first
-        // signup is promoted. When it is set, only the exact-match
-        // username may be promoted.
+        // Unset → any first signup; set → exact-match only.
         None => true,
         Some(expected) => expected == username,
     };
@@ -298,9 +282,7 @@ pub async fn update_profile(
     user_id: Uuid,
     fields: &ProfileUpdate<'_>,
 ) -> Result<UserProfileRow, sqlx::Error> {
-    // NULL = field not in request (keep existing value).
-    // Empty string = user cleared the field (set to NULL in DB).
-    // Non-empty string = user set a value (store it).
+    // Tri-state: NULL = keep, empty = clear (DB NULL), non-empty = set.
     sqlx::query_as::<_, UserProfileRow>(
         "UPDATE users SET \
          display_name = CASE WHEN $2 IS NULL THEN display_name ELSE NULLIF($2, '') END, \

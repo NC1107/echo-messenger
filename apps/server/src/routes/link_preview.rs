@@ -154,18 +154,14 @@ async fn validate_url(url: &str) -> Result<ValidatedUrl, AppError> {
 
     let port = parsed.port_or_known_default().unwrap_or(80);
 
-    // TD-31: lock down the egress port so a bug elsewhere can't be used to
-    // probe internal services on uncommon ports (Redis 6379, Memcached
-    // 11211, ElasticSearch 9200, internal admin UIs on 8080, …).
+    // TD-31: egress port allow-list blocks SSRF probes of internal services.
     if !ALLOWED_PORTS.contains(&port) {
         return Err(AppError::bad_request(
             "URL port not permitted (only 80 and 443)",
         ));
     }
 
-    // TD-31: async DNS lookup so we don't stall a tokio worker. `lookup_host`
-    // also handles dual-stack (returns both v4 and v6) so the per-address
-    // SSRF check runs for every candidate the OS would have chosen.
+    // TD-31: dual-stack async lookup so SSRF check runs over every candidate.
     let addrs: Vec<std::net::SocketAddr> = tokio::net::lookup_host((host.as_str(), port))
         .await
         .map_err(|_| AppError::bad_request("Could not resolve hostname"))?
@@ -177,9 +173,7 @@ async fn validate_url(url: &str) -> Result<ValidatedUrl, AppError> {
         ));
     }
 
-    // Validate ALL resolved addresses are safe (reject if any is private).
-    // Checking the whole set defeats split-horizon DNS games where one
-    // record is public and another is internal.
+    // Validate ALL addrs — defeats split-horizon DNS games.
     for addr in &addrs {
         if is_ssrf_target(addr.ip()) {
             return Err(AppError::bad_request(
@@ -207,9 +201,7 @@ pub async fn fetch_preview(
 ) -> Result<Json<LinkPreviewResponse>, AppError> {
     let validated = validate_url(&body.url).await?;
 
-    // Pin the resolved IP so reqwest cannot re-resolve to a different
-    // (potentially private) address after our validation -- closes the
-    // TOCTOU DNS rebinding window.
+    // Pin the resolved IP so reqwest can't re-resolve (DNS rebinding TOCTOU).
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .redirect(reqwest::redirect::Policy::none())

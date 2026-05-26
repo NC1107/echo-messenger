@@ -1,21 +1,7 @@
-// Chunked / resumable upload client (#556).
-//
-// Mirrors the three Rust endpoints on `/api/media/upload`:
-//   1. POST   /init       → returns `{ upload_id, chunk_size }`
-//   2. PATCH  /{id}/chunk → appends one chunk at the next offset
-//   3. POST   /{id}/finalize → assembles the media row and returns
-//      the same shape the legacy single-shot endpoint does
-//   4. GET    /{id}       → re-sync after a 416 / crash
-//
-// The on-disk file is read incrementally in `chunk_size`-byte slices; no
-// part of the upload ever sits in RAM longer than one chunk.  Each chunk
-// gets up to [maxRetriesPerChunk] retries with exponential back-off; a
-// 416 from the server triggers a fresh GET so the client can pick the
-// right offset before retrying.
-//
-// The public return shape matches the existing [UploadClient.uploadFile]
-// result so callers can switch between the two paths without branching on
-// the return type.
+// (#556) Chunked/resumable upload client. Mirrors Rust /api/media/upload
+// endpoints (init/chunk/finalize/state). One chunk in RAM at a time;
+// retries with backoff and 416 → GET re-sync. Return shape matches
+// UploadClient.uploadFile so callers can swap without branching.
 
 import 'dart:async';
 import 'dart:convert';
@@ -324,29 +310,20 @@ class ChunkedUploadClient {
 
       if (resp.ok) return resp;
 
-      // 416 → re-sync from server and adjust the offset.  This is a
-      // one-shot correction; if the server tells us nothing, fall through
-      // to the regular retry path.
+      // 416 → one-shot re-sync from server offset, then fall back to retry.
       if (resp.statusCode == 416 && resp.bytesReceived >= 0) {
         final newStart = resp.bytesReceived;
-        // Don't keep bytes we've already shipped.  If the server is ahead
-        // of where we thought, advance; if behind, re-send the trailing
-        // slice.
         if (newStart > localStart) {
           final advance = newStart - localStart;
           if (advance >= localChunk.length) {
-            // Server already has more than we were about to send -- skip
-            // this whole chunk and let the outer loop fetch the next.
+            // Server is past our chunk; skip and let outer loop fetch next.
             return _ChunkResult.ok(bytesReceived: newStart);
           }
           localChunk = localChunk.sublist(advance);
           localStart = newStart;
           continue;
         }
-        // newStart < start: server lost progress; resume from there.
-        // We don't have the missing bytes here, so the caller's outer
-        // loop will re-derive the chunk on the next iteration.  Surface
-        // a synthetic ok=true so the outer loop re-reads from disk.
+        // Server lost progress; surface ok so outer loop re-reads from disk.
         return _ChunkResult.ok(bytesReceived: newStart);
       }
 
@@ -389,17 +366,14 @@ class ChunkedUploadClient {
     }
 
     if (resp.statusCode == 416) {
-      // Body shape mirrors the server-side `range_mismatch` AppError:
-      // `{ "bytes_received": N }`.  Defensive parse so a future body
-      // shape change doesn't crash the client.
+      // Server-side range_mismatch body: { "bytes_received": N }; defensive parse.
       var rebased = -1;
       try {
         final data = jsonDecode(text) as Map<String, dynamic>;
         final raw = data['bytes_received'];
         if (raw is num) rebased = raw.toInt();
       } catch (_) {
-        // Older servers may return an empty 416 body.  Trigger a state
-        // fetch as a fallback.
+        // Older servers may return empty 416 body — state fetch handles it.
       }
       if (rebased < 0) {
         rebased =
@@ -518,9 +492,7 @@ class ChunkedUploadClient {
   }
 
   Future<List<int>> _readSlice(File file, int start, int end) async {
-    // openRead is a `Stream<List<int>>` that lazily reads only the
-    // requested byte window from disk, so we never load the whole file
-    // into RAM even for multi-GB inputs.
+    // openRead lazily streams just the byte window — multi-GB safe.
     final out = <int>[];
     await for (final chunk in file.openRead(start, end)) {
       out.addAll(chunk);

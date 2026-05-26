@@ -56,9 +56,7 @@ pub(in crate::ws::message_service) const GROUP_WIRE_PREFIX_V2: &str = "GRP2:";
 ///   The group form is checked BEFORE base64 decoding because the `:`
 ///   character is not a valid base64 alphabet member.
 pub(in crate::ws::message_service) fn is_valid_ciphertext_shape(payload: &str) -> bool {
-    // Group wires carry a textual prefix that breaks naive base64 decode.
-    // Strip the prefix and verify the remainder is non-empty + valid base64
-    // with enough bytes for `nonce(12) || ct || tag(16)`.
+    // Group prefix must be stripped before base64 decode.
     for prefix in [GROUP_WIRE_PREFIX_V1, GROUP_WIRE_PREFIX_V2] {
         if let Some(after_prefix) = payload.strip_prefix(prefix) {
             let Ok(bytes) = BASE64.decode(after_prefix.as_bytes()) else {
@@ -75,10 +73,8 @@ pub(in crate::ws::message_service) fn is_valid_ciphertext_shape(payload: &str) -
         return false;
     };
 
-    // Initial-message wires (V1 / V2) start with the 0xEC magic byte plus
-    // a known version. We require the keys+ratchet wire to follow but only
-    // gate the prefix here; full structural validation lives in the crypto
-    // layer.
+    // V1/V2 initial wires: gate the magic+version prefix only; full struct
+    // validation lives in the crypto layer.
     if bytes.len() >= 2
         && bytes[0] == ECHO_WIRE_MAGIC
         && (bytes[1] == ECHO_WIRE_INITIAL_V1 || bytes[1] == ECHO_WIRE_INITIAL_V2)
@@ -256,10 +252,8 @@ pub(in crate::ws::message_service) fn validate_encrypted_payload(
 ) -> bool {
     match conv_kind {
         Some(ConversationKind::Direct) => {
-            // The canonical content field is persisted and relayed in
-            // NewMessage events, so it must be ciphertext-shaped — otherwise
-            // a client could pass valid recipient_device_contents while
-            // smuggling plaintext in `content`.
+            // Canonical `content` is persisted + relayed; must be ciphertext-
+            // shaped or a client could smuggle plaintext alongside valid rdc.
             if !validate_dm_canonical_content(state, sender_id, conversation_id, content) {
                 return false;
             }
@@ -327,9 +321,7 @@ pub(in crate::ws::message_service) async fn enforce_dm_recipient_includes_peer(
         }
     };
 
-    // The DM has exactly two members; everyone besides the sender is a peer
-    // that must receive ciphertext. `rdc` keys are user_id strings, so build
-    // a string-set view of the expected peers for the membership check.
+    // Every non-sender member must appear as an rdc key.
     let mut missing_peer = false;
     for member_id in &members {
         if *member_id == sender_id {
@@ -568,10 +560,7 @@ mod tests {
 
     #[test]
     fn shape_grp2_prefix_accepted() {
-        // Future GRP2 wires also flow through this validator without a
-        // coordinated server flip. Payload after the prefix is base64 of
-        // version(1) + nonce(12) + ct + tag(16) + sig(64); the structural
-        // floor here is just "≥ 28 bytes of decoded payload".
+        // GRP2 wires flow through without a server flip; floor is ≥28 bytes.
         let payload = format!("{GROUP_WIRE_PREFIX_V2}{}", group_envelope(64));
         assert!(is_valid_ciphertext_shape(&payload));
     }
@@ -616,9 +605,7 @@ mod tests {
             is_valid_ciphertext_shape(&payload),
             "GRP1-prefixed group ciphertext must be accepted",
         );
-        // Sanity-check the failure mode the fix corrects: dropping the prefix
-        // recovers a base64-decodable payload, but the FULL string with the
-        // `:` does not.
+        // Full string (with `:`) is not base64-decodable; stripped is.
         assert!(BASE64.decode(payload.as_bytes()).is_err());
     }
 }

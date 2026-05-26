@@ -118,8 +118,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel>
   @override
   void didUpdateWidget(covariant ConversationPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // When a conversation is selected externally, reset the filter so the
-    // selected conversation is visible and highlighted.
+    // Reset filter on external selection so the picked conversation is visible.
     if (widget.selectedConversationId != null &&
         widget.selectedConversationId != oldWidget.selectedConversationId &&
         ref.read(conversationFilterTypeProvider) !=
@@ -165,8 +164,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel>
 
     final pendingCount = contactsState.pendingRequests.length;
 
-    // Derived list is precomputed by sortedConversationsProvider — no
-    // sort/filter work happens here in the build path.
     final conversations = ref.watch(sortedConversationsProvider);
 
     return Container(
@@ -176,10 +173,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel>
           Column(
             children: [
               _buildLogoHeader(context, pendingCount),
-              // Mobile used to render a separate "Search conversations"
-              // filter bar here; removed in favour of the header's
-              // global-search icon (matches desktop, per the
-              // feedback_desktop_search memory rule).
               _buildFilterChips(),
               _buildReplacedBanner(context, wsReplaced),
               if (pendingCount > 0) _buildPendingBanner(pendingCount),
@@ -193,25 +186,9 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel>
                   wsOnlineUsers,
                 ),
               ),
-              // Hide the status bar on mobile narrow — redundant with the
-              // bottom tab bar that already exposes Settings + identity.
-              //
-              // Stack from top → bottom of the sidebar bottom chrome:
-              //   1. VoiceDock — full call controls when voice is active
-              //      (renders SizedBox.shrink() otherwise)
-              //   2. Update banner / bug-report row
-              //   3. VoiceFooter — slim "tap to return to lounge" handle
-              //      while voice is active (collapses when inactive)
-              //   4. User status bar
-              // VoiceDock used to be a floating AnimatedPositioned overlay
-              // at `bottom: 60` which occluded everything beneath it
-              // (F-029 in the 2026-05-19 UI audit) — flowing it inline
-              // means the bug-report and update affordances stay reachable
-              // during a call.
+              // VoiceDock is inline (not floating) so update/bug-report stay reachable during calls (F-029).
               if (MediaQuery.sizeOf(context).width >= 600)
-                // LayoutBuilder hands the dock the actual column width so
-                // it doesn't under-fill (sidebar default is 350, dock
-                // used to hardcode 320) or overflow on resize. TD-11.
+                // LayoutBuilder gives dock actual column width to avoid under-fill/overflow on resize (TD-11).
                 LayoutBuilder(
                   builder: (context, constraints) => VoiceDock(
                     width: constraints.maxWidth,
@@ -222,10 +199,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel>
                 _buildSidebarUpdateBanner(context),
               if (MediaQuery.sizeOf(context).width >= 600)
                 const SizedBox(height: 4),
-              // On narrow (mobile), VoiceFooter is rendered at the Scaffold
-              // level in home_screen.dart above the bottom tab bar — desktop
-              // exposes the same tap-to-return-to-lounge through VoiceDock
-              // above, so we don't double up on a second voice ribbon.
+              // Mobile renders VoiceFooter at Scaffold level (home_screen.dart); desktop uses VoiceDock above.
               if (MediaQuery.sizeOf(context).width < 600)
                 VoiceFooter(onNavigateToLounge: widget.onNavigateToLounge),
               if (MediaQuery.sizeOf(context).width >= 600)

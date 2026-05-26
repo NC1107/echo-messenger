@@ -116,10 +116,7 @@ class DebugLogService with ChangeNotifier {
     if (kIsWeb) return null;
     if (_logFilePath != null) return _logFilePath;
     try {
-      // getApplicationDocumentsDirectory works on iOS, Android, macOS,
-      // Linux, and Windows. On Linux this is ~/Documents/<app> which is
-      // less ideal than Support, but it's readable without a special
-      // entitlement on iOS — which is the primary target for this feature.
+      // Documents dir is readable on iOS without extra entitlement (primary target).
       final dir = await getApplicationDocumentsDirectory();
       _logFilePath = '${dir.path}/echo-debug.log';
       return _logFilePath;
@@ -197,12 +194,7 @@ class DebugLogService with ChangeNotifier {
   /// so elevated-severity breadcrumbs reach disk quickly and survive a crash
   /// that happens in the window immediately after logging.
   void log(LogLevel level, String source, String message) {
-    // Kick off a one-time file load so that any entries already on disk
-    // appear in the in-memory buffer before we start evicting.  This is
-    // async and may complete after several log() calls have already been
-    // added — that is fine; duplicates are not a concern because we only
-    // load once and subsequent log() calls append to the already-loaded
-    // buffer.
+    // Lazy one-shot file load; async-late completion is fine (load-once).
     if (!_loaded && !kIsWeb) {
       _loadFromFile();
     }

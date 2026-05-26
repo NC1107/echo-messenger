@@ -76,16 +76,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   Future<void> _init() async {
     final stopwatch = Stopwatch()..start();
 
-    // Slice 10: shrink the desktop window to a 320×440 splash before doing
-    // any async work, Discord-style. The window expands back to the user's
-    // last-known size after navigation lands on home/login.
+    // Slice 10: shrink desktop window to 320×440 splash before async work; restored on navigate.
     await WindowStateService.enterSplash();
-
-    // The iOS/macOS local-network permission explainer used to fire here
-    // before auto-login. Removed per direct user feedback — the bare OS
-    // dialog is enough, and the in-app overlay added friction on the
-    // splash that users didn't want. The service file is kept in case
-    // we want to restore a friendlier variant later.
 
     _setStatus('Checking session…');
     final loggedIn = await _attemptAutoLogin();
@@ -103,12 +95,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       }
     }
 
-    // Keep the splash visible long enough to read the wordmark + tagline
-    // and let the indigo sweep complete one cycle on FIRST install. After
-    // that the user has seen the brand moment — veterans don't need to
-    // pay the 1500 ms on every cold launch. Drop to a small 400 ms floor
-    // so the cross-fade still feels intentional but doesn't actively
-    // hold up the app.
+    // 1500 ms brand moment on first install; 400 ms floor on subsequent launches.
     stopwatch.stop();
     final elapsed = stopwatch.elapsedMilliseconds;
     final prefs = await SharedPreferences.getInstance();
@@ -129,9 +116,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     // instead of navigating immediately.
     final updateState = ref.read(updateProvider);
     if (!kIsWeb && update_svc.canAutoUpdate && updateState.updateAvailable) {
-      // Grow the chromeless splash window to a size that comfortably fits
-      // the actionable update prompt — the 320×440 splash dimensions
-      // crowded the Download/Restart/Skip stack.
+      // 320×440 splash too cramped for the Download/Restart/Skip stack.
       await WindowStateService.enterUpdatePrompt();
       if (!mounted) return;
       setState(() {
@@ -207,9 +192,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     final isLoggedIn = ref.read(authProvider).isLoggedIn;
     final deepLink = ref.read(pendingDeepLinkProvider.notifier).takeAndClear();
 
-    // Slice 10: restore the user's last-known window geometry as soon as we
-    // know we're leaving the splash. Fire-and-forget — navigation must not
-    // wait for the OS window resize.
+    // Slice 10: fire-and-forget window-geometry restore; navigation must not wait on OS resize.
     unawaited(WindowStateService.restore());
 
     if (isLoggedIn && deepLink != null) {
@@ -235,9 +218,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     context.go('/home');
 
     final cryptoState = ref.read(cryptoProvider);
-    // Only warn about regenerated keys when the user had prior messages on
-    // this device. Fresh logins on a new device would otherwise see a
-    // scary "history unavailable" banner that doesn't apply to them.
+    // Only warn about regenerated keys when prior messages exist; fresh logins shouldn't see it.
     final hadPriorMessages = MessageCache.entryCount() > 0;
     if (cryptoState.keysWereRegenerated && hadPriorMessages && mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -256,11 +237,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   }
 
   Widget _buildUpdatePrompt(BuildContext context) {
-    // Desktop renders inside the 320×440 chromeless splash window, so the
-    // update prompt has to reuse the splash shell — same `mainBg`, same
-    // ambient halo, same brand block — and just swap the bottom action
-    // slot. Mobile/web fall through to full-screen with the same
-    // composition, mirroring [_SplashBody.compact].
+    // Desktop reuses the 320×440 splash shell and just swaps the action slot.
     final isCompact =
         !kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.linux ||
@@ -320,10 +297,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     );
 
     if (isCompact) {
-      // Desktop: transparent Scaffold + rounded-clipped surface so the splash
-      // reads as a floating card on compositors that honour window
-      // transparency, and degrades gracefully to a squared-off card on those
-      // that don't.
+      // Transparent Scaffold + rounded clip: floating card on transparent compositors, squared elsewhere.
       return Scaffold(
         backgroundColor: Colors.transparent,
         body: ClipRRect(
@@ -502,19 +476,9 @@ class _UpdatePromptBody extends ConsumerWidget {
         ? const EdgeInsets.fromLTRB(28, 44, 28, 22)
         : const EdgeInsets.fromLTRB(36, 24, 36, 38);
 
-    // The previous layout used MainAxisAlignment.spaceBetween across the
-    // full viewport, which on anything larger than the 320×440 desktop
-    // splash window left huge empty gaps above and below the action block.
-    // Centring the brand + action as one tight stack and pinning the
-    // version label to the bottom keeps the prompt feeling like a focused
-    // card at every window size.
     return FadeTransition(
       opacity: fade,
-      // StackFit.expand forces the rounded card chain to fill the whole
-      // chromeless window. Without it the non-positioned Center wraps
-      // tightly around its content, the ClipRRect shrinks to that size,
-      // and the transparent window corners show through as black on
-      // compositors that don't paint window translucency.
+      // StackFit.expand: rounded card must fill chromeless window or transparent corners show through.
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -668,9 +632,7 @@ class _UpdatePromptBody extends ConsumerWidget {
             style: TextStyle(fontSize: 12, color: context.textMuted),
           ),
           const SizedBox(height: 6),
-          // Escape hatch for the user who tapped "Download" by accident
-          // on a 200 MB update — Skip is disabled while busy, so without
-          // this they're stuck waiting out the whole transfer.
+          // Escape hatch: Skip is disabled while downloading, so otherwise the user is stuck.
           Semantics(
             button: true,
             label: 'Cancel update download',

@@ -114,11 +114,7 @@ class LiveKitVoiceState {
     this.rttMs = 0,
   });
 
-  // @S107: copyWith mirrors LiveKitVoiceState's 21 immutable fields one-to-one.
-  // Refactoring into grouped param objects would break the idiomatic
-  // `state = state.copyWith(field: value)` calls scattered across the LiveKit
-  // event handlers and would not reduce overall complexity — the fields are
-  // genuinely independent (capture, video, peers, quality, timing).
+  // S107: copyWith mirrors 21 independent fields; grouping would break call sites.
   LiveKitVoiceState copyWith({
     bool? isActive,
     bool? isJoining,
@@ -286,9 +282,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
   }) async {
     if (_disposed) return;
 
-    // Prevent concurrent join sequences from racing each other.  This can
-    // happen when the user taps a new lounge while the previous join is still
-    // in flight (token fetch, room.connect, etc.).
+    // Prevent concurrent join sequences from racing (tap new lounge mid-join).
     if (_isJoining) {
       DebugLogService.instance.log(
         LogLevel.warning,
@@ -307,11 +301,8 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
 
     _isJoining = true;
 
-    // Fully tear down any existing room BEFORE starting the new join sequence.
-    // Awaiting here ensures the previous Room's EventChannel streams (LiveKit
-    // internal) are cancelled before a second Room tries to open its own
-    // streams on the same native channel — otherwise Flutter throws
-    // PlatformException(error, No active stream to cancel, null, null).
+    // Await full teardown before new join: prevents EventChannel stream collision
+    // (PlatformException "No active stream to cancel") on the LiveKit native side.
     await _teardownCurrent();
 
     state = state.copyWith(
@@ -349,8 +340,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
         'joinChannel: successfully joined channel $channelId',
       );
     } catch (e) {
-      // Surface the URL we tried so a 404 / DNS failure points ops at the
-      // exact subdomain that needs DNS or Traefik attention.
+      // Surface URL on failure so a 404/DNS error points ops at the right subdomain.
       final tried = attemptedUrl ?? '<token-fetch>';
       debugPrint('[LiveKitVoice] join failed at $tried: $e');
       DebugLogService.instance.log(
@@ -377,18 +367,9 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     String channelId,
     bool startMuted,
   ) async {
-    // ---- breadcrumb 0: pre-request microphone permission ------------------
-    // CRITICAL: iOS must grant mic permission BEFORE LiveKit's room.connect
-    // or any audio-track creation. LiveKit server logs from a real iOS
-    // crash showed: `room.connect` succeeded in 1.2s, then 22s later the
-    // peer connection died from watchdog SIGKILL. The 22s matches iOS
-    // killing the app for a blocked main thread, which is what happens
-    // when AVAudioSession activation in `setMicrophoneEnabled` collides
-    // with a TCC mic-permission prompt presented at the same time.
-    //
-    // Requesting permission FIRST drains the prompt into a clean idle
-    // context, so by the time room.connect/setMicrophoneEnabled run the
-    // permission is already .granted or .denied — no synchronous race.
+    // iOS: mic permission MUST resolve before room.connect / setMicrophoneEnabled
+    // or AVAudioSession activation races the TCC prompt and the watchdog SIGKILLs
+    // the app after ~22s of blocked main thread.
     final micPermitted = await _requestMicrophonePermission();
     if (!micPermitted) {
       DebugLogService.instance.log(
@@ -484,14 +465,8 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       rethrow;
     }
 
-    // Set display name so peers see a username instead of a UUID identity.
-    // Wrap in try/catch: setName triggers an UpdateOwnMetadata signal request
-    // that needs the `canUpdateOwnMetadata` grant in the LiveKit token. If
-    // the server-issued token is missing it, the SFU returns NOT_ALLOWED
-    // which closes the signal channel and cascades into every subsequent
-    // call (setMicrophoneEnabled, publish) failing. Server fix lives in
-    // routes/voice.rs but this guard stops a future grant regression from
-    // bricking the whole join flow.
+    // setName needs `canUpdateOwnMetadata` grant; missing grant closes signal
+    // channel and breaks every subsequent call. Guard against grant regression.
     final username = ref.read(authProvider).username;
     if (username != null && username.isNotEmpty) {
       try {
@@ -505,9 +480,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       }
     }
 
-    // ---- breadcrumb 4: microphone enable ------------------------------------
-    // Mic permission was already granted at the top of joinChannel
-    // (breadcrumb 0) so this call is non-blocking.
+    // Mic permission already resolved at breadcrumb 0; this call is non-blocking.
     final micEnabled = !startMuted;
     try {
       await room.localParticipant?.setMicrophoneEnabled(micEnabled);
@@ -520,11 +493,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       rethrow;
     }
 
-    // ---- PTT: start muted and install keyboard listener -------------------
-    // When push-to-talk is enabled the mic must be silent by default and
-    // only transmit while the configured key is held.  Override `micEnabled`
-    // so the mic is off at join time regardless of `startMuted`, then arm
-    // the listener that will call setCaptureEnabled on key-down/up.
+    // PTT: force mic off at join regardless of startMuted, then arm key listener.
     final voiceSettingsForPtt = ref.read(voiceSettingsProvider);
     final pttActive = voiceSettingsForPtt.pushToTalkEnabled;
     if (pttActive) {
@@ -559,17 +528,14 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     Room room,
     bool micEnabled,
   ) async {
-    // ---- breadcrumb 5: foreground service + CallKit -------------------------
     final resolvedChannelName = _resolveChannelName(conversationId, channelId);
     DebugLogService.instance.log(
       LogLevel.info,
       'LiveKitVoice',
       'joinChannel: starting background service / CallKit for "$resolvedChannelName"',
     );
-    // Promote the foreground service to voice mode (Android) and report
-    // an outgoing CallKit call (iOS) so the OS keeps the mic + audio
-    // session alive when the app is backgrounded.  Listen for Mute /
-    // Leave / End taps coming back from either UI.
+    // Foreground service (Android) + CallKit (iOS) keep mic/audio alive when
+    // backgrounded; listener routes their Mute/Leave taps back into state.
     _attachNotificationActionListener();
     unawaited(
       BackgroundService.instance.startVoice(
@@ -580,15 +546,8 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     );
     unawaited(
       VoiceCallKitService.instance.startCall(
-        // CallKit's iOS CXCall ID is required to be a valid UUID.
-        // flutter_callkit_incoming's Swift handler does
-        // `UUID(uuidString: params.id)!` and force-unwraps — passing the
-        // previous `"$conversationId:$channelId"` composite was not a
-        // valid UUID, so the force-unwrap crashed with EXC_BREAKPOINT
-        // (Swift fatal error) inside CallManager.startCall, killing the
-        // app every iOS voice join. channelId is already a UUID and is
-        // unique per voice room, which preserves the "rejoin same room
-        // is a no-op" dedup semantic.
+        // CallKit CXCall ID must be a valid UUID — Swift force-unwraps
+        // UUID(uuidString:); a composite "convId:chanId" crashed every iOS join.
         callId: channelId,
         channelName: resolvedChannelName,
         isMuted: !micEnabled,
@@ -604,10 +563,8 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
   /// LiveKit Room tries to open its EventChannel streams before the first
   /// Room's streams are fully closed.
   Future<void> _teardownCurrent() async {
-    // Stop background services and CallKit before cleaning up the room so
-    // the OS audio session is released in the right order.
+    // Stop background/CallKit before room so OS audio session releases in order.
     _detachNotificationActionListener();
-    // Use unawaited for fire-and-forget OS calls; errors are non-fatal.
     unawaited(BackgroundService.instance.stopVoice());
     unawaited(VoiceCallKitService.instance.endCall());
     unawaited(PipController.instance.disable());
@@ -615,9 +572,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     try {
       await _cleanupRoom();
     } on PlatformException catch (e) {
-      // Swallow "No active stream to cancel" that LiveKit's EventChannel
-      // emits when the room's broadcast stream is torn down a second time
-      // (e.g. disposed-screen navigation races a new joinChannel call).
+      // Swallow LiveKit "No active stream to cancel" on double-teardown races.
       debugPrint(
         '[LiveKitVoice] PlatformException during teardown (ignored): $e',
       );
@@ -670,10 +625,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
   /// Returns `true` if mic is available (granted or already authorised),
   /// `false` if denied / permanently denied.
   Future<bool> _requestMicrophonePermission() async {
-    // Web and non-mobile platforms handle permissions differently; the
-    // WebRTC stack requests them inline and the dialog is browser-native.
-    // Skip the explicit check on those platforms to avoid pulling record's
-    // platform channel into a path that doesn't need it.
+    // Web/desktop: WebRTC requests permission inline via browser-native dialog.
     if (kIsWeb ||
         defaultTargetPlatform == TargetPlatform.linux ||
         defaultTargetPlatform == TargetPlatform.windows ||
@@ -693,8 +645,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       }
       return granted;
     } catch (e) {
-      // Permission check itself threw (unusual). Log and proceed optimistically
-      // so a spurious error doesn't lock out users who already have permission.
+      // Proceed optimistically: don't lock out users when the check itself fails.
       DebugLogService.instance.log(
         LogLevel.warning,
         'LiveKitVoice',
@@ -799,9 +750,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       })
       ..on<ParticipantConnectionQualityUpdatedEvent>((event) {
         if (_disposed) return;
-        // Only the local participant's quality is surfaced in the dock —
-        // remote participants' quality is shown via individual presence
-        // dots elsewhere.
+        // Only local quality drives the dock badge; remote is shown elsewhere.
         if (event.participant.identity == room.localParticipant?.identity) {
           state = state.copyWith(
             localConnectionQuality: event.connectionQuality,
@@ -810,9 +759,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       })
       ..on<ActiveSpeakersChangedEvent>((event) {
         if (_disposed) return;
-        // Push-based: reacts within ~RTT to the server-side detector,
-        // rather than waiting for the 100ms local audio-level poll to
-        // ramp past the static threshold (#907).
+        // Push-based: server-detected speakers react within RTT, not poll cadence (#907).
         final ids = <String>{};
         for (final p in event.speakers) {
           final id = p.identity.isNotEmpty ? p.identity : p.sid.toString();
@@ -863,10 +810,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
         if (pub.track != null &&
             pub.subscribed &&
             pub.source == TrackSource.screenShareVideo) {
-          // Native side stores 16:9 default when 0 is passed; LiveKit
-          // doesn't surface frame dimensions synchronously, so we accept
-          // a slightly-off aspect for the first PiP entry.  Frame-size
-          // tracking via VideoTrackRenderer is a follow-up.
+          // Native stores 16:9 default for 0/0; LiveKit dims aren't sync-available.
           unawaited(PipController.instance.enable(width: 0, height: 0));
           return;
         }
@@ -919,13 +863,8 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
 
   void _startAudioLevelPolling() {
     _audioLevelTimer?.cancel();
-    // Web on CanvasKit is far more expensive per repaint than native, and
-    // every audio-level publish (currently observed by `ref.watch(
-    // livekitVoiceProvider)` callers in the lounge) triggers a wholesale
-    // rebuild of the participant grid. The 100 ms cadence that was fine
-    // on desktop/mobile crashed Chrome tabs in voice calls; throttle to
-    // 250 ms there and let `_pollAudioLevels` skip publishes when the
-    // numbers haven't meaningfully changed.
+    // Web CanvasKit repaint cost forces 250ms cadence (vs 100ms native) to avoid
+    // tab crashes; _pollAudioLevels also dedups when values barely change.
     final interval = kIsWeb
         ? const Duration(milliseconds: 250)
         : const Duration(milliseconds: 100);
@@ -966,21 +905,16 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     final room = _room;
     if (room == null || _disposed) return;
 
-    // Local audio level.
     final localLevel = room.localParticipant?.audioLevel ?? 0.0;
 
-    // Remote audio levels -- keyed by identity (stable, unique per participant)
-    // so the voice lounge UI can look them up consistently.
+    // Keyed by identity (stable+unique) so the lounge UI can look peers up.
     final peerLevels = <String, double>{};
     for (final p in room.remoteParticipants.values) {
       final key = p.identity.isNotEmpty ? p.identity : p.sid.toString();
       peerLevels[key] = p.audioLevel;
     }
 
-    // Dedup: when nobody is talking, the values are all near-zero on every
-    // tick — republishing identical state burns CanvasKit on web for no
-    // visual change. Compare to 0.01 because LiveKit returns floating
-    // noise around the silence floor that's not perceptible in the UI.
+    // Dedup near-silence (epsilon 0.01) so CanvasKit doesn't repaint on noise.
     if (!_disposed && _audioLevelsChanged(localLevel, peerLevels)) {
       state = state.copyWith(
         localAudioLevel: localLevel,
@@ -1028,13 +962,9 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     final room = _room;
     _room = null;
     if (room != null) {
-      // #927: restore per-participant track volumes to 1.0 BEFORE disconnect
-      // so the underlying MediaStreamTrack handles are still alive when the
-      // `Helper.setVolume` calls land. On Windows the per-track gain is
-      // applied via WASAPI session volume, which Windows persists across
-      // process lifetime — exiting with a reduced gain leaves the app
-      // visibly pinned at the lower level in the system mixer until the
-      // user manually re-adjusts it. Harmless no-op on other platforms.
+      // #927: restore per-track volumes to 1.0 BEFORE disconnect — Windows
+      // WASAPI persists session volume across process lifetime, leaving the
+      // system mixer pinned at the lowered level otherwise.
       try {
         await ParticipantVolumeController.instance.restoreAll(room);
       } catch (e) {
@@ -1070,19 +1000,14 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     unawaited(BackgroundService.instance.stopVoice());
     unawaited(VoiceCallKitService.instance.endCall());
 
-    // Synchronously null out references so in-flight callbacks hit null checks
-    // instead of accessing freed memory. The actual network disconnect is
-    // fire-and-forget on captured local references.
+    // Null refs sync so in-flight callbacks hit null checks, not freed memory.
     final listener = _roomListener;
     final room = _room;
     _roomListener = null;
     _room = null;
     listener?.dispose();
     if (room != null) {
-      // #927: chain the volume restore before disconnect so per-track gain is
-      // returned to 1.0 while tracks are still alive. See `_cleanupRoom` for
-      // the long-form rationale. Fire-and-forget by design — dispose is
-      // synchronous from the framework's POV.
+      // #927: restore volumes before disconnect (see _cleanupRoom for rationale).
       unawaited(
         ParticipantVolumeController.instance
             .restoreAll(room)

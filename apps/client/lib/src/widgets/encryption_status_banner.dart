@@ -77,12 +77,7 @@ class EncryptionStatusBanner extends ConsumerWidget {
     }
 
     if (sigFailed && conversation.isGroup) {
-      // GRP2 signature verification failed — a member of this group
-      // signed a message with a key that doesn't match their device's
-      // published verify key. Could be a benign device-rotation race,
-      // but it could also be forgery. We don't auto-recover; the user
-      // explicitly dismisses after they've contacted an admin / the
-      // sender out-of-band.
+      // GRP2 signature mismatch could be device-rotation race OR forgery — no auto-recover; user dismisses explicitly.
       return EchoBanner(
         icon: Icons.gpp_bad_outlined,
         severity: EchoBannerSeverity.danger,
@@ -101,15 +96,7 @@ class EncryptionStatusBanner extends ConsumerWidget {
     }
 
     if ((needsRotation || outOfSync) && conversation.isGroup) {
-      // Two paths funnel into the same banner:
-      // 1. needsRotation — the server reported 410 Gone from
-      //    /keys/latest because no envelope exists for this user at
-      //    the current key version. Another member must rotate us in.
-      // 2. outOfSync — repeated "[Could not decrypt...]" placeholders
-      //    crossed the threshold; the local cached key is probably
-      //    stale and a fresh envelope is sitting on the server.
-      // "Refresh key" drops the local cache + refetches; if the fetch
-      // returns 410 again the callback re-flags the conversation.
+      // needsRotation = server 410 (no envelope at current version); outOfSync = decrypt-failure threshold tripped.
       final message = needsRotation
           ? "This group's encryption key was rotated without you. Ask any "
                 'active member to refresh and send a message — the new '
@@ -178,14 +165,8 @@ class EncryptionStatusBanner extends ConsumerWidget {
   }
 
   String? _peerUserIdFor(Conversation conv, WidgetRef ref) {
-    // 1:1 conversations have exactly one "other" member.
     if (conv.members.length < 2) return null;
-    // The store-side userId of the current user is needed to exclude self,
-    // but the banner is constructed inside the per-conversation tree where
-    // myUserId isn't directly threaded. Walk members and pick the first
-    // non-self entry; the chat panel already filters self from member lists
-    // upstream, so members[0] is a safe heuristic here. For non-1:1 the
-    // banner is suppressed above.
+    // Chat panel already filters self from member lists upstream, so members.first is the peer.
     return conv.members.first.userId;
   }
 }

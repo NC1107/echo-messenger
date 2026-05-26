@@ -72,10 +72,7 @@ class MentionAutocomplete extends StatelessWidget {
 
   List<_BroadcastMention> get _filteredBroadcasts {
     if (mentionQuery.isEmpty) return _broadcasts;
-    // Defensive lowercase: callers from this codebase already pass a
-    // lowercased query (extractMentionQuery normalizes it), but the
-    // public API should not silently drop suggestions for a mixed-case
-    // query supplied by a future caller.
+    // Defensive lowercase for future callers; extractMentionQuery already normalises.
     final q = mentionQuery.toLowerCase();
     return _broadcasts.where((b) => b.keyword.startsWith(q)).toList();
   }
@@ -88,10 +85,7 @@ class MentionAutocomplete extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    // ListView uses `reverse: true`, so item 0 paints at the bottom (next
-    // to the text field).  Members come first (lower indices) so they sit
-    // closest to the cursor; broadcasts get pushed to the top of the
-    // picker — they're rarer and visually distinct.
+    // ListView is reverse:true — members first so they sit next to the cursor; broadcasts to the top.
     final total = memberRows.length + broadcastRows.length;
 
     return Container(

@@ -181,19 +181,7 @@ class _ChannelColumnState extends ConsumerState<ChannelColumn> {
   }
 
   Future<void> _join(GroupChannel channel) async {
-    // Two-step join, mirroring channel_bar.dart's `_handleVoiceChipTap`:
-    //
-    //   1. POST to /api/groups/:id/voice/:chan/join — records membership
-    //      so the server's voice session reflects the new participant.
-    //   2. LiveKit join — opens the WebRTC connection that actually
-    //      streams audio and is what flips `livekitVoiceProvider.isActive`
-    //      to true.
-    //
-    // The old code only did step 1, so voiceActive stayed false, the
-    // home screen's `_resolveRightPanel` refused to render the lounge,
-    // and any `onShowLounge` callback flicker-dismissed almost
-    // immediately. Issue surfaced once Column mode shipped — bar mode
-    // never had this bug because it did both calls already.
+    // Two-step join (mirrors channel_bar's `_handleVoiceChipTap`): server membership POST then LiveKit connect — skipping step 2 leaves voiceActive false and the lounge refuses to render.
     DebugLogService.instance.log(
       LogLevel.info,
       'VoiceLoungeUI',

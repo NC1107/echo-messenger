@@ -458,11 +458,7 @@ class VoiceDock extends ConsumerWidget {
       tooltip: 'Leave',
       iconSize: m.btnIconSize,
       onPressed: () async {
-        // Call the shared helper instead of bare setScreenShareEnabled(false)
-        // so that Linux portal cleanup (removePublishedTrack + track.stop +
-        // track.dispose) runs before disconnect. Guard with the sharing flag
-        // so toggleScreenShare only takes the stop-sharing branch, never the
-        // start-sharing branch.
+        // Use shared helper for Linux portal cleanup before disconnect; guard so toggleScreenShare only stops.
         if (screenShare.isScreenSharing) {
           await toggleScreenShare(context, ref);
         }

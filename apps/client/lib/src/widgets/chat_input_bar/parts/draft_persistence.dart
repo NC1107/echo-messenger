@@ -37,10 +37,7 @@ extension _DraftPersistence on ChatInputBarState {
   void _onTextChanged() {
     final text = _messageController.text;
     final empty = text.trim().isEmpty;
-    // Detect multiline either via explicit newlines or content long enough
-    // to soft-wrap at the current viewport width. The character threshold
-    // is recomputed in build() from MediaQuery so a 4K-wide input doesn't
-    // jump to multi-line halfway through a normal sentence.
+    // Threshold recomputed from viewport so 4K doesn't flip mid-sentence.
     final multiline =
         text.contains('\n') || text.length > _multilineCharThreshold;
     if (empty != _isTextEmpty || multiline != _isMultiline) {

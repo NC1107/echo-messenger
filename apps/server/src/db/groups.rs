@@ -59,11 +59,8 @@ pub async fn create_group_with_visibility(
 ) -> Result<GroupInfo, sqlx::Error> {
     let mut tx = pool.begin().await?;
 
-    // E2E encryption is an explicit opt-in (see CreateGroupRequest).
-    // The Phase 5 (audit OQ-3) default-on stance was rolled back when
-    // groups created with the GRP1 envelope path wedged under
-    // identity-key drift; the client now passes is_encrypted=true only
-    // when the creator explicitly chose the experimental toggle.
+    // OQ-3: E2E is opt-in only (default-on was rolled back due to GRP1 wedge
+    // under identity-key drift).
     let group: GroupInfo = sqlx::query_as(
         "INSERT INTO conversations (kind, title, is_public, description, is_encrypted) \
          VALUES ('group', $1, $2, $3, $4) \
@@ -111,12 +108,8 @@ pub async fn create_group_with_visibility(
         .execute(&mut *tx)
         .await?;
 
-    // Seed the default text + voice channels in the same transaction.
-    // Before TD-3, channel inserts ran AFTER tx.commit(); a partial
-    // failure (e.g. voice channel insert errors) left the group rows
-    // committed but with a missing channel, surfacing to the client as
-    // a 500 with no way to recover. Folding them in means the entire
-    // group either exists with both channels or doesn't exist at all.
+    // TD-3: seed default channels in the same tx so a partial failure
+    // doesn't leave a group with no channels.
     sqlx::query(
         "INSERT INTO channels (conversation_id, name, kind, topic, position, category) \
          VALUES ($1, 'general', 'text', NULL, 0, 'Text Channels')",
@@ -839,11 +832,8 @@ pub async fn bump_key_version_and_purge_envelopes(
         .execute(&mut *tx)
         .await?;
 
-    // We intentionally leave rows in `group_keys` alone — they only carry the
-    // sentinel "__envelope__" placeholder and the version number, which lets
-    // existing duplicate-version protection (UNIQUE(conversation_id,
-    // key_version)) continue to work for the next rotation upload. Old
-    // envelopes carry the actual ciphertext and are gone.
+    // Leave sentinel `group_keys` rows in place so UNIQUE(conv_id, key_version)
+    // still gates the next rotation upload.
 
     tx.commit().await?;
     Ok(row.0)
@@ -974,9 +964,8 @@ pub async fn accept_invite_token(
 ) -> Result<AcceptInviteOutcome, sqlx::Error> {
     let mut tx = pool.begin().await?;
 
-    // Lock the token row for update so concurrent accepts are serialised.
-    // #829: fetch expires_at / max_uses / use_count under the same lock so
-    // the post-pre-tx-check window cannot be exploited.
+    // #829: FOR UPDATE + lock-scoped re-read closes the TOCTOU window between
+    // the route's pre-tx check and use_count++.
     let row: (Uuid, Option<DateTime<Utc>>, Option<i32>, i32) = sqlx::query_as(
         "SELECT conversation_id, expires_at, max_uses, use_count \
          FROM group_invite_tokens WHERE token = $1 FOR UPDATE",
@@ -986,10 +975,7 @@ pub async fn accept_invite_token(
     .await?;
     let (conversation_id, expires_at, max_uses, use_count) = row;
 
-    // Re-validate under the lock (#829).  Bail out before mutating membership
-    // or incrementing use_count so concurrent accepts cannot over-consume a
-    // max-uses=N token.  The caller maps these outcomes to the same error
-    // shape the pre-tx checks already use.
+    // #829: bail before any mutation so a max-uses=N token can't over-consume.
     if expires_at.is_some_and(|exp| Utc::now() > exp) {
         // Read-only tx; rollback is implicit on drop, but be explicit.
         let _ = tx.rollback().await;

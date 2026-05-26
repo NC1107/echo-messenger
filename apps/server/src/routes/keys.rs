@@ -157,38 +157,17 @@ pub async fn upload_bundle(
 
     let device_id = body.device_id;
 
-    // Decode and verify signing_key + signature (required for MITM prevention).
-    //
-    // Proof-of-possession rationale (#74): requiring the client to provide a
-    // valid Ed25519 signature over `signed_prekey` bytes using `signing_key`
-    // implicitly proves possession of the signing private key -- an attacker
-    // that does not hold the private key cannot produce a valid signature.
-    // This is equivalent to a challenge-response: the signed_prekey bytes act
-    // as the message being signed, and the server verifies the signature with
-    // the uploaded public key.  The identity binding fingerprint (stored on
-    // first upload, checked on every subsequent upload) further prevents an
-    // attacker from swapping the identity key while keeping the signing key or
-    // vice-versa.  A separate explicit nonce challenge would add no additional
-    // security here because the attacker is already unable to forge the
-    // signature without the private key.
+    // #74: Ed25519 signature over `signed_prekey` proves possession of the
+    // signing private key (MITM prevention). Identity binding via fingerprint
+    // prevents swapping identity key while keeping signing key, or vice-versa.
     let signing_key_bytes = BASE64
         .decode(&body.signing_key)
         .map_err(|_| AppError::bad_request("Invalid base64 for signing_key"))?;
     verify_signed_prekey_signature(&signing_key_bytes, &signed_prekey, &signed_prekey_signature)?;
 
-    // --- Identity binding check (per-device) ---
-    // On first upload for this (user, device) the identity+signing key
-    // fingerprint is recorded on the identity_keys row. Subsequent uploads
-    // for the same device MUST match or the request is rejected with 409
-    // and a structured body the client uses to drive the
-    // `IdentityKeyConflictException` reset flow. Rotation requires
-    // POST /api/keys/reset_device (single device) or /api/keys/reset
-    // (full account).
-    //
-    // Legacy fallback: if the per-device fingerprint hasn't been bound yet
-    // (e.g. a device 0 row created before the migration backfill), fall back
-    // to the legacy per-user fingerprint so existing single-device users
-    // stay enforced during the rollout.
+    // Per-device identity binding: subsequent uploads must match the recorded
+    // fingerprint or 409 (drives client reset flow). Falls back to the legacy
+    // per-user fingerprint for unmigrated device-0 rows.
     let new_fingerprint = identity_fingerprint(&identity_key, &signing_key_bytes);
     let device_fp =
         db::keys::get_device_fingerprint(&state.pool, auth_user.user_id, device_id).await?;
@@ -241,9 +220,8 @@ pub async fn upload_bundle(
     )
     .await?;
 
-    // Bind the per-device fingerprint on first upload (or after a reset that
-    // cleared it). Done AFTER store_identity_key so the upsert above guarantees
-    // the row exists for `set_device_fingerprint` to update.
+    // First-upload (or post-reset) bind; must follow store_identity_key so
+    // the row exists for the UPDATE.
     if stored_fingerprint.is_none() {
         db::keys::set_device_fingerprint(&mut *tx, auth_user.user_id, device_id, &new_fingerprint)
             .await?;
@@ -312,10 +290,8 @@ pub async fn get_bundle(
     _auth_user: AuthUser,
     Path(user_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Try device 0 first (legacy single-device clients). TD-53: when no
-    // device-0 row exists, ask the DB for the *lowest* active device id in
-    // a single query instead of looping over `get_user_devices` and firing
-    // a 3-statement `get_prekey_bundle` per device.
+    // TD-53: fall through to the lowest active device id in a single query
+    // instead of looping over `get_user_devices`.
     let bundle = match db::keys::get_prekey_bundle(&state.pool, user_id, 0).await? {
         Some(b) => b,
         None => match db::keys::get_first_active_device_id(&state.pool, user_id).await? {
@@ -491,10 +467,8 @@ pub async fn revoke_other_devices(
     use crate::ws::handler::ServerMessage;
     use axum::extract::ws::Message as WsMessage;
 
-    // Self-lockout guard: refuse the request if the caller's current_device_id
-    // is not actually registered for this user. Without this check a client
-    // that passed a bogus ID (e.g. after a botched re-install) would silently
-    // wipe every one of its own devices.
+    // Self-lockout guard: without this a bogus current_device_id would wipe
+    // every one of the caller's own devices.
     let devices = db::keys::get_user_devices(&state.pool, auth_user.user_id).await?;
     if !devices
         .iter()
@@ -512,9 +486,7 @@ pub async fn revoke_other_devices(
             .await
             .db_ctx("revoke_other_devices")?;
 
-    // CR-4: invalidate every outstanding access token for this user. The
-    // current_device_id keeps its session via the next /refresh + login; the
-    // dropped devices lose access immediately rather than at JWT TTL.
+    // CR-4: drop access tokens now so revoked devices can't ride out the JWT TTL.
     if !revoked_ids.is_empty() {
         state.token_invalidator.invalidate(auth_user.user_id);
     }
@@ -640,11 +612,8 @@ pub async fn reset_device(
         return Err(AppError::unauthorized("Invalid password"));
     }
 
-    // Clear the device's fingerprint AND delete its identity_keys row +
-    // signed/one-time prekeys so the next upload binds cleanly. Both steps
-    // must commit together; a crash between them previously left the
-    // identity slot half-cleared and the next bundle upload could rebind
-    // to a different identity silently (TD-38).
+    // Both steps must commit together (TD-38): a crash between them previously
+    // left the identity slot half-cleared and let a re-upload rebind silently.
     let mut tx = state.pool.begin().await.db_ctx("reset_device/begin_tx")?;
     db::keys::clear_device_fingerprint(&mut *tx, auth_user.user_id, body.device_id)
         .await

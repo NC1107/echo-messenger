@@ -478,11 +478,7 @@ class _CanvasPainter extends CustomPainter {
 
   @override
   void paint(Canvas c, Size size) {
-    // saveLayer is required for BlendMode.clear (eraser) to carve only
-    // the strokes rather than punching through the underlying canvas.
-    // Skip the layer when there are no eraser strokes — drawing directly
-    // saves a viewport-sized offscreen buffer per paint, which on
-    // CanvasKit/Firefox is one of the heaviest GPU ops.
+    // saveLayer needed only for eraser BlendMode.clear; skip otherwise — offscreen buffer is heavy on CanvasKit.
     final needsLayer = _hasEraserStrokes();
     if (needsLayer) c.saveLayer(Offset.zero & size, Paint());
 
@@ -559,9 +555,7 @@ class _CanvasPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_CanvasPainter old) {
-    // Reference equality on the lists isn't enough — the provider may
-    // hand back a fresh List each tick. Compare lengths and the most-
-    // recent stroke id so identical state short-circuits the repaint.
+    // Provider may hand back fresh List each tick; compare lengths + last stroke id.
     if (old.canvas.strokes.length != canvas.strokes.length) return true;
     if (old.canvas.activePoints.length != canvas.activePoints.length) {
       return true;
@@ -705,9 +699,7 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
     if (_trail.isEmpty) {
       _trailTicker.stop();
     }
-    // Bump the notifier instead of setState — the CustomPainter listens to
-    // it via `repaint:` so only the trail layer repaints, not the whole
-    // avatar subtree.
+    // Bump notifier (CustomPainter `repaint:`) so only the trail layer repaints, not the avatar subtree.
     if (mounted) _trailTick.value = _trailTick.value + 1;
   }
 
@@ -830,12 +822,7 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
   Widget _buildAvatarWithTrail(Widget avatar) {
     if (_reduceMotion) return avatar;
 
-    // Keep the trail layer mounted whenever the avatar is — its painter
-    // listens to `_trailTick` and returns immediately when the buffer is
-    // empty, so an idle puck pays no per-frame cost beyond shouldRepaint
-    // staying false. This avoids re-mounting the CustomPaint (and the
-    // ensuing layout pass) whenever the trail buffer flips between
-    // empty and non-empty.
+    // Keep trail layer mounted (idle painter returns early) to avoid CustomPaint remount when buffer flips empty/non-empty.
     return Stack(
       clipBehavior: Clip.none,
       alignment: Alignment.center,

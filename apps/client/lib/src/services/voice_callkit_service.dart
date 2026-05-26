@@ -34,10 +34,7 @@ class CallKitEndAction extends CallKitAction {
 class VoiceCallKitService {
   VoiceCallKitService._() {
     if (!_isIos) return;
-    // Subscribe defensively — on a fresh install the plugin may not be
-    // fully registered yet and getting `onEvent` can throw on some iOS
-    // versions.  A failure here must NOT crash the app; CallKit
-    // integration just becomes a no-op.
+    // Defensive subscribe: fresh-install plugin race can throw; degrade to no-op.
     try {
       _eventSub = FlutterCallkitIncoming.onEvent.listen(
         _handleEvent,
@@ -87,23 +84,10 @@ class VoiceCallKitService {
       await endCall();
     }
 
-    // Bare-minimum IOSParams — every optional field we set in v0.0.299 has
-    // been a candidate for the on-tap crash, so we drop everything that
-    // isn't strictly required to start an outgoing call.  Notably
-    // `iconName` is gone (it referenced a CallKitLogo.png we don't bundle,
-    // a hard-crash trigger when CallKit tries to resolve the asset) and
-    // audioSessionMode is reset to 'default' to match the upstream
-    // example.
-    //
-    // audioSessionActive: false — LiveKit's WebRTC stack already calls
-    // AVAudioSession.setActive(true) during room.connect() and again when
-    // setMicrophoneEnabled creates the LocalAudioTrack. CallKit asking to
-    // (re-)activate the session was racing those calls and producing a
-    // native EXC_BAD_ACCESS in the audio render thread on iOS 17+ — a
-    // crash outside any Dart try/catch, so the user just saw the app
-    // disappear when joining a voice lounge. Setting this to false makes
-    // CallKit observe the session LiveKit established rather than fight
-    // for it.
+    // Bare-minimum IOSParams: every optional field has been a crash candidate.
+    // audioSessionActive=false: LiveKit already activates session via room.connect
+    // and setMicrophoneEnabled; CallKit re-activating races into EXC_BAD_ACCESS
+    // on iOS 17+. Keep CallKit as observer, not contender.
     final params = CallKitParams(
       id: callId,
       nameCaller: channelName,
@@ -123,12 +107,8 @@ class VoiceCallKitService {
       ),
     );
 
-    // CallKit failure must NOT take down the voice join — LiveKit is
-    // already connected by the time we get here, and the user's
-    // experience of "voice works but iOS may suspend faster" is far
-    // better than "tap channel, app crashes."  Catch everything,
-    // including platform exceptions, asset-resolution errors, and
-    // permission failures.
+    // CallKit failure must NOT block voice join — LiveKit is already connected;
+    // worst case is faster iOS suspension, not crash.
     try {
       await FlutterCallkitIncoming.startCall(params);
       if (isMuted) {

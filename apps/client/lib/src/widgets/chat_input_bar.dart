@@ -113,11 +113,7 @@ class ChatInputBar extends ConsumerStatefulWidget {
 enum _MentionMove { up, down }
 
 class ChatInputBarState extends ConsumerState<ChatInputBar> {
-  // The text composer, focus node, edit-message state, and (in a later
-  // slice) mention controller live on [_controller]. Forwarders below
-  // preserve the existing `_messageController` / `_inputFocusNode` /
-  // `_editingMessage` call sites so the file diff stays focused on state
-  // ownership and the `GlobalKey<ChatInputBarState>` API contract.
+  // Text, focus, edit, mention state lives on [_controller]; getters preserve old call-site shape.
   late final ChatInputController _controller;
   TextEditingController get _messageController => _controller.text;
   FocusNode get _inputFocusNode => _controller.focus;
@@ -153,20 +149,14 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   // File picker guard
   bool _isPickingFile = false;
 
-  // Edit mode state — lives on [_controller]. The widget's `_editingMessage`
-  // setter funnels through `_controller.enterEditMode` / `exitEditMode` so
-  // the notifier-fire order stays consistent.
+  // Edit mode on [_controller]; setter goes through enterEditMode/exitEditMode for consistent notifier order.
   ChatMessage? get _editingMessage => _controller.editingMessage;
   bool get _isEditing => _controller.isEditing;
 
-  // Mention autocomplete state — owned by a controller so the logic is
-  // unit-testable without pumping the whole composer (#513). Composed
-  // (not inherited) by [_controller] so its dispose hook is wired through.
+  // Mention controller is composed (not inherited) for unit-testability (#513).
   MentionComposerController get _mentionController => _controller.mention;
 
-  // Pending attachments + voice recording state live on [_controller].
-  // Forwarders preserve the existing `_pendingAttachments` / `_isRecording`
-  // / `_recorder` call sites.
+  // Pending attachments + voice recording on [_controller]; getters preserve old call sites.
   List<PendingAttachment> get _pendingAttachments =>
       _controller.pendingAttachments;
   bool get _hasPendingAttachment => _controller.hasPendingAttachment;
@@ -198,9 +188,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   int _mentionPickerIndex = 0;
   String _lastMentionQuery = '';
   bool _lastMentionShowing = false;
-  // Cached candidate list — recomputed only when picker state changes.
-  // Reading _mentionCandidates per keystroke was allocating a new filtered
-  // list each time (audit perf + frontend findings).
+  // Cached candidate list (recomputing per keystroke allocated a fresh filtered list each time).
   List<String> _cachedMentionCandidates = const [];
 
   @override
@@ -221,9 +209,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       _draftSaveTimer?.cancel();
 
       _mentionController.dismiss();
-      // Release every staged attachment's ValueNotifier — switching
-      // conversations was previously only releasing the last one (#623),
-      // leaking notifiers for the rest.
+      // Release ALL staged attachment notifiers on conv switch (#623 used to leak all but the last).
       _clearAllPendingAttachments();
       _messageController.clear();
       _controller.exitEditMode();
@@ -242,9 +228,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     _draftSaveTimer?.cancel();
     _messageController.removeListener(_onTextChanged);
     _mentionController.removeListener(_onMentionChanged);
-    // [_controller.dispose] handles text controller + focus node + mention
-    // controller + voice ticker + recorder + pending attachments dispose
-    // so the cancel-then-tear-down order stays in one place (#513, #623).
+    // _controller.dispose tears down all sub-controllers in the right order (#513, #623).
     _controller.dispose();
     super.dispose();
   }
@@ -367,11 +351,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       chatProvider.select((s) => s.replyToMessage),
     );
 
-    // Recompute the multiline threshold from the viewport width so the
-    // input row only flips to multi-line when the message is long enough
-    // to actually wrap visually.  Inter 14px averages ~7-8px/char; we
-    // subtract a generous fixed budget for icons/padding (~120px), divide
-    // the remainder by 8, and clamp to a sane band.
+    // Multiline threshold derived from viewport so flip happens when text actually wraps.
     final width = MediaQuery.sizeOf(context).width;
     _multilineCharThreshold = ((width - 120) / 8).clamp(35, 120).round();
 
@@ -428,9 +408,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                       statusText: inputStatusText,
                       onCancelEdit: _cancelEditMode,
                     ),
-                  // Reply preview bar — wrap in AnimatedSize so the bar
-                  // slides in/out instead of snapping when reply mode
-                  // is entered or dismissed (UX roadmap motion expansion).
+                  // AnimatedSize slides reply bar in/out instead of snapping.
                   AnimatedSize(
                     duration: MotionDurations.standard,
                     curve: MotionCurves.entrance,
@@ -451,10 +429,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                       onCancel: _removePendingAttachment,
                       onAnnotate: _annotatePendingAttachment,
                     ),
-                  // Markdown formatting toolbar (bold, italic, strike, code,
-                  // quote, link). Always visible on desktop. On mobile it's
-                  // hidden by default and toggled from the "+" attach sheet so
-                  // it doesn't permanently eat ~36 px of vertical real estate.
+                  // Markdown toolbar: always-on desktop; mobile is opt-in via "+" sheet so it doesn't eat 36px.
                   if (!isMobileLayout || _showFormatToolbarOnMobile)
                     MarkdownToolbar(
                       controller: _messageController,

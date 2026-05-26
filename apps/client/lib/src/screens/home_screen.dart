@@ -49,10 +49,7 @@ import 'discover_groups_screen.dart';
 import 'settings_screen.dart';
 import '../widgets/profile_sheets.dart';
 
-// Behaviour parts. Each part adds a mixin onto `_HomeScreenState` that
-// shares the same library scope (so private fields and methods are
-// freely visible across files). Mirrors `apps/client/lib/src/providers/
-// auth/` which uses the same `part of` + mixin pattern.
+// Behaviour mixins share the same library scope as `_HomeScreenState` via `part of`.
 part 'home_screen/parts/lifecycle.dart';
 part 'home_screen/parts/actions.dart';
 part 'home_screen/parts/listeners.dart';
@@ -149,16 +146,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   // Search focus node for Ctrl+K shortcut
   final _searchFocusNode = FocusNode();
 
-  // Inline "What's New" notes for the desktop overlay path. When non-null
-  // the body Stack renders a [WhatsNewInlineOverlay] above the page so
-  // the AppTitleBar remains draggable.
+  // Non-null = render WhatsNewInlineOverlay above the page so AppTitleBar stays draggable.
   ReleaseNotesView? _whatsNewNotes;
 
-  // Edge-swipe state for narrow chat → conversation-list navigation. Kept
-  // on the parent class because `_swipeSnapController` is initialised in
-  // `initState` and disposed in `dispose`, while the gesture handlers live
-  // in narrow_layout.dart — splitting the state across parts would scatter
-  // fragile animation timing across files.
+  // Edge-swipe state lives on parent so initState/dispose own the AnimationController
+  // even though gesture handlers live in narrow_layout.dart.
   double? _swipeStartX;
 
   // Progress of the in-flight edge swipe: 0.0 (idle) → 1.0 (threshold reached).
@@ -222,9 +214,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     if (state == AppLifecycleState.resumed) {
       ref.read(contactsProvider.notifier).loadPending(force: true);
     } else if (state == AppLifecycleState.detached) {
-      // Only leave voice on full app termination, not on background.
-      // Mobile users expect calls to continue when switching apps or
-      // locking the screen.
+      // Only leave voice on full app termination; backgrounded calls must keep running.
       _voiceRtcNotifier.leaveChannel();
     }
   }
@@ -249,10 +239,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           const SingleActivator(LogicalKeyboardKey.keyK, control: true): () {
             _showQuickSwitcher();
           },
-          // Ctrl+F and Ctrl+Shift+F both open the global search overlay.
-          // Ctrl+F matches the OS-native "find" muscle memory; the older
-          // Ctrl+Shift+F stays bound so existing users don't have to relearn.
-          // The per-chat magnifying glass was retired in #1135.
+          // Ctrl+F (native "find" muscle memory) + legacy Ctrl+Shift+F both open global search (#1135).
           const SingleActivator(LogicalKeyboardKey.keyF, control: true): () {
             _showGlobalSearch();
           },
@@ -266,9 +253,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           const SingleActivator(LogicalKeyboardKey.slash, control: true): () {
             _showKeyboardShortcuts();
           },
-          // Power-user shortcuts: open settings (matches the Discord /
-          // browser convention) and close settings with Esc so the panel
-          // never strands the user without a mouse.
+          // Ctrl+, opens settings (Discord/browser convention); Esc closes for no-mouse exit.
           const SingleActivator(LogicalKeyboardKey.comma, control: true): () {
             _openSettings();
           },

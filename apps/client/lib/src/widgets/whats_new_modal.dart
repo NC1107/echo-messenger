@@ -245,10 +245,7 @@ class WhatsNewInlineOverlay extends ConsumerWidget {
             // the dim layer above.
             behavior: HitTestBehavior.opaque,
             onTap: () {},
-            // The modal's own button handlers call markShown(); this
-            // callback only needs to clear the overlay state. Calling
-            // markShown twice doesn't corrupt anything (idempotent
-            // SharedPreferences write), but signals broken ownership.
+            // Modal buttons call markShown(); this callback only clears overlay state.
             child: WhatsNewModal(
               notes: notes,
               isDialog: true,

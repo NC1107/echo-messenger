@@ -1,8 +1,4 @@
-// Shared "Server: host ›" affordance + the switch-server dialog used on the
-// login and register screens. Tapping the subtitle opens the dialog which
-// lists known servers + accepts a custom URL. The custom URL is pre-flighted
-// against GET /api/server-info before the switch transaction runs so a typo
-// can't log the user out of the active server (#1063).
+// Custom-URL pre-flighted via GET /api/server-info so a typo can't log the user out (#1063).
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;

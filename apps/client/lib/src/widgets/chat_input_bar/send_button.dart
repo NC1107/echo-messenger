@@ -149,10 +149,7 @@ class SendButton extends ConsumerWidget {
         cryptoState.isInitialized && !cryptoState.keysUploadFailed;
     final canSend = hasContent && (cryptoReady || !isDm);
 
-    // Three visual modes share one container so the transitions between
-    // them animate via AnimatedContainer + AnimatedSwitcher rather than
-    // snapping (mic ↔ send-arrow on first keystroke; send-arrow ↔ check
-    // on edit-mode entry; disabled ↔ enabled fill color).
+    // Shared container so mic↔send↔check transitions animate, not snap.
     final bool showMic = !hasContent && !isEditing && !kIsWeb;
 
     final state = _resolveButtonState(

@@ -399,10 +399,7 @@ class _GalleryPageState extends State<_GalleryPage> {
     final opacity = (1.0 - (_dragY.abs() / 280)).clamp(0.0, 1.0);
 
     return GestureDetector(
-      // Tap on the scrim area (anywhere not occupied by the image itself)
-      // dismisses the gallery (#901). The inner GestureDetector below
-      // swallows taps on the image so this only fires for the letterbox
-      // scrim around the contained image.
+      // Tap on scrim (letterbox area) dismisses (#901); inner GestureDetector swallows taps on the image itself.
       onTap: _isZoomed ? null : widget.onDismiss,
       behavior: HitTestBehavior.translucent,
       onVerticalDragUpdate: _onVerticalDragUpdate,
@@ -419,10 +416,6 @@ class _GalleryPageState extends State<_GalleryPage> {
             onInteractionEnd: (_) => widget.onZoomChanged(),
             child: Center(
               child: GestureDetector(
-                // Swallow taps directly on the image so they don't bubble up
-                // to the outer scrim-dismiss handler. Pan / pinch still reach
-                // the InteractiveViewer above because those are different
-                // gesture kinds.
                 onTap: () {},
                 behavior: HitTestBehavior.opaque,
                 child: _buildImage(),

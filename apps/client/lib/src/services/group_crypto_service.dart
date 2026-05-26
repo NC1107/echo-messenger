@@ -456,9 +456,8 @@ class GroupCryptoService {
     final tag = wire.sublist(tagStart, sigStart);
     final signatureBytes = wire.sublist(sigStart);
 
-    // Verify the sender signature BEFORE running AEAD. Catching a forged
-    // signature early avoids paying the AEAD cost and prevents a
-    // timing channel that could leak whether AEAD passed independently.
+    // Verify signature BEFORE AEAD: avoids cost on forgery and closes a
+    // timing side-channel that would leak AEAD-pass independently.
     final sigPayload = _grpV2SignaturePayload(
       version: version,
       conversationIdBytes: expectedConversationIdBytes,
@@ -580,14 +579,11 @@ class GroupCryptoService {
         headers: {'Authorization': 'Bearer $_token'},
       );
 
-      // 410 Gone: the group has a current key version but the server has
-      // no per-user envelope for us at that version. Another member needs
-      // to rotate us in. Surface the recovery banner instead of caching a
-      // bogus sentinel string as if it were the AES key.
+      // 410 Gone = no envelope for us at current version; need re-rotation.
       if (response.statusCode == 410) {
         debugPrint(
-          '[GroupCrypto] $conversationId has no envelope for this user at '
-          'the latest key version — flagging for re-rotation.',
+          '[GroupCrypto] $conversationId: no envelope at latest version, '
+          'flagging for re-rotation.',
         );
         onGroupNeedsRotation?.call(conversationId);
         return null;
@@ -609,16 +605,8 @@ class GroupCryptoService {
       // Phase 2C dispatch is conservative against unknown servers.
       final minWireVersion = (data['min_wire_version'] as int?) ?? 1;
 
-      // Try to decrypt the envelope using our identity key.
-      // If _cryptoService is available, the encrypted_key is a per-member
-      // envelope that must be unwrapped. If not, assume legacy plaintext key.
-      //
-      // Audit P1-2: whichever branch produces the candidate key, validate
-      // it is 32 bytes (AES-256 key size) before caching. Pre-fix, an
-      // unwrap failure would silently cache the ~96-byte ciphertext blob
-      // as if it were the key, producing endless decrypt failures on
-      // every subsequent group message with no signal that the actual
-      // problem was a malformed envelope.
+      // Audit P1-2: structurally validate (32-byte) candidate key before cache
+      // to avoid silently caching an envelope-ciphertext as the key.
       String rawKeyB64;
       if (_cryptoService != null && encryptedKey != '__envelope__') {
         try {
@@ -627,10 +615,7 @@ class GroupCryptoService {
           );
           rawKeyB64 = base64Encode(rawKeyBytes);
         } catch (e) {
-          // Fallback: treat as legacy plaintext key (migration path).
-          // We accept this only if the structural check below confirms
-          // the bytes are AES-256-key-shaped; an envelope ciphertext
-          // would not pass.
+          // Legacy plaintext migration; only accepted if shape check passes below.
           debugPrint(
             '[GroupCrypto] Envelope decrypt failed, trying as legacy: $e',
           );
@@ -649,8 +634,7 @@ class GroupCryptoService {
       );
       return (version, rawKeyB64);
     } on GroupEnvelopeUnwrapException catch (e) {
-      // Typed structural failure — log and return null so the UI sees the
-      // group as "no key available" instead of caching a known-bad key.
+      // Return null instead of caching a known-bad key.
       debugPrint('[GroupCrypto] $e');
       return null;
     } catch (e) {
@@ -755,11 +739,8 @@ class GroupCryptoService {
     String? selfUserId,
     required String triggeredByEvent,
   }) async {
-    // Drop the stale key first so we never encrypt with the now-revoked
-    // material on the next outgoing message — even if we cannot finish the
-    // rotation right now (no CryptoService wired yet, or no envelopes
-    // built), we must NOT keep the old key around. A stale-cache leak is a
-    // correctness bug; a missing envelope is just a refetch.
+    // Purge stale key BEFORE rotation: stale-cache leak is a correctness bug;
+    // missing envelope is just a refetch.
     await _purgeKey(conversationId);
 
     if (_cryptoService == null) {
@@ -771,12 +752,8 @@ class GroupCryptoService {
     final newKeyBytes = Uint8List.fromList(base64Decode(generateGroupKey()));
     final newKeyB64 = base64Encode(newKeyBytes);
 
-    // Fetch all identity keys concurrently. The previous serial for-loop
-    // was O(N) round-trips before any envelope could be built — a
-    // 100-member group took 5–10s on mobile. Future.wait parallelises
-    // the N requests; the server's /api/keys/bundle endpoint is per-user
-    // but the calls overlap on the wire so the wall time collapses to
-    // roughly one RTT regardless of N. (TD-1 in TECHNICAL_DEBT.md.)
+    // TD-1: parallel identity key fetches (serial was O(N) RTTs → 5-10s on
+    // 100-member groups; Future.wait collapses to ~1 RTT).
     final userIds = members
         .map((m) => m['user_id'] as String?)
         .where((id) => id != null && id.isNotEmpty)
@@ -784,14 +761,8 @@ class GroupCryptoService {
         .toList();
     final identityKeys = await Future.wait(userIds.map(fetchIdentityKey));
 
-    // TD-21: if the rotator's own identity key is unavailable (e.g.
-    // keyring locked, secure storage migration in flight), uploading
-    // envelopes that exclude self would leave us unable to decrypt
-    // anything we send in this group until the next rotation re-
-    // includes us. Hard-abort so the caller can retry once the
-    // keyring is unlocked. Other members with null keys still get
-    // skipped further down — they'll be included in the next rotation
-    // once they publish.
+    // TD-21: abort if self's identity key is unavailable — uploading without
+    // self wedges us until the next rotation includes us back in.
     if (selfUserId != null) {
       for (var i = 0; i < userIds.length; i++) {
         if (userIds[i] == selfUserId && identityKeys[i] == null) {
@@ -805,14 +776,8 @@ class GroupCryptoService {
       }
     }
 
-    // TD-4: TOFU bypass guard. fetchPeerIdentityKey(forceRefresh: true)
-    // silently trusts whatever the server returned, so wrapping the
-    // group secret under a changed identity key would hand a fresh
-    // envelope to a key the user has never confirmed. Abort the
-    // rotation when any participant's TOFU flag is set — admins can
-    // acknowledge the change in the chat header and retry. Skipped
-    // when the caller didn't supply the checker (preserves the legacy
-    // performRotation contract).
+    // TD-4: TOFU bypass guard — abort rotation if any member's identity key
+    // changed silently; admins must acknowledge in the chat header.
     if (hasIdentityKeyChanged != null) {
       final changedFlags = await Future.wait(
         userIds.map(hasIdentityKeyChanged),
@@ -831,14 +796,8 @@ class GroupCryptoService {
       }
     }
 
-    // Abort if ANY member lacks an identity key. The previous behaviour
-    // silently `continue`d, which let rotation "complete" with a subset
-    // of envelopes — the unkeyed member then hit the server's
-    // `__envelope__` sentinel row and fed it to the AES unwrap path,
-    // producing "candidate key has wrong length: 9 bytes" errors with
-    // no actionable signal. Rotation = "make this group encrypted for
-    // these N members"; partial coverage is BUSTED state we must
-    // refuse to publish.
+    // Refuse partial rotation: unkeyed members hit the __envelope__ sentinel
+    // and produce silent decrypt failures. All-or-nothing.
     final missingKeyUserIds = <String>[
       for (var i = 0; i < userIds.length; i++)
         if (identityKeys[i] == null) userIds[i],
@@ -884,8 +843,7 @@ class GroupCryptoService {
       );
 
       if (response.statusCode == 409) {
-        // Another member raced us and won. Drop our candidate key — the
-        // server-broadcast `group_key_rotated` event will trigger a refetch.
+        // Lost rotation race; group_key_rotated WS event triggers refetch.
         debugPrint(
           '[GroupCrypto] performRotation: lost race (409); '
           'will fetch winning envelope',

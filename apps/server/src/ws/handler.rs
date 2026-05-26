@@ -70,15 +70,9 @@ pub async fn handle_socket(
     };
     tokio::pin!(send_fut);
 
-    // Task: send heartbeat every 30 seconds to keep the connection alive
-    // through reverse-proxy (Traefik/Cloudflare) idle timeouts.
-    //
-    // We send BOTH a WebSocket protocol Ping (for proxy keepalive) and an
-    // application-level JSON heartbeat. Browser WebSocket APIs handle
-    // Ping/Pong transparently without surfacing them to JavaScript, so the
-    // client's heartbeat monitor would never see protocol Pings.  The JSON
-    // heartbeat triggers the browser's onMessage callback, letting the
-    // client know the connection is still alive.
+    // 30s heartbeat keeps the connection alive through Traefik/Cloudflare idle
+    // timeouts. Send BOTH a Ping (proxy keepalive) and a JSON heartbeat —
+    // browsers hide protocol Ping/Pong from JS so the client only sees JSON.
     let ping_hub = state.hub.clone();
     let ping_user_id = user_id;
     let ping_device_id = device_id;
@@ -94,9 +88,7 @@ pub async fn handle_socket(
                 ping_device_id,
                 WsMessage::Ping(vec![].into()),
             );
-            // Application-level heartbeat (visible to all clients).
-            // #829: payload is a module-level `&'static str` to avoid the
-            // per-tick `String` allocation.
+            // #829: `&'static str` payload avoids per-tick allocation.
             if !ping_hub.send_to_device(
                 &ping_user_id,
                 ping_device_id,
@@ -129,24 +121,16 @@ pub async fn handle_socket(
 
     let leftover_rx: Option<mpsc::Receiver<WsMessage>> = tokio::select! {
         _ = &mut recv_fut => {
-            // Receive loop ended -- the send half might still have pending
-            // frames in `rx`. Unregister so no new ones land, then attempt a
-            // brief drain (50ms) to flush what's already buffered.
+            // Recv ended: unregister to stop new frames, then briefly drain
+            // anything already buffered in `rx`.
             state.hub.unregister(user_id, device_id);
-            // Pull the sink + rx back out of the send future by polling
-            // it once with a tight timeout. If the channel was already
-            // closed by `unregister` (which dropped the tx) the future
-            // resolves immediately; otherwise the timeout caps it.
             match tokio::time::timeout(Duration::from_millis(50), &mut send_fut).await {
                 Ok((_sender, rx)) => Some(rx),
                 Err(_) => None,
             }
         }
         (_sender, rx) = &mut send_fut => {
-            // Send half ended (peer TCP died, or rx was closed). Stop
-            // accepting new inbound frames by unregistering, then let the
-            // recv future complete naturally as the underlying socket
-            // surfaces the error.
+            // Send ended: unregister and let recv finish on the socket error.
             state.hub.unregister(user_id, device_id);
             // Best-effort: give the recv loop a moment to observe the
             // socket close before we drop it.
@@ -155,11 +139,7 @@ pub async fn handle_socket(
         }
     };
     drop(leftover_rx);
-    // #829: abort the heartbeat task on any disconnect path (clean close OR
-    // the err arm of the recv loop both flow through this select! cleanup).
-    // Without the explicit abort, the 30 s tick keeps firing until
-    // `send_to_device` returns false on the dropped queue -- one or two
-    // extra ticks past the disconnect under load.
+    // #829: explicit abort avoids extra 30s ticks past disconnect under load.
     ping_task.abort();
 
     cleanup_user_voice_sessions(&state, user_id).await;

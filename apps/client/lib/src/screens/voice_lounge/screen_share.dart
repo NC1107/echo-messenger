@@ -157,14 +157,7 @@ class _DraggableScreenShareWindowState
 
   @override
   Widget build(BuildContext context) {
-    // The widget is rendered as a Stack child by callers. Flutter
-    // requires direct Stack children to be Positioned (or
-    // unpositioned) — wrapping the Positioned inside a LayoutBuilder
-    // breaks that invariant and produced a parent-data exception
-    // widget tests had to drain. Wrap the whole tree in Positioned.fill
-    // so the outer Stack sees a Positioned; then put an inner Stack
-    // around the LayoutBuilder so the draggable Positioned still has a
-    // legitimate Stack parent.
+    // Stack requires Positioned children: wrap in Positioned.fill, then inner Stack for LayoutBuilder.
     return Positioned.fill(
       child: LayoutBuilder(
         builder: (ctx, constraints) {

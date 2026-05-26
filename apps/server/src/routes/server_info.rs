@@ -30,12 +30,8 @@ pub struct ServerInfoResponse {
 pub async fn server_info(
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Singleton bootstrap. Two concurrent first-boot requests both attempt
-    // an INSERT but the UNIQUE PRIMARY KEY on `singleton` causes one of
-    // them to no-op via ON CONFLICT, so the row's `id` stays stable across
-    // every subsequent SELECT. ON CONFLICT DO NOTHING guarantees idempotent
-    // success even when our INSERT lost the race -- we follow up with a
-    // SELECT to read back whichever row won.
+    // Idempotent singleton bootstrap; concurrent first-boots race safely via
+    // the UNIQUE PK + ON CONFLICT DO NOTHING.
     sqlx::query("INSERT INTO server_metadata (singleton) VALUES (TRUE) ON CONFLICT DO NOTHING")
         .execute(&state.pool)
         .await

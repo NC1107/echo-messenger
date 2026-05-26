@@ -28,10 +28,7 @@ extension CryptoServiceInit on CryptoService {
 
     final prefs = await SharedPreferences.getInstance();
 
-    // On web, skip removing keys from SharedPreferences after copying to
-    // secure storage. SecureKeyStore on web uses Web Crypto API encryption
-    // which can fail to decrypt after page refresh in some browsers, so
-    // SharedPreferences (plain localStorage) is the reliable fallback.
+    // Web: keep prefs copy — SecureKeyStore decrypt can fail post-refresh.
     const removeFromPrefs = !kIsWeb;
 
     final namedOk = await _migrateNamedKeys(prefs, store, removeFromPrefs);
@@ -260,10 +257,8 @@ extension CryptoServiceInit on CryptoService {
 
       final store = SecureKeyStore.instance;
 
-      // On web, SecureKeyStore encrypts values with Web Crypto API. If the
-      // encryption key is lost (browser cleared storage, incognito, etc.),
-      // reads return null even though the keys were previously stored. Fall
-      // back to SharedPreferences which uses plain localStorage.
+      // Web fallback: SecureKeyStore null-reads after WebCrypto key loss
+      // (incognito, cleared storage) — prefs is the recovery path.
       final SharedPreferences? webFallbackPrefs = kIsWeb
           ? await SharedPreferences.getInstance()
           : null;
@@ -306,8 +301,7 @@ extension CryptoServiceInit on CryptoService {
     if (storedDeviceId != null) {
       _deviceId = int.tryParse(storedDeviceId) ?? 0;
     } else {
-      // Generate a random positive device ID (1..2^30) to avoid collision
-      // with legacy device_id=0 from single-device era.
+      // Positive random ID (1..2^30) avoids collision with legacy 0.
       _deviceId = Random.secure().nextInt(1 << 30) + 1;
       await store.write(CryptoService._deviceIdPref, _deviceId.toString());
       debugPrint('[Crypto] Generated new device_id: $_deviceId');
@@ -321,9 +315,7 @@ extension CryptoServiceInit on CryptoService {
     SecureKeyStore store, {
     required bool isFirstInstall,
   }) async {
-    // Only flag as "regenerated" when prior keys existed (device ID was
-    // already assigned). On a true first install there is nothing to
-    // regenerate, so suppress the misleading warning.
+    // Suppress regen warning on true first install (no prior keys existed).
     _keysWereRegenerated = !isFirstInstall;
     _identityKeyPair = await _x25519.newKeyPair();
     _signingKeyPair = await _ed25519.newKeyPair();
@@ -396,11 +388,7 @@ extension CryptoServiceInit on CryptoService {
 
     debugPrint('[Crypto] Signed prekey is ${age.inDays} days old -- rotating');
 
-    // Move current signed prekey to "previous" slot. The previous-created-
-    // at timestamp is the *current* prekey's createdAt — i.e. when the
-    // key we're about to demote was minted. `_cleanupPreviousPrekey`
-    // compares against this on the next init so the previous key is
-    // dropped exactly `_signedPrekeyGracePeriod` after its real birth.
+    // Move current → previous; track real birth so grace-period drop is exact.
     final currentPriv = await store.read(CryptoService._signedPrekeyPref);
     final currentPub = await store.read(CryptoService._signedPrekeyPubPref);
     if (currentPriv != null && currentPub != null) {
@@ -435,11 +423,7 @@ extension CryptoServiceInit on CryptoService {
     final prevCreatedAtStr = await store.read(
       CryptoService._signedPrekeyPreviousCreatedAtPref,
     );
-    // Pre-fix data has no previous-created-at timestamp. Treat as "old
-    // enough to clean up" — the worst case is a one-rotation-cycle drop
-    // of a key that might still have been within grace period, but a
-    // peer that can't decrypt against it would simply re-fetch the
-    // bundle and get the current key. Conservative and predictable.
+    // Pre-fix data lacks timestamp — drop it (peer just re-fetches bundle).
     if (prevCreatedAtStr == null) {
       await store.delete(CryptoService._signedPrekeyPreviousPref);
       await store.delete(CryptoService._signedPrekeyPreviousPubPref);

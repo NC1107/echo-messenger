@@ -161,16 +161,11 @@ extension _Attachments on ChatInputBarState {
     required String mimeType,
     void Function(int sent, int total)? onProgress,
   }) async {
-    // If the user has the "preserve original filenames" privacy toggle off,
-    // upload the file under a generic name keyed off the extension. The file
-    // contents are unchanged.
+    // Privacy toggle: generic name when "preserve original filenames" is off (contents unchanged).
     final preserve = await readPreserveOriginalFilenames();
     final uploadFileName = preserve ? fileName : genericFilename(fileName);
 
-    // Files above the chunked-upload threshold go through the resumable
-    // PATCH pipeline (#556).  Cloudflare's edge cap is 100 MB; the chunked
-    // path streams 5 MB chunks server-side so it can ferry files multiples
-    // of that without ever pinning the whole payload in server RAM.
+    // Resumable chunked PATCH (#556): 5MB chunks bypass Cloudflare's 100MB cap without pinning payload in RAM.
     Future<UploadResult> uploadChunked() async {
       final auth = ref.read(authProvider.notifier);
       final chunked = ChunkedUploadClient(

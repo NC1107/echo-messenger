@@ -168,9 +168,7 @@ impl AppError {
             | ErrorCode::InvalidCredentials
             | ErrorCode::TokenExpired
             | ErrorCode::TokenRevoked => StatusCode::UNAUTHORIZED,
-            // TD-34: "not a member of this conversation" is a permission
-            // failure, not an authentication failure. Returning 401 made
-            // clients trigger a global re-auth/logout. 403 is correct.
+            // TD-34: NotMember is 403, not 401 — avoids forced re-auth/logout.
             ErrorCode::Forbidden | ErrorCode::RegistrationDisabled | ErrorCode::NotMember => {
                 StatusCode::FORBIDDEN
             }
@@ -222,12 +220,8 @@ impl IntoResponse for AppError {
 
 impl From<sqlx::Error> for AppError {
     fn from(err: sqlx::Error) -> Self {
-        // TD-71: log structured fields instead of the raw Debug formatting.
-        // The Debug repr of a Postgres error can echo back column *values*
-        // from constraint violations (the unique-key column data, the
-        // failing FK row, etc.). That's a PII leak waiting to happen.
-        // Logging the SQLSTATE + constraint name keeps the operator
-        // diagnostic signal intact.
+        // TD-71: Debug-format Postgres errors can echo column VALUES — log
+        // structured fields (SQLSTATE + constraint) instead.
         match &err {
             sqlx::Error::Database(db_err) => {
                 tracing::error!(
@@ -424,9 +418,7 @@ mod tests {
 
     #[test]
     fn with_code_not_member_is_403() {
-        // TD-34: "not a member" is a permission failure, not an
-        // authentication failure. Returning 401 made clients trigger global
-        // re-auth/logout when they hit a stale conversation.
+        // TD-34: NotMember is 403, not 401.
         let err = AppError::with_code(ErrorCode::NotMember, "Not a member");
         assert_eq!(err.status, StatusCode::FORBIDDEN);
         assert_eq!(err.code, ErrorCode::NotMember);

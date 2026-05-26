@@ -198,10 +198,7 @@ Future<void> _dispatchPickedFiles(
   _PickAndDispatchParams params,
   List<PlatformFile> files,
 ) async {
-  // Single pick → preview flow (caption + send). Multi pick → send all
-  // immediately as separate messages; mixing the two creates races where
-  // the user may interact with the pending preview while the rest are
-  // still uploading in the background.
+  // Single = caption+send preview; multi = immediate send. Mixing races the preview with background uploads.
   final isMulti = files.length > 1;
   if (isMulti && context.mounted) {
     ToastService.show(

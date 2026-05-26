@@ -70,10 +70,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   void initState() {
     super.initState();
     _selectedTimezone = DateTime.now().timeZoneName;
-    // Pre-fill display name with the username so the Welcome page can be
-    // skipped without forcing the user to type anything. They can still
-    // edit it before continuing, but Skip no longer hard-blocks on an
-    // empty field — #1177.
+    // Pre-fill display name with username so Skip on Welcome doesn't hard-block (#1177).
     final username = ref.read(authProvider).username;
     if (username != null && username.isNotEmpty) {
       _displayNameController.text = username;
@@ -117,10 +114,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   static const int _pageCount = 5;
 
   void _next() {
-    // The display-name field on the Welcome page is the only required
-    // input in the entire wizard. Block forward navigation until it has
-    // a value so the user can't land on home with a profile that's just
-    // `@nicolas` everywhere.
+    // Display name is the only required wizard field; block forward nav until set.
     if (_currentPage == 0 && _displayNameController.text.trim().isEmpty) {
       _showDisplayNameRequired();
       return;
@@ -218,9 +212,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
     final file = result.files.first;
     if (file.bytes == null) return;
 
-    // Show the same crop dialog the Settings → Profile flow uses (#728) so
-    // signup users get an aspect-correct avatar instead of whatever shape
-    // their gallery handed back. Dialog returns null on cancel.
+    // Reuse Settings → Profile crop dialog for aspect-correct avatar (#728).
     if (!mounted) return;
     final croppedBytes = await showAvatarCropDialog(context, file.bytes!);
     if (croppedBytes == null) return;
@@ -286,9 +278,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           const AppTitleBar(),
           Expanded(
             child: SafeArea(
-              // top: true so the page content (and the narrow-layout
-              // EchoLogoIcon) doesn't collide with the iOS status bar /
-              // dynamic island. Bottom safe area continues to apply.
+              // top safe area: avoid iOS status bar / dynamic island collision.
               child: Center(
                 child: LayoutBuilder(
                   builder: (context, outerConstraints) {
@@ -316,11 +306,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         child: Column(
           children: [
-            // Standalone EchoLogoIcon removed from narrow layout — the
-            // Welcome page header already brands the screen and on iOS
-            // the logo collided with the dynamic island. The wide-layout
-            // brand panel still renders its own logo because it has the
-            // horizontal space to do so cleanly.
+            // Logo removed on narrow: Welcome header already brands, and iOS dynamic island collided.
             Expanded(child: _buildPageView()),
             const SizedBox(height: 16),
             _buildBottomControls(context),
@@ -427,9 +413,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         ),
       ],
     );
-    // Backwards-only navigation: the user can click any step they've
-    // already completed to jump back. Future steps stay un-clickable so a
-    // hurried user can't skip required setup.
+    // Backwards-only step nav: completed steps clickable, future ones blocked.
     if (!isDone) return row;
     return Semantics(
       button: true,
@@ -488,11 +472,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
     return SingleChildScrollView(
       child: Column(
         children: [
-          // Beta callout was moved to the login/register screens (see
-          // BetaBanner) so new users see it before signing up and returning
-          // testers see it on every login. Keeping it out of the wizard
-          // also lets the welcome step lead with the actual setup CTA
-          // instead of a doom warning.
+          // Beta callout lives on login/register (BetaBanner); wizard leads with the setup CTA.
           Text(
             'Welcome to Echo!',
             style: TextStyle(
@@ -590,10 +570,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           ],
           const SizedBox(height: 12),
           _buildTimezoneDropdown(context),
-          // Presence/Status dropdown removed from onboarding per direct
-          // user feedback — defaults to 'online' and remains editable in
-          // Settings → Status. Keeping the controller wired so the
-          // server still receives the default value on save.
+          // Presence dropdown removed; defaults to 'online', editable in Settings → Status.
         ],
       ),
     );

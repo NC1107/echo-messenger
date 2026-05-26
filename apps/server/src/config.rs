@@ -34,9 +34,7 @@ impl Config {
                 if trimmed.is_empty() {
                     return None;
                 }
-                // Accept bare IPs (e.g. `127.0.0.1`) by normalising them to
-                // host routes (`/32` for IPv4, `/128` for IPv6) so the storage
-                // type is always `IpNet`.
+                // Normalise bare IPs to /32 or /128 host routes.
                 trimmed
                     .parse::<IpNet>()
                     .ok()
@@ -203,11 +201,8 @@ mod tests {
         assert_eq!(proxies.len(), 2);
     }
 
-    // -----------------------------------------------------------------
-    // SERVER_HOST/SERVER_PORT precedence + legacy HOST/PORT fallback.
-    // Closure-based fake env keeps these tests parallel-safe -- no
-    // std::env::set_var, which would race against the other test threads.
-    // -----------------------------------------------------------------
+    // SERVER_HOST/PORT precedence + legacy fallback.
+    // Closure fake-env keeps tests parallel-safe (no set_var races).
     use std::collections::HashMap;
 
     fn fake_env(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
@@ -262,9 +257,7 @@ mod tests {
 
     #[test]
     fn resolve_port_legacy_unparseable_falls_through_to_default() {
-        // Belt-and-suspenders branch coverage: same parse logic on the legacy
-        // arm should also default rather than panic if a future refactor
-        // diverges the two paths.
+        // Branch coverage for the legacy arm's parse defaulting.
         let port = resolve_port(fake_env(&[("PORT", "garbage")]));
         assert_eq!(port, 8080);
     }

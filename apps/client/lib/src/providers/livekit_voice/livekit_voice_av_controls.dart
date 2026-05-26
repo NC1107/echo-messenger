@@ -27,12 +27,8 @@ mixin LiveKitVoiceAvControlsMixin on Notifier<LiveKitVoiceState> {
       'LiveKitVoice',
       'setCaptureEnabled($enabled)',
     );
-    // Wrap the setMicrophoneEnabled call so a native audio-session error
-    // (e.g. AVAudioSession activation race on iOS) doesn't surface as an
-    // unhandled exception into the Riverpod error boundary.  State is still
-    // updated optimistically so the UI reflects the intended mute state;
-    // if the underlying track fails, LiveKit will emit a disconnect or
-    // error event through the room listener.
+    // Optimistic state update; native audio-session errors caught below to
+    // keep them out of Riverpod's error boundary.
     final future = _room?.localParticipant?.setMicrophoneEnabled(enabled);
     if (future != null) {
       // ignore: unawaited_futures
@@ -169,9 +165,7 @@ mixin LiveKitVoiceAvControlsMixin on Notifier<LiveKitVoiceState> {
     );
     try {
       if (defaultTargetPlatform == TargetPlatform.iOS) {
-        // iOS requires a ReplayKit Broadcast Upload Extension for screen
-        // capture. LiveKit's plugin reads RTCScreenSharingExtension from
-        // Info.plist and presents the system broadcast picker automatically.
+        // iOS: ReplayKit picker is auto-presented from Info.plist extension.
         await room.localParticipant?.setScreenShareEnabled(
           enabled,
           captureScreenAudio: true,
@@ -180,16 +174,8 @@ mixin LiveKitVoiceAvControlsMixin on Notifier<LiveKitVoiceState> {
         // Disable path: SDK handles unpublish + track stop internally.
         await room.localParticipant?.setScreenShareEnabled(false);
       } else {
-        // #910: Enable path bypasses `setScreenShareEnabled(true)` so we
-        // can pass explicit publish options. The SDK shortcut falls back
-        // to `roomOptions.defaultVideoPublishOptions`, which is tuned for
-        // camera (simulcast=true + a camera-shaped VideoEncoding). For
-        // screen-share that combination negotiates a multi-layer simulcast
-        // publish that the SFU silently drops for remote viewers — the
-        // sharer keeps their local preview (no SFU round-trip) but
-        // remotes see no track. A single-layer VP8 publish matches the
-        // LiveKit meet sample and is decodable wherever flutter_webrtc
-        // runs (Linux xdg-desktop-portal, web getDisplayMedia, Android).
+        // (#910) Single-layer VP8: camera-shaped simulcast was being dropped by
+        // SFU for remote viewers; matches LiveKit meet sample.
         final captureOptions =
             room.roomOptions.defaultScreenShareCaptureOptions;
         final track = await LocalVideoTrack.createScreenShareTrack(

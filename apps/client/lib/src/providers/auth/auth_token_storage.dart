@@ -32,10 +32,8 @@ mixin AuthTokenStorageMixin on Notifier<AuthState> {
   }) async {
     final store = SecureKeyStore.instance;
 
-    // Write tokens to secure storage (global scope -- no user prefix).
-    // On web the refresh token is intentionally omitted -- the browser manages
-    // it as an HttpOnly cookie.  We also skip writing an empty string, which is
-    // the sentinel the web code path passes when no token is available.
+    // Global scope (called BEFORE _setUserScope). Web: refresh token stays in
+    // HttpOnly cookie; '' is the no-token sentinel.
     final shouldPersistRefresh = !kIsWeb && refreshToken.isNotEmpty;
     try {
       await store.writeGlobal(AuthNotifier._keyAccessToken, accessToken);
@@ -46,12 +44,8 @@ mixin AuthTokenStorageMixin on Notifier<AuthState> {
       debugPrint('[Auth] SecureKeyStore unavailable: $e');
     }
 
-    // Always write to SharedPreferences as well. On web, SecureKeyStore
-    // uses Web Crypto + encrypted localStorage which can fail to read
-    // back after a page refresh, causing unexpected logouts. Keeping a
-    // copy in SharedPreferences guarantees tryAutoLogin can recover.
-    // On native platforms the duplication is harmless (belt & suspenders).
-    // On web the refresh token is excluded for the same XSS-safety reason.
+    // Dup to SharedPreferences: belt-and-suspenders for native; web's
+    // SecureKeyStore can fail post-refresh, so prefs is the recovery path.
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(AuthNotifier._keyAccessToken, accessToken);
@@ -61,10 +55,8 @@ mixin AuthTokenStorageMixin on Notifier<AuthState> {
       await prefs.setString(AuthNotifier._keyUserId, userId);
       await prefs.setString(AuthNotifier._keyUsername, username);
 
-      // Mirror userId/username into per-host slots so the login screen on
-      // a known server can pre-fill the username after a server switch.
-      // The global keys above stay authoritative for the active session
-      // because tokens themselves remain global.
+      // Per-host mirror enables login pre-fill after server switch;
+      // global keys remain authoritative for the active session.
       final host = AuthNotifier._hostOf(_serverUrl);
       if (host.isNotEmpty) {
         await prefs.setString(AuthNotifier._userIdKeyFor(host), userId);
@@ -86,9 +78,7 @@ mixin AuthTokenStorageMixin on Notifier<AuthState> {
     try {
       await MessageCache.initForUser(userId, host);
     } catch (e) {
-      // Non-fatal: fall back to the default shared message cache.
-      // On web, Hive/IndexedDB box close/reopen can fail during
-      // page refresh; this must not prevent login.
+      // Non-fatal: web Hive/IndexedDB can fail mid-refresh; don't block login.
       debugPrint('[Auth] MessageCache.initForUser failed (non-fatal): $e');
       DebugLogService.instance.log(
         LogLevel.error,
@@ -106,8 +96,7 @@ mixin AuthTokenStorageMixin on Notifier<AuthState> {
     await store.deleteGlobal(AuthNotifier._keyAccessToken);
     await store.deleteGlobal(AuthNotifier._keyRefreshToken);
 
-    // Remove everything from SharedPreferences (tokens may exist there
-    // from pre-migration installs or secure-storage fallback writes).
+    // Also clear prefs (tokens may exist from pre-migration / fallback writes).
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(AuthNotifier._keyAccessToken);
@@ -133,8 +122,7 @@ mixin AuthTokenStorageMixin on Notifier<AuthState> {
     final prefs = await SharedPreferences.getInstance();
     final store = SecureKeyStore.instance;
 
-    // On web the refresh token must never be stored in JS-accessible storage,
-    // so skip migrating it.  Only migrate the access token on web.
+    // Web: skip refresh token migration (must stay in HttpOnly cookie only).
     final keysToMigrate = kIsWeb
         ? [AuthNotifier._keyAccessToken]
         : [AuthNotifier._keyAccessToken, AuthNotifier._keyRefreshToken];
@@ -144,10 +132,7 @@ mixin AuthTokenStorageMixin on Notifier<AuthState> {
       if (value != null && value.isNotEmpty) {
         try {
           await store.writeGlobal(key, value);
-          // On web, keep tokens in SharedPreferences as a reliable fallback.
-          // SecureKeyStore on web uses Web Crypto API encryption which can
-          // fail to decrypt after page refresh in some browsers, so
-          // SharedPreferences (plain localStorage) is the safety net.
+          // Web: keep prefs copy as recovery for SecureKeyStore decrypt failures.
           if (!kIsWeb) {
             await prefs.remove(key);
           }

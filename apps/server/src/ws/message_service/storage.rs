@@ -193,10 +193,7 @@ pub(in crate::ws::message_service) async fn store_and_confirm(
 ) -> Option<db::messages::MessageRow> {
     let effective_ttl = resolve_effective_ttl(ttl_seconds, conv_ttl_seconds);
 
-    // Store message in DB. `RowNotFound` from `store_message` means the
-    // requested `reply_to_id` does not refer to a message in this conversation
-    // (cross-conversation reply, deleted parent, or non-existent id). Surface
-    // a targeted error to the sender instead of a generic store failure.
+    // `RowNotFound` here = bad/cross-conversation reply_to_id; surface targeted.
     let stored = match db::messages::store_message(
         &state.pool,
         conv_id,
@@ -228,11 +225,8 @@ pub(in crate::ws::message_service) async fn store_and_confirm(
         Err(sqlx::Error::Database(db_err))
             if db_err.is_unique_violation() && client_message_id.is_some() =>
         {
-            // Client minted a UUID that collides with an existing row.
-            // Returning a typed error lets the sender retry with a
-            // fresh UUID (and re-sign for GRP2). Vanishingly rare for
-            // v4 UUIDs but still worth handling explicitly so the
-            // confirm/fanout path doesn't run on someone else's row.
+            // Client UUID collision — typed error so sender retries (re-sign
+            // for GRP2) instead of confirming someone else's row.
             tracing::warn!(
                 user_id = %sender_id,
                 conversation_id = %conv_id,

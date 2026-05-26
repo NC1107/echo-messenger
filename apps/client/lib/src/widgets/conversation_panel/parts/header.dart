@@ -25,11 +25,7 @@ mixin _ConversationPanelHeaderMixin
           Expanded(
             child: Row(
               children: [
-                // Anchor the connection status dot to a small fixed-size
-                // icon on every layout. Wrapping it around the large
-                // "Chats" text on mobile placed the dot at the lower-right
-                // of the "s" — visually awkward; the icon variant matches
-                // desktop and gives the dot a predictable anchor.
+                // Anchor status dot to a fixed-size icon (wrapping "Chats" text placed dot at "s" lower-right).
                 const ConnectionStatusBadge(child: EchoLogoIcon(size: 22)),
                 const SizedBox(width: 10),
                 Text(
@@ -76,11 +72,7 @@ mixin _ConversationPanelHeaderMixin
               ),
             ),
           ],
-          // Global-search entrypoint on both mobile and desktop. The
-          // mobile build used to expose a separate "filter conversations"
-          // search bar below the header; we dropped that to match the
-          // single-search-entrypoint pattern the desktop already uses
-          // (see the feedback_desktop_search memory rule).
+          // Single search entrypoint on mobile + desktop (feedback_desktop_search memory rule).
           if (widget.onGlobalSearch != null) ...[
             const SizedBox(width: 2),
             Semantics(
@@ -300,10 +292,7 @@ mixin _ConversationPanelHeaderMixin
     IconData? icon,
   }) {
     final isSelected = activeFilter == filter;
-    // Selected chip bg is always `context.accent` (a saturated indigo across
-    // every theme variant), so white reads cleanly. The previous reliance on
-    // `colorScheme.onPrimary` broke on themes where onPrimary resolves dark
-    // (graphite/ember/neon).
+    // White, not onPrimary — onPrimary resolves dark on graphite/ember/neon themes.
     final chipColor = isSelected ? Colors.white : context.textSecondary;
     final chipWeight = isSelected ? FontWeight.w600 : FontWeight.w500;
     return GestureDetector(

@@ -44,12 +44,7 @@ extension MessageHandlersOn on WsMessageHandler {
           channelId: channelId,
           expiresAt: expiresAt,
         );
-    // confirmSent already transitions status to sent atomically with the ID
-    // swap (chat_provider.dart:442); no follow-up updateMessageStatus needed.
-
-    // Update conversation list preview so the sender sees their own message
-    // reflected immediately (e.g. attachment markers, text). Without this the
-    // conversation preview stays stale until the next server fetch.
+    // Update conv preview so sender sees own message reflected immediately.
     final confirmed = ref
         .read(chatProvider)
         .messagesForConversation(conversationId)
@@ -102,14 +97,8 @@ extension MessageHandlersOn on WsMessageHandler {
       return;
     }
 
-    // #26: detect replayed offline messages via a synchronous Hive box check.
-    // isMessageCachedSync only returns true when the box for this conversation
-    // is already open in memory AND the key exists — no disk I/O, no async.
-    // On re-login the first loadConversations() call (triggered by WS connect)
-    // opens the per-conversation Hive boxes, so by the time the server drains
-    // the offline queue the boxes are open and this check is effective.
-    // Messages that are NOT yet in the open box (first time seen) return false,
-    // so genuinely new messages are never suppressed.
+    // (#26) Sync Hive check detects offline-queue replays without false positives;
+    // genuinely-new messages (box-miss) always return false.
     final alreadySeen =
         messageId.isNotEmpty &&
         MessageCache.isMessageCachedSync(conversationId, messageId);
@@ -190,15 +179,13 @@ extension MessageHandlersOn on WsMessageHandler {
       );
     }
 
-    // Only do a full HTTP reload if this is a new conversation we don't have
-    // locally. For existing conversations, onNewMessage() already updates state.
+    // Full reload only for unknown convs; existing ones use onNewMessage.
     if (!isKnownConversation) {
       ref.read(conversationsProvider.notifier).loadConversations();
     }
 
-    // When crypto is NOT initialized, notify with raw content (it's plaintext
-    // in that case). When crypto IS initialized, the notification fires AFTER
-    // decryption inside _decryptAndDeliverWithPreview.
+    // Crypto-not-ready: notify on raw plaintext; otherwise notification fires
+    // post-decrypt inside _decryptAndDeliverWithPreview.
     if (!cryptoState.isInitialized && fromUserId != myUserId && !alreadySeen) {
       _notifyIfAllowed(conversationId, senderUsername, rawContent);
     }
@@ -303,19 +290,15 @@ extension MessageHandlersOn on WsMessageHandler {
     String timestamp,
     String senderUsername,
   ) {
-    // Crypto not ready yet — show a placeholder and queue for decryption.
-    // The literal 'Securing message...' string is recognised by
-    // chat_provider.dart's `_placeholderContents` so the decrypted
-    // version replaces it in place when the queue drains (#430).
+    // (#430) Placeholder 'Securing message...' is recognised by chat_provider
+    // and replaced in-place when the queue drains.
     final placeholder = ChatMessage.fromServerJson({
       ...json,
       'content': 'Securing message...',
     }, myUserId).copyWith(isEncrypted: true);
     ref.read(chatProvider.notifier).addMessage(placeholder);
 
-    // Queue the raw JSON so it can be decrypted once crypto initializes.
-    // Bind the entry to the current user so a logout + re-login cannot
-    // leak this ciphertext into another account's state (#830 finding 4).
+    // (#830) Bind queue entry to current user — prevents leak on re-login.
     _enqueuePendingDecrypt(json, myUserId);
 
     ref

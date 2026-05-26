@@ -28,9 +28,7 @@ import 'session_cache.dart';
 import 'signal_session.dart';
 import 'signal_x3dh.dart';
 
-// Re-export the typed exceptions so external callers that already import
-// them from `crypto_service.dart` (e.g. websocket_provider, the test suite)
-// keep compiling without a coordinated import-rewrite across the codebase.
+// Re-export so existing callers don't need a coordinated import rewrite.
 export 'crypto_exceptions.dart';
 
 part 'crypto/init_extension.dart';
@@ -253,16 +251,8 @@ class CryptoService {
       'Loaded ${_sessions.length} session(s) from storage on init',
     );
 
-    // Audit P1-3: surface any torn-write intents that survived the last
-    // shutdown. Each entry means the process died between the pre- and
-    // post-decrypt session save; that session is now at risk of being
-    // out-of-sync with the sender's ratchet on its next inbound message.
-    // We log structured events for telemetry but do NOT auto-discard —
-    // forcing a session reset on every torn-write would over-correct,
-    // and the next decrypt will either succeed (sender's ratchet survived
-    // the same way ours did) or fail through the existing P0-3
-    // out-of-sync banner. Once we have a real rate from production we
-    // can decide whether to upgrade this to a true write-ahead log.
+    // Audit P1-3: log torn-write intents from last shutdown for telemetry.
+    // Do NOT auto-discard — next decrypt either succeeds or trips P0-3 banner.
     try {
       final torn = await scanAndClearTornSessionWrites();
       if (torn.isNotEmpty) {
@@ -298,30 +288,10 @@ class CryptoService {
     await store.write('$_sessionPrefix$peerId', jsonEncode(json));
   }
 
-  /// Audit P1-3: torn-write instrumentation. `_decryptNormalMessage` saves
-  /// session state twice — once as a pre-isolate write-ahead intent, once
-  /// after the post-decrypt state is back from the isolate. If the process
-  /// crashes between the two, on the next launch we'd silently keep the
-  /// pre-state on disk and re-decrypt the next inbound message against a
-  /// stale ratchet, wedging the session.
-  ///
-  /// To observe how often this actually happens, [_beginSessionWriteIntent]
-  /// drops a small intent marker into secure storage before the pre-save,
-  /// and [_endSessionWriteIntent] removes it after the post-save. On init,
-  /// [scanAndClearTornSessionWrites] surfaces any markers that survived as
-  /// a structured `crypto.session_torn_write` log line.
-  ///
-  /// We deliberately do NOT auto-discard the half-state: this is
-  /// observation only. If telemetry shows a non-negligible rate, the
-  /// follow-up is a real write-ahead log (audit P1-3 → "decide on full
-  /// WAL after instrumentation"). Hot path cost: one extra
-  /// `SecureKeyStore.write` per decrypt.
-  ///
-  /// **Prefix discipline**: deliberately does NOT start with
-  /// `_sessionPrefix` (`echo_signal_session_`). If it did, `_loadSessions`
-  /// would try to `jsonDecode` the timestamp value and quarantine the
-  /// intent entry as a "corrupted session", deleting the very signal
-  /// we're trying to surface. Keep this prefix orthogonal.
+  /// Audit P1-3 torn-write instrumentation marker prefix. Deliberately NOT
+  /// `_sessionPrefix` so `_loadSessions` doesn't quarantine the timestamp
+  /// value as a corrupted session. See `_beginSessionWriteIntent` /
+  /// `scanAndClearTornSessionWrites` for the surrounding flow.
   static const _sessionIntentPrefix = 'echo_session_writeahead_';
 
   Future<void> _beginSessionWriteIntent(String sessionKey) async {
@@ -382,11 +352,8 @@ class CryptoService {
       _sessions.put(key, session);
       return session;
     } on StorageUnavailableException {
-      // The keyring is locked / Keychain denied / etc.  This is NOT the same
-      // as "no session on disk" — the session very likely IS on disk, we just
-      // can't read it right now. Let the exception propagate so the caller
-      // can keep the in-memory session alive and surface a banner. Audit
-      // P0-1: "session_reload_failure_does_not_zero_in_memory_session".
+      // Audit P0-1: keyring locked is not "no session" — propagate so caller
+      // keeps in-memory session alive and surfaces a banner.
       rethrow;
     } catch (e) {
       debugPrint('[Crypto] Failed to reload session for $key: $e');
@@ -476,11 +443,8 @@ class CryptoService {
     final signingPub = await _signingKeyPair!.extractPublicKey();
     final signingPubB64 = base64Encode(signingPub.bytes);
 
-    // Only generate new OTP keys when replenishment is actually needed
-    // (fresh install, key regeneration, or server count is low).
-    // On normal restart, we keep existing OTP private keys intact to avoid
-    // the key-ID collision bug where the server holds old public keys but
-    // the client overwrites local private keys with new material.
+    // Only regenerate OTPs on fresh install / regen / low server count;
+    // restart-time overwrite would orphan keys the server still hands out.
     final otps = <Map<String, dynamic>>[];
     if (_needsOtpReplenishment) {
       await _generateAndPersistOtpKeys(otps);
@@ -512,9 +476,8 @@ class CryptoService {
     );
 
     if (response.statusCode == 409) {
-      // Server returns a structured `identity_key_conflict` envelope (#664)
-      // with `device_id`, `expected_fingerprint`, `actual_fingerprint`. Older
-      // servers emit a plain `{"error": "..."}` body; tolerate both.
+      // (#664) Tolerate both structured `identity_key_conflict` envelope and
+      // legacy plain `{"error": "..."}` from older servers.
       int conflictDeviceId = _deviceId;
       String? expected;
       String? actual;
@@ -629,11 +592,8 @@ class CryptoService {
       type: KeyPairType.x25519,
     );
 
-    // Block silent session establishment when the peer's identity key has
-    // changed since first contact. The user must explicitly accept the new
-    // key (via [acceptIdentityKeyChange]) after verifying the safety number;
-    // otherwise we would happily X3DH against an attacker-supplied key.
-    // (#580)
+    // (#580) TOFU: block X3DH against an attacker-substituted key. User must
+    // call [acceptIdentityKeyChange] after verifying safety number.
     final newIdentityKeyB64 = data['identity_key'] as String;
     final tofuStore = SecureKeyStore.instance;
     final existingIdentityKeyB64 = await tofuStore.read(
@@ -641,8 +601,7 @@ class CryptoService {
     );
     if (existingIdentityKeyB64 != null &&
         existingIdentityKeyB64 != newIdentityKeyB64) {
-      // Mark the change so the UI can show a banner even if the caller
-      // catches the exception silently.
+      // Persist change marker so UI shows banner even if caller swallows exception.
       await tofuStore.write(
         '$_peerIdentityChangedPrefix$peerUserId',
         DateTime.now().toIso8601String(),
@@ -672,9 +631,8 @@ class CryptoService {
       }
     }
 
-    // Perform X3DH as Alice (initiator) -- 4-DH with OTP if available.
-    // P1-4 timeline event lets us see how much of the encrypt budget is
-    // the one-time X3DH cost vs the per-message ratchet.
+    // X3DH as Alice (4-DH with OTP if available). P1-4 telemetry isolates
+    // one-time X3DH cost from per-message ratchet cost.
     final x3dhResult = await timedCryptoOp(
       'X3DH.initiate',
       () => X3DH.initiate(
@@ -775,9 +733,8 @@ class CryptoService {
 
     Uint8List wire;
     try {
-      // Write-ahead: save session state BEFORE mutation so that if the app
-      // crashes between encrypt and the post-save, the session reloads to the
-      // pre-mutation state.  The unsent message can safely be re-encrypted.
+      // Write-ahead: pre-mutation save so a crash mid-encrypt reloads to a
+      // state where the unsent message can be re-encrypted safely.
       if (!isNewSession) {
         await _saveSession(peerUserId, session);
       }
@@ -919,12 +876,8 @@ class CryptoService {
     try {
       plainBytes = await session.decrypt(sessionWire);
     } catch (e) {
-      // Initial X3DH wire failed AES-GCM auth -- almost always because our
-      // server-side bundle was stale and the sender encrypted against a
-      // signed prekey / OTP whose private half we no longer hold (#662).
-      // Re-upload our keys (fire-and-forget) so the NEXT message from this
-      // peer authenticates, and surface the failure as a typed exception so
-      // UI can show "couldn't establish secure session".
+      // (#662) Initial X3DH AES-GCM fail = stale server bundle; sender used
+      // a prekey/OTP whose private half we no longer hold. Re-upload to heal.
       debugPrint(
         '[Crypto] Initial X3DH decrypt failed for $peerUserId: $e -- '
         'scheduling key re-upload to heal stale bundle',
@@ -1039,11 +992,8 @@ class CryptoService {
     try {
       session ??= await _reloadSession(sessionKey);
     } on StorageUnavailableException catch (e) {
-      // Keyring locked at decrypt time. Do NOT clear anything — the session
-      // on disk is presumed intact, and our in-memory map is unchanged (the
-      // session var was never reassigned). Surface as a typed error so the
-      // chat layer can render a "keyring locked" banner instead of the
-      // generic "[Could not decrypt…]" placeholder.
+      // Keyring locked: don't clear anything (disk session presumed intact);
+      // surface typed error so UI shows "keyring locked" banner.
       _onSecureStorageUnavailable?.call();
       throw SessionStorageUnavailableException(sessionKey, e);
     }
@@ -1061,11 +1011,7 @@ class CryptoService {
     await _beginSessionWriteIntent(sessionKey);
     await _saveSession(sessionKey, session);
     try {
-      // Run pure Double Ratchet crypto off the UI thread.  The isolate
-      // receives a snapshot of the session state and the wire bytes; it
-      // returns the decrypted plaintext bytes and the mutated session state.
-      // No Hive boxes, SecureKeyStore handles, or singletons are touched
-      // inside the isolate -- it is a pure input → output computation.
+      // Pure crypto in isolate (no Hive / SecureKeyStore / singletons).
       final result = await compute(_decryptNormalInIsolate, {
         'session': sessionJsonBefore,
         'wire': fullWire,
@@ -1081,17 +1027,12 @@ class CryptoService {
       _sessions.put(sessionKey, updatedSession);
       return utf8.decode(result['plaintext'] as Uint8List);
     } on StorageUnavailableException catch (e) {
-      // Storage unavailable during post-save: don't touch the in-memory
-      // session, surface the typed error.  The recipient already got the
-      // plaintext from the isolate but we can't persist the new ratchet
-      // state — on next decrypt we'll see the same session and either
-      // succeed (if storage came back) or fail again the same way.
+      // Post-save storage failure: leave in-memory session alone, surface error.
+      // Plaintext already delivered; next decrypt retries or fails identically.
       _onSecureStorageUnavailable?.call();
       throw SessionStorageUnavailableException(sessionKey, e);
     } catch (e) {
-      // Session is stale/corrupted — clear it. The next incoming initial
-      // message from this peer will establish a fresh session via X3DH.
-      // We do NOT create a new outgoing session here (that would break sync).
+      // Clear stale session; do NOT create a new outgoing one (would break sync).
       debugPrint(
         '[Crypto] Normal decrypt failed for $sessionKey, '
         'clearing stale session: $e',
@@ -1135,14 +1076,8 @@ class CryptoService {
         return null;
       }
 
-      // #557: when the originating device is known, prefer the per-device
-      // session (`peerUserId:fromDeviceId`) so multi-device DM history is
-      // decrypted on the right ratchet. Falls through to the legacy
-      // peer-only key when there's no device-specific session yet.
-      // Track the actual key the session was loaded from so we save the
-      // advanced ratchet state back to the same slot it came from -- using
-      // `_sessions.containsKey(...)` after the fact would mis-route under
-      // LRU TTL expiry and write a foreign session over a fresh slot.
+      // #557: prefer per-device session; track loaded-from key so we save back
+      // to the same slot (containsKey-after-the-fact mis-routes under LRU TTL).
       final preferredKey = _sessionKeyFor(peerUserId, fromDeviceId);
       var loadedKey = preferredKey;
       var session = _sessions.get(preferredKey);
@@ -1281,10 +1216,7 @@ class CryptoService {
 
     final store = SecureKeyStore.instance;
 
-    // Drop in-memory + persisted self-sessions (`me:<deviceId>`) so the next
-    // outbound message to one of our own other devices runs a fresh X3DH
-    // against the regenerated keys. Peer sessions are intentionally
-    // preserved -- only OUR identity changed, the peer's didn't.
+    // Drop self-sessions only (peer sessions preserved — only OUR identity changed).
     if (myUserId != null && myUserId.isNotEmpty) {
       final allEntries = await store.readAll();
       for (final k in allEntries.keys) {
@@ -1312,9 +1244,8 @@ class CryptoService {
     final cur = int.tryParse(stored ?? '0') ?? 0;
     await store.write(_otpNextIdPref, '${cur + 100}');
 
-    // Regenerate identity / signing / signed-prekey IN PLACE (cannot route
-    // through init() because init's regen branch purges every session in
-    // storage, and we explicitly need to preserve peer sessions here).
+    // Regen in place: init()'s regen branch purges peer sessions, which we
+    // must preserve here (only OUR identity changed).
     _identityKeyPair = await _x25519.newKeyPair();
     _signingKeyPair = await _ed25519.newKeyPair();
     _signedPrekeyPair = await _x25519.newKeyPair();
@@ -1601,11 +1532,8 @@ class CryptoService {
     String peerUserId,
     String plaintext,
   ) async {
-    // First-send heal (#662): if we don't currently have ANY session for this
-    // peer (cache miss across all devices) but we DO hold a cached bundle
-    // from a prior fetch, evict the cached bundle so the upcoming
-    // _fetchAllBundles re-pulls fresh keys. Stale cached bundles are the root
-    // cause of the "first DM can't decrypt until peer replies" bug.
+    // (#662) First-send heal: stale cached bundle without any session = root
+    // cause of "first DM undecryptable"; evict so fetch re-pulls fresh keys.
     if (_bundleCache.containsKey(peerUserId) &&
         !_hasAnySessionForPeer(peerUserId)) {
       invalidateBundleCache(peerUserId);
@@ -1631,9 +1559,8 @@ class CryptoService {
           final session = info.session;
           final plaintextBytes = Uint8List.fromList(utf8.encode(plaintext));
 
-          // For an existing (cached or reloaded) session, write-ahead save
-          // before the ratchet mutation so a crash mid-encrypt is recoverable.
-          // For a brand-new X3DH session there is no previous state to save.
+          // Write-ahead save before ratchet mutation (recoverable mid-crash).
+          // Skip for fresh X3DH session — no previous state to save.
           if (info.x3dhResult == null) {
             await _saveSession(sessionKey, session);
           }

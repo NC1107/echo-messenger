@@ -28,16 +28,11 @@ class ChatPanelController extends ChangeNotifier {
   String? loadedChannelsConversationId;
   String? autoScrollConversationKey;
 
-  // Per-channel scroll position cache, keyed by `${conversationId}:${channelId ?? ""}`
-  // so switching text channels within a group preserves separate positions.
-  // Capped to avoid unbounded growth; oldest entries evict first.
+  // Per-channel scroll cache keyed `${convId}:${channelId ?? ""}`; capped (oldest evicts first).
   static const int kMaxScrollPositions = 50;
   final Map<String, double> scrollPositions = {};
 
-  // Last viewed channel per conversation. Lets a re-entered group restore the
-  // user to the channel they left off on (which in turn lets [scrollPositions]
-  // hit on its `"convId:channelId"` key — otherwise the channel id is null at
-  // restore time and the lookup misses, falling through to scroll-to-bottom).
+  // Last-viewed channel per conv — restores channel BEFORE scrollPositions lookup so its "convId:channelId" key hits.
   final Map<String, String?> lastChannelByConversation = {};
 
   void evictScrollPositions() {
@@ -49,10 +44,7 @@ class ChatPanelController extends ChangeNotifier {
   String cacheKeyFor(String conversationId) =>
       '$conversationId:${selectedTextChannelId ?? ""}';
 
-  // Unread boundary is captured ONCE per channel session (on first open with
-  // `unreadCount > 0`, or first arrival after an empty open). Setting
-  // [unreadBoundaryMessageId] to `null` re-arms the capture; the widget
-  // does so on conversation switch and `onTextChannelChanged`.
+  // Unread boundary captured once per channel session; set null to re-arm on conv/channel switch.
   String? unreadBoundaryMessageId;
   int unreadBoundaryCount = 0;
 
@@ -64,10 +56,7 @@ class ChatPanelController extends ChangeNotifier {
   bool floatingDateVisible = false;
   Timer? floatingDateTimer;
 
-  // [wasNearBottom] is updated on every scroll event BEFORE the soft keyboard
-  // shrinks the viewport. `handleKeyboardScroll` reads this pre-resize
-  // snapshot — the live `isNearBottom()` is unreliable after the resize
-  // because `maxScrollExtent` has already shifted.
+  // Snapshotted pre-keyboard-resize because isNearBottom() reads a shifted maxScrollExtent after resize.
   bool wasNearBottom = true;
   double lastKeyboardInset = 0;
 

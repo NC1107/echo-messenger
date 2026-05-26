@@ -80,21 +80,10 @@ class _NativeNotificationService implements NotificationService {
         requestSoundPermission: true,
       );
       const linux = LinuxInitializationSettings(defaultActionName: 'Open');
-      // Windows toast notifications require an app name, an AppUserModelID,
-      // and a stable activation GUID. Without these, the plugin silently
-      // fails to register and no notifications appear (#923).
-      //
-      // IMPORTANT: appUserModelId and guid MUST remain stable across
-      // releases — changing either will break notification activation on
-      // machines that already have the previous values registered with
-      // the Action Center. Do not modify these values.
-      //
-      // iconPath is intentionally omitted: the bundled app icon lives at
-      // windows/runner/resources/app_icon.ico (compiled into the
-      // executable's resources, not a Flutter asset path), and the plugin
-      // expects an absolute filesystem path at runtime. Letting the
-      // plugin fall back to the default icon is more reliable than
-      // shipping a path that may not resolve.
+      // (#923) Windows toast requires appName + appUserModelId + GUID;
+      // appUserModelId and guid MUST stay stable across releases (Action Center
+      // registration breaks otherwise). iconPath omitted: bundled .ico isn't
+      // a Flutter asset and the plugin needs an absolute filesystem path.
       const windows = WindowsInitializationSettings(
         appName: 'Echo Messenger',
         appUserModelId: 'EchoMessenger.EchoMessenger.Client',

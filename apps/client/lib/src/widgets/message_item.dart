@@ -168,11 +168,7 @@ class MessageItem extends StatefulWidget {
 
 class _MessageItemState extends State<MessageItem>
     with SingleTickerProviderStateMixin {
-  // Hover state is intentionally a ValueNotifier rather than `setState`-driven
-  // state: scoping mouse-enter/exit to the three subtrees that actually depend
-  // on it (the row-tint Container, the inline timestamp, and the action
-  // overlay) avoids rebuilding the bubble — including any embedded media —
-  // every time the cursor crosses the row (#834, closes #872).
+  // ValueNotifier (not setState) so hover-driven rebuilds skip the bubble + embedded media (#834, closes #872).
   final _hoverNotifier = ValueNotifier<bool>(false);
   double _swipeDx = 0;
   bool _swipeTriggered = false;
@@ -431,8 +427,6 @@ class _MessageItemState extends State<MessageItem>
       builder: (dialogContext) {
         return Stack(
           children: [
-            // Dismiss layer — covers entire screen. Tapping anywhere outside
-            // the image closes the viewer.
             Positioned.fill(
               child: GestureDetector(
                 onTap: () => Navigator.of(dialogContext).pop(),
@@ -451,9 +445,6 @@ class _MessageItemState extends State<MessageItem>
                   minScale: 0.8,
                   maxScale: 4,
                   child: GestureDetector(
-                    // Tap on the image / letterbox padding dismisses; pinch
-                    // and pan are different gesture kinds and still reach
-                    // InteractiveViewer.
                     onTap: () => Navigator.of(dialogContext).pop(),
                     behavior: HitTestBehavior.opaque,
                     child: CachedNetworkImage(
@@ -590,10 +581,7 @@ class _MessageItemState extends State<MessageItem>
         child: Builder(
           builder: (btnContext) => InkWell(
             onTap: () {
-              // Anchor at the button's bottom-left so the menu opens
-              // directly below it. globalPaintBounds resolves the
-              // RenderBox to viewport coords without us having to
-              // pass GlobalKeys around.
+              // Anchor menu at button's bottom-left.
               final box = btnContext.findRenderObject() as RenderBox?;
               final origin =
                   box?.localToGlobal(Offset(0, box.size.height)) ?? Offset.zero;
@@ -661,13 +649,7 @@ class _MessageItemState extends State<MessageItem>
   /// Resolve text color for message content.
   Color _contentTextColor({required bool isMine, required bool isFailed}) {
     if (isFailed) return EchoTheme.danger;
-    // Plain (Slack) AND Compact (Discord) layouts both drop the bubble
-    // fill (#564, see _bubbleColor → Colors.transparent), so the message
-    // sits directly on the chat background. onPrimary is calibrated for
-    // an accent-coloured bubble that no longer exists — using it against
-    // chatBg produces near-black-on-near-black on dark themes such as
-    // Graphite (#13AF9D bubble's onPrimary is #0A1114). Fall back to
-    // textPrimary so own messages stay readable in bubble-less layouts.
+    // Plain/Compact drop the bubble fill (#564), so onPrimary (calibrated for accent bubble) reads as black-on-black on dark themes.
     if (widget._isPlain || widget._isCompact) return context.textPrimary;
     if (isMine) return Theme.of(context).colorScheme.onPrimary;
     return context.textPrimary;
@@ -728,9 +710,7 @@ class _MessageItemState extends State<MessageItem>
                   httpHeaders: headers,
                   cacheManager: chatMediaCacheManager,
                   errorWidget: (_, _, _) => const SizedBox.shrink(),
-                  // Reserve the expected image area while loading so
-                  // the scroll position does not jump when the image
-                  // finally decodes.
+                  // Reserve area while loading to avoid scroll jump on decode.
                   placeholder: (_, _) => Container(
                     height: 200,
                     width: 300,
@@ -790,9 +770,7 @@ class _MessageItemState extends State<MessageItem>
     );
   }
 
-  // Forwarded messages: strip the `[Forwarded] ` prefix so the marker
-  // regex inside MediaContent can match. The "Forwarded" badge above the
-  // bubble still signals provenance.
+  // Strip `[Forwarded] ` so MediaContent's start-anchored marker regex still matches.
   Widget _buildMediaBubble({
     required ChatMessage msg,
     required bool isMine,
@@ -826,11 +804,7 @@ class _MessageItemState extends State<MessageItem>
     );
   }
 
-  // Sender side: if WE drafted this message and the system preserved the
-  // original text in failedContent, show the user what they wrote (dimmed)
-  // with a Resend/Delete footer rather than the generic "couldn't decrypt"
-  // pill — the pill makes it look like the message was sent by someone
-  // else. F-006 / expert recommendation in the 2026-05-19 UI audit.
+  // Show our own preserved draft (with Resend/Delete) instead of generic decrypt pill that looks like another sender (F-006).
   Widget _buildDecryptFailureBubble({
     required ChatMessage msg,
     required bool isMine,
@@ -861,9 +835,6 @@ class _MessageItemState extends State<MessageItem>
     );
 
     final embeddedImages = extractEmbeddedImageUrls(displayContent);
-    // Link preview for the first URL (skip attachment-only messages and
-    // internal server links). YouTube URLs short-circuit to an embed card
-    // with thumbnail + red play button.
     final linkPreview = _buildLinkPreviewWidget(displayContent);
 
     if (embeddedImages.isEmpty && linkPreview == null) return textWidget;
@@ -904,13 +875,7 @@ class _MessageItemState extends State<MessageItem>
   }) {
     return [
       if (msg.pinnedAt != null) PinnedIndicator(isMine: isMine),
-      // Sender name + inline timestamp is shown ONCE per consecutive run
-      // of messages from the same author (Discord-style grouping). The
-      // earlier "always show in compact" branch made every continuation
-      // bubble repeat the author + time, which read as visual noise on
-      // back-to-back replies — see the user-reported screenshots from
-      // 2026-05-26. Now keyed solely on `showHeader` (computed by the
-      // chat list from the previous neighbour).
+      // Show sender name once per author-run; the prior "always show in compact" reproduced author/time on every continuation (2026-05-26 regression).
       if (widget.showHeader && (!isMine || widget.compactLayout))
         SenderNameLabel(
           message: msg,
@@ -984,11 +949,7 @@ class _MessageItemState extends State<MessageItem>
       };
     }
 
-    // Compact / Plain layouts (#794) flow to the full chat-pane width like
-    // Discord/Slack — no centered-bubble cap. Bubble layout keeps 520px so
-    // bubbles don't stretch awkwardly on wide windows; ultrawide (≥1600px)
-    // grows the cap up to 720px or 45% of viewport, whichever is smaller
-    // (#403).
+    // Bubble cap: 520px (520 keeps reading line tight); ultrawide ≥1600px grows to min(720, 45%vw) (#403, #794).
     final width = MediaQuery.of(context).size.width;
     final maxBubble = width >= 1600 ? math.min(720.0, width * 0.45) : 520.0;
     final bubbleConstraints = widget.compactLayout
@@ -1002,10 +963,7 @@ class _MessageItemState extends State<MessageItem>
         color: _bubbleColor(isMine: isMine, isFailed: isFailed),
         borderRadius: _bubbleBorderRadius(isMine: isMine),
       ),
-      // Merge semantics for the bubble's inner content so the screen reader
-      // announces a single composite label (handled in build()) instead of
-      // separate header/body/timestamp/lock fragments. Avatar and hover bar
-      // sit OUTSIDE this merge so their own semantics survive.
+      // Merge inner semantics so the screen reader announces one composite label; avatar/hover sit outside the merge.
       child: MergeSemantics(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1028,10 +986,7 @@ class _MessageItemState extends State<MessageItem>
     required Widget reactionPill,
   }) {
     if (!hasReactions) return bubble;
-    // Slice 5: in plain (Slack) mode, render reactions inline directly
-    // beneath the message body instead of using a Stack overlay — Slack's
-    // reactions sit in the same column as the timestamp row, never as a
-    // floating pill.
+    // Plain (Slack) mode: render reactions inline beneath body, not as overlay pill.
     if (widget._isPlain) {
       return Column(
         crossAxisAlignment: isMine
@@ -1194,10 +1149,7 @@ class _MessageItemState extends State<MessageItem>
         child: child,
       ),
       child: Padding(
-        // Compact / plain layouts left-align every message regardless of
-        // sender, so even "my" messages need the 36px avatar-gutter inset
-        // to line up with the bubble.  Only bubbles-layout sent messages
-        // sit flush right and warrant `left: 0`.
+        // Compact/plain left-align all messages, so even own messages need the 36px avatar-gutter inset.
         padding: EdgeInsets.only(
           top: 2,
           left: (isMine && !widget.compactLayout) ? 0 : 36,
@@ -1228,20 +1180,11 @@ class _MessageItemState extends State<MessageItem>
     required String? mediaUrl,
   }) {
     final style = _hoverStyle;
-    // Always anchor to the right side of the row at a fixed inset,
-    // matching the Discord convention: action bar is always top-right
-    // regardless of which side the bubble is on. This removes the
-    // bubbleOnRight branching that used to vary left/right per sender.
+    // Always top-right (Discord convention), regardless of bubble side.
     return Positioned(
       top: style.overlayTop,
       right: 8,
-      // Defensive `IntrinsicWidth` wrap: in CanvasKit (web) the action
-      // row's `Container > Row(MainAxisSize.min)` was still expanding to
-      // the full Stack width despite the Positioned only setting one
-      // edge — see the production screenshot reported on 2026-05-08.
-      // IntrinsicWidth forces the child subtree to size to its
-      // own intrinsic content regardless of the parent's loose
-      // constraints, giving us the snug action bar everywhere.
+      // IntrinsicWidth: CanvasKit otherwise stretches the Row to full Stack width when only one edge is set (prod 2026-05-08).
       child: ValueListenableBuilder<bool>(
         valueListenable: _hoverNotifier,
         builder: (context, isHovered, child) => ExcludeSemantics(
@@ -1279,13 +1222,7 @@ class _MessageItemState extends State<MessageItem>
       return [Flexible(child: bubbleWithReactions)];
     }
 
-    // Continuation messages (same author as the row above) reserve the
-    // avatar column with a blank spacer so the bubble/row stays aligned
-    // with the header row, but DO NOT repeat the avatar. This matches the
-    // Discord / Slack / iMessage behaviour where back-to-back messages
-    // from one user read as a single grouped column with one header.
-    // Applies to every layout — bubbles included — so received-message
-    // groups don't smear a small avatar against each follow-up bubble.
+    // Continuation rows reserve the avatar column with a spacer (no repeated avatar) — Discord/Slack/iMessage grouping.
     if (!widget.showHeader) {
       return [
         SizedBox(width: _resolveAvatarWidth()),
@@ -1401,9 +1338,7 @@ class _MessageItemState extends State<MessageItem>
       onEdit: _wrapMsgCallback(widget.onEdit, msg),
       onDelete: _wrapMsgCallback(widget.onDelete, msg),
       onCopyId: () => _copyMessageId(msg),
-      // Inline reactions header is hidden by the registry when
-      // isEncryptedUnreadable; we still wire the callbacks so the
-      // registry can decide.
+      // Registry decides visibility based on isEncryptedUnreadable; we still wire callbacks.
       onPickReaction: widget.onReactionSelect == null
           ? null
           : (emoji) => widget.onReactionSelect!(msg, emoji),
@@ -1481,19 +1416,14 @@ class _MessageItemState extends State<MessageItem>
   /// Density+header-aware top padding for the message row.
   double _buildTopPad() {
     if (widget.showHeader) {
-      // Phase 2 follow-up: density-driven gap between bubbles from
-      // the same sender, replacing the old MessageLayout-derived
-      // ternary so layout (bubble style) and density (vertical
-      // spacing) are independent knobs.
+      // Density-driven gap so layout and density are independent knobs.
       return switch (widget.density) {
         UIDensity.cozy => 12,
         UIDensity.normal => 8,
         UIDensity.compact => 3,
       };
     }
-    // Continuation row in the same group — pull subsequent messages
-    // tighter so a multi-line group reads as one paragraph (Discord +
-    // iMessage rhythm).
+    // Continuation rows: tighter spacing so a group reads as one paragraph.
     return switch (widget.density) {
       UIDensity.cozy => 1,
       UIDensity.normal => 1,
@@ -1549,9 +1479,7 @@ class _MessageItemState extends State<MessageItem>
               mainAxisAlignment: isAlignedEnd
                   ? MainAxisAlignment.end
                   : MainAxisAlignment.start,
-              // Bubbles: avatar anchors to the bottom of the bubble (iMessage
-              // style). Discord/Slack: avatar anchors to the top so it lines
-              // up with the sender name on the first line of the group.
+              // Bubbles: avatar bottom (iMessage); compact: top (lines up with sender name).
               crossAxisAlignment: widget.compactLayout
                   ? CrossAxisAlignment.start
                   : CrossAxisAlignment.end,
@@ -1606,9 +1534,7 @@ class _MessageItemState extends State<MessageItem>
     return GestureDetector(
       onLongPressStart: (details) =>
           _handleLongPress(details, msg, isMine, mediaUrl, hasReactions),
-      // Desktop right-click on the bubble opens the same centralised
-      // context menu. Hover-bar "..." remains as a discoverable
-      // mouse affordance but routes to the same _openContextMenu.
+      // Right-click routes through _openContextMenu like the hover-bar overflow.
       onSecondaryTapDown: (details) =>
           _openContextMenu(details.globalPosition, msg, isMine, mediaUrl),
       onHorizontalDragUpdate: canSwipeToReply
@@ -1654,10 +1580,7 @@ class _MessageItemState extends State<MessageItem>
       return const SizedBox.shrink();
     }
 
-    // Strip the `[Forwarded] ` prefix before regex media detection — the
-    // media-marker patterns are start-anchored (`^\[video:`) so the
-    // prefix would otherwise hide the marker and render `[video:url]`
-    // raw in the bubble.
+    // Strip `[Forwarded] ` before media regex (start-anchored patterns would otherwise miss the marker).
     final contentForMedia = msg.content.startsWith(_forwardedPrefix)
         ? msg.content.substring(_forwardedPrefix.length)
         : msg.content;
@@ -1692,10 +1615,6 @@ class _MessageItemState extends State<MessageItem>
     final canSwipeToReply =
         _isMobileTouch && widget.onReply != null && !msg.isSystemEvent;
     final topPad = _buildTopPad();
-    // On hover: tint the row background and draw a subtle border so the
-    // focused message stands out. Plain (Slack) layout also keeps its
-    // 3px left accent rule. All colors come from _HoverStyleSpec so
-    // they are fully theme-aware.
     final hoverSpec = _hoverStyle;
 
     final messageWidget = ValueListenableBuilder<bool>(
@@ -1729,10 +1648,7 @@ class _MessageItemState extends State<MessageItem>
         onExit: (_) => _hoverNotifier.value = false,
         child: Semantics(
           label: _composeMessageSemanticsLabel(msg, isMine),
-          // Audit #830 finding 11: the row's only direct gesture is
-          // long-press to open the action sheet; advertising `button: true`
-          // lied to screen readers ("activate" was announced even though
-          // a tap is a no-op). Declare the action that actually fires.
+          // Declare the actual gesture (long-press); `button: true` lied to screen readers (#830 finding 11).
           onLongPress: () => _handleLongPress(
             const LongPressStartDetails(),
             msg,

@@ -79,13 +79,7 @@ class TrayService with TrayListener, WindowListener {
     await windowManager.setPreventClose(true);
     windowManager.addListener(this);
 
-    // Each step is guarded so a failure later in the sequence (notably
-    // setContextMenu, which is flaky on some Linux compositors) doesn't
-    // leave the icon unresponsive: the click listener still attaches
-    // even if the menu can't be installed, which keeps Windows/macOS
-    // left-click usable.  On Linux the menu IS the interaction surface
-    // (see class docstring), so install failure here means tray is
-    // effectively dead until next login.
+    // Each step guarded so setContextMenu flakes don't kill the icon listener.
     var iconShown = false;
     try {
       await trayManager.setIcon(_iconPath());
@@ -136,10 +130,7 @@ class TrayService with TrayListener, WindowListener {
 
   @override
   void onWindowClose() async {
-    // Slice 10: persist window geometry before hiding to tray so that even
-    // a soft-close (close button -> tray) captures the user's latest
-    // layout. The true app quit also funnels through this listener via
-    // `Quit` -> `setPreventClose(false)` -> `close()`.
+    // Persist geometry before hide-to-tray; Quit also funnels through here.
     await WindowStateService.save();
     await windowManager.hide();
   }
@@ -148,10 +139,7 @@ class TrayService with TrayListener, WindowListener {
 
   @override
   void onTrayIconMouseDown() {
-    // Windows + macOS path: the OS delivers a real MouseDown, so we toggle
-    // the window directly.  Linux/libappindicator never fires this when a
-    // context menu is attached -- any click opens the menu instead, and
-    // the user toggles via the Show/Hide menu entries (#558).
+    // (#558) Win/macOS only; Linux fires context menu instead.
     _toggleWindow();
   }
 
@@ -186,10 +174,7 @@ class TrayService with TrayListener, WindowListener {
   }
 
   Future<void> _setContextMenu() async {
-    // Show / Hide are first-class menu items because on Linux any click on
-    // the icon opens this menu (libappindicator/SNI does not deliver
-    // MouseDown when a menu is attached) -- they are the only path to
-    // toggle window visibility on that platform (#558).
+    // (#558) Show/Hide are first-class — only toggle path on Linux SNI.
     await trayManager.setContextMenu(
       Menu(
         items: [

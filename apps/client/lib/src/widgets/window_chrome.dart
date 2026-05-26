@@ -141,10 +141,7 @@ class AppTitleBar extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    // Clamp the OS text scaler inside the 36-px title bar. At 1.5x system
-    // scaling the title would overflow the fixed-height bar and clip into the
-    // window controls; clamping to 1.2x keeps a11y while preserving the
-    // chrome's geometry. Buttons are icon-only so they're unaffected.
+    // Clamp text scale to 1.2x — 1.5x overflows the 36px title bar into the window controls.
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.2,
       child: Container(
@@ -157,9 +154,7 @@ class AppTitleBar extends StatelessWidget {
           children: [
             // Full-width drag area underneath everything.
             const Positioned.fill(child: AppDragArea(child: SizedBox.expand())),
-            // Centered name — IgnorePointer so clicks fall through to drag
-            // area. Reserve room on macOS so the title can't slide under the
-            // red/yellow/green traffic-light cluster anchored to the left.
+            // IgnorePointer so clicks fall through to drag; macOS padding avoids the traffic-light cluster.
             if (title != null && title!.isNotEmpty)
               Padding(
                 padding: EdgeInsets.only(left: Platform.isMacOS ? 72.0 : 0.0),

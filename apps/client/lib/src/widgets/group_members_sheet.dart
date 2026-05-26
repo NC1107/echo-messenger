@@ -89,9 +89,7 @@ class _GroupMembersSheetState extends ConsumerState<GroupMembersSheet> {
 
     final members = conv.members;
 
-    // Resolve online/status for each member: self is never broadcast by
-    // the WS, so substitute auth's local status. Everyone else uses the
-    // central presenceFor lookup.
+    // WS doesn't broadcast self presence; substitute auth's local status.
     UserPresence presenceFor(ConversationMember m) {
       if (m.userId == myUserId) {
         return UserPresence(status: myPresenceStatus, isOnline: true);
