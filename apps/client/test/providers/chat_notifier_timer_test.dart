@@ -67,10 +67,12 @@ void main() {
             .messagesForConversation('conv-1');
         expect(afterMsgs, hasLength(1));
         expect(afterMsgs.first.status, MessageStatus.failed);
-        // Original content preserved in failedContent for retry.
+        // Original content preserved in both content + failedContent — the
+        // body no longer gets replaced with a "Tap to retry" label, since
+        // the RetryRow widget already surfaces the failure with explicit
+        // Retry / Delete buttons.
         expect(afterMsgs.first.failedContent, 'hello world');
-        // User-facing content is the timeout message.
-        expect(afterMsgs.first.content, contains("Couldn't send"));
+        expect(afterMsgs.first.content, 'hello world');
       });
     });
 
