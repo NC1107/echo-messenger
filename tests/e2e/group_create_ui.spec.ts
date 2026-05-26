@@ -183,15 +183,15 @@ test.describe('Group Creation UI Flow', () => {
     await ss(page, '03-form-filled');
 
     // Step 6: Verify visibility toggle — the Private/Public SegmentedButton
-    // was replaced with a single "Private group" SwitchListTile that reads
-    // consistently with the E2E toggle directly below it. Default is ON
-    // (private); toggling off makes the group public.
-    const privateTile = page.getByText('Private group').first();
-    await expect(privateTile).toBeVisible({ timeout: 3000 });
-    await privateTile.click();
+    // was replaced with a single "Private group" SwitchListTile (wrapped in
+    // a Semantics(label: 'private group toggle') in create_group_screen.dart).
+    // Default is ON (private); toggling makes the group public.
+    const privateToggle = page.getByLabel(/private group toggle/i);
+    await expect(privateToggle).toBeVisible({ timeout: 5000 });
+    await privateToggle.click();
     await page.waitForTimeout(500);
     await ss(page, '04-toggled-public');
-    await privateTile.click();
+    await privateToggle.click();
     await page.waitForTimeout(500);
     console.log('  Visibility toggle works');
 
