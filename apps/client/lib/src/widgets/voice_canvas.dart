@@ -465,9 +465,26 @@ class _CanvasPainter extends CustomPainter {
 
   const _CanvasPainter({required this.canvas});
 
+  bool _hasEraserStrokes() {
+    for (final s in canvas.strokes) {
+      if (s.kind == StrokeKind.eraser) return true;
+    }
+    if (canvas.activePoints.isNotEmpty &&
+        canvas.selectedTool == CanvasTool.eraser) {
+      return true;
+    }
+    return false;
+  }
+
   @override
   void paint(Canvas c, Size size) {
-    c.saveLayer(Offset.zero & size, Paint());
+    // saveLayer is required for BlendMode.clear (eraser) to carve only
+    // the strokes rather than punching through the underlying canvas.
+    // Skip the layer when there are no eraser strokes — drawing directly
+    // saves a viewport-sized offscreen buffer per paint, which on
+    // CanvasKit/Firefox is one of the heaviest GPU ops.
+    final needsLayer = _hasEraserStrokes();
+    if (needsLayer) c.saveLayer(Offset.zero & size, Paint());
 
     for (final stroke in canvas.strokes) {
       _paintStroke(c, size, stroke);
@@ -486,7 +503,7 @@ class _CanvasPainter extends CustomPainter {
       _paintStroke(c, size, activeStroke);
     }
 
-    c.restore();
+    if (needsLayer) c.restore();
   }
 
   void _paintStroke(Canvas c, Size size, CanvasStroke stroke) {
@@ -541,9 +558,20 @@ class _CanvasPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_CanvasPainter old) =>
-      old.canvas.strokes != canvas.strokes ||
-      old.canvas.activePoints != canvas.activePoints;
+  bool shouldRepaint(_CanvasPainter old) {
+    // Reference equality on the lists isn't enough — the provider may
+    // hand back a fresh List each tick. Compare lengths and the most-
+    // recent stroke id so identical state short-circuits the repaint.
+    if (old.canvas.strokes.length != canvas.strokes.length) return true;
+    if (old.canvas.activePoints.length != canvas.activePoints.length) {
+      return true;
+    }
+    if (canvas.strokes.isNotEmpty &&
+        canvas.strokes.last.id != old.canvas.strokes.last.id) {
+      return true;
+    }
+    return false;
+  }
 }
 
 class _ParticipantInfo {
@@ -615,6 +643,13 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
   /// Only ticks while the buffer holds at least one sample.
   late final Ticker _trailTicker;
 
+  /// Tick counter the trail's CustomPainter watches via `repaint:`. Bumping
+  /// this triggers a scoped repaint of just the _TrailPainter — without
+  /// rebuilding the rest of the avatar (video tile, opacity/scale animators,
+  /// etc.) on every Ticker frame. Previously the Ticker called
+  /// `setState({})` 60 Hz per participant, rebuilding the whole subtree.
+  final ValueNotifier<int> _trailTick = ValueNotifier<int>(0);
+
   /// Cached reduce-motion value; refreshed on `didChangeDependencies`
   /// and `didUpdateWidget` so we don't sample inside `MediaQuery.of`
   /// during paint.
@@ -648,6 +683,7 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
   @override
   void dispose() {
     _trailTicker.dispose();
+    _trailTick.dispose();
     _trail.clear();
     super.dispose();
   }
@@ -669,7 +705,10 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
     if (_trail.isEmpty) {
       _trailTicker.stop();
     }
-    if (mounted) setState(() {});
+    // Bump the notifier instead of setState — the CustomPainter listens to
+    // it via `repaint:` so only the trail layer repaints, not the whole
+    // avatar subtree.
+    if (mounted) _trailTick.value = _trailTick.value + 1;
   }
 
   @override
@@ -789,29 +828,30 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
   }
 
   Widget _buildAvatarWithTrail(Widget avatar) {
-    final trailSamples = _reduceMotion
-        ? const <RenderedTrailSample>[]
-        : _trail.render(
-            current: _localPos ?? widget.currentPos,
-            canvasSize: widget.canvasSize,
-            now: DateTime.now(),
-          );
+    if (_reduceMotion) return avatar;
 
-    if (trailSamples.isEmpty) {
-      return avatar;
-    }
-
+    // Keep the trail layer mounted whenever the avatar is — its painter
+    // listens to `_trailTick` and returns immediately when the buffer is
+    // empty, so an idle puck pays no per-frame cost beyond shouldRepaint
+    // staying false. This avoids re-mounting the CustomPaint (and the
+    // ensuing layout pass) whenever the trail buffer flips between
+    // empty and non-empty.
     return Stack(
       clipBehavior: Clip.none,
       alignment: Alignment.center,
       children: [
         IgnorePointer(
-          child: CustomPaint(
-            size: const Size(_kAvatarSize, _kAvatarSize),
-            painter: _TrailPainter(
-              samples: trailSamples,
-              color: EchoTheme.online,
-              radius: _kAvatarHalfSize * 0.45,
+          child: RepaintBoundary(
+            child: CustomPaint(
+              size: const Size(_kAvatarSize, _kAvatarSize),
+              painter: _TrailPainter(
+                trail: _trail,
+                currentPos: _localPos ?? widget.currentPos,
+                canvasSize: widget.canvasSize,
+                color: EchoTheme.online,
+                radius: _kAvatarHalfSize * 0.45,
+                tick: _trailTick,
+              ),
             ),
           ),
         ),
@@ -977,26 +1017,37 @@ class _CanvasImageWidgetState extends State<_CanvasImageWidget> {
 /// Paints fading ghost circles at past positions of a puck so motion
 /// reads as "presence" rather than a snapping cursor.
 ///
-/// Phase 3a sub-slice 2 of `docs/ux-roadmap.md`.  `samples` is built
-/// fresh each frame by `PuckTrail.render`; the painter just iterates
-/// and draws.  No allocations beyond the per-call `Paint` — and we
-/// reuse a single Paint instance across the loop.
+/// Phase 3a sub-slice 2 of `docs/ux-roadmap.md`. Samples are computed
+/// inside paint() from the live [PuckTrail] so the parent doesn't have
+/// to rebuild on every Ticker frame just to pass a fresh sample list.
+/// Repaint is driven by [repaint] (the per-avatar tick notifier).
 class _TrailPainter extends CustomPainter {
-  final List<RenderedTrailSample> samples;
+  final PuckTrail trail;
+  final CanvasPoint currentPos;
+  final Size canvasSize;
   final Color color;
 
   /// Radius of each ghost circle.  Smaller than the puck itself so
   /// trails read as a wake, not a doppelgänger.
   final double radius;
 
-  const _TrailPainter({
-    required this.samples,
+  _TrailPainter({
+    required this.trail,
+    required this.currentPos,
+    required this.canvasSize,
     required this.color,
     required this.radius,
-  });
+    required Listenable tick,
+  }) : super(repaint: tick);
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (trail.isEmpty) return;
+    final samples = trail.render(
+      current: currentPos,
+      canvasSize: canvasSize,
+      now: DateTime.now(),
+    );
     if (samples.isEmpty) return;
     final center = Offset(size.width / 2, size.height / 2);
     final paint = Paint()..style = PaintingStyle.fill;
@@ -1012,7 +1063,12 @@ class _TrailPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _TrailPainter old) =>
-      !identical(old.samples, samples) ||
+      // The repaint Listenable drives ticks; only structural changes need
+      // shouldRepaint to fire (canvas resize, position handoff).
+      !identical(old.trail, trail) ||
+      old.canvasSize != canvasSize ||
+      old.currentPos.x != currentPos.x ||
+      old.currentPos.y != currentPos.y ||
       old.color != color ||
       old.radius != radius;
 }

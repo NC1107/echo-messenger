@@ -415,12 +415,18 @@ class _ParticipantTileState extends State<ParticipantTile> {
             clipBehavior: Clip.antiAlias,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(15),
-              // RepaintBoundary isolates the blur layer so audio-level
-              // rebuilds (~10 Hz) don't re-rasterise the BackdropFilter
-              // for every tile in the grid.
+              // RepaintBoundary isolates the tile so audio-level rebuilds
+              // (~10 Hz) don't cascade into sibling tiles.
+              //
+              // BackdropFilter is desktop/mobile only. On web, CanvasKit
+              // composites the 12×12 Gaussian blur into an offscreen GPU
+              // texture every frame per tile — on Firefox/NVIDIA EGL that
+              // can saturate the CanvasRenderer thread and stall the
+              // lounge. The opaque `context.surface @ 0.30` underneath is
+              // enough on web without the blur.
               child: RepaintBoundary(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                child: _MaybeBackdropBlur(
+                  enabled: !kIsWeb,
                   child: Container(
                     color: context.surface.withValues(alpha: 0.30),
                     child: Stack(
@@ -910,4 +916,23 @@ class _LocalScreenShareTrackState extends State<LocalScreenShareTrack> {
 
 Map<String, String>? _getAuthHeaders(String? authToken) {
   return authToken != null ? {'Authorization': 'Bearer $authToken'} : null;
+}
+
+/// BackdropFilter wrapper that skips the blur on web. The 12×12 Gaussian
+/// blur is a CanvasKit hotspot on Firefox/NVIDIA EGL — see the comment at
+/// the call site above for the perf rationale.
+class _MaybeBackdropBlur extends StatelessWidget {
+  final bool enabled;
+  final Widget child;
+
+  const _MaybeBackdropBlur({required this.enabled, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!enabled) return child;
+    return BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+      child: child,
+    );
+  }
 }
