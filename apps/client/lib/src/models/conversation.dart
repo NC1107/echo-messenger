@@ -212,12 +212,18 @@ class ConversationMember {
   final String? avatarUrl;
   final String? statusText;
 
+  /// Stored presence ('online', 'away', 'dnd', 'invisible'). Null when the
+  /// server build pre-dates the member-row presence join; treat it as
+  /// 'online' downstream.
+  final String? presenceStatus;
+
   const ConversationMember({
     required this.userId,
     required this.username,
     this.role,
     this.avatarUrl,
     this.statusText,
+    this.presenceStatus,
   });
 
   factory ConversationMember.fromJson(Map<String, dynamic> json) {
@@ -227,6 +233,7 @@ class ConversationMember {
       role: json['role'] as String?,
       avatarUrl: json['avatar_url'] as String?,
       statusText: json['status_text'] as String?,
+      presenceStatus: json['presence_status'] as String?,
     );
   }
 
@@ -238,10 +245,17 @@ class ConversationMember {
             username == other.username &&
             role == other.role &&
             avatarUrl == other.avatarUrl &&
-            statusText == other.statusText;
+            statusText == other.statusText &&
+            presenceStatus == other.presenceStatus;
   }
 
   @override
-  int get hashCode =>
-      Object.hash(userId, username, role, avatarUrl, statusText);
+  int get hashCode => Object.hash(
+    userId,
+    username,
+    role,
+    avatarUrl,
+    statusText,
+    presenceStatus,
+  );
 }

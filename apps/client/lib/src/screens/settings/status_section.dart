@@ -5,12 +5,32 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
+import '../../utils/presence.dart';
 import '../../widgets/settings_panel_scaffold.dart';
 
 /// Maximum characters accepted by `PUT /api/users/me/status-text`.
 /// The server caps at 64; we enforce 80 in the field but show a counter so
 /// users know when they are near the server limit.
 const _kMaxStatusLength = 80;
+
+/// Short, app-curated text statuses surfaced as one-tap presets.
+const _kStatusPresets = <String>[
+  'AFK',
+  'BRB',
+  'In a meeting',
+  'Out to lunch',
+  'Streaming on Twitch',
+  'Heads down',
+];
+
+/// Presence dropdown options. Pairs (status, label) — the colour dot is
+/// resolved by [presenceColor] downstream.
+const _kPresenceOptions = <({String status, String label})>[
+  (status: 'online', label: 'Online'),
+  (status: 'away', label: 'Away'),
+  (status: 'dnd', label: 'Do not disturb'),
+  (status: 'invisible', label: 'Invisible'),
+];
 
 /// Settings section that lets the authenticated user set or clear a short
 /// custom status text.  The text is persisted via
@@ -99,10 +119,35 @@ class _StatusSectionState extends ConsumerState<StatusSection> {
     }
   }
 
+  void _applyPreset(String preset) {
+    _controller
+      ..text = preset
+      ..selection = TextSelection.collapsed(offset: preset.length);
+    _onTextChanged();
+  }
+
+  Future<void> _setPresence(String status) async {
+    final current = ref.read(authProvider).presenceStatus;
+    if (current == status) return;
+    try {
+      await ref.read(authProvider.notifier).setPresenceStatus(status);
+      if (!mounted) return;
+      ToastService.show(context, 'Status set to $status', type: ToastType.info);
+    } catch (e) {
+      if (!mounted) return;
+      ToastService.show(
+        context,
+        'Failed to change status',
+        type: ToastType.error,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final charCount = _controller.text.length;
     final overLimit = charCount > _kMaxStatusLength;
+    final presence = ref.watch(authProvider.select((s) => s.presenceStatus));
 
     return SettingsPanelScaffold(
       children: [
@@ -124,7 +169,44 @@ class _StatusSectionState extends ConsumerState<StatusSection> {
             height: 1.5,
           ),
         ),
+        const SizedBox(height: 20),
+
+        // Availability picker (online / away / dnd / invisible).
+        Text(
+          'Availability',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final option in _kPresenceOptions)
+              _PresenceChip(
+                label: option.label,
+                color: presenceColor(option.status),
+                selected: presence == option.status,
+                onTap: () => _setPresence(option.status),
+              ),
+          ],
+        ),
+
         const SizedBox(height: 24),
+
+        // Custom status text
+        Text(
+          'Custom message',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
 
         // Text field
         TextField(
@@ -185,6 +267,27 @@ class _StatusSectionState extends ConsumerState<StatusSection> {
           ),
         ),
 
+        const SizedBox(height: 12),
+
+        // One-tap preset chips.
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final preset in _kStatusPresets)
+              ActionChip(
+                label: Text(preset),
+                onPressed: () => _applyPreset(preset),
+                backgroundColor: context.surface,
+                labelStyle: TextStyle(
+                  color: context.textSecondary,
+                  fontSize: 12,
+                ),
+                side: BorderSide(color: context.border),
+              ),
+          ],
+        ),
+
         const SizedBox(height: 20),
 
         // Action buttons
@@ -235,6 +338,58 @@ class _StatusSectionState extends ConsumerState<StatusSection> {
           ],
         ),
       ],
+    );
+  }
+}
+
+/// Selectable pill used in the availability picker. The colour dot sits to
+/// the left of the label; when selected the chip gets an accent outline.
+class _PresenceChip extends StatelessWidget {
+  const _PresenceChip({
+    required this.label,
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected
+              ? context.accent.withValues(alpha: 0.15)
+              : context.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? context.accent : context.border,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(color: context.textPrimary, fontSize: 13),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
