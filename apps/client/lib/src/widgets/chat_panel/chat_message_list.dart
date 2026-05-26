@@ -239,6 +239,10 @@ class ChatMessageList extends ConsumerWidget {
         // Flutter 3.41+ renames to scrollCacheExtent; drop ignore when .flutter-version > 3.41.9.
         // ignore: deprecated_member_use
         cacheExtent: 600,
+        // Default true leaks Slivers in long histories (10k+ msgs). Message
+        // rows don't hold per-tile state that needs keep-alive (reaction
+        // overlays are anchored to widget keys, not state). #1117
+        addAutomaticKeepAlives: false,
         itemCount: messages.length + 1,
         itemBuilder: (context, index) {
           if (index == 0) {

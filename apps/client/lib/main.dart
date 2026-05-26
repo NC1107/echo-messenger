@@ -30,11 +30,14 @@ void main() {
   // has no implementation (#727).
   MediaKit.ensureInitialized();
 
-  // Cap Flutter's in-memory decoded-image cache: 500 images / 100 MB.
-  // The default (1000 images, no byte cap) is too generous for a chat app
-  // that can display hundreds of unique images in one session.
-  PaintingBinding.instance.imageCache.maximumSize = 500;
-  PaintingBinding.instance.imageCache.maximumSizeBytes = 100 * 1024 * 1024;
+  // Cap Flutter's in-memory decoded-image cache.
+  // Web holds decoded bitmaps in the JS heap, so 100 MB risks browser OOM
+  // under memory pressure — drop to 30 MB / 200 images there (#1117).
+  // Native keeps the original 500 / 100 MB.
+  PaintingBinding.instance.imageCache.maximumSize = kIsWeb ? 200 : 500;
+  PaintingBinding.instance.imageCache.maximumSizeBytes = kIsWeb
+      ? 30 * 1024 * 1024
+      : 100 * 1024 * 1024;
 
   // Register lifecycle observer early — before runApp — so it captures state
   // changes that happen during voice-channel entry on iOS (audio session
