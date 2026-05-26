@@ -267,7 +267,8 @@ async fn revoked_device_excluded_from_fanout_and_storage() {
 
     // CR-4: revoke_device bumps the per-user min-iat invalidator, so Bob's
     // pre-revoke token may be rejected on subsequent AuthUser checks under
-    // CI load when iat seconds roll over. Re-login to obtain a fresh token.
+    // CI load when iat seconds roll over.  Re-login to obtain a fresh token
+    // before fetching WS tickets.
     let (bob_token, _) =
         common::login(&client, &base, &bob_username, common::TEST_USER_PASSWORD).await;
 

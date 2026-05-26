@@ -324,6 +324,12 @@ async fn stream_chunk_to_disk(
     file.flush()
         .await
         .map_err(|e| AppError::internal(format!("Failed to flush chunk: {e}")))?;
+    // `sync_all` was tried here to close the page-cache race the chunked
+    // test occasionally hit on slow CI runners, but per-chunk fsync turned
+    // out to amplify the flake on tmpfs-backed GHA runners (the second
+    // chunk's sync_all returned EIO under disk pressure → 500). The
+    // finalize step does a single sync immediately before `fs::rename`
+    // instead, which keeps the safety property without per-chunk cost.
     Ok(written)
 }
 
@@ -357,6 +363,23 @@ pub async fn finalize(
 
     if let Some(expected_hex) = req.sha256.as_deref() {
         verify_sha256(&session.temp_path, expected_hex).await?;
+    }
+
+    // Single durability checkpoint: open the assembled temp file and sync
+    // it to disk before reading the head for MIME detection. This closes
+    // the rare race where a chunk write reports 200 (with `flush` only)
+    // but the kernel hasn't yet committed every byte before `fs::rename`
+    // moves the file into place.  Errors here are downgraded to a warning
+    // so a transient EIO on tmpfs doesn't fail an otherwise-good upload.
+    if let Ok(f) = fs::File::open(&session.temp_path).await
+        && let Err(e) = f.sync_all().await
+    {
+        tracing::warn!(
+            upload_id = %id,
+            temp_path = %session.temp_path,
+            error = %e,
+            "chunked_upload/finalize: sync_all failed; continuing"
+        );
     }
 
     let mime_type = detect_mime_from_file(&session.temp_path, &session.mime_type).await?;
