@@ -1,9 +1,12 @@
 /// Drawing tools popup menu used by the floating dock's draw submenu.
 library;
 
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,12 +15,14 @@ import '../../models/canvas_models.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/canvas_provider.dart';
 import '../../providers/server_url_provider.dart';
+import '../../services/canvas_export_service.dart';
 import '../../services/chunked_upload_client.dart';
 import '../../services/toast_service.dart';
 import '../../services/upload_client.dart';
 import '../../theme/echo_theme.dart';
 import '../../theme/motion_tokens.dart';
 import '../../utils/canvas_utils.dart';
+import '../../widgets/voice_canvas.dart' show voiceCanvasRepaintKey;
 
 /// Popup content for the drawing tools menu.
 class DrawingToolsMenu extends ConsumerStatefulWidget {
@@ -242,42 +247,202 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
   Widget _buildActionButtons(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-      child: Row(
+      child: Column(
         children: [
-          Expanded(
-            child: TextButton.icon(
-              onPressed: () async {
-                HapticFeedback.lightImpact();
-                await _pickAndAddImage(context);
-                if (mounted) widget.onRequestClose?.call();
-              },
-              icon: const Icon(Icons.add_photo_alternate_outlined, size: 16),
-              label: const Text('Image'),
-              style: TextButton.styleFrom(
-                foregroundColor: context.accent,
-                textStyle: const TextStyle(fontSize: 12),
+          Row(
+            children: [
+              Expanded(
+                child: TextButton.icon(
+                  onPressed: () async {
+                    HapticFeedback.lightImpact();
+                    await _pickAndAddImage(context);
+                    if (mounted) widget.onRequestClose?.call();
+                  },
+                  icon: const Icon(
+                    Icons.add_photo_alternate_outlined,
+                    size: 16,
+                  ),
+                  label: const Text('Image'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: context.accent,
+                    textStyle: const TextStyle(fontSize: 12),
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: TextButton.icon(
+                  onPressed: () {
+                    HapticFeedback.mediumImpact();
+                    ref.read(canvasProvider.notifier).clearDrawing();
+                    widget.onRequestClose?.call();
+                  },
+                  icon: const Icon(Icons.delete_outline, size: 16),
+                  label: const Text('Clear'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: EchoTheme.danger,
+                    textStyle: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: TextButton.icon(
-              onPressed: () {
-                HapticFeedback.mediumImpact();
-                ref.read(canvasProvider.notifier).clearDrawing();
-                widget.onRequestClose?.call();
-              },
-              icon: const Icon(Icons.delete_outline, size: 16),
-              label: const Text('Clear'),
-              style: TextButton.styleFrom(
-                foregroundColor: EchoTheme.danger,
-                textStyle: const TextStyle(fontSize: 12),
+          Row(
+            children: [
+              Expanded(
+                child: TextButton.icon(
+                  onPressed: () => _exportPng(context),
+                  icon: const Icon(Icons.image_outlined, size: 16),
+                  label: const Text('PNG'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: context.textSecondary,
+                    textStyle: const TextStyle(fontSize: 12),
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: TextButton.icon(
+                  onPressed: () => _exportJson(context),
+                  icon: const Icon(Icons.save_alt_outlined, size: 16),
+                  label: const Text('Save'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: context.textSecondary,
+                    textStyle: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: TextButton.icon(
+                  onPressed: () => _importJson(context),
+                  icon: const Icon(Icons.upload_file_outlined, size: 16),
+                  label: const Text('Load'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: context.textSecondary,
+                    textStyle: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
+  }
+
+  /// Save [bytes] under [suggestedName]. On web, file_picker writes the file
+  /// itself via a browser download; on native it only returns a path and we
+  /// write the bytes ourselves (see services/export_service.dart #740).
+  Future<String?> _saveBytes({
+    required Uint8List bytes,
+    required String suggestedName,
+    required String dialogTitle,
+    required List<String> allowedExtensions,
+  }) async {
+    if (kIsWeb) {
+      return FilePicker.saveFile(
+        dialogTitle: dialogTitle,
+        fileName: suggestedName,
+        type: FileType.custom,
+        allowedExtensions: allowedExtensions,
+        bytes: bytes,
+      );
+    }
+    final path = await FilePicker.saveFile(
+      dialogTitle: dialogTitle,
+      fileName: suggestedName,
+      type: FileType.custom,
+      allowedExtensions: allowedExtensions,
+    );
+    if (path == null) return null;
+    await File(path).writeAsBytes(bytes, flush: true);
+    return path;
+  }
+
+  Future<void> _exportPng(BuildContext ctx) async {
+    HapticFeedback.lightImpact();
+    try {
+      final bytes = await CanvasExportService.capturePng(voiceCanvasRepaintKey);
+      final path = await _saveBytes(
+        bytes: bytes,
+        suggestedName:
+            'voice-canvas-${DateTime.now().millisecondsSinceEpoch}.png',
+        dialogTitle: 'Export canvas as PNG',
+        allowedExtensions: const ['png'],
+      );
+      if (!ctx.mounted) return;
+      ToastService.show(
+        ctx,
+        path == null ? 'Export cancelled.' : 'Canvas exported.',
+        type: path == null ? ToastType.info : ToastType.success,
+      );
+    } catch (e) {
+      if (!ctx.mounted) return;
+      ToastService.show(ctx, 'PNG export failed: $e', type: ToastType.error);
+    }
+    if (mounted) widget.onRequestClose?.call();
+  }
+
+  Future<void> _exportJson(BuildContext ctx) async {
+    HapticFeedback.lightImpact();
+    try {
+      final json = CanvasExportService.encodeJson(ref.read(canvasProvider));
+      final bytes = Uint8List.fromList(utf8.encode(json));
+      final path = await _saveBytes(
+        bytes: bytes,
+        suggestedName:
+            'voice-canvas-${DateTime.now().millisecondsSinceEpoch}.json',
+        dialogTitle: 'Save canvas snapshot',
+        allowedExtensions: const ['json'],
+      );
+      if (!ctx.mounted) return;
+      ToastService.show(
+        ctx,
+        path == null ? 'Save cancelled.' : 'Snapshot saved.',
+        type: path == null ? ToastType.info : ToastType.success,
+      );
+    } catch (e) {
+      if (!ctx.mounted) return;
+      ToastService.show(ctx, 'Save failed: $e', type: ToastType.error);
+    }
+    if (mounted) widget.onRequestClose?.call();
+  }
+
+  Future<void> _importJson(BuildContext ctx) async {
+    HapticFeedback.lightImpact();
+    try {
+      final result = await FilePicker.pickFiles(
+        dialogTitle: 'Load canvas snapshot',
+        type: FileType.custom,
+        allowedExtensions: const ['json'],
+        withData: true,
+      );
+      if (result == null || result.files.isEmpty) {
+        if (mounted) widget.onRequestClose?.call();
+        return;
+      }
+      final bytes = result.files.first.bytes;
+      if (bytes == null) {
+        if (!ctx.mounted) return;
+        ToastService.show(
+          ctx,
+          'Could not read the snapshot file.',
+          type: ToastType.error,
+        );
+        return;
+      }
+      final decoded = CanvasExportService.decodeJson(utf8.decode(bytes));
+      ref
+          .read(canvasProvider.notifier)
+          .importSnapshot(strokes: decoded.strokes, images: decoded.images);
+      if (!ctx.mounted) return;
+      ToastService.show(ctx, 'Snapshot loaded.', type: ToastType.success);
+    } catch (e) {
+      if (!ctx.mounted) return;
+      ToastService.show(ctx, 'Load failed: $e', type: ToastType.error);
+    }
+    if (mounted) widget.onRequestClose?.call();
   }
 
   /// Open the system file picker to select an image and add it to the canvas.
