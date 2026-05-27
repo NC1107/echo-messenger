@@ -405,32 +405,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final confirmed = await showEchoConfirmDialog(
       context,
       title: _logOutLabel,
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Are you sure you want to log out?',
-            style: TextStyle(
-              color: context.textSecondary,
-              fontSize: 14,
-              height: 1.5,
-            ),
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'Your local encryption keys will be cleared. '
-            'Old encrypted messages on this device may become unreadable.',
-            style: TextStyle(
-              color: EchoTheme.danger,
-              fontSize: 13,
-              height: 1.5,
-            ),
-          ),
-        ],
+      content: Text(
+        'You can sign back in any time.',
+        style: TextStyle(
+          color: context.textSecondary,
+          fontSize: 14,
+          height: 1.5,
+        ),
       ),
       confirmLabel: _logOutLabel,
-      destructive: true,
+      destructive: false,
     );
 
     if (!confirmed) return;
