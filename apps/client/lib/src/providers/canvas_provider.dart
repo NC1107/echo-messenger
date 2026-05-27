@@ -23,6 +23,12 @@ class CanvasController extends _$CanvasController {
   /// The channel this canvas is attached to.
   String? _channelId;
 
+  /// The channel currently being attached (set BEFORE the REST fetch
+  /// completes). Used by [handleCanvasEvent] to recognise inbound events
+  /// for the right channel and buffer them while the snapshot is loading
+  /// so they aren't wiped when the fetch result overwrites state.
+  String? _attachingChannelId;
+
   /// Throttle timer for avatar position broadcasts (~20 fps).
   Timer? _avatarThrottle;
   ({String userId, CanvasPoint pos})? _pendingAvatar;
@@ -53,14 +59,34 @@ class CanvasController extends _$CanvasController {
   // -------------------------------------------------------------------------
 
   /// Load the persisted canvas state from the server and set up WS listener.
+  ///
+  /// Race-safe load order:
+  ///  1. Mark the channel as "attaching" so [handleCanvasEvent] buffers any
+  ///     inbound canvas events for it instead of mutating state directly.
+  ///  2. Reset state.
+  ///  3. Await the REST snapshot fetch — this populates strokes/images from
+  ///     the server's persisted truth.
+  ///  4. Promote `_attachingChannelId` to `_channelId` AFTER the fetch result
+  ///     has been written to state, so the fetched snapshot can't be
+  ///     overwritten by WS events that landed mid-fetch.
+  ///  5. Replay buffered events (typically a no-op, but covers the case where
+  ///     a peer drew while we were fetching).
   Future<void> attach(String conversationId, String channelId) async {
     if (_channelId == channelId) return; // already attached
-    _channelId = channelId;
+    _attachingChannelId = channelId;
+    _channelId = null;
+    _pendingEvents.clear();
     state = const CanvasState(); // reset while loading
 
     await _fetchCanvas(conversationId, channelId);
 
-    // Flush any canvas events that arrived before _channelId was set.
+    // Only promote to "attached" if we're still attaching to this channel —
+    // a second attach() to a different channel may have superseded us.
+    if (_attachingChannelId != channelId) return;
+    _channelId = channelId;
+    _attachingChannelId = null;
+
+    // Flush any canvas events that landed during the fetch.
     final buffered = List<Map<String, dynamic>>.from(_pendingEvents);
     _pendingEvents.clear();
     for (final event in buffered) {
@@ -81,6 +107,7 @@ class CanvasController extends _$CanvasController {
     _pendingStrokePoints = null;
     _pendingEvents.clear();
     _channelId = null;
+    _attachingChannelId = null;
     state = const CanvasState();
   }
 
@@ -569,8 +596,15 @@ class CanvasController extends _$CanvasController {
     final channelId = json['channel_id'] as String?;
     // Buffer events that arrive before attach() has set _channelId.  They
     // will be replayed once attach() completes and _channelId is known.
+    // Also buffer events that arrive WHILE attach()'s REST snapshot is
+    // in flight for this channel — applying them mid-fetch is unsafe
+    // because the fetch result will overwrite state and discard the
+    // WS-derived stroke (regression: late joiners drawing during another
+    // peer's fetch would vanish on the late-joiner's side).
     if (_channelId == null) {
-      _pendingEvents.add(json);
+      if (_attachingChannelId == null || channelId == _attachingChannelId) {
+        _pendingEvents.add(json);
+      }
       return;
     }
     if (channelId != _channelId) return; // event for a different channel

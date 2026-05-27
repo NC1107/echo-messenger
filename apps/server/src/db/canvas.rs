@@ -59,7 +59,16 @@ pub async fn append_stroke(
     stroke: serde_json::Value,
 ) -> Result<(), CanvasCapError> {
     // Check current stroke count before appending to bound cumulative growth.
-    let current_len: Option<i64> = sqlx::query_scalar(
+    //
+    // NOTE: `jsonb_array_length` returns SQL INT4 (i32), not INT8 — decoding
+    // as `i64` was a latent bug that fired the moment a row actually
+    // existed: sqlx errored with "mismatched types ... INT8 vs INT4", the
+    // cap check returned `CanvasCapError::Db`, and `persist_canvas_state`
+    // silently logged + fell through to broadcast WITHOUT writing.  The
+    // visible symptom was "every stroke after the first one vanishes for
+    // late joiners" (user report 2026-05-27).  Decode as the actual SQL
+    // type and widen at the comparison site.
+    let current_len: Option<i32> = sqlx::query_scalar(
         "SELECT jsonb_array_length(drawing_data)
          FROM channel_canvas
          WHERE channel_id = $1",
@@ -68,7 +77,7 @@ pub async fn append_stroke(
     .fetch_optional(pool)
     .await?;
 
-    if current_len.unwrap_or(0) >= MAX_STROKES {
+    if i64::from(current_len.unwrap_or(0)) >= MAX_STROKES {
         return Err(CanvasCapError::CapReached);
     }
 
@@ -160,7 +169,9 @@ pub async fn add_image(
     image: serde_json::Value,
 ) -> Result<(), CanvasCapError> {
     // Check current image count before appending to bound cumulative growth.
-    let current_len: Option<i64> = sqlx::query_scalar(
+    // See `append_stroke` for the i64-vs-i32 cap-decode bug context — same
+    // root cause was wiping every image past the first.
+    let current_len: Option<i32> = sqlx::query_scalar(
         "SELECT jsonb_array_length(images_data)
          FROM channel_canvas
          WHERE channel_id = $1",
@@ -169,7 +180,7 @@ pub async fn add_image(
     .fetch_optional(pool)
     .await?;
 
-    if current_len.unwrap_or(0) >= MAX_IMAGES {
+    if i64::from(current_len.unwrap_or(0)) >= MAX_IMAGES {
         return Err(CanvasCapError::CapReached);
     }
 

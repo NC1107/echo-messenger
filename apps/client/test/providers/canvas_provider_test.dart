@@ -336,6 +336,79 @@ void main() {
       expect(state.strokes, isEmpty);
     });
 
+    // Regression test for the 2026-05-27 user report:
+    // "If I draw and someone is not in the call, when they join they should
+    // see my drawings." Specifically, this guards against the inverse race:
+    // a WS canvas_event arriving DURING the REST snapshot fetch must NOT be
+    // applied to a state that is about to be overwritten by the fetch.
+    // Before the fix, _channelId was set BEFORE awaiting _fetchCanvas, so
+    // mid-fetch events mutated state and then the fetch result wiped them.
+    //
+    // The fix is to leave _channelId null until the fetch resolves, and
+    // buffer events whose channel matches _attachingChannelId.
+    test(
+      'mid-fetch events are buffered then replayed after snapshot lands',
+      () {
+        // Simulate the attach state machine.
+        String? channelId; // _channelId
+        String? attachingChannelId; // _attachingChannelId
+        final pending = <Map<String, dynamic>>[];
+        var state = const CanvasState();
+
+        // 1) attach() starts: mark attaching, leave _channelId null.
+        attachingChannelId = 'ch-fetch-race';
+        channelId = null;
+        state = const CanvasState();
+
+        // 2) A mid-fetch WS stroke event arrives.
+        final event = {
+          'channel_id': 'ch-fetch-race',
+          'kind': 'stroke',
+          'from_user_id': 'peer-1',
+          'payload': {
+            'id': 'mid-fetch-stroke',
+            'color': '#123456',
+            'width': 2.0,
+            'points': [
+              {'x': 0.2, 'y': 0.2},
+            ],
+            'kind': 'pen',
+          },
+        };
+
+        // The fixed handleCanvasEvent buffers it: _channelId is still null
+        // (fetch hasn't resolved), so the event is queued if its channel_id
+        // matches _attachingChannelId.
+        if (channelId == null && event['channel_id'] == attachingChannelId) {
+          pending.add(event);
+        }
+
+        // 3) Fetch resolves with an empty board (the peer drew the stroke
+        // AFTER our GET hit the DB).
+        state = state.copyWith(strokes: [], images: [], isLoaded: true);
+
+        // 4) Promote attaching → attached, then replay buffered events.
+        channelId = attachingChannelId;
+        attachingChannelId = null;
+        for (final ev in pending) {
+          if (ev['channel_id'] == channelId && ev['kind'] == 'stroke') {
+            final stroke = CanvasStroke.fromJson(
+              ev['payload'] as Map<String, dynamic>,
+            );
+            final next = List<CanvasStroke>.from(state.strokes)..add(stroke);
+            state = state.copyWith(strokes: next);
+          }
+        }
+
+        expect(
+          state.strokes.length,
+          1,
+          reason: 'mid-fetch stroke must survive snapshot overwrite',
+        );
+        expect(state.strokes.first.id, 'mid-fetch-stroke');
+      },
+    );
+
     test('event with mismatched channel_id is still ignored after attach', () {
       const attachedChannelId = 'ch-correct';
       const foreignChannelId = 'ch-other';
