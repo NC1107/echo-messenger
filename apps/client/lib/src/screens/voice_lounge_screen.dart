@@ -1213,8 +1213,14 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
             transformationController: _viewport,
             minScale: minScale,
             maxScale: maxScale,
+            // Both pan AND scale must be off while a tool is in hand —
+            // otherwise InteractiveViewer's ScaleGestureRecognizer can claim
+            // single-pointer drags via its scale-of-one path and turn a
+            // shape draw into a viewport pan (image #57, 2026-05-27). The
+            // drawing layer's HitTestBehavior.opaque pairs with this to
+            // guarantee the gesture arena is uncontested.
             panEnabled: !_isDrawing,
-            scaleEnabled: true,
+            scaleEnabled: !_isDrawing,
             trackpadScrollCausesScale: true,
             boundaryMargin: EdgeInsets.symmetric(
               horizontal: marginX,
