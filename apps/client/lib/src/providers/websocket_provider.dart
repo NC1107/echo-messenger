@@ -207,6 +207,12 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
       'Connected to $wsBase',
     );
 
+    // Suppress notification toasts for the first few seconds after connect
+    // so backfilled messages don't spam the user on login / reconnect
+    // (2026-05-27 feedback). Reset on every connect so a long-disconnected
+    // device coming back online doesn't re-spam either.
+    openInitialSyncWindow();
+
     // Reload conversations in case initial REST raced with the WS connect.
     ref.read(conversationsProvider.notifier).loadConversations();
 

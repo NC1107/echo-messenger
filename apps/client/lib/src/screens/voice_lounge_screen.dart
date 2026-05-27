@@ -10,6 +10,7 @@ import 'package:livekit_client/livekit_client.dart' as lk;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../models/canvas_models.dart' show CanvasTool;
 import '../providers/auth_provider.dart';
 import '../providers/canvas_provider.dart';
 import '../providers/channels_provider.dart';
@@ -1093,6 +1094,22 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     final channelsState = ref.watch(channelsProvider);
     final inPip = ref.watch(pipModeProvider).inPip;
 
+    // Auto-enable drawing mode when the user picks a tool from the drawing
+    // menu (Pen / Shape / Text / Eraser). Previously the menu only set the
+    // tool, leaving `_isDrawing=false`, so the InteractiveViewer kept
+    // claiming single-finger drags as pans — particularly visible on
+    // mobile where users reported shapes "not drawing" (2026-05-27).
+    final selectedTool = ref.watch(
+      canvasProvider.select((c) => c.selectedTool),
+    );
+    if (selectedTool != CanvasTool.none && !_isDrawing) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_isDrawing) {
+          setState(() => _isDrawing = true);
+        }
+      });
+    }
+
     final conversationId = voiceLk.conversationId ?? '';
     final channelId = voiceLk.channelId ?? '';
 
@@ -1179,12 +1196,15 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     // Pan is disabled while drawing so single-pointer drags become
     // strokes, not viewport pans. Pinch + ctrl/trackpad-scroll still
     // zoom regardless.
-    const minScale = 0.25;
+    // Bumped minScale from 0.25 → 0.6 and trimmed the boundaryMargin so
+    // the canvas never appears smaller than ~60% of the viewport. The
+    // previous 0.25 + 1.5× viewport margin let an accidental pinch-out
+    // shrink the canvas into a small rectangle in the middle of the
+    // mesh-background, which testers consistently reported as "the
+    // lounge is bordered very small" (image #50, 2026-05-27).
+    const minScale = 0.6;
     const maxScale = 4.0;
     final size = MediaQuery.sizeOf(context);
-    // (1 / minScale - 1) / 2 → margin per side that, at minScale, fits
-    // the full workspace into the viewport. With minScale=0.25 the
-    // margin is 1.5× viewport per side, so total canvas = 4× viewport.
     final marginX = size.width * ((1 / minScale - 1) / 2);
     final marginY = size.height * ((1 / minScale - 1) / 2);
     final viewportContent = _spotlightMode
