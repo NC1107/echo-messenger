@@ -3,6 +3,7 @@ import 'dart:io' show Directory, Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show SemanticsBinding;
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -52,6 +53,15 @@ void main() {
   // viewer — framework errors almost always indicate a crash or a broken
   // widget tree.
   FlutterError.onError = (details) {
+    if (_isBenignNoActiveStream(details.exception)) {
+      DebugLogService.instance.log(
+        LogLevel.fine,
+        'flutter',
+        'Swallowed benign EventChannel "No active stream to cancel": '
+            '${details.exception}',
+      );
+      return;
+    }
     DebugLogService.instance.log(
       LogLevel.fatal,
       'flutter',
@@ -68,6 +78,14 @@ void main() {
   // Returns true to signal that the error was handled and should not be
   // re-thrown by the engine.
   PlatformDispatcher.instance.onError = (error, stack) {
+    if (_isBenignNoActiveStream(error)) {
+      DebugLogService.instance.log(
+        LogLevel.fine,
+        'platform',
+        'Swallowed benign EventChannel "No active stream to cancel": $error',
+      );
+      return true;
+    }
     DebugLogService.instance.log(LogLevel.fatal, 'platform', '$error\n$stack');
     DebugLogService.instance.forceFlushSync();
     return true;
@@ -81,6 +99,14 @@ void main() {
       await _initAndRun();
     },
     (error, stack) {
+      if (_isBenignNoActiveStream(error)) {
+        DebugLogService.instance.log(
+          LogLevel.fine,
+          'platform',
+          'Swallowed benign EventChannel "No active stream to cancel": $error',
+        );
+        return;
+      }
       debugPrint('[Unhandled] $error\n$stack');
       DebugLogService.instance.log(
         LogLevel.fatal,
@@ -90,6 +116,22 @@ void main() {
       DebugLogService.instance.forceFlushSync();
     },
   );
+}
+
+/// True when [error] is the harmless LiveKit/EventChannel teardown race:
+/// `PlatformException(error, No active stream to cancel, null, null)`.
+///
+/// The LiveKit SDK opens an EventChannel broadcast stream for screen-share
+/// and other platform tracks. On Linux + iOS, cancelling that stream when
+/// nothing is currently active throws this PlatformException from the
+/// platform side. Our `setScreenShareEnabled(false)` already swallows it at
+/// the call site, but the SDK also rethrows it from an internal stream
+/// callback that escapes our try/catch and surfaces as [FTL] in the log
+/// viewer. Demote it to FINE so prod logs aren't dominated by this noise.
+bool _isBenignNoActiveStream(Object error) {
+  if (error is! PlatformException) return false;
+  final msg = error.message;
+  return msg != null && msg.contains('No active stream');
 }
 
 /// Initialize Hive with a sane storage location.
