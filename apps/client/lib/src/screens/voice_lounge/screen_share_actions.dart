@@ -3,6 +3,7 @@
 /// entry points behavior-identical (#911).
 library;
 
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -20,6 +21,25 @@ bool _useLiveKitPicker() {
   if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) return true;
   return false;
 }
+
+/// In-flight guard for [toggleScreenShare]. The iOS broadcast picker
+/// is asynchronous: the user taps Share, the picker appears, they tap
+/// "Start Broadcast", and only then does ReplayKit fire
+/// `broadcastStarted`. If the user (or a jittery tap) fires a second
+/// toggle while the first is mid-flight, ReplayKit reports
+/// "Recording interrupted by another application" and the user has
+/// to tap 2-3 times before a share actually sticks (#mobile-voice).
+///
+/// Library-level so the guard is shared across both entry points
+/// (sidebar voice dock + lounge floating dock).
+bool _toggleInFlight = false;
+
+/// Settle delay between stopping a share and accepting the next
+/// toggle. On iOS, ReplayKit needs a moment for `broadcastFinished`
+/// to fully tear down the extension before a new
+/// `RPSystemBroadcastPickerView` press won't collide with the
+/// previous session.
+const Duration _iosBroadcastSettle = Duration(milliseconds: 600);
 
 /// Unpublish, stop, and dispose every screen-share publication on [local].
 ///
@@ -110,6 +130,13 @@ Future<void> _startScreenShareNative(
   final ok = await lkNotifier.setScreenShareEnabled(true);
   if (ok) {
     ssNotifier.setLiveKitScreenShareActive(true);
+  } else {
+    // Defensive: if the SDK reports failure (broadcast picker dismissed,
+    // permission denied, ReplayKit interrupted), make sure provider state
+    // doesn't drift to "sharing" — otherwise the next tap would hit the
+    // stop path instead of the start path and the user would have to
+    // tap a third time to recover. (#mobile-voice)
+    ssNotifier.setLiveKitScreenShareActive(false);
   }
 }
 
@@ -121,20 +148,43 @@ Future<void> _startScreenShareNative(
 /// publish (no simulcast). On mobile / web the LiveKit notifier handles source
 /// selection internally via the platform's native picker.
 ///
+/// Guarded against rapid re-entry: if a previous toggle is still in flight
+/// the second call is ignored. This is what fixed the "3-taps-to-share"
+/// behaviour on iOS — every tap before ReplayKit settled was issuing a
+/// fresh `setScreenShareEnabled` that ReplayKit then treated as an
+/// "interrupting application" (#mobile-voice).
+///
 /// No-op when not in a voice channel (no room available).
 Future<void> toggleScreenShare(BuildContext context, WidgetRef ref) async {
-  final screenShare = ref.read(screenShareProvider);
-  final lkNotifier = ref.read(livekitVoiceProvider.notifier);
-  final ssNotifier = ref.read(screenShareProvider.notifier);
-
-  if (screenShare.isScreenSharing) {
-    await _stopScreenShare(lkNotifier, ssNotifier);
+  if (_toggleInFlight) {
+    debugPrint('[ScreenShare] toggle ignored: previous toggle still in flight');
     return;
   }
+  _toggleInFlight = true;
+  try {
+    final screenShare = ref.read(screenShareProvider);
+    final lkNotifier = ref.read(livekitVoiceProvider.notifier);
+    final ssNotifier = ref.read(screenShareProvider.notifier);
 
-  if (_useLiveKitPicker()) {
-    await _startScreenShareWithPicker(context, lkNotifier, ssNotifier);
-  } else {
-    await _startScreenShareNative(lkNotifier, ssNotifier);
+    if (screenShare.isScreenSharing) {
+      await _stopScreenShare(lkNotifier, ssNotifier);
+      // On iOS, give ReplayKit a moment to fully tear the broadcast
+      // extension down before this method returns. Without the settle,
+      // a "start" tap immediately after a "stop" tap collides with the
+      // outgoing extension and surfaces as "Recording interrupted by
+      // another application".
+      if (!kIsWeb && Platform.isIOS) {
+        await Future<void>.delayed(_iosBroadcastSettle);
+      }
+      return;
+    }
+
+    if (_useLiveKitPicker()) {
+      await _startScreenShareWithPicker(context, lkNotifier, ssNotifier);
+    } else {
+      await _startScreenShareNative(lkNotifier, ssNotifier);
+    }
+  } finally {
+    _toggleInFlight = false;
   }
 }

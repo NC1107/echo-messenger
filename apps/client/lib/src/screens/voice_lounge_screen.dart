@@ -262,11 +262,15 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
               initialTop: 16.0 + idx * 30,
               label: "$name's screen",
               isLocal: false,
-              child: GestureDetector(
+              // Builder form so the window reshapes itself to match the
+              // remote source — a phone share comes in portrait, not
+              // 16:9.
+              childBuilder: (ctx, aspect) => GestureDetector(
                 onDoubleTap: () =>
                     setState(() => _focusedTileKey = 'screenshare-$sid'),
-                child: lk.VideoTrackRenderer(
-                  track,
+                child: AspectAwareVideoTrack(
+                  track: track,
+                  aspectRatio: aspect,
                   fit: lk.VideoViewFit.contain,
                 ),
               ),
@@ -399,10 +403,12 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
               initialTop: 16,
               label: 'Your screen',
               isLocal: true,
-              child: GestureDetector(
+              // Builder form so the window matches a portrait phone
+              // share instead of letterboxing it into landscape.
+              childBuilder: (ctx, aspect) => GestureDetector(
                 onDoubleTap: () =>
                     setState(() => _focusedTileKey = kScreenshareLocal),
-                child: LocalScreenShareTrack(ref: ref),
+                child: LocalScreenShareTrack(ref: ref, aspectRatio: aspect),
               ),
             ),
         ],
@@ -768,28 +774,39 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     );
   }
 
-  /// Fullscreen-immersive toggle. Pressing this hides the HomeScreen
-  /// sidebar / members panel / title bar and the lounge's own header,
-  /// leaving only the canvas + dock. Pressing again restores them.
-  Widget _buildFullscreenButton(BuildContext context) {
-    final isFull = ref.watch(voiceLoungeFullscreenProvider);
+  /// True on iOS / Android — the touch-friendly platforms where the
+  /// corner controls need a 44pt minimum hit target instead of the
+  /// 34pt that's fine for desktop mouse pointers.
+  bool get _isTouchPlatform =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.android);
+
+  /// Wraps an icon button payload in a tappable circle. On touch
+  /// platforms the hit target is bumped to 44×44 (Apple HIG / Material
+  /// minimum); desktop keeps the compact 34×34 size that the design
+  /// originally shipped with.
+  Widget _buildCornerControl({
+    required String semanticLabel,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    final double size = _isTouchPlatform ? 44 : 34;
+    final double iconSize = _isTouchPlatform ? 22 : 18;
     return Semantics(
       button: true,
-      label: isFull ? 'Exit fullscreen lounge' : 'Enter fullscreen lounge',
+      label: semanticLabel,
       child: Material(
         color: Colors.black54,
         shape: const CircleBorder(),
         child: InkWell(
           customBorder: const CircleBorder(),
-          onTap: () => ref
-              .read(voiceLoungeFullscreenProvider.notifier)
-              .update((v) => !v),
-          child: Padding(
-            padding: const EdgeInsets.all(8),
-            child: Icon(
-              isFull ? Icons.fullscreen_exit : Icons.fullscreen,
-              size: 18,
-              color: Colors.white,
+          onTap: onTap,
+          child: SizedBox(
+            width: size,
+            height: size,
+            child: Center(
+              child: Icon(icon, size: iconSize, color: Colors.white),
             ),
           ),
         ),
@@ -797,28 +814,28 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     );
   }
 
+  /// Fullscreen-immersive toggle. Pressing this hides the HomeScreen
+  /// sidebar / members panel / title bar and the lounge's own header,
+  /// leaving only the canvas + dock. Pressing again restores them.
+  Widget _buildFullscreenButton(BuildContext context) {
+    final isFull = ref.watch(voiceLoungeFullscreenProvider);
+    return _buildCornerControl(
+      semanticLabel: isFull
+          ? 'Exit fullscreen lounge'
+          : 'Enter fullscreen lounge',
+      icon: isFull ? Icons.fullscreen_exit : Icons.fullscreen,
+      onTap: () =>
+          ref.read(voiceLoungeFullscreenProvider.notifier).update((v) => !v),
+    );
+  }
+
   /// Reset-view affordance shown only when the canvas is zoomed or panned.
   /// Returns the canvas transform to identity (1x, no offset).
   Widget _buildResetViewButton(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: 'Reset canvas zoom',
-      child: Material(
-        color: Colors.black54,
-        shape: const CircleBorder(),
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: _resetViewport,
-          child: const Padding(
-            padding: EdgeInsets.all(8),
-            child: Icon(
-              Icons.fit_screen_outlined,
-              size: 18,
-              color: Colors.white,
-            ),
-          ),
-        ),
-      ),
+    return _buildCornerControl(
+      semanticLabel: 'Reset canvas zoom',
+      icon: Icons.fit_screen_outlined,
+      onTap: _resetViewport,
     );
   }
 
@@ -827,25 +844,10 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   /// because it's a destructive action that shouldn't share neighbours
   /// with the pen / color / size pickers.
   Widget _buildClearBoardButton(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: 'Clear the canvas board for everyone',
-      child: Material(
-        color: Colors.black54,
-        shape: const CircleBorder(),
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: () => _confirmClearBoard(context),
-          child: const Padding(
-            padding: EdgeInsets.all(8),
-            child: Icon(
-              Icons.delete_sweep_outlined,
-              size: 18,
-              color: Colors.white,
-            ),
-          ),
-        ),
-      ),
+    return _buildCornerControl(
+      semanticLabel: 'Clear the canvas board for everyone',
+      icon: Icons.delete_sweep_outlined,
+      onTap: () => _confirmClearBoard(context),
     );
   }
 
@@ -869,21 +871,10 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   /// is the ONE settings entry-point for the customizable voice-lounge
   /// background feature.
   Widget _buildBackgroundPickerButton(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: 'Voice lounge background settings',
-      child: Material(
-        color: Colors.black54,
-        shape: const CircleBorder(),
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: () => _openBackgroundMenu(context),
-          child: const Padding(
-            padding: EdgeInsets.all(8),
-            child: Icon(Icons.wallpaper, size: 18, color: Colors.white),
-          ),
-        ),
-      ),
+    return _buildCornerControl(
+      semanticLabel: 'Voice lounge background settings',
+      icon: Icons.wallpaper,
+      onTap: () => _openBackgroundMenu(context),
     );
   }
 
@@ -1015,7 +1006,11 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       ..._buildSubmenuFollowers(conversationId),
       Positioned(bottom: 16, left: 0, right: 0, child: dock),
       Positioned(
-        top: isFull ? 16 : 60,
+        // When fullscreen-immersive, clear the iOS notch / Android
+        // status bar with viewPadding.top so the corner controls
+        // (including Fullscreen Exit) aren't hidden under the camera
+        // cutout. When not fullscreen, sit below LoungeHeader.
+        top: isFull ? (MediaQuery.viewPaddingOf(context).top + 8) : 60,
         right: 12,
         child: Row(
           mainAxisSize: MainAxisSize.min,

@@ -21,6 +21,7 @@ import '../../widgets/voice/participant_attention.dart';
 import '../../widgets/voice_speaking_ring.dart';
 import '../user_profile_screen.dart';
 import 'participant_volume_controller.dart';
+import 'screen_share.dart' show AspectAwareVideoTrack;
 
 class ParticipantGrid extends StatelessWidget {
   final lk.Room? room;
@@ -689,7 +690,14 @@ class AvatarCircle extends StatelessWidget {
 /// retries on a short timer until the track appears or the widget is disposed.
 class LocalScreenShareTrack extends StatefulWidget {
   final WidgetRef ref;
-  const LocalScreenShareTrack({super.key, required this.ref});
+
+  /// Optional aspect-ratio sink. When provided, the rendered track
+  /// reports its source dimensions here so a parent
+  /// [DraggableScreenShareWindow] can reshape itself to match (e.g.
+  /// portrait phone share renders portrait, not letterboxed 16:9).
+  final ValueNotifier<double?>? aspectRatio;
+
+  const LocalScreenShareTrack({super.key, required this.ref, this.aspectRatio});
 
   @override
   State<LocalScreenShareTrack> createState() => _LocalScreenShareTrackState();
@@ -758,6 +766,14 @@ class _LocalScreenShareTrackState extends State<LocalScreenShareTrack> {
             ),
           ),
         ),
+      );
+    }
+    final aspect = widget.aspectRatio;
+    if (aspect != null) {
+      return AspectAwareVideoTrack(
+        track: _track!,
+        aspectRatio: aspect,
+        fit: lk.VideoViewFit.contain,
       );
     }
     return lk.VideoTrackRenderer(_track!, fit: lk.VideoViewFit.contain);

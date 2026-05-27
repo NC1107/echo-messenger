@@ -180,4 +180,88 @@ void main() {
       );
     });
   });
+
+  group('screen_share_actions.dart re-entrancy guard (#mobile-voice)', () {
+    test('toggleScreenShare gates on a library-level in-flight flag', () {
+      // The 3-taps-to-share regression on iOS was caused by repeated
+      // setScreenShareEnabled calls landing while ReplayKit was still
+      // settling. Removing the in-flight guard re-enables the
+      // regression.
+      expect(
+        source,
+        contains('_toggleInFlight'),
+        reason:
+            'toggleScreenShare must keep a library-level in-flight flag so '
+            'rapid taps cannot stack setScreenShareEnabled calls '
+            '(#mobile-voice).',
+      );
+      expect(
+        source,
+        contains('if (_toggleInFlight)'),
+        reason:
+            'toggleScreenShare must early-return when a previous toggle is '
+            'still running.',
+      );
+    });
+
+    test(
+      'toggleScreenShare yields after stop on iOS so ReplayKit can settle',
+      () {
+        // Without the post-stop delay the next start tap collides with
+        // the outgoing broadcast extension and the user gets
+        // "Recording interrupted by another application".
+        expect(
+          source,
+          contains('_iosBroadcastSettle'),
+          reason:
+              'toggleScreenShare must await an iOS settle delay between '
+              'stop and accepting the next toggle (#mobile-voice).',
+        );
+        expect(
+          source,
+          contains('Platform.isIOS'),
+          reason:
+              'The settle delay must be gated on iOS so other platforms '
+              'do not pay the cost.',
+        );
+      },
+    );
+
+    test('_startScreenShareNative resets provider state when start fails', () {
+      // If setScreenShareEnabled returns false (picker dismissed,
+      // permission denied, ReplayKit interrupted) the provider's
+      // isScreenSharing flag must stay false — otherwise the next
+      // tap hits the stop path instead of retrying, and the user has
+      // to tap a third time.
+      //
+      // Locate the function body to keep the assertion narrowly
+      // scoped instead of matching the substring anywhere in the
+      // file.
+      final fnStart = source.indexOf('Future<void> _startScreenShareNative(');
+      expect(fnStart, isNot(-1), reason: '_startScreenShareNative not found');
+      final braceStart = source.indexOf('{', fnStart);
+      var depth = 0;
+      var fnEnd = -1;
+      for (var i = braceStart; i < source.length; i++) {
+        if (source[i] == '{') {
+          depth++;
+        } else if (source[i] == '}') {
+          depth--;
+          if (depth == 0) {
+            fnEnd = i;
+            break;
+          }
+        }
+      }
+      expect(fnEnd, isNot(-1));
+      final fn = source.substring(fnStart, fnEnd + 1);
+      expect(
+        fn,
+        contains('setLiveKitScreenShareActive(false)'),
+        reason:
+            '_startScreenShareNative must clear the provider when the '
+            'SDK reports start failure (#mobile-voice).',
+      );
+    });
+  });
 }
