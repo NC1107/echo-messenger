@@ -9,11 +9,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../providers/auth_provider.dart';
-import '../../providers/chat_provider.dart';
-import '../../providers/crypto_provider.dart';
 import '../../providers/server_url_provider.dart';
 import '../../providers/update_provider.dart';
-import '../../providers/websocket_provider.dart';
 import '../../services/clipboard_service.dart';
 import '../../services/debug_log_service.dart';
 import '../../services/message_cache.dart';
@@ -225,128 +222,6 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
     }
   }
 
-  Future<void> _deleteAccount() async {
-    final username = ref.read(authProvider).username ?? '';
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        final controller = TextEditingController();
-        return StatefulBuilder(
-          builder: (dialogContext, setDialogState) {
-            final matches = controller.text == username;
-            return AlertDialog(
-              backgroundColor: context.surface,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(color: context.border),
-              ),
-              title: const Text(
-                'Delete Account',
-                style: TextStyle(
-                  color: EchoTheme.danger,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'This will permanently delete your account and all data. '
-                    'This cannot be undone.',
-                    style: TextStyle(
-                      color: context.textSecondary,
-                      fontSize: 14,
-                      height: 1.5,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Type your username to confirm:',
-                    style: TextStyle(
-                      color: context.textSecondary,
-                      fontSize: 13,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: controller,
-                    style: TextStyle(color: context.textPrimary, fontSize: 14),
-                    decoration: InputDecoration(hintText: username),
-                    onChanged: (_) => setDialogState(() {}),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, false),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: matches
-                      ? () => Navigator.pop(dialogContext, true)
-                      : null,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: EchoTheme.danger,
-                  ),
-                  child: const Text('Delete My Account'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    if (confirmed != true) return;
-
-    final serverUrl = ref.read(serverUrlProvider);
-    try {
-      final response = await ref
-          .read(authProvider.notifier)
-          .authenticatedRequest(
-            (token) => http.delete(
-              Uri.parse('$serverUrl/api/users/me'),
-              headers: {'Authorization': 'Bearer $token'},
-            ),
-          );
-
-      if (!mounted) return;
-
-      if (response.statusCode == 200 || response.statusCode == 204) {
-        // Clear all local data and navigate to login
-        ref.read(websocketProvider.notifier).disconnect();
-        ref.read(chatProvider.notifier).clear();
-        await ref.read(cryptoProvider.notifier).resetState();
-        ref.read(authProvider.notifier).logout();
-        if (mounted) {
-          ToastService.show(
-            context,
-            'Account deleted successfully.',
-            type: ToastType.success,
-          );
-          context.go('/login');
-        }
-      } else {
-        String errorMsg = 'Failed to delete account';
-        try {
-          final data = jsonDecode(response.body) as Map<String, dynamic>;
-          errorMsg = data['error'] as String? ?? errorMsg;
-        } catch (_) {}
-        ToastService.show(context, errorMsg, type: ToastType.error);
-      }
-    } catch (e) {
-      if (mounted) {
-        ToastService.show(
-          context,
-          'Network error. Please try again.',
-          type: ToastType.error,
-        );
-      }
-    }
-  }
-
   Widget _buildServersList() {
     final activeUrl = ref.watch(serverUrlProvider);
     final servers = ref.watch(knownServersProvider);
@@ -523,21 +398,29 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
           'Client v$appVersion',
           style: TextStyle(color: context.textMuted, fontSize: 14),
         ),
-        SelectableText(
-          'Build $appCommit'
-          '${appBuildTime.isEmpty ? '' : ' · $appBuildTime'}',
-          style: TextStyle(
-            color: context.textMuted,
-            fontSize: 12,
-            fontFamily: 'monospace',
+        // Hide the "Build $sha" row on local dev builds — `appCommit`
+        // defaults to "local" when no APP_COMMIT is plumbed via CI, and
+        // surfacing that to end users (image #54) reads as a placeholder.
+        // CI builds plumb the real short-SHA and we show it.
+        if (appCommit.isNotEmpty && appCommit != 'local')
+          SelectableText(
+            'Build $appCommit'
+            '${appBuildTime.isEmpty ? '' : ' · $appBuildTime'}',
+            style: TextStyle(
+              color: context.textMuted,
+              fontSize: 12,
+              fontFamily: 'monospace',
+            ),
           ),
-        ),
         const SizedBox(height: 16),
         _buildCheckForUpdates(),
         const SizedBox(height: 24),
         Divider(color: context.border),
         const SizedBox(height: 16),
-        // Server info (merged from former Server section)
+        // Server info (merged from former Server section). Wrapped in a
+        // surface-tinted card so the list of known servers + the Add row
+        // read as a single cohesive control instead of loose tiles
+        // floating against the page background (image #54 feedback).
         Text(
           'Server',
           style: TextStyle(
@@ -547,13 +430,26 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
           ),
         ),
         const SizedBox(height: 12),
-        _buildServersList(),
-        const SizedBox(height: 8),
-        SettingsListTile(
-          icon: Icons.add_circle_outline,
-          title: 'Add server',
-          subtitle: 'Verifies the URL before adding it to your list.',
-          onTap: _showAddServerDialog,
+        Container(
+          decoration: BoxDecoration(
+            color: context.surface,
+            border: Border.all(color: context.border),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildServersList(),
+              Divider(height: 1, color: context.border),
+              SettingsListTile(
+                icon: Icons.add_circle_outline,
+                title: 'Add server',
+                subtitle: 'Verifies the URL before adding it to your list.',
+                onTap: _showAddServerDialog,
+              ),
+            ],
+          ),
         ),
         // Debug logs viewer. Earlier work mistakenly gated this behind
         // kDebugMode in response to "log spam" feedback — the user meant
@@ -610,46 +506,6 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
               );
             }
           },
-        ),
-        const SizedBox(height: 16),
-        Divider(color: context.border),
-        const SizedBox(height: 16),
-        Text(
-          'Open source',
-          style: TextStyle(
-            color: context.accent,
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Echo is a decentralized, end-to-end encrypted messenger. '
-          'Contributions and self-hosting are welcome.',
-          style: TextStyle(
-            color: context.textSecondary,
-            fontSize: 13,
-            height: 1.5,
-          ),
-        ),
-        const SizedBox(height: 32),
-        Divider(color: context.border),
-        const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: _deleteAccount,
-            icon: const Icon(Icons.delete_forever_outlined, size: 18),
-            label: const Text('Delete Account'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: EchoTheme.danger,
-              side: const BorderSide(color: EchoTheme.danger),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-            ),
-          ),
         ),
       ],
     );

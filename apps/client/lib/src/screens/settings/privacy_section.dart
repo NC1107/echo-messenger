@@ -1,11 +1,19 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../providers/auth_provider.dart';
 import '../../providers/biometric_provider.dart';
+import '../../providers/chat_provider.dart';
 import '../../providers/contacts_provider.dart';
 import '../../providers/crypto_provider.dart';
 import '../../providers/privacy_provider.dart';
+import '../../providers/server_url_provider.dart';
+import '../../providers/websocket_provider.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
 import '../../widgets/confirm_dialog.dart';
@@ -779,7 +787,148 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
             ),
           ),
         ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _deleteAccount,
+            icon: const Icon(Icons.delete_forever_outlined, size: 18),
+            label: const Text('Delete Account'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: EchoTheme.danger,
+              side: const BorderSide(color: EchoTheme.danger),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+        ),
       ],
     );
+  }
+
+  /// Permanently delete the user's account. Moved here from About so the
+  /// destructive action sits alongside the other Danger Zone items (Reset
+  /// Encryption Keys) rather than being buried after server settings.
+  Future<void> _deleteAccount() async {
+    final username = ref.read(authProvider).username ?? '';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        final controller = TextEditingController();
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            final matches = controller.text == username;
+            return AlertDialog(
+              backgroundColor: context.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: context.border),
+              ),
+              title: const Text(
+                'Delete Account',
+                style: TextStyle(
+                  color: EchoTheme.danger,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'This will permanently delete your account and all data. '
+                    'This cannot be undone.',
+                    style: TextStyle(
+                      color: context.textSecondary,
+                      fontSize: 14,
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Type your username to confirm:',
+                    style: TextStyle(
+                      color: context.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: controller,
+                    style: TextStyle(color: context.textPrimary, fontSize: 14),
+                    decoration: InputDecoration(hintText: username),
+                    onChanged: (_) => setDialogState(() {}),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: matches
+                      ? () => Navigator.pop(dialogContext, true)
+                      : null,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: EchoTheme.danger,
+                  ),
+                  child: const Text('Delete My Account'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    final serverUrl = ref.read(serverUrlProvider);
+    try {
+      final response = await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
+            (token) => http.delete(
+              Uri.parse('$serverUrl/api/users/me'),
+              headers: {'Authorization': 'Bearer $token'},
+            ),
+          );
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        ref.read(websocketProvider.notifier).disconnect();
+        ref.read(chatProvider.notifier).clear();
+        await ref.read(cryptoProvider.notifier).resetState();
+        ref.read(authProvider.notifier).logout();
+        if (mounted) {
+          ToastService.show(
+            context,
+            'Account deleted successfully.',
+            type: ToastType.success,
+          );
+          context.go('/login');
+        }
+      } else {
+        String errorMsg = 'Failed to delete account';
+        try {
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          errorMsg = data['error'] as String? ?? errorMsg;
+        } catch (_) {}
+        ToastService.show(context, errorMsg, type: ToastType.error);
+      }
+    } catch (_) {
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Network error. Please try again.',
+          type: ToastType.error,
+        );
+      }
+    }
   }
 }
