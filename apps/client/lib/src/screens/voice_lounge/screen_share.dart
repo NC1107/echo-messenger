@@ -12,6 +12,7 @@ import 'package:livekit_client/livekit_client.dart' as lk;
 import '../../providers/livekit_voice/livekit_voice_provider.dart';
 import '../../providers/screen_share_provider.dart';
 import '../../theme/echo_theme.dart';
+import 'screen_share_actions.dart' show toggleScreenShare;
 
 // ---------------------------------------------------------------------------
 // Aspect-aware track renderer
@@ -217,14 +218,12 @@ class _ScreenShareViewerState extends ConsumerState<ScreenShareViewer> {
             child: IconButton(
               icon: const Icon(Icons.close, size: 18, color: Colors.white),
               tooltip: 'Stop sharing',
-              onPressed: () async {
-                await ref
-                    .read(livekitVoiceProvider.notifier)
-                    .setScreenShareEnabled(false);
-                ref
-                    .read(screenShareProvider.notifier)
-                    .setLiveKitScreenShareActive(false);
-              },
+              // Route through the shared toggle so the in-flight
+              // guard + iOS broadcast settle delay applies here too —
+              // tapping Close + then Share in quick succession was the
+              // exact pattern that triggered the iOS "Recording
+              // interrupted by another application" loop (#mobile-voice).
+              onPressed: () => toggleScreenShare(context, ref),
               style: IconButton.styleFrom(
                 backgroundColor: EchoTheme.danger.withValues(alpha: 0.7),
                 padding: const EdgeInsets.all(10),
