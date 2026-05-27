@@ -67,7 +67,11 @@ class _ChannelColumnState extends ConsumerState<ChannelColumn> {
   @override
   Widget build(BuildContext context) {
     final channelsState = ref.watch(channelsProvider);
-    final channels = channelsState.channelsFor(widget.conversation.id)
+    // channelsFor() can return an unmodifiable view backed by the state's
+    // internal map (e.g. when the conversation has no channels yet, an
+    // empty const list comes back). Sorting in-place crashes with
+    // "Cannot modify an unmodifiable list" on the next build. Copy first.
+    final channels = List.of(channelsState.channelsFor(widget.conversation.id))
       ..sort((a, b) => a.position.compareTo(b.position));
     final textChannels = channels.where((c) => c.isText).toList();
     final voiceChannels = channels.where((c) => c.isVoice).toList();
