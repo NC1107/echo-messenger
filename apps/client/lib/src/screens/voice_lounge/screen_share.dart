@@ -188,11 +188,15 @@ class _DraggableScreenShareWindowState
                     decoration: BoxDecoration(
                       color: Colors.black.withValues(alpha: 0.85),
                       borderRadius: BorderRadius.circular(12),
+                      // Softer accent ring (alpha .25, hairline) so the
+                      // window sits in the canvas without reading as a
+                      // hard frame the user mistakes for the canvas
+                      // boundary.
                       border: Border.all(
                         color:
                             (widget.isLocal ? EchoTheme.danger : context.accent)
-                                .withValues(alpha: 0.6),
-                        width: 1.5,
+                                .withValues(alpha: 0.25),
+                        width: 0.5,
                       ),
                       boxShadow: [
                         BoxShadow(
