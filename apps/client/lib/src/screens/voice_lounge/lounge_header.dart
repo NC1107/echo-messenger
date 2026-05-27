@@ -12,6 +12,11 @@ class LoungeHeader extends StatelessWidget {
   final bool membersSidebarCollapsed;
   final VoidCallback? onToggleMembers;
 
+  /// Optional metrics chip (call duration + ping). Rendered to the right
+  /// of the participant count when present so it sits at eye-level with
+  /// the channel name. Null in tests / when metrics aren't ready.
+  final Widget? trailing;
+
   const LoungeHeader({
     super.key,
     required this.channelName,
@@ -19,6 +24,7 @@ class LoungeHeader extends StatelessWidget {
     this.onBackToChat,
     this.membersSidebarCollapsed = false,
     this.onToggleMembers,
+    this.trailing,
   });
 
   @override
@@ -58,6 +64,7 @@ class LoungeHeader extends StatelessWidget {
               ),
             ),
           ),
+          if (trailing != null) ...[const SizedBox(width: 8), trailing!],
           const Spacer(),
           if (onToggleMembers != null)
             IconButton(
