@@ -300,6 +300,27 @@ class MessageCache {
     _convBoxes.clear();
   }
 
+  /// Await `box.flush()` on every currently-open conversation box.
+  ///
+  /// Called from [ShutdownHandler] when the OS signals `AppLifecycleState
+  /// .paused` (one beat before `detached`, where async work is no longer
+  /// awaitable). With this, the fire-and-forget `Hive.close()` on
+  /// `detached` has minimal in-flight data left to lose if the process
+  /// is hard-killed before close completes (#1182).
+  ///
+  /// Errors are swallowed per-box — the cache is a performance optimisation,
+  /// not a source of truth, and we never want flush to block teardown.
+  static Future<void> flushAll() async {
+    for (final box in _convBoxes.values) {
+      if (!box.isOpen) continue;
+      try {
+        await box.flush();
+      } catch (_) {
+        // Per-box best-effort; keep flushing the rest.
+      }
+    }
+  }
+
   /// Retrieve the Hive encryption key from secure storage, or null if
   /// secure storage is not available yet (e.g. before first login).
   static Future<List<int>?> _getEncryptionKey() async {

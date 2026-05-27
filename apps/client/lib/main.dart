@@ -187,6 +187,15 @@ void _performCleanup(ProviderContainer container) {
     WindowStateService.save().ignore();
   } catch (_) {}
   try {
+    // #1182: kick a fire-and-forget flush on the message-cache boxes
+    // before the close. SIGTERM gives systemd ~5s to clean up; even a
+    // partial flush is better than zero, and the no-await-required
+    // ShutdownHandler.paused path will already have flushed in most
+    // graceful shutdown sequences. This catches the SIGKILL-after-no-
+    // -paused (web exit, IDE force-quit) case.
+    MessageCache.flushAll().ignore();
+  } catch (_) {}
+  try {
     // Hive.close() is async; starting it before exit(0) gives Hive a chance
     // to begin flushing buffered writes, which prevents box-file corruption
     // on graceful SIGTERM paths.
