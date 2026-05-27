@@ -105,10 +105,17 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   /// transform differs from identity (any zoom or pan applied).
   bool _viewportTransformed = false;
 
+  /// Captured at initState so dispose() can clear fullscreen without
+  /// touching `ref` (which becomes invalid the moment the element is
+  /// unmounted, even before super.dispose runs). Riverpod's
+  /// StateController survives across rebuilds and is safe to retain.
+  late final StateController<bool> _fullscreenNotifier;
+
   @override
   void initState() {
     super.initState();
     _viewport = TransformationController()..addListener(_onViewportChanged);
+    _fullscreenNotifier = ref.read(voiceLoungeFullscreenProvider.notifier);
     // Breadcrumb fires post-joinChannel: missing = crash in joinChannel; present-but-alone = crash in build.
     final voiceLk = ref.read(livekitVoiceProvider);
     DebugLogService.instance.log(
@@ -127,19 +134,9 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       ..removeListener(_onViewportChanged)
       ..dispose();
     // Clear fullscreen so the user doesn't return to an immersive
-    // HomeScreen (no sidebar / no title bar) the next time they open
-    // the lounge. Read the provider's notifier synchronously now —
-    // ConsumerState's `ref` is invalidated the moment `super.dispose`
-    // runs, so a deferred `Future.microtask(() => ref.read(...))`
-    // crashes with "Cannot use 'ref' after the widget was disposed".
-    try {
-      final notifier = ref.read(voiceLoungeFullscreenProvider.notifier);
-      if (notifier.state) notifier.state = false;
-    } catch (_) {
-      // Ref may already be invalid in narrow edge cases (route swap
-      // during teardown). Silently skip — the next mount will pick up
-      // whatever value the provider holds.
-    }
+    // HomeScreen the next time they open the lounge. Uses the notifier
+    // captured at initState — ref is unsafe in dispose().
+    if (_fullscreenNotifier.state) _fullscreenNotifier.state = false;
     DebugLogService.instance.log(
       LogLevel.info,
       'VoiceLoungeUI',
