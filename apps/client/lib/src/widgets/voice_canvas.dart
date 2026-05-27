@@ -692,6 +692,12 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
   CanvasPoint? _localPos;
   bool _hovered = false;
 
+  /// Distance from the ring centre at the start of a resize pan, in local
+  /// (ring-relative) pixels. Used to translate radial pointer motion into
+  /// per-frame scale deltas, so the gesture feels uniform regardless of
+  /// which side of the ring the user grabbed.
+  double? _resizeStartRadius;
+
   /// Buffer of recent positions used to paint the presence trail
   /// (Phase 3a sub-slice 2 of `docs/ux-roadmap.md`).
   final PuckTrail _trail = PuckTrail();
@@ -916,13 +922,18 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
   /// Wraps the avatar tile in a circular click-and-drag resize ring.
   /// When [onResize] is null (callers that don't want resize, e.g. tests)
   /// this is a no-op so the avatar renders unwrapped. On hover the ring
-  /// becomes visible and PanUpdate gestures on its 10 px perimeter drive
-  /// the resize callback — clicks dead-center still pass through to the
-  /// avatar's move-drag wrapper.
+  /// becomes visible. The gesture is radial: pulling the cursor away from
+  /// the avatar centre grows it, pushing toward the centre shrinks it —
+  /// regardless of which side of the ring the user grabbed. Previously
+  /// the code averaged `(dx + dy) / 2` of the per-frame delta, which felt
+  /// inverted on the left and top quadrants of the ring (dragging
+  /// outward in those directions returned negative deltas and shrank
+  /// the avatar).
   Widget _wrapInResizeRing(Widget avatar) {
     if (widget.onResize == null) return avatar;
     const ringThickness = 6.0;
     final ringSize = _effectiveAvatarSize + ringThickness * 2;
+    final ringCenter = Offset(ringSize / 2, ringSize / 2);
     return SizedBox(
       width: ringSize,
       height: ringSize,
@@ -938,8 +949,27 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
             cursor: SystemMouseCursors.resizeUpRightDownLeft,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onPanUpdate: (d) => widget.onResize!(d.delta.dx, d.delta.dy),
-              onPanEnd: (_) => widget.onResizeEnd?.call(),
+              dragStartBehavior: DragStartBehavior.down,
+              onPanStart: (d) {
+                _resizeStartRadius = (d.localPosition - ringCenter).distance;
+              },
+              onPanUpdate: (d) {
+                final start = _resizeStartRadius;
+                if (start == null || start <= 0) return;
+                final currentRadius = (d.localPosition - ringCenter).distance;
+                // Per-frame radial delta. Positive when the pointer moved
+                // away from centre, negative when toward — true to user
+                // intuition regardless of which quadrant the gesture
+                // started in.
+                final delta = currentRadius - start;
+                _resizeStartRadius = currentRadius;
+                widget.onResize!(delta, delta);
+              },
+              onPanEnd: (_) {
+                _resizeStartRadius = null;
+                widget.onResizeEnd?.call();
+              },
+              onPanCancel: () => _resizeStartRadius = null,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 120),
                 width: ringSize,
@@ -1009,6 +1039,11 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
         children: [
           GestureDetector(
             behavior: HitTestBehavior.translucent,
+            // Win the gesture arena on pointer-down (see _CanvasImageWidget
+            // for full rationale). Avatars are smaller targets and a brief
+            // moment of arena-fight with InteractiveViewer can detach them
+            // mid-drag.
+            dragStartBehavior: DragStartBehavior.down,
             onDoubleTap: widget.onDoubleTap,
             onPanUpdate: (details) {
               final s = widget.canvasSize;
@@ -1090,6 +1125,13 @@ class _CanvasImageWidgetState extends State<_CanvasImageWidget> {
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(
+        // DragStartBehavior.down: the inner image's pan recognizer wins
+        // the gesture arena on pointer-down instead of waiting for
+        // kPanSlop. Without this, a fast drag occasionally lost
+        // arbitration to the parent InteractiveViewer's PanGestureRecognizer
+        // mid-gesture and detached, forcing the user to click and start
+        // the drag over (user-reported 2026-05-27).
+        dragStartBehavior: DragStartBehavior.down,
         onPanUpdate: (d) => widget.onMove(d.delta.dx, d.delta.dy),
         onPanEnd: (_) => widget.onMoveEnd(),
         child: Stack(
@@ -1169,6 +1211,7 @@ class _CanvasImageWidgetState extends State<_CanvasImageWidget> {
                 child: MouseRegion(
                   cursor: SystemMouseCursors.resizeDownRight,
                   child: GestureDetector(
+                    dragStartBehavior: DragStartBehavior.down,
                     onPanUpdate: (d) => widget.onResize(d.delta.dx, d.delta.dy),
                     onPanEnd: (_) => widget.onResizeEnd(),
                     child: Container(
