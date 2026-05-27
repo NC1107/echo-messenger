@@ -97,23 +97,23 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
     super.dispose();
   }
 
-  Size _canvasSize() {
-    final box = _canvasKey.currentContext?.findRenderObject() as RenderBox?;
-    return box?.size ?? const Size(400, 300);
-  }
+  /// Fixed canvas size shared by every participant. The InteractiveViewer in
+  /// the parent screen scales + pans this surface; downstream painters and
+  /// positioned widgets work in absolute canvas-space pixels.
+  static const Size _canvasSize = Size(kCanvasWidth, kCanvasHeight);
 
-  CanvasPoint _toNormalized(Offset local) {
-    final size = _canvasSize();
+  /// Convert a pointer event whose `localPosition` is already in the
+  /// child-of-InteractiveViewer coordinate space (= canvas space) into a
+  /// [CanvasPoint]. Clamping prevents strokes from being persisted with
+  /// negative or out-of-canvas coordinates if a quick gesture overshoots.
+  CanvasPoint _toCanvasPoint(Offset canvasSpace) {
     return CanvasPoint(
-      x: (local.dx / size.width).clamp(0.0, 1.0),
-      y: (local.dy / size.height).clamp(0.0, 1.0),
+      x: canvasSpace.dx.clamp(0.0, kCanvasWidth),
+      y: canvasSpace.dy.clamp(0.0, kCanvasHeight),
     );
   }
 
-  Offset _toLocal(CanvasPoint norm) {
-    final size = _canvasSize();
-    return Offset(norm.x * size.width, norm.y * size.height);
-  }
+  Offset _toLocal(CanvasPoint pt) => Offset(pt.x, pt.y);
 
   /// Opens a small text-entry dialog and commits the result as a text label
   /// at [anchor]. Returns immediately when the canvas isn't usable (no
@@ -172,49 +172,50 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
       onKeyEvent: (node, event) => _handleKeyEvent(event),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        child: Column(
-          children: [
-            Expanded(
-              child: ClipRect(
-                child: RepaintBoundary(
-                  key: voiceCanvasRepaintKey,
-                  child: Stack(
-                    key: _canvasKey,
-                    children: [
-                      Positioned.fill(
-                        child: _DrawingLayer(
-                          canvas: canvas,
-                          onPointerDown: (offset) {
-                            if (isDrawingTool(tool)) {
-                              ref
-                                  .read(canvasProvider.notifier)
-                                  .startStroke(_toNormalized(offset));
-                            } else if (tool == CanvasTool.text) {
-                              _promptTextLabel(_toNormalized(offset));
-                            }
-                          },
-                          onPointerMove: (offset) {
-                            if (isDrawingTool(tool)) {
-                              ref
-                                  .read(canvasProvider.notifier)
-                                  .continueStroke(_toNormalized(offset));
-                            }
-                          },
-                          onPointerUp: () {
-                            if (isDrawingTool(tool)) {
-                              ref.read(canvasProvider.notifier).endStroke();
-                            }
-                          },
-                        ),
-                      ),
-                      ..._buildImages(canvas, authState),
-                      ..._buildAvatars(canvas, myUserId, authState),
-                    ],
+        child: RepaintBoundary(
+          key: voiceCanvasRepaintKey,
+          // The Stack is sized to the fixed canvas dimensions so the parent
+          // InteractiveViewer scales the whole 4096×4096 surface uniformly.
+          // Every Positioned child below works in absolute canvas-space
+          // pixels — circles drawn on a phone read as circles on desktop.
+          child: SizedBox(
+            width: kCanvasWidth,
+            height: kCanvasHeight,
+            child: Stack(
+              key: _canvasKey,
+              clipBehavior: Clip.none,
+              children: [
+                Positioned.fill(
+                  child: _DrawingLayer(
+                    canvas: canvas,
+                    onPointerDown: (offset) {
+                      if (isDrawingTool(tool)) {
+                        ref
+                            .read(canvasProvider.notifier)
+                            .startStroke(_toCanvasPoint(offset));
+                      } else if (tool == CanvasTool.text) {
+                        _promptTextLabel(_toCanvasPoint(offset));
+                      }
+                    },
+                    onPointerMove: (offset) {
+                      if (isDrawingTool(tool)) {
+                        ref
+                            .read(canvasProvider.notifier)
+                            .continueStroke(_toCanvasPoint(offset));
+                      }
+                    },
+                    onPointerUp: () {
+                      if (isDrawingTool(tool)) {
+                        ref.read(canvasProvider.notifier).endStroke();
+                      }
+                    },
                   ),
                 ),
-              ),
+                ..._buildImages(canvas, authState),
+                ..._buildAvatars(canvas, myUserId, authState),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -227,7 +228,7 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
   ) {
     final participants = _gatherParticipants(myUserId, authState);
     final anyoneSpeaking = participants.any((p) => p.isSpeaking);
-    final size = _canvasSize();
+    const size = _canvasSize;
     final widgets = <Widget>[];
 
     for (int i = 0; i < participants.length; i++) {
@@ -393,33 +394,31 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
   }
 
   AvatarPosition _defaultAvatarPos(String userId, int total, int index) {
-    if (total <= 1) return AvatarPosition(userId: userId, x: 0.5, y: 0.5);
+    const cx = kCanvasWidth / 2;
+    const cy = kCanvasHeight / 2;
+    if (total <= 1) return AvatarPosition(userId: userId, x: cx, y: cy);
     final angle = (2 * math.pi * index) / total;
-    const r = 0.3;
+    // Radius = 30% of the shorter canvas axis so all defaults land well
+    // inside the visible region at minScale.
+    const r = 0.3 * kCanvasWidth;
     return AvatarPosition(
       userId: userId,
-      x: 0.5 + r * math.cos(angle),
-      y: 0.5 + r * math.sin(angle),
+      x: cx + r * math.cos(angle),
+      y: cy + r * math.sin(angle),
     );
   }
 
   List<Widget> _buildImages(CanvasState canvas, AuthState authState) {
-    final size = _canvasSize();
     final token = authState.token;
     final httpHeaders = token != null
         ? <String, String>{'Authorization': 'Bearer $token'}
         : null;
     return canvas.images.map((img) {
-      final x = img.x * size.width;
-      final y = img.y * size.height;
-      final w = img.width * size.width;
-      final h = img.height * size.height;
-
       return Positioned(
-        left: x,
-        top: y,
-        width: w,
-        height: h,
+        left: img.x,
+        top: img.y,
+        width: img.width,
+        height: img.height,
         child: _CanvasImageWidget(
           image: img,
           httpHeaders: httpHeaders,
@@ -429,10 +428,10 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
                 .images
                 .where((i) => i.id == img.id)
                 .firstOrNull;
-            final curX = (current?.x ?? img.x) * size.width;
-            final curY = (current?.y ?? img.y) * size.height;
-            final newX = ((curX + dx) / size.width).clamp(0.0, 1.0);
-            final newY = ((curY + dy) / size.height).clamp(0.0, 1.0);
+            final curX = current?.x ?? img.x;
+            final curY = current?.y ?? img.y;
+            final newX = (curX + dx).clamp(0.0, kCanvasWidth);
+            final newY = (curY + dy).clamp(0.0, kCanvasHeight);
             ref.read(canvasProvider.notifier).moveImage(img.id, newX, newY);
           },
           onMoveEnd: () {
@@ -453,10 +452,10 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
                 .images
                 .where((i) => i.id == img.id)
                 .firstOrNull;
-            final curW = (current?.width ?? img.width) * size.width;
-            final curH = (current?.height ?? img.height) * size.height;
-            final newW = ((curW + dx) / size.width).clamp(0.05, 1.0);
-            final newH = ((curH + dy) / size.height).clamp(0.05, 1.0);
+            final curW = current?.width ?? img.width;
+            final curH = current?.height ?? img.height;
+            final newW = (curW + dx).clamp(32.0, kCanvasWidth);
+            final newH = (curH + dy).clamp(32.0, kCanvasHeight);
             ref.read(canvasProvider.notifier).resizeImage(img.id, newW, newH);
           },
           onResizeEnd: () =>
@@ -497,13 +496,13 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
     // Spawn dead-centre. The drag-and-drop or paste action that lands here
     // already represents intent — the user shouldn't have to chase a
     // random off-centre placement to start working with the image.
-    const w = 0.25;
-    const h = 0.25;
+    const w = kCanvasWidth * 0.25;
+    const h = kCanvasHeight * 0.25;
     final img = CanvasImage(
       id: newCanvasId(),
       url: url,
-      x: 0.5 - w / 2,
-      y: 0.5 - h / 2,
+      x: kCanvasWidth / 2 - w / 2,
+      y: kCanvasHeight / 2 - h / 2,
       width: w,
       height: h,
     );
@@ -616,7 +615,9 @@ class _CanvasPainter extends CustomPainter {
         textDirection: TextDirection.ltr,
         textAlign: TextAlign.left,
       )..layout(maxWidth: size.width);
-      tp.paint(c, Offset(anchor.x * size.width, anchor.y * size.height));
+      // Stroke points are absolute canvas-space pixels — no scaling needed
+      // because the parent SizedBox sizes us to the full canvas extent.
+      tp.paint(c, Offset(anchor.x, anchor.y));
       return;
     }
 
@@ -645,10 +646,12 @@ class _CanvasPainter extends CustomPainter {
 
     final first = stroke.points.first;
 
+    // All stroke point coords are absolute canvas-space pixels — the
+    // painter's parent is sized to the canvas extent, so no scaling needed.
     // Single-point freehand stroke: a dot.
     if (stroke.points.length == 1 && !isShapeKind(stroke.kind)) {
       c.drawCircle(
-        Offset(first.x * size.width, first.y * size.height),
+        Offset(first.x, first.y),
         stroke.width / 2,
         paint..style = PaintingStyle.fill,
       );
@@ -658,8 +661,8 @@ class _CanvasPainter extends CustomPainter {
     // Two-point shape kinds — straight geometry from first to last.
     if (isShapeKind(stroke.kind) && stroke.points.length >= 2) {
       final last = stroke.points.last;
-      final p1 = Offset(first.x * size.width, first.y * size.height);
-      final p2 = Offset(last.x * size.width, last.y * size.height);
+      final p1 = Offset(first.x, first.y);
+      final p2 = Offset(last.x, last.y);
       switch (stroke.kind) {
         case StrokeKind.line:
           c.drawLine(p1, p2, paint);
@@ -676,10 +679,10 @@ class _CanvasPainter extends CustomPainter {
     }
 
     final path = Path();
-    path.moveTo(first.x * size.width, first.y * size.height);
+    path.moveTo(first.x, first.y);
     for (int i = 1; i < stroke.points.length; i++) {
       final p = stroke.points[i];
-      path.lineTo(p.x * size.width, p.y * size.height);
+      path.lineTo(p.x, p.y);
     }
 
     c.drawPath(path, paint..style = PaintingStyle.stroke);
@@ -1011,7 +1014,10 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
               painter: _TrailPainter(
                 trail: _trail,
                 currentPos: _localPos ?? widget.currentPos,
-                canvasSize: widget.canvasSize,
+                // Trail deltas are now in absolute canvas-space pixels —
+                // PuckTrail.render multiplies by canvasSize.width/height, so
+                // pass unit Size to keep deltas at their natural pixel scale.
+                canvasSize: const Size(1, 1),
                 color: EchoTheme.online,
                 radius: _effectiveAvatarSize * 0.225,
                 tick: _trailTick,
@@ -1151,14 +1157,14 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
             dragStartBehavior: DragStartBehavior.down,
             onDoubleTap: widget.onDoubleTap,
             onPanUpdate: (details) {
-              final s = widget.canvasSize;
-              if (s.width <= 0 || s.height <= 0) return;
-              final dx = details.delta.dx / s.width;
-              final dy = details.delta.dy / s.height;
+              // Pointer delta is in canvas-space pixels because the
+              // GestureDetector lives inside the InteractiveViewer-scaled
+              // surface, so we can apply it 1:1 against current canvas
+              // coords. Clamp to the fixed canvas extent.
               final base = _localPos ?? widget.currentPos;
               final newPos = CanvasPoint(
-                x: (base.x + dx).clamp(0.0, 1.0),
-                y: (base.y + dy).clamp(0.0, 1.0),
+                x: (base.x + details.delta.dx).clamp(0.0, kCanvasWidth),
+                y: (base.y + details.delta.dy).clamp(0.0, kCanvasHeight),
               );
               _pushTrailSample(base);
               _localPos = newPos;

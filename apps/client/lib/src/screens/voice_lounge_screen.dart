@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -10,7 +11,8 @@ import 'package:livekit_client/livekit_client.dart' as lk;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-import '../models/canvas_models.dart' show CanvasTool;
+import '../models/canvas_models.dart'
+    show CanvasTool, kCanvasHeight, kCanvasWidth;
 import '../providers/auth_provider.dart';
 import '../providers/canvas_provider.dart';
 import '../providers/channels_provider.dart';
@@ -107,6 +109,12 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   /// transform differs from identity (any zoom or pan applied).
   bool _viewportTransformed = false;
 
+  /// True once the viewport has been initialised to the "canvas top-left at
+  /// viewport top-left, fully zoomed out" pose. Reset to false when this
+  /// widget is rebuilt for a different conversation/channel so each lounge
+  /// session starts from a clean canvas overview.
+  bool _viewportInitialised = false;
+
   /// Captured at initState so dispose() can clear fullscreen without
   /// touching `ref` (which becomes invalid the moment the element is
   /// unmounted, even before super.dispose runs). Riverpod's
@@ -148,14 +156,36 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   }
 
   void _onViewportChanged() {
-    final isIdentity = _viewport.value.isIdentity();
-    if (isIdentity == _viewportTransformed) {
-      setState(() => _viewportTransformed = !isIdentity);
+    // The reset-view button only needs to appear when the user has actively
+    // panned or zoomed away from the initial fit-to-screen pose. The fit
+    // pose itself isn't identity (it's a uniform scale), so use the matrix
+    // translation + a tolerance check on scale instead.
+    final m = _viewport.value;
+    final size = MediaQuery.maybeSizeOf(context) ?? Size.zero;
+    final fit = size.width <= 0 || size.height <= 0
+        ? 1.0
+        : math.min(size.width / kCanvasWidth, size.height / kCanvasHeight);
+    final scaleDiff = (m.getMaxScaleOnAxis() - fit).abs();
+    final translated = m.getTranslation().length > 0.5;
+    final transformed = scaleDiff > 1e-3 || translated;
+    if (transformed != _viewportTransformed) {
+      setState(() => _viewportTransformed = transformed);
     }
   }
 
   void _resetViewport() {
-    _viewport.value = Matrix4.identity();
+    // Reset to the same starting pose used on first mount: canvas top-left
+    // at viewport top-left, scaled so the entire 4096-px surface fits.
+    final size = MediaQuery.sizeOf(context);
+    if (size.width <= 0 || size.height <= 0) {
+      _viewport.value = Matrix4.identity();
+      return;
+    }
+    final fit = math.min(
+      size.width / kCanvasWidth,
+      size.height / kCanvasHeight,
+    );
+    _viewport.value = Matrix4.identity()..scaleByDouble(fit, fit, fit, 1);
   }
 
   String? _buildAvatarUrl() {
@@ -1168,45 +1198,60 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       },
     );
 
-    // Merge the drawing overlay INTO the content area so they share the
-    // same render bounds. Previously the overlay was a separate
-    // Positioned.fill over the whole scaffold, so its LayoutBuilder
-    // captured the full scaffold height while VoiceCanvas's stroke
-    // painter denormalized against the smaller inner-area height — the
-    // strokes landed ~40 px below the cursor because the header strip
-    // (64 px landscape / LoungeHeader portrait) was double-counted.
-    final mergedContent = Stack(
-      fit: StackFit.expand,
-      children: [
-        contentArea,
-        if (!_spotlightMode)
-          Positioned.fill(child: LoungeDrawingCanvas(isActive: _isDrawing)),
-      ],
+    // Wrap the canvas content in a fixed-size SizedBox so the
+    // InteractiveViewer treats the child as a finite scrollable surface.
+    // Every participant shares the same 4096×4096 logical canvas, which
+    // makes circles drawn on a phone read as circles on desktop — only
+    // the viewport (zoom + pan) differs between devices. See
+    // `apps/client/lib/src/models/canvas_models.dart` for the
+    // kCanvasWidth/kCanvasHeight constants and migration heuristic.
+    final mergedContent = SizedBox(
+      width: kCanvasWidth,
+      height: kCanvasHeight,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          contentArea,
+          if (!_spotlightMode)
+            Positioned.fill(child: LoungeDrawingCanvas(isActive: _isDrawing)),
+        ],
+      ),
     );
 
-    // Figma-style zoom + pan with a finite canvas. The boundaryMargin
-    // is sized so that at minScale the user sees the full workspace —
-    // boundary then doubles as the visible "page edge" + a scale
-    // reference, instead of either a hard wall mid-pan or an infinite
-    // void with no anchor.
+    // Figma-style zoom + pan over a finite 4096×4096 surface.
+    //
+    // minScale is computed dynamically so at full zoom-out the entire
+    // canvas fits inside the viewport (no wasted space outside, no
+    // letterboxing inside). On a small phone this might be ~0.1; on a
+    // 4K monitor it can exceed 1.0 — that's fine, the user can still
+    // zoom in up to maxScale for fine detail. Pan is disabled while
+    // drawing so single-pointer drags become strokes; pinch + trackpad
+    // scroll still zoom regardless.
     //
     // Background sits in a separate scaffold layer behind this widget
-    // so the bg never moves with the canvas.
-    //
-    // Pan is disabled while drawing so single-pointer drags become
-    // strokes, not viewport pans. Pinch + ctrl/trackpad-scroll still
-    // zoom regardless.
-    // Bumped minScale from 0.25 → 0.6 and trimmed the boundaryMargin so
-    // the canvas never appears smaller than ~60% of the viewport. The
-    // previous 0.25 + 1.5× viewport margin let an accidental pinch-out
-    // shrink the canvas into a small rectangle in the middle of the
-    // mesh-background, which testers consistently reported as "the
-    // lounge is bordered very small" (image #50, 2026-05-27).
-    const minScale = 0.6;
-    const maxScale = 4.0;
+    // so it never moves with the canvas.
     final size = MediaQuery.sizeOf(context);
-    final marginX = size.width * ((1 / minScale - 1) / 2);
-    final marginY = size.height * ((1 / minScale - 1) / 2);
+    final viewportW = size.width;
+    final viewportH = size.height;
+    final minScale = viewportW <= 0 || viewportH <= 0
+        ? 0.1
+        : math.min(viewportW / kCanvasWidth, viewportH / kCanvasHeight);
+    const maxScale = 4.0;
+
+    // Apply the initial pose once we have a non-zero viewport: place the
+    // canvas top-left at the viewport top-left, scaled so the whole
+    // canvas fits. The user can then pan/zoom from a known starting
+    // overview instead of landing somewhere arbitrary inside a 4096-px
+    // surface.
+    if (!_viewportInitialised && viewportW > 0 && viewportH > 0) {
+      _viewportInitialised = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _viewport.value = Matrix4.identity()
+          ..scaleByDouble(minScale, minScale, minScale, 1);
+      });
+    }
+
     final viewportContent = _spotlightMode
         ? mergedContent
         : InteractiveViewer(
@@ -1216,10 +1261,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
             panEnabled: !_isDrawing,
             scaleEnabled: true,
             trackpadScrollCausesScale: true,
-            boundaryMargin: EdgeInsets.symmetric(
-              horizontal: marginX,
-              vertical: marginY,
-            ),
+            boundaryMargin: EdgeInsets.zero,
             child: mergedContent,
           );
 

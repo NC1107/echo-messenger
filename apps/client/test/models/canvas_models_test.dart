@@ -4,18 +4,35 @@ import 'package:echo_app/src/models/canvas_models.dart';
 
 void main() {
   group('CanvasPoint', () {
-    test('round-trips through JSON', () {
-      const point = CanvasPoint(x: 0.25, y: 0.75);
+    test('canvas dimensions are the agreed 4096 px square', () {
+      expect(kCanvasWidth, 4096);
+      expect(kCanvasHeight, 4096);
+    });
+
+    test('round-trips through JSON in canvas-space pixels', () {
+      const point = CanvasPoint(x: 1024.0, y: 3072.0);
       final json = point.toJson();
       final restored = CanvasPoint.fromJson(json);
-      expect(restored.x, closeTo(0.25, 1e-10));
-      expect(restored.y, closeTo(0.75, 1e-10));
+      expect(restored.x, closeTo(1024.0, 1e-9));
+      expect(restored.y, closeTo(3072.0, 1e-9));
     });
 
     test('fromJson accepts num (int or double)', () {
-      final p = CanvasPoint.fromJson({'x': 1, 'y': 0});
-      expect(p.x, 1.0);
-      expect(p.y, 0.0);
+      // Use a value > 1.0 so the legacy-coord migration does not rescale.
+      final p = CanvasPoint.fromJson({'x': 100, 'y': 200});
+      expect(p.x, 100.0);
+      expect(p.y, 200.0);
+    });
+
+    test('legacy 0..1 normalized coords migrate to canvas-space pixels', () {
+      // Strokes persisted before the fixed-size canvas migration stored
+      // x/y as fractions of the participant's viewport. The fromJson
+      // heuristic (value ≤ 1.0 = legacy) rescales them to the shared
+      // 4096-px space so circles drawn on a phone display as circles on
+      // desktop after the upgrade.
+      final p = CanvasPoint.fromJson({'x': 0.5, 'y': 0.25});
+      expect(p.x, closeTo(2048.0, 1e-9));
+      expect(p.y, closeTo(1024.0, 1e-9));
     });
   });
 
@@ -65,14 +82,14 @@ void main() {
   });
 
   group('CanvasImage', () {
-    test('round-trips through JSON', () {
+    test('round-trips through JSON in canvas-space pixels', () {
       const img = CanvasImage(
         id: 'img-1',
         url: 'https://example.com/img.png',
-        x: 0.1,
-        y: 0.2,
-        width: 0.3,
-        height: 0.2,
+        x: 400,
+        y: 800,
+        width: 1200,
+        height: 800,
       );
 
       final json = img.toJson();
@@ -80,39 +97,54 @@ void main() {
 
       expect(restored.id, 'img-1');
       expect(restored.url, 'https://example.com/img.png');
-      expect(restored.x, closeTo(0.1, 1e-10));
-      expect(restored.y, closeTo(0.2, 1e-10));
-      expect(restored.width, closeTo(0.3, 1e-10));
-      expect(restored.height, closeTo(0.2, 1e-10));
+      expect(restored.x, closeTo(400, 1e-9));
+      expect(restored.y, closeTo(800, 1e-9));
+      expect(restored.width, closeTo(1200, 1e-9));
+      expect(restored.height, closeTo(800, 1e-9));
+    });
+
+    test('legacy 0..1 image coords migrate to canvas-space pixels', () {
+      final restored = CanvasImage.fromJson({
+        'id': 'img-legacy',
+        'url': 'https://example.com/old.png',
+        'x': 0.1,
+        'y': 0.2,
+        'width': 0.5,
+        'height': 0.25,
+      });
+      expect(restored.x, closeTo(kCanvasWidth * 0.1, 1e-9));
+      expect(restored.y, closeTo(kCanvasHeight * 0.2, 1e-9));
+      expect(restored.width, closeTo(kCanvasWidth * 0.5, 1e-9));
+      expect(restored.height, closeTo(kCanvasHeight * 0.25, 1e-9));
     });
 
     test('copyWith updates only specified fields', () {
       const img = CanvasImage(
         id: 'img-2',
         url: 'https://example.com/foo.png',
-        x: 0.0,
-        y: 0.0,
-        width: 0.2,
-        height: 0.1,
+        x: 0,
+        y: 0,
+        width: 800,
+        height: 400,
       );
-      final moved = img.copyWith(x: 0.5, y: 0.6);
+      final moved = img.copyWith(x: 2048, y: 2456);
       expect(moved.id, 'img-2');
       expect(moved.url, 'https://example.com/foo.png');
-      expect(moved.x, closeTo(0.5, 1e-10));
-      expect(moved.y, closeTo(0.6, 1e-10));
+      expect(moved.x, closeTo(2048, 1e-9));
+      expect(moved.y, closeTo(2456, 1e-9));
       // Unchanged
-      expect(moved.width, closeTo(0.2, 1e-10));
-      expect(moved.height, closeTo(0.1, 1e-10));
+      expect(moved.width, closeTo(800, 1e-9));
+      expect(moved.height, closeTo(400, 1e-9));
     });
   });
 
   group('AvatarPosition', () {
-    test('copyWith updates coordinates', () {
-      const pos = AvatarPosition(userId: 'u1', x: 0.5, y: 0.5);
-      final moved = pos.copyWith(x: 0.8, y: 0.2);
+    test('copyWith updates canvas-space coordinates', () {
+      const pos = AvatarPosition(userId: 'u1', x: 2048, y: 2048);
+      final moved = pos.copyWith(x: 3000, y: 500);
       expect(moved.userId, 'u1');
-      expect(moved.x, closeTo(0.8, 1e-10));
-      expect(moved.y, closeTo(0.2, 1e-10));
+      expect(moved.x, closeTo(3000, 1e-9));
+      expect(moved.y, closeTo(500, 1e-9));
     });
   });
 
