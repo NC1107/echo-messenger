@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/canvas_models.dart';
@@ -62,8 +63,6 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
     Colors.pink,
   ];
 
-  static const _penSizes = [2.0, 4.0, 6.0, 10.0, 16.0];
-
   @override
   void initState() {
     super.initState();
@@ -113,129 +112,202 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
   }
 
   Widget _buildColorPicker(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-          child: Text(
-            'Color',
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Colour',
             style: TextStyle(
               color: context.textMuted,
               fontSize: 11,
               fontWeight: FontWeight.w600,
             ),
           ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: GridView.count(
-            crossAxisCount: 5,
-            mainAxisSpacing: 2,
-            crossAxisSpacing: 2,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            childAspectRatio: 1.0,
-            children: _penColors.map((c) => _colorSwatch(context, c)).toList(),
+          const SizedBox(height: 6),
+          // Single compact row: 9 quick presets + a custom-colour disk that
+          // opens an HSV picker. Wraps if it doesn't fit (palette grows when
+          // recent custom colours are added).
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final c in _penColors) _colorSwatch(context, c),
+              _customColorTile(context),
+            ],
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
   Widget _colorSwatch(BuildContext context, Color c) {
-    final isSelected = _selectedColor == c;
+    final isSelected = _selectedColor.toARGB32() == c.toARGB32();
     return GestureDetector(
       onTap: () {
         HapticFeedback.selectionClick();
         setState(() => _selectedColor = c);
         ref.read(canvasProvider.notifier).setColor(c);
       },
-      child: SizedBox(
-        width: 44,
-        height: 44,
-        child: Center(
-          child: AnimatedContainer(
-            duration: MotionDurations.quick,
-            width: isSelected ? 24 : 20,
-            height: isSelected ? 24 : 20,
-            decoration: BoxDecoration(
-              color: c,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: isSelected ? context.accent : context.border,
-                width: isSelected ? 2.5 : 1,
-              ),
-              boxShadow: isSelected
-                  ? [BoxShadow(color: c.withValues(alpha: 0.5), blurRadius: 6)]
-                  : null,
-            ),
+      child: AnimatedContainer(
+        duration: MotionDurations.quick,
+        width: 22,
+        height: 22,
+        decoration: BoxDecoration(
+          color: c,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: isSelected ? context.accent : context.border,
+            width: isSelected ? 2.5 : 1,
           ),
+          boxShadow: isSelected
+              ? [BoxShadow(color: c.withValues(alpha: 0.5), blurRadius: 6)]
+              : null,
         ),
       ),
     );
   }
 
-  Widget _buildSizePicker(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-          child: Text(
-            'Size',
-            style: TextStyle(
-              color: context.textMuted,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
+  /// "+" tile that pops an HSV / hex colour picker dialog. The selected
+  /// custom colour is committed to the canvas provider just like any preset.
+  Widget _customColorTile(BuildContext context) {
+    final isCustom = !_penColors.any(
+      (p) => p.toARGB32() == _selectedColor.toARGB32(),
+    );
+    return GestureDetector(
+      onTap: _openCustomColorPicker,
+      child: Container(
+        width: 22,
+        height: 22,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          // Conic gradient hint that this is the "choose anything" tile.
+          gradient: isCustom
+              ? null
+              : const SweepGradient(
+                  colors: [
+                    Colors.red,
+                    Colors.yellow,
+                    Colors.green,
+                    Colors.cyan,
+                    Colors.blue,
+                    Colors.purple,
+                    Colors.red,
+                  ],
+                ),
+          color: isCustom ? _selectedColor : null,
+          border: Border.all(
+            color: isCustom ? context.accent : context.border,
+            width: isCustom ? 2.5 : 1,
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Row(
-            children: _penSizes.map((s) => _sizeChip(context, s)).toList(),
-          ),
-        ),
-      ],
+        child: isCustom
+            ? null
+            : Icon(Icons.add, size: 14, color: context.textPrimary),
+      ),
     );
   }
 
-  Widget _sizeChip(BuildContext context, double s) {
-    final isSelected = _selectedSize == s;
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: GestureDetector(
-        onTap: () {
-          HapticFeedback.selectionClick();
-          setState(() => _selectedSize = s);
-          ref.read(canvasProvider.notifier).setStrokeWidth(s);
-        },
-        child: AnimatedContainer(
-          duration: MotionDurations.quick,
-          width: 28,
-          height: 28,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: isSelected
-                ? context.accent.withValues(alpha: 0.12)
-                : Colors.transparent,
-            border: Border.all(
-              color: isSelected ? context.accent : context.border,
-              width: isSelected ? 2 : 1,
-            ),
-          ),
-          child: Center(
-            child: Container(
-              width: s.clamp(4.0, 16.0),
-              height: s.clamp(4.0, 16.0),
-              decoration: BoxDecoration(
-                color: isSelected ? context.accent : context.textPrimary,
-                shape: BoxShape.circle,
-              ),
-            ),
+  Future<void> _openCustomColorPicker() async {
+    HapticFeedback.selectionClick();
+    Color picked = _selectedColor;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: ctx.surface,
+        contentPadding: const EdgeInsets.all(12),
+        content: SingleChildScrollView(
+          child: ColorPicker(
+            pickerColor: _selectedColor,
+            onColorChanged: (c) => picked = c,
+            enableAlpha: false,
+            labelTypes: const [],
+            pickerAreaHeightPercent: 0.65,
+            displayThumbColor: true,
+            paletteType: PaletteType.hsvWithHue,
           ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Use colour'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (confirmed == true) {
+      setState(() => _selectedColor = picked);
+      ref.read(canvasProvider.notifier).setColor(picked);
+    }
+  }
+
+  Widget _buildSizePicker(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Size',
+                style: TextStyle(
+                  color: context.textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${_selectedSize.toStringAsFixed(0)} px',
+                style: TextStyle(
+                  color: context.textPrimary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
+          Row(
+            children: [
+              // Live preview dot tracks the slider value so users can eyeball
+              // the brush thickness without dragging in mid-air.
+              SizedBox(
+                width: 28,
+                height: 28,
+                child: Center(
+                  child: Container(
+                    width: _selectedSize.clamp(2.0, 24.0),
+                    height: _selectedSize.clamp(2.0, 24.0),
+                    decoration: BoxDecoration(
+                      color: _selectedColor,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Slider(
+                  value: _selectedSize.clamp(1.0, 48.0),
+                  min: 1,
+                  max: 48,
+                  divisions: 47,
+                  onChanged: (v) {
+                    setState(() => _selectedSize = v);
+                    ref.read(canvasProvider.notifier).setStrokeWidth(v);
+                  },
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
