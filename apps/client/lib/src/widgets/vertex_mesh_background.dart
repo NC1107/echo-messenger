@@ -54,6 +54,17 @@ class _VertexMeshBackgroundState extends State<VertexMeshBackground>
   }
 
   @override
+  void didUpdateWidget(VertexMeshBackground oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Tunable changes from the customisation dialog: re-seed the vertex
+    // list so density slider changes are visible without a restart.
+    if (oldWidget.vertexCount != widget.vertexCount && _lastSize != Size.zero) {
+      _initVertices(_lastSize);
+      _repaint.value++;
+    }
+  }
+
+  @override
   void dispose() {
     _ticker.dispose();
     _repaint.dispose();
