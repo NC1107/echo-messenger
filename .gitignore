@@ -104,6 +104,7 @@ tests/e2e/*.spec.ts
 !tests/e2e/density_walkthrough.spec.ts
 !tests/e2e/screenshot_tour.spec.ts
 !tests/e2e/theme_tour.spec.ts
+!tests/e2e/audit_tour.spec.ts
 test-results/
 
 # Uploaded media files

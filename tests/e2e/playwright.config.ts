@@ -74,6 +74,18 @@ export default defineConfig({
         viewport: { width: 1920, height: 1080 },
       },
     },
+    {
+      // Audit tour: full surface sweep × 3 beta themes for the screenshot
+      // audit. Run on demand:
+      //   npx playwright test --project=audit
+      // Output: screenshot_audit/{theme}/{area}/{screen}.png
+      name: 'audit',
+      testMatch: ['audit_tour.spec.ts'],
+      use: {
+        browserName: 'chromium',
+        viewport: { width: 1920, height: 1080 },
+      },
+    },
   ],
   outputDir: './test-results',
 });
