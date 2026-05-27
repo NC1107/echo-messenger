@@ -1000,3 +1000,75 @@ pub async fn unpin_conversation(
         .db_ctx("unpin_conversation")?;
     Ok(StatusCode::NO_CONTENT)
 }
+
+// ---------------------------------------------------------------------------
+// Threads inbox + read state (M3)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct ThreadsInboxQuery {
+    /// Soft cap. Server clamps to [1, 100]; default 50 keeps the
+    /// payload bounded for the initial inbox render.
+    pub limit: Option<i64>,
+}
+
+/// GET /api/threads/inbox — every thread the caller can see, sorted
+/// newest-reply-first, with per-row unread counts.
+pub async fn get_threads_inbox(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<ThreadsInboxQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let limit = params.limit.unwrap_or(50).clamp(1, 100);
+    let entries = db::threads::get_threads_inbox(&state.pool, auth.user_id, limit)
+        .await
+        .db_ctx("get_threads_inbox")?;
+    Ok(Json(entries))
+}
+
+/// POST /api/messages/:thread_root_id/thread/read — bump the read marker
+/// for the caller's view of this thread. The client calls this when the
+/// user opens the thread panel (and again on each new reply they see).
+pub async fn mark_thread_read(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(thread_root_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    // Verify the user has visibility into the thread's conversation
+    // before recording a read marker. Otherwise a malicious caller could
+    // observe whether a root id exists by probing the endpoint.
+    let parent: Option<(Uuid,)> =
+        sqlx::query_as("SELECT conversation_id FROM messages WHERE id = $1 AND deleted_at IS NULL")
+            .bind(thread_root_id)
+            .fetch_optional(&state.pool)
+            .await
+            .db_ctx("mark_thread_read/lookup")?;
+    let conversation_id = parent
+        .map(|(cid,)| cid)
+        .ok_or_else(|| AppError::not_found("Thread not found"))?;
+    let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
+        .await
+        .db_ctx("mark_thread_read/is_member")?;
+    if !is_member {
+        return Err(AppError::with_code(
+            ErrorCode::NotMember,
+            "Not a member of this conversation",
+        ));
+    }
+    db::threads::mark_thread_read(&state.pool, auth.user_id, thread_root_id, Utc::now())
+        .await
+        .db_ctx("mark_thread_read")?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// GET /api/threads/unread-count — single integer for the nav-rail
+/// badge. Cheap query; safe to poll on focus.
+pub async fn get_unread_thread_count(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    let count = db::threads::unread_thread_count(&state.pool, auth.user_id)
+        .await
+        .db_ctx("unread_thread_count")?;
+    Ok(Json(serde_json::json!({ "count": count })))
+}

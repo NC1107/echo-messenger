@@ -60,6 +60,10 @@ class ConversationPanel extends ConsumerStatefulWidget {
   final VoidCallback? onGlobalSearch;
   final VoidCallback? onSavedMessages;
 
+  /// Opens the cross-group threads inbox. Surfaced from the "+" menu
+  /// next to Saved Messages.
+  final VoidCallback? onThreads;
+
   /// Opens the keyboard-shortcuts overlay (also bindable to Ctrl+/).
   /// When null, the help icon in the header is hidden.
   final VoidCallback? onShowKeyboardShortcuts;
@@ -90,6 +94,7 @@ class ConversationPanel extends ConsumerStatefulWidget {
     this.onShowContacts,
     this.onGlobalSearch,
     this.onSavedMessages,
+    this.onThreads,
     this.onShowKeyboardShortcuts,
     this.onScanQr,
     this.onMessageContact,

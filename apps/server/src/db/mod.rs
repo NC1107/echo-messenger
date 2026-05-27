@@ -11,6 +11,7 @@ pub mod password_reset;
 pub mod polls;
 pub mod push_tokens;
 pub mod reactions;
+pub mod threads;
 pub mod tokens;
 pub mod upload_sessions;
 pub mod users;

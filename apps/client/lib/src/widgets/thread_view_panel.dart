@@ -8,6 +8,7 @@ import '../models/chat_message.dart';
 import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/server_url_provider.dart';
+import '../providers/threads_inbox_provider.dart';
 import '../theme/echo_theme.dart';
 import '../theme/motion_tokens.dart';
 import 'message/rich_text_content.dart';
@@ -53,6 +54,13 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
   void initState() {
     super.initState();
     _loadReplies();
+    // Threads M3: opening the panel implicitly marks this thread as
+    // read. Fire-and-forget on the inbox provider — fails silently if
+    // offline; the next inbox refresh re-derives the truth.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(threadsInboxProvider.notifier).markRead(widget.parentMessage.id);
+    });
   }
 
   @override
