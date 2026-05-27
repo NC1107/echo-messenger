@@ -141,6 +141,8 @@ mixin _ConversationPanelHeaderMixin
                   widget.onDiscover?.call();
                 case 'saved':
                   widget.onSavedMessages?.call();
+                case 'threads':
+                  widget.onThreads?.call();
               }
             },
             itemBuilder: (context) => const [
@@ -215,6 +217,22 @@ mixin _ConversationPanelHeaderMixin
                           'Saved Messages',
                           overflow: TextOverflow.ellipsis,
                         ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'threads',
+                child: SizedBox(
+                  width: 200,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.forum_outlined, size: 18),
+                      SizedBox(width: 10),
+                      Flexible(
+                        child: Text('Threads', overflow: TextOverflow.ellipsis),
                       ),
                     ],
                   ),

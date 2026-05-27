@@ -22,6 +22,7 @@ import '../screens/safety_number_screen.dart';
 import '../screens/saved_messages_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/splash_screen.dart';
+import '../screens/threads_inbox_screen.dart';
 import '../screens/username_invite_screen.dart';
 import '../screens/user_profile_screen.dart';
 
@@ -236,6 +237,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/contacts',
         pageBuilder: (context, state) =>
             _fadePage(key: state.pageKey, child: const ContactsScreen()),
+      ),
+      GoRoute(
+        path: '/threads',
+        pageBuilder: (context, state) =>
+            _fadePage(key: state.pageKey, child: const ThreadsInboxScreen()),
       ),
       GoRoute(
         path: '/create-group',

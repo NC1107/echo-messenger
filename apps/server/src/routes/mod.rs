@@ -262,6 +262,15 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpNet>) -> Route
                 .layer(middleware::from_fn(edit_message_limit)),
         )
         .route("/messages/{id}/replies", get(messages::get_thread_replies))
+        .route(
+            "/messages/{id}/thread/read",
+            post(messages::mark_thread_read),
+        )
+        .route("/threads/inbox", get(messages::get_threads_inbox))
+        .route(
+            "/threads/unread-count",
+            get(messages::get_unread_thread_count),
+        )
         .route("/messages/{id}/reactions", post(reactions::add_reaction))
         .route(
             "/messages/{message_id}/reactions/{emoji}",
