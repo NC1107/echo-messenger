@@ -5,21 +5,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/canvas_models.dart';
 import '../providers/canvas_provider.dart';
 
-/// Transparent pointer-capture overlay for freehand drawing in the voice
-/// lounge.
+/// Single-pointer drawing overlay for the voice lounge canvas.
 ///
-/// All stroke state (in-progress + committed) is owned by [canvasProvider]
-/// so it broadcasts to other participants and persists.  This widget is
-/// purely a pointer router: when [isActive] is true it sits above the voice
-/// canvas, captures pointer events that would otherwise hit avatars or
-/// shared-screen tiles, and forwards them to the provider as normalized
-/// `CanvasPoint`s.
+/// Previously used [Listener] with [HitTestBehavior.opaque] which ate ALL
+/// pointer events — including the second finger of a pinch — before the
+/// parent [InteractiveViewer]'s `ScaleGestureRecognizer` could claim them.
+/// That killed pinch-to-zoom on mobile (user feedback, 2026-05-27).
 ///
-/// Rendering of strokes (committed and in-progress) happens in
-/// `widgets/voice_canvas.dart`'s `_DrawingLayer`, which subscribes to the
-/// same provider state.  Without this overlay, drawing-mode pointer events
-/// would race with avatar drag handlers and stroke broadcast was previously
-/// not happening at all (#752).
+/// Now uses [GestureDetector]'s `onPan*` callbacks. Flutter's
+/// `PanGestureRecognizer` accepts exactly one pointer; a second touch
+/// causes the pan to lose the gesture arena, letting InteractiveViewer's
+/// scale recogniser take over so pinch-to-zoom works.
 class LoungeDrawingCanvas extends ConsumerStatefulWidget {
   final bool isActive;
 
@@ -31,10 +27,9 @@ class LoungeDrawingCanvas extends ConsumerStatefulWidget {
 }
 
 class LoungeDrawingCanvasState extends ConsumerState<LoungeDrawingCanvas> {
-  /// Pointer events delivered to this Listener arrive in the
-  /// InteractiveViewer-scaled child's coordinate space — i.e. absolute
-  /// canvas-space pixels in the 4096×4096 surface. We just clamp and pass
-  /// through; no per-viewport scaling is needed.
+  /// Pointer events arrive in the InteractiveViewer-scaled child's
+  /// coordinate space — absolute pixels in the 4096×4096 surface. We
+  /// clamp and pass through; no per-viewport scaling is needed.
   CanvasPoint _toCanvasPoint(Offset canvasSpace) {
     return CanvasPoint(
       x: canvasSpace.dx.clamp(0.0, kCanvasWidth),
@@ -42,37 +37,31 @@ class LoungeDrawingCanvasState extends ConsumerState<LoungeDrawingCanvas> {
     );
   }
 
-  void _onPointerDown(PointerDownEvent event) {
-    if (event.buttons != kPrimaryButton) return;
-    ref
-        .read(canvasProvider.notifier)
-        .startStroke(_toCanvasPoint(event.localPosition));
-  }
-
-  void _onPointerMove(PointerMoveEvent event) {
-    if (event.buttons != kPrimaryButton) return;
-    ref
-        .read(canvasProvider.notifier)
-        .continueStroke(_toCanvasPoint(event.localPosition));
-  }
-
-  void _onPointerUp(PointerUpEvent event) {
-    ref.read(canvasProvider.notifier).endStroke();
-  }
-
-  void _onPointerCancel(PointerCancelEvent event) {
-    ref.read(canvasProvider.notifier).endStroke();
-  }
-
   @override
   Widget build(BuildContext context) {
     if (!widget.isActive) return const SizedBox.shrink();
-    return Listener(
+    return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onPointerDown: _onPointerDown,
-      onPointerMove: _onPointerMove,
-      onPointerUp: _onPointerUp,
-      onPointerCancel: _onPointerCancel,
+      // DragStartBehavior.down so the inner pan claims the gesture arena
+      // immediately on pointer-down instead of waiting for slop —
+      // otherwise a fast first stroke can get reclassified.
+      dragStartBehavior: DragStartBehavior.down,
+      onPanStart: (details) {
+        ref
+            .read(canvasProvider.notifier)
+            .startStroke(_toCanvasPoint(details.localPosition));
+      },
+      onPanUpdate: (details) {
+        ref
+            .read(canvasProvider.notifier)
+            .continueStroke(_toCanvasPoint(details.localPosition));
+      },
+      onPanEnd: (_) {
+        ref.read(canvasProvider.notifier).endStroke();
+      },
+      onPanCancel: () {
+        ref.read(canvasProvider.notifier).endStroke();
+      },
       child: const SizedBox.expand(),
     );
   }

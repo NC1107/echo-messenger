@@ -188,6 +188,39 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     _viewport.value = Matrix4.identity()..scaleByDouble(fit, fit, fit, 1);
   }
 
+  /// Toggle between fit-to-screen and a 2× zoom centred on the tap point.
+  /// `tapPoint` is in viewport-local pixels (where the user touched);
+  /// `minScale` is the fit-to-screen scale for the current viewport.
+  ///
+  /// This is the recommended mobile UX: pinch is fiddly with one hand,
+  /// and the gesture arena gets noisy with a drawing tool in hand. A
+  /// double-tap is unambiguous and works in either drawing or idle mode.
+  void _toggleDoubleTapZoom(Offset tapPoint, double minScale) {
+    final current = _viewport.value.getMaxScaleOnAxis();
+    final isFit = (current - minScale).abs() < 1e-3;
+    if (isFit) {
+      // Zoom in. The transform's scale * canvasPoint + translate = tap,
+      // so translate = tap - scale * canvasPoint. We want the tap point
+      // to stay anchored on the same pixel of the canvas under the
+      // finger as it zooms in.
+      const targetScale = 2.0;
+      final inverse = Matrix4.copy(_viewport.value)..invert();
+      final canvasPoint = MatrixUtils.transformPoint(inverse, tapPoint);
+      final m = Matrix4.identity()
+        ..scaleByDouble(targetScale, targetScale, targetScale, 1)
+        ..setTranslationRaw(
+          tapPoint.dx - canvasPoint.dx * targetScale,
+          tapPoint.dy - canvasPoint.dy * targetScale,
+          0,
+        );
+      _viewport.value = m;
+    } else {
+      // Snap back to fit-to-screen.
+      _viewport.value = Matrix4.identity()
+        ..scaleByDouble(minScale, minScale, minScale, 1);
+    }
+  }
+
   String? _buildAvatarUrl() {
     final avatarPath = ref.read(authProvider).avatarUrl;
     if (avatarPath == null || avatarPath.isEmpty) return null;
@@ -1228,55 +1261,68 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
 
     // Figma-style zoom + pan over a finite 4096×4096 surface.
     //
-    // minScale is computed dynamically so at full zoom-out the entire
-    // canvas fits inside the viewport (no wasted space outside, no
-    // letterboxing inside). On a small phone this might be ~0.1; on a
-    // 4K monitor it can exceed 1.0 — that's fine, the user can still
-    // zoom in up to maxScale for fine detail. Pan is disabled while
-    // drawing so single-pointer drags become strokes; pinch + trackpad
-    // scroll still zoom regardless.
+    // minScale uses the InteractiveViewer's ACTUAL region (via
+    // LayoutBuilder below), not the full screen — the previous
+    // MediaQuery-based calc included the header band + dock so the canvas
+    // rendered smaller than the available area and only the top-left
+    // corner was touchable (user feedback, 2026-05-27).
+    //
+    // Pan is disabled while drawing so single-pointer drags become
+    // strokes. **Scale stays enabled**: pinch needs two fingers and
+    // doesn't conflict with single-finger drawing — the drawing layer's
+    // PanGestureRecognizer cancels when a second pointer arrives,
+    // handing the pinch off to InteractiveViewer's ScaleGestureRecognizer.
     //
     // Background sits in a separate scaffold layer behind this widget
     // so it never moves with the canvas.
-    final size = MediaQuery.sizeOf(context);
-    final viewportW = size.width;
-    final viewportH = size.height;
-    final minScale = viewportW <= 0 || viewportH <= 0
-        ? 0.1
-        : math.min(viewportW / kCanvasWidth, viewportH / kCanvasHeight);
     const maxScale = 4.0;
-
-    // Apply the initial pose once we have a non-zero viewport: place the
-    // canvas top-left at the viewport top-left, scaled so the whole
-    // canvas fits. The user can then pan/zoom from a known starting
-    // overview instead of landing somewhere arbitrary inside a 4096-px
-    // surface.
-    if (!_viewportInitialised && viewportW > 0 && viewportH > 0) {
-      _viewportInitialised = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _viewport.value = Matrix4.identity()
-          ..scaleByDouble(minScale, minScale, minScale, 1);
-      });
-    }
 
     final viewportContent = _spotlightMode
         ? mergedContent
-        : InteractiveViewer(
-            transformationController: _viewport,
-            minScale: minScale,
-            maxScale: maxScale,
-            // Both pan AND scale must be off while a tool is in hand —
-            // otherwise InteractiveViewer's ScaleGestureRecognizer can claim
-            // single-pointer drags via its scale-of-one path and turn a
-            // shape draw into a viewport pan (image #57, 2026-05-27). The
-            // drawing layer's HitTestBehavior.opaque pairs with this to
-            // guarantee the gesture arena is uncontested.
-            panEnabled: !_isDrawing,
-            scaleEnabled: !_isDrawing,
-            trackpadScrollCausesScale: true,
-            boundaryMargin: EdgeInsets.zero,
-            child: mergedContent,
+        : LayoutBuilder(
+            builder: (ctx, constraints) {
+              final viewportW = constraints.maxWidth;
+              final viewportH = constraints.maxHeight;
+              final minScale = viewportW <= 0 || viewportH <= 0
+                  ? 0.1
+                  : math.min(
+                      viewportW / kCanvasWidth,
+                      viewportH / kCanvasHeight,
+                    );
+
+              // Initial pose: canvas top-left at the viewport top-left,
+              // scaled to fit. Re-applied if the viewport size changes
+              // (rotation, sidebar toggle, etc.) so the user never gets
+              // stuck off-canvas.
+              if (!_viewportInitialised && viewportW > 0 && viewportH > 0) {
+                _viewportInitialised = true;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) return;
+                  _viewport.value = Matrix4.identity()
+                    ..scaleByDouble(minScale, minScale, minScale, 1);
+                });
+              }
+
+              return GestureDetector(
+                // Double-tap to toggle zoom — single-finger UX that
+                // doesn't fight the gesture arena. Tap once at fit-to-
+                // screen to jump to 2x at the tap point; tap again to
+                // return to fit.
+                behavior: HitTestBehavior.translucent,
+                onDoubleTapDown: (details) =>
+                    _toggleDoubleTapZoom(details.localPosition, minScale),
+                child: InteractiveViewer(
+                  transformationController: _viewport,
+                  minScale: minScale,
+                  maxScale: maxScale,
+                  panEnabled: !_isDrawing,
+                  scaleEnabled: true,
+                  trackpadScrollCausesScale: true,
+                  boundaryMargin: EdgeInsets.zero,
+                  child: mergedContent,
+                ),
+              );
+            },
           );
 
     return OrientationBuilder(
