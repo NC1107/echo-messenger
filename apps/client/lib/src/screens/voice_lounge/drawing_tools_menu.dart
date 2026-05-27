@@ -249,43 +249,28 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
       padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
       child: Column(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: TextButton.icon(
-                  onPressed: () async {
-                    HapticFeedback.lightImpact();
-                    await _pickAndAddImage(context);
-                    if (mounted) widget.onRequestClose?.call();
-                  },
-                  icon: const Icon(
-                    Icons.add_photo_alternate_outlined,
-                    size: 16,
-                  ),
-                  label: const Text('Image'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: context.accent,
-                    textStyle: const TextStyle(fontSize: 12),
-                  ),
+          // Single primary action: "Add image". The destructive Clear
+          // moved out of the drawing menu into a confirmed corner
+          // button on the lounge so a misclick can't wipe everyone's
+          // drawings (image #39 feedback).
+          Tooltip(
+            message: 'Add an image to the canvas',
+            child: SizedBox(
+              width: double.infinity,
+              child: TextButton.icon(
+                onPressed: () async {
+                  HapticFeedback.lightImpact();
+                  await _pickAndAddImage(context);
+                  if (mounted) widget.onRequestClose?.call();
+                },
+                icon: const Icon(Icons.add_photo_alternate_outlined, size: 16),
+                label: const Text('Add image'),
+                style: TextButton.styleFrom(
+                  foregroundColor: context.accent,
+                  textStyle: const TextStyle(fontSize: 12),
                 ),
               ),
-              const SizedBox(width: 4),
-              Expanded(
-                child: TextButton.icon(
-                  onPressed: () {
-                    HapticFeedback.mediumImpact();
-                    ref.read(canvasProvider.notifier).clearDrawing();
-                    widget.onRequestClose?.call();
-                  },
-                  icon: const Icon(Icons.delete_outline, size: 16),
-                  label: const Text('Clear'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: EchoTheme.danger,
-                    textStyle: const TextStyle(fontSize: 12),
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
           const SizedBox(height: 4),
           // Icon-only export row. Three text labels at this menu width

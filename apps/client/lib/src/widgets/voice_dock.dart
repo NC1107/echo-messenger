@@ -147,6 +147,27 @@ class VoiceDock extends ConsumerWidget {
       );
       return _buildCollapsedDock(compactSpec, statusColor);
     }
+
+    // Below this width the full "status + channel name + controls" row
+    // won't fit and the status text wraps letter-by-letter (image #40).
+    // Switch to a tighter horizontal layout — controls only, status dot
+    // for context — that gracefully shrinks down to the collapsed-strip
+    // threshold.
+    const narrowThreshold = 220.0;
+    if (width < narrowThreshold) {
+      final compactSpec = (
+        context: context,
+        ref: ref,
+        voiceLk: voiceLk,
+        voiceSettings: voiceSettings,
+        screenShare: screenShare,
+        conversationId: conversationId,
+        channelId: channelId,
+        m: _DockMetrics.compact,
+      );
+      return _buildNarrowDock(compactSpec, statusColor);
+    }
+
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTap: onNavigateToLounge,
@@ -178,6 +199,51 @@ class VoiceDock extends ConsumerWidget {
               voiceLk.callStartedAt,
             ),
             ..._buildControlButtons(spec),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Horizontal icon-only dock for sidebars too narrow for the channel
+  /// name but still too wide for the 60-px collapsed-strip layout.
+  /// Status dot anchors the left so the user can still see whether the
+  /// call is connected; the controls row scrolls horizontally if even
+  /// the icons don't fit (e.g. user dragged the rail very narrow).
+  Widget _buildNarrowDock(_DockButtonSpec spec, Color statusColor) {
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: onNavigateToLounge,
+      child: Container(
+        width: width,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        decoration: BoxDecoration(
+          color: spec.context.surface,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: spec.context.border),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.start,
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              margin: const EdgeInsets.only(left: 4, right: 4),
+              decoration: BoxDecoration(
+                color: statusColor,
+                shape: BoxShape.circle,
+              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                physics: const ClampingScrollPhysics(),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: _buildControlButtons(spec),
+                ),
+              ),
+            ),
           ],
         ),
       ),
