@@ -296,6 +296,17 @@ Widget buildChatContentBox(
                         ref.read(chatProvider.notifier).setReplyTo(msg);
                         p.chatInputBarKey.currentState?.requestInputFocus();
                       },
+                      onReplyInThread: (msg) {
+                        // Stamp the reply with the thread root so the
+                        // outbound message lands in the thread panel,
+                        // not the main timeline.
+                        ref
+                            .read(chatProvider.notifier)
+                            .setReplyTo(msg, asThread: true);
+                        // Open the thread panel so the user sees the
+                        // active conversation context while typing.
+                        p.onOpenThread(msg);
+                      },
                       onOpenThread: p.onOpenThread,
                       onPin: p.onPinMessage,
                       onUnpin: p.onUnpinMessage,

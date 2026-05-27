@@ -451,6 +451,18 @@ pub(in crate::ws::message_service) async fn fanout_message(
         );
     }
 
+    // Threads M4: dampen push for thread replies. Only the thread
+    // root's author + previous repliers (auto-subscribers) and anyone
+    // @mentioned in this new reply get a push; everyone else in the
+    // conversation stays silent until they explicitly open the thread.
+    if let Some(thread_root_id) = fields.thread_root_id
+        && !offline_user_ids.is_empty()
+    {
+        offline_user_ids =
+            filter_thread_push_recipients(&state.pool, offline_user_ids, thread_root_id, stored_id)
+                .await;
+    }
+
     if !offline_user_ids.is_empty() && !suppress_offline_push {
         spawn_push_notifications(
             state.pool.clone(),
@@ -462,4 +474,43 @@ pub(in crate::ws::message_service) async fn fanout_message(
             stored_id,
         );
     }
+}
+
+/// Threads M4 dampening: trim [offline_user_ids] to only the users
+/// who are subscribed to the thread (root author + prior repliers) or
+/// who got @mentioned in the new reply. Anyone else stays silent.
+///
+/// Failures are non-fatal — on any DB error we fall back to the
+/// undampened recipient list so a flaky DB doesn't accidentally
+/// silence the whole conversation.
+async fn filter_thread_push_recipients(
+    pool: &sqlx::PgPool,
+    offline_user_ids: Vec<Uuid>,
+    thread_root_id: Uuid,
+    new_message_id: Uuid,
+) -> Vec<Uuid> {
+    let subscribers = match db::threads::get_thread_subscribers(pool, thread_root_id).await {
+        Ok(ids) => ids,
+        Err(e) => {
+            tracing::warn!(
+                "thread push filter: subscriber lookup failed: {e:?}; using full recipient list"
+            );
+            return offline_user_ids;
+        }
+    };
+    let mentioned = match db::mentions::get_mentioned_user_ids(pool, new_message_id).await {
+        Ok(ids) => ids,
+        Err(e) => {
+            tracing::warn!(
+                "thread push filter: mention lookup failed: {e:?}; using full recipient list"
+            );
+            return offline_user_ids;
+        }
+    };
+    let allowed: std::collections::HashSet<Uuid> =
+        subscribers.into_iter().chain(mentioned).collect();
+    offline_user_ids
+        .into_iter()
+        .filter(|id| allowed.contains(id))
+        .collect()
 }

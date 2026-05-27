@@ -62,6 +62,11 @@ class ChatMessageList extends ConsumerWidget {
   final void Function(ChatMessage message) onEnterEditMode;
   final void Function(ChatMessage message) onReply;
   final void Function(ChatMessage message) onOpenThread;
+
+  /// Slack-style "Reply in thread" entry on the message context menu.
+  /// Sets the active reply to the message with the thread flag, then
+  /// opens the panel anchored on the parent. null = hide the row.
+  final void Function(ChatMessage message)? onReplyInThread;
   final void Function(ChatMessage message) onPin;
   final void Function(ChatMessage message) onUnpin;
   final void Function(ChatMessage message) onForward;
@@ -111,6 +116,7 @@ class ChatMessageList extends ConsumerWidget {
     required this.onEnterEditMode,
     required this.onReply,
     required this.onOpenThread,
+    this.onReplyInThread,
     required this.onPin,
     required this.onUnpin,
     required this.onForward,
@@ -218,6 +224,7 @@ class ChatMessageList extends ConsumerWidget {
             // #582: suppress edit on encrypted convs — would broadcast plaintext until per-device edit fanout ships.
             onEdit: conv.isEncrypted ? null : onEnterEditMode,
             onReply: onReply,
+            onReplyInThread: onReplyInThread,
             onViewThread: onOpenThread,
             onPin: onPin,
             onUnpin: onUnpin,

@@ -1,14 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../models/chat_message.dart';
+import '../../providers/threads_inbox_provider.dart';
 import '../../theme/echo_theme.dart';
 
 /// Tappable "X replies" pill shown beneath a message that has at least
 /// one threaded reply.  Aligns to the bubble's own side (right for
 /// "my" messages in bubbles layout, left otherwise).  Tapping fires
 /// [onTap] -- typically opens the thread view.
-class ReplyCountBadge extends StatelessWidget {
+///
+/// Unread state comes from the threads inbox provider (M3): when the
+/// most recent inbox snapshot has a matching entry with unreadCount > 0,
+/// the badge renders an accent dot inline. Caller can still hard-force
+/// the state via the [hasUnread] override prop for tests.
+class ReplyCountBadge extends ConsumerWidget {
   final ChatMessage message;
   final bool isMine;
   final ValueChanged<ChatMessage>? onTap;
@@ -18,15 +25,10 @@ class ReplyCountBadge extends StatelessWidget {
   /// chrome of a pill clashes with the surrounding text-only treatment.
   final bool inlineStyle;
 
-  /// Whether the local user has unread replies on this thread. When true,
-  /// a small accent-coloured dot renders on the badge so the user can
-  /// spot fresh activity without opening the thread (#449-3).
-  ///
-  /// Today no call site wires this — the unread-tracking state path
-  /// (last-viewed-reply timestamp, per-thread, persisted) is deferred
-  /// to a separate change. The prop is plumbed now so the visual
-  /// affordance is in place and a follow-up only has to flip the bool.
-  final bool hasUnread;
+  /// Forces the unread dot on regardless of inbox state. Default is to
+  /// derive from the threads-inbox provider snapshot. Tests + the
+  /// thread panel (where the parent is always "read") can override.
+  final bool? hasUnread;
 
   const ReplyCountBadge({
     super.key,
@@ -34,7 +36,7 @@ class ReplyCountBadge extends StatelessWidget {
     required this.isMine,
     this.onTap,
     this.inlineStyle = false,
-    this.hasUnread = false,
+    this.hasUnread,
   });
 
   Widget _unreadDot(BuildContext context) {
@@ -52,12 +54,26 @@ class ReplyCountBadge extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final count = message.replyCount;
     final label = count == 1 ? '1 reply' : '$count replies';
+    final unread = hasUnread ?? _isUnreadFromInbox(ref);
     return inlineStyle
-        ? _buildInline(context, label)
-        : _buildPill(context, label);
+        ? _buildInline(context, label, unread)
+        : _buildPill(context, label, unread);
+  }
+
+  /// True when the threads-inbox snapshot has a matching entry with
+  /// unreadCount > 0. Falls back to false when the inbox hasn't been
+  /// loaded yet (so we never falsely advertise unread state).
+  bool _isUnreadFromInbox(WidgetRef ref) {
+    final inbox = ref.watch(threadsInboxProvider);
+    for (final entry in inbox.entries) {
+      if (entry.threadRootId == message.id) {
+        return entry.unreadCount > 0;
+      }
+    }
+    return false;
   }
 
   EdgeInsets _topPadding(double topInset) =>
@@ -69,25 +85,25 @@ class ReplyCountBadge extends StatelessWidget {
   VoidCallback? get _onTapCallback =>
       onTap == null ? null : () => onTap!(message);
 
-  Widget _buildInline(BuildContext context, String label) {
+  Widget _buildInline(BuildContext context, String label, bool unread) {
     return Padding(
       padding: _topPadding(2),
       child: Align(
         alignment: _alignment,
         child: Semantics(
-          label: hasUnread ? 'View $label (new replies)' : 'View $label',
+          label: unread ? 'View $label (new replies)' : 'View $label',
           button: true,
           child: InkWell(
             borderRadius: BorderRadius.circular(2),
             onTap: _onTapCallback,
-            child: _buildInlineRow(context, label),
+            child: _buildInlineRow(context, label, unread),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildInlineRow(BuildContext context, String label) {
+  Widget _buildInlineRow(BuildContext context, String label, bool unread) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -101,12 +117,12 @@ class ReplyCountBadge extends StatelessWidget {
             decorationColor: context.accent.withValues(alpha: 0.4),
           ),
         ),
-        if (hasUnread) _unreadDot(context),
+        if (unread) _unreadDot(context),
       ],
     );
   }
 
-  Widget _buildPill(BuildContext context, String label) {
+  Widget _buildPill(BuildContext context, String label, bool unread) {
     return Padding(
       padding: _topPadding(4),
       child: Align(
@@ -119,7 +135,7 @@ class ReplyCountBadge extends StatelessWidget {
             child: InkWell(
               borderRadius: BorderRadius.circular(12),
               onTap: _onTapCallback,
-              child: _buildPillContainer(context, label),
+              child: _buildPillContainer(context, label, unread),
             ),
           ),
         ),
@@ -127,7 +143,7 @@ class ReplyCountBadge extends StatelessWidget {
     );
   }
 
-  Widget _buildPillContainer(BuildContext context, String label) {
+  Widget _buildPillContainer(BuildContext context, String label, bool unread) {
     final repliers = message.recentReplierUsernames;
     final lastReplyAt = message.lastReplyAt;
     final hasFaces = repliers.isNotEmpty;
@@ -161,7 +177,7 @@ class ReplyCountBadge extends StatelessWidget {
               style: GoogleFonts.inter(fontSize: 11, color: context.textMuted),
             ),
           ],
-          if (hasUnread) _unreadDot(context),
+          if (unread) _unreadDot(context),
         ],
       ),
     );

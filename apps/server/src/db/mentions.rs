@@ -212,6 +212,21 @@ async fn resolve_mention_targets(
 }
 
 /// Bulk-insert one row per target into `mentions` with `ON CONFLICT DO
+/// Look up the user ids @-mentioned in a single message. Used by the
+/// thread-push dampening path (M4): a reply notifies non-subscribers
+/// only when they're explicitly named.
+pub async fn get_mentioned_user_ids(
+    pool: &PgPool,
+    message_id: Uuid,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    let rows: Vec<(Uuid,)> =
+        sqlx::query_as("SELECT mentioned_user_id FROM mentions WHERE message_id = $1")
+            .bind(message_id)
+            .fetch_all(pool)
+            .await?;
+    Ok(rows.into_iter().map(|(id,)| id).collect())
+}
+
 /// NOTHING` so a redelivery is a no-op.  Uses `UNNEST` to bind a single
 /// array parameter rather than building a variadic `VALUES` clause.
 async fn insert_mention_rows(

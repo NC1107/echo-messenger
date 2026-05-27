@@ -139,6 +139,29 @@ pub async fn mark_thread_read(
     Ok(())
 }
 
+/// Users who are "subscribed" to push notifications for replies in
+/// [thread_root_id]. Subscription is implicit: the thread root's
+/// author + everyone who's ever replied in the thread. Used by the
+/// fanout path to dampen pushes — non-subscribers only get a push
+/// when explicitly @mentioned in the new reply.
+pub async fn get_thread_subscribers(
+    pool: &sqlx::PgPool,
+    thread_root_id: Uuid,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    let rows: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT sender_id FROM messages \
+         WHERE id = $1 AND deleted_at IS NULL \
+         UNION \
+         SELECT DISTINCT sender_id FROM messages \
+         WHERE (thread_root_id = $1 OR reply_to_id = $1) \
+           AND deleted_at IS NULL",
+    )
+    .bind(thread_root_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(id,)| id).collect())
+}
+
 /// Count of distinct threads the user has unread replies in. Powers the
 /// nav-rail badge.
 pub async fn unread_thread_count(pool: &sqlx::PgPool, user_id: Uuid) -> Result<i64, sqlx::Error> {

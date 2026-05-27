@@ -191,6 +191,7 @@ class MessageTarget extends ContextMenuTarget {
     required this.mediaUrl,
     required this.isImageMedia,
     this.onReply,
+    this.onReplyInThread,
     this.onForward,
     this.onRetry,
     this.onCopyText,
@@ -217,6 +218,11 @@ class MessageTarget extends ContextMenuTarget {
 
   // Action handlers — null = row hidden.
   final VoidCallback? onReply;
+
+  /// Distinct from [onReply]: anchors the new reply to the thread root
+  /// so it filters out of the main timeline (Slack-style). null = row
+  /// hidden (e.g. failed-message bubbles).
+  final VoidCallback? onReplyInThread;
   final VoidCallback? onForward;
   final VoidCallback? onRetry;
   final VoidCallback? onCopyText;
