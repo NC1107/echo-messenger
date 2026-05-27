@@ -67,10 +67,13 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
   void initState() {
     super.initState();
     // Hydrate from the provider so the menu opens with the current selection.
+    // `none` means the drawing layer is off; show "pen" as the default
+    // selected tool, but don't push it back into the provider — that would
+    // arm the drawing layer just by opening the menu.
     final canvas = ref.read(canvasProvider);
-    _selectedTool = canvas.selectedTool == CanvasTool.eraser
-        ? CanvasTool.eraser
-        : CanvasTool.pen;
+    _selectedTool = canvas.selectedTool == CanvasTool.none
+        ? CanvasTool.pen
+        : canvas.selectedTool;
     _selectedColor = canvas.currentColor;
     _selectedSize = canvas.strokeWidth;
   }
@@ -84,10 +87,15 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildToolSelector(context),
-          if (_selectedTool == CanvasTool.pen) ...[
+          // Eraser strips colour + ignores the colour picker, but every
+          // other tool (pen, highlighter, shapes) is colour + size aware.
+          if (_selectedTool != CanvasTool.eraser) ...[
             const Divider(height: 1),
             _buildColorPicker(context),
             const SizedBox(height: 4),
+            const Divider(height: 1),
+            _buildSizePicker(context),
+          ] else ...[
             const Divider(height: 1),
             _buildSizePicker(context),
           ],
@@ -101,10 +109,20 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
   Widget _buildToolSelector(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-      child: Row(
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 6,
         children: [
-          _toolChip(context, Icons.edit, 'Draw', CanvasTool.pen),
-          const SizedBox(width: 8),
+          _toolChip(context, Icons.edit, 'Pen', CanvasTool.pen),
+          _toolChip(context, Icons.brush, 'Highlight', CanvasTool.highlighter),
+          _toolChip(context, Icons.show_chart, 'Line', CanvasTool.line),
+          _toolChip(context, Icons.crop_square, 'Rectangle', CanvasTool.rect),
+          _toolChip(
+            context,
+            Icons.circle_outlined,
+            'Ellipse',
+            CanvasTool.ellipse,
+          ),
           _toolChip(context, Icons.auto_fix_high, 'Erase', CanvasTool.eraser),
         ],
       ),
@@ -631,43 +649,43 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
     CanvasTool tool,
   ) {
     final isSelected = _selectedTool == tool;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          HapticFeedback.selectionClick();
-          setState(() => _selectedTool = tool);
-          ref.read(canvasProvider.notifier).setTool(tool);
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? context.accent.withValues(alpha: 0.12)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: isSelected ? context.accent : context.border,
+    // Wrap-friendly: no Expanded. Width auto-sizes to icon + short label so
+    // 6 tools fit two rows of three on the 280px menu.
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        setState(() => _selectedTool = tool);
+        ref.read(canvasProvider.notifier).setTool(tool);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? context.accent.withValues(alpha: 0.12)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? context.accent : context.border,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: isSelected ? context.accent : context.textSecondary,
             ),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 16,
-                color: isSelected ? context.accent : context.textSecondary,
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? context.accent : context.textPrimary,
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
               ),
-              const SizedBox(width: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  color: isSelected ? context.accent : context.textPrimary,
-                  fontSize: 12,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

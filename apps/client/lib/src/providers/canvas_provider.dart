@@ -140,18 +140,30 @@ class CanvasController extends _$CanvasController {
   }
 
   void continueStroke(CanvasPoint point) {
-    final pts = List<CanvasPoint>.from(state.activePoints)..add(point);
+    final tool = state.selectedTool;
+    List<CanvasPoint> pts;
+    if (isShapeKind(strokeKindForTool(tool))) {
+      // Shape tools (line/rect/ellipse) only need first + last point.
+      // Replace the trailing point on every move so the preview rubberbands
+      // without bloating the points list.
+      pts = state.activePoints.isEmpty
+          ? [point]
+          : [state.activePoints.first, point];
+    } else {
+      pts = List<CanvasPoint>.from(state.activePoints)..add(point);
+    }
     state = state.copyWith(activePoints: pts);
 
-    // Buffer the new point for throttled broadcast.
-    _pendingStrokePoints ??= [];
-    _pendingStrokePoints!.add(point);
-
-    // Start throttle timer if not already running.
-    _strokeThrottle ??= Timer.periodic(
-      const Duration(milliseconds: 33), // ~30 fps
-      (_) => _flushStrokePoints(),
-    );
+    // Shapes don't need streaming WS partials — the final stroke at endStroke
+    // is enough. Freehand keeps the 30 Hz partial broadcast.
+    if (!isShapeKind(strokeKindForTool(tool))) {
+      _pendingStrokePoints ??= [];
+      _pendingStrokePoints!.add(point);
+      _strokeThrottle ??= Timer.periodic(
+        const Duration(milliseconds: 33), // ~30 fps
+        (_) => _flushStrokePoints(),
+      );
+    }
   }
 
   void _flushStrokePoints() {
@@ -162,13 +174,42 @@ class CanvasController extends _$CanvasController {
       return;
     }
     _pendingStrokePoints = null;
-    final isEraser = state.selectedTool == CanvasTool.eraser;
+    final tool = state.selectedTool;
+    final kind = strokeKindForTool(tool);
+    final isEraser = kind == StrokeKind.eraser;
     _sendCanvasEvent('stroke_partial', {
       'points': pending.map((p) => {'x': p.x, 'y': p.y}).toList(),
       'color': isEraser ? '#00000000' : colorToHex(state.currentColor),
-      'width': isEraser ? state.strokeWidth * 3 : state.strokeWidth,
-      'kind': isEraser ? 'eraser' : 'pen',
+      'width': _effectiveStrokeWidth(kind),
+      'kind': _strokeKindWire(kind),
     });
+  }
+
+  /// Wire `kind` string per protocol — falls back to "pen" for unknown.
+  /// Mirrors the mapping in [CanvasStroke.toJson] but kept independent so
+  /// stroke_partial events don't need to construct a full stroke.
+  String _strokeKindWire(StrokeKind kind) {
+    switch (kind) {
+      case StrokeKind.eraser:
+        return 'eraser';
+      case StrokeKind.highlighter:
+        return 'highlighter';
+      case StrokeKind.line:
+        return 'line';
+      case StrokeKind.rect:
+        return 'rect';
+      case StrokeKind.ellipse:
+        return 'ellipse';
+      case StrokeKind.pen:
+        return 'pen';
+    }
+  }
+
+  /// Eraser is rendered 3× the selected width so the user can wipe a
+  /// reasonable area without dialing the size slider up.
+  double _effectiveStrokeWidth(StrokeKind kind) {
+    if (kind == StrokeKind.eraser) return state.strokeWidth * 3;
+    return state.strokeWidth;
   }
 
   void endStroke() {
@@ -180,13 +221,15 @@ class CanvasController extends _$CanvasController {
     _strokeThrottle = null;
     _pendingStrokePoints = null;
 
-    final isEraser = state.selectedTool == CanvasTool.eraser;
+    final tool = state.selectedTool;
+    final kind = strokeKindForTool(tool);
+    final isEraser = kind == StrokeKind.eraser;
     final stroke = CanvasStroke(
       id: newCanvasId(),
       color: isEraser ? '#00000000' : colorToHex(state.currentColor),
-      width: isEraser ? state.strokeWidth * 3 : state.strokeWidth,
+      width: _effectiveStrokeWidth(kind),
       points: List.from(state.activePoints),
-      kind: isEraser ? StrokeKind.eraser : StrokeKind.pen,
+      kind: kind,
     );
 
     // Append locally.

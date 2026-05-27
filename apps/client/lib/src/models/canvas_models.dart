@@ -41,7 +41,54 @@ class CanvasPoint {
 // Drawing strokes
 // ---------------------------------------------------------------------------
 
-enum StrokeKind { pen, eraser }
+/// Brush type. `pen` and `eraser` are the original freehand modes;
+/// `highlighter` is a thick translucent pen; `line`, `rect`, `ellipse`
+/// are two-point shapes recorded as `[first, last]` and rendered as
+/// straight geometry by the painter.
+enum StrokeKind { pen, eraser, highlighter, line, rect, ellipse }
+
+/// `true` if the kind is a two-point geometric shape rather than a freehand
+/// stroke. Shape kinds always store exactly two points: the gesture's start
+/// and end positions; intermediate samples are discarded.
+bool isShapeKind(StrokeKind kind) =>
+    kind == StrokeKind.line ||
+    kind == StrokeKind.rect ||
+    kind == StrokeKind.ellipse;
+
+StrokeKind _strokeKindFromString(String? raw) {
+  switch (raw) {
+    case 'eraser':
+      return StrokeKind.eraser;
+    case 'highlighter':
+      return StrokeKind.highlighter;
+    case 'line':
+      return StrokeKind.line;
+    case 'rect':
+      return StrokeKind.rect;
+    case 'ellipse':
+      return StrokeKind.ellipse;
+    case 'pen':
+    default:
+      return StrokeKind.pen;
+  }
+}
+
+String _strokeKindToString(StrokeKind kind) {
+  switch (kind) {
+    case StrokeKind.eraser:
+      return 'eraser';
+    case StrokeKind.highlighter:
+      return 'highlighter';
+    case StrokeKind.line:
+      return 'line';
+    case StrokeKind.rect:
+      return 'rect';
+    case StrokeKind.ellipse:
+      return 'ellipse';
+    case StrokeKind.pen:
+      return 'pen';
+  }
+}
 
 /// A single freehand stroke drawn on the canvas.
 class CanvasStroke {
@@ -66,9 +113,7 @@ class CanvasStroke {
     points: (json['points'] as List)
         .map((p) => CanvasPoint.fromJson(p as Map<String, dynamic>))
         .toList(),
-    kind: (json['kind'] as String?) == 'eraser'
-        ? StrokeKind.eraser
-        : StrokeKind.pen,
+    kind: _strokeKindFromString(json['kind'] as String?),
   );
 
   Map<String, dynamic> toJson() => {
@@ -76,7 +121,7 @@ class CanvasStroke {
     'color': color,
     'width': width,
     'points': points.map((p) => p.toJson()).toList(),
-    'kind': kind == StrokeKind.eraser ? 'eraser' : 'pen',
+    'kind': _strokeKindToString(kind),
   };
 
   CanvasStroke copyWith({
@@ -190,7 +235,36 @@ class AvatarPosition {
 // Drawing tools
 // ---------------------------------------------------------------------------
 
-enum CanvasTool { none, pen, eraser }
+enum CanvasTool { none, pen, eraser, highlighter, line, rect, ellipse }
+
+/// `true` for any tool that records a freehand or shape stroke (i.e. the
+/// drawing-layer should grab pointer events for it).
+bool isDrawingTool(CanvasTool tool) =>
+    tool == CanvasTool.pen ||
+    tool == CanvasTool.eraser ||
+    tool == CanvasTool.highlighter ||
+    tool == CanvasTool.line ||
+    tool == CanvasTool.rect ||
+    tool == CanvasTool.ellipse;
+
+/// Map the currently-selected [CanvasTool] to the [StrokeKind] it produces.
+StrokeKind strokeKindForTool(CanvasTool tool) {
+  switch (tool) {
+    case CanvasTool.eraser:
+      return StrokeKind.eraser;
+    case CanvasTool.highlighter:
+      return StrokeKind.highlighter;
+    case CanvasTool.line:
+      return StrokeKind.line;
+    case CanvasTool.rect:
+      return StrokeKind.rect;
+    case CanvasTool.ellipse:
+      return StrokeKind.ellipse;
+    case CanvasTool.pen:
+    case CanvasTool.none:
+      return StrokeKind.pen;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Full canvas state

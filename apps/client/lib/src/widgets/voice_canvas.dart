@@ -141,24 +141,21 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
                         child: _DrawingLayer(
                           canvas: canvas,
                           onPointerDown: (offset) {
-                            if (tool == CanvasTool.pen ||
-                                tool == CanvasTool.eraser) {
+                            if (isDrawingTool(tool)) {
                               ref
                                   .read(canvasProvider.notifier)
                                   .startStroke(_toNormalized(offset));
                             }
                           },
                           onPointerMove: (offset) {
-                            if (tool == CanvasTool.pen ||
-                                tool == CanvasTool.eraser) {
+                            if (isDrawingTool(tool)) {
                               ref
                                   .read(canvasProvider.notifier)
                                   .continueStroke(_toNormalized(offset));
                             }
                           },
                           onPointerUp: () {
-                            if (tool == CanvasTool.pen ||
-                                tool == CanvasTool.eraser) {
+                            if (isDrawingTool(tool)) {
                               ref.read(canvasProvider.notifier).endStroke();
                             }
                           },
@@ -536,13 +533,14 @@ class _CanvasPainter extends CustomPainter {
 
     if (canvas.activePoints.isNotEmpty) {
       final tool = canvas.selectedTool;
-      final isEraser = tool == CanvasTool.eraser;
+      final kind = strokeKindForTool(tool);
+      final isEraser = kind == StrokeKind.eraser;
       final activeStroke = CanvasStroke(
         id: '__active__',
         color: isEraser ? '#000000' : colorToHex(canvas.currentColor),
         width: isEraser ? canvas.strokeWidth * 3 : canvas.strokeWidth,
         points: canvas.activePoints,
-        kind: isEraser ? StrokeKind.eraser : StrokeKind.pen,
+        kind: kind,
       );
       _paintStroke(c, size, activeStroke);
     }
@@ -563,6 +561,13 @@ class _CanvasPainter extends CustomPainter {
       paint
         ..blendMode = BlendMode.clear
         ..color = const Color(0x00000000);
+    } else if (stroke.kind == StrokeKind.highlighter) {
+      // Translucent + multiply blend: stacks underneath dark UI without
+      // washing out the canvas, and double-passes deepen the colour the
+      // way a real highlighter does.
+      paint
+        ..blendMode = BlendMode.srcOver
+        ..color = _parseColor(stroke.color).withValues(alpha: 0.35);
     } else {
       paint
         ..blendMode = BlendMode.srcOver
@@ -571,13 +576,34 @@ class _CanvasPainter extends CustomPainter {
 
     final first = stroke.points.first;
 
-    if (stroke.points.length == 1) {
+    // Single-point freehand stroke: a dot.
+    if (stroke.points.length == 1 && !isShapeKind(stroke.kind)) {
       c.drawCircle(
         Offset(first.x * size.width, first.y * size.height),
         stroke.width / 2,
         paint..style = PaintingStyle.fill,
       );
       return;
+    }
+
+    // Two-point shape kinds — straight geometry from first to last.
+    if (isShapeKind(stroke.kind) && stroke.points.length >= 2) {
+      final last = stroke.points.last;
+      final p1 = Offset(first.x * size.width, first.y * size.height);
+      final p2 = Offset(last.x * size.width, last.y * size.height);
+      switch (stroke.kind) {
+        case StrokeKind.line:
+          c.drawLine(p1, p2, paint);
+          return;
+        case StrokeKind.rect:
+          c.drawRect(Rect.fromPoints(p1, p2), paint);
+          return;
+        case StrokeKind.ellipse:
+          c.drawOval(Rect.fromPoints(p1, p2), paint);
+          return;
+        default:
+          break;
+      }
     }
 
     final path = Path();
