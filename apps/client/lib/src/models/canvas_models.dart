@@ -4,9 +4,32 @@ import 'dart:ui' show Color;
 // Canvas geometry helpers
 // ---------------------------------------------------------------------------
 
-/// A 2-D point with coordinates normalized to the range [0, 1] relative to
-/// the canvas size.  Normalization ensures the layout transfers correctly
-/// between participants using different screen sizes.
+/// Fixed virtual canvas size shared by every participant regardless of their
+/// screen size or orientation. The InteractiveViewer in the voice lounge
+/// scrolls + zooms inside this 4096×4096 logical surface so a circle drawn
+/// on a phone reads as a circle on a desktop. See
+/// `apps/client/lib/src/screens/voice_lounge_screen.dart` for the
+/// viewport-fit math (minScale = min(viewportW, viewportH) / kCanvasWidth).
+const double kCanvasWidth = 4096;
+const double kCanvasHeight = 4096;
+
+/// Migrates legacy [0, 1] normalized coordinates persisted before the fixed
+/// 4096-px space landed. The heuristic is "value ≤ 1.0 means legacy
+/// normalized" — safe because the new pixel range starts at 0 and crosses 1
+/// instantly (4096 / 4096 ≈ 1.0 is at the bottom-right corner; any other
+/// real-world stroke point is far above 1.0). Without this old persisted
+/// canvases would collapse into the top-left pixel after upgrade.
+double _migrateLegacyCoord(double value, double axisExtent) {
+  if (value <= 1.0) return value * axisExtent;
+  return value;
+}
+
+/// A 2-D point in absolute pixels within the fixed [kCanvasWidth] ×
+/// [kCanvasHeight] virtual canvas. Storing absolute coordinates (instead of
+/// the legacy 0..1 normalized scheme) means a stroke drawn on a 420×900
+/// phone lays down the same circle a 1920×1080 desktop sees, because every
+/// participant shares the same 4096-px coordinate space — only the viewport
+/// (zoom + pan) differs.
 class CanvasPoint {
   final double x;
   final double y;
@@ -14,8 +37,8 @@ class CanvasPoint {
   const CanvasPoint({required this.x, required this.y});
 
   factory CanvasPoint.fromJson(Map<String, dynamic> json) => CanvasPoint(
-    x: (json['x'] as num).toDouble(),
-    y: (json['y'] as num).toDouble(),
+    x: _migrateLegacyCoord((json['x'] as num).toDouble(), kCanvasWidth),
+    y: _migrateLegacyCoord((json['y'] as num).toDouble(), kCanvasHeight),
   );
 
   Map<String, dynamic> toJson() => {'x': x, 'y': y};
@@ -162,15 +185,17 @@ class CanvasStroke {
 
 /// An image pinned to the canvas (pasted from clipboard or drag-dropped).
 ///
-/// All coordinates and dimensions are normalized [0, 1] relative to the
-/// canvas size so they display correctly on every screen resolution.
+/// All coordinates and dimensions are absolute pixels inside the
+/// [kCanvasWidth] × [kCanvasHeight] virtual canvas. Legacy 0..1 values
+/// persisted before the fixed-size canvas migration are auto-rescaled in
+/// [CanvasImage.fromJson].
 class CanvasImage {
   final String id;
   final String url; // absolute URL served via /api/media/{id}
-  final double x; // normalized left edge
-  final double y; // normalized top edge
-  final double width; // normalized width (fraction of canvas width)
-  final double height; // normalized height (fraction of canvas height)
+  final double x; // pixel left edge in the 4096-px space
+  final double y; // pixel top edge in the 4096-px space
+  final double width; // pixel width in the 4096-px space
+  final double height; // pixel height in the 4096-px space
 
   const CanvasImage({
     required this.id,
@@ -184,10 +209,13 @@ class CanvasImage {
   factory CanvasImage.fromJson(Map<String, dynamic> json) => CanvasImage(
     id: json['id'] as String,
     url: json['url'] as String,
-    x: (json['x'] as num).toDouble(),
-    y: (json['y'] as num).toDouble(),
-    width: (json['width'] as num).toDouble(),
-    height: (json['height'] as num).toDouble(),
+    x: _migrateLegacyCoord((json['x'] as num).toDouble(), kCanvasWidth),
+    y: _migrateLegacyCoord((json['y'] as num).toDouble(), kCanvasHeight),
+    width: _migrateLegacyCoord((json['width'] as num).toDouble(), kCanvasWidth),
+    height: _migrateLegacyCoord(
+      (json['height'] as num).toDouble(),
+      kCanvasHeight,
+    ),
   );
 
   Map<String, dynamic> toJson() => {
@@ -216,8 +244,9 @@ class CanvasImage {
 
 /// A participant's current position on the canvas.
 ///
-/// Coordinates are normalized [0, 1].  The local user's own position is
-/// tracked separately and broadcast via WebSocket on drag-end.
+/// Coordinates are absolute pixels in the [kCanvasWidth] × [kCanvasHeight]
+/// virtual space. The local user's own position is tracked separately and
+/// broadcast via WebSocket on drag-end.
 class AvatarPosition {
   final String userId;
   final double x;
@@ -246,6 +275,82 @@ class AvatarPosition {
         y: y ?? this.y,
         scale: scale ?? this.scale,
       );
+}
+
+// ---------------------------------------------------------------------------
+// Screen-share window positions
+// ---------------------------------------------------------------------------
+
+/// Position + size of a draggable screen-share window on the canvas.
+///
+/// Coordinates and dimensions are in **CSS pixels** relative to the
+/// lounge viewport's top-left (NOT normalized [0, 1] like
+/// [AvatarPosition]). The window has its own intrinsic aspect ratio so
+/// scaling it by canvas size would distort the underlying video; clients
+/// agree on raw pixel coordinates instead and rely on the canvas size
+/// being roughly consistent across participants.
+///
+/// [windowId] is a stable per-stream identifier — for remote screen
+/// shares it's `screenshare-{participantSid}` and for the host's own
+/// preview it's `screenshare-local`. Broadcast over WebSocket as the
+/// `screenshare_move` event; ephemeral (never persisted server-side).
+class ScreenShareWindow {
+  final String windowId;
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+
+  const ScreenShareWindow({
+    required this.windowId,
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+  });
+
+  factory ScreenShareWindow.fromJson(Map<String, dynamic> json) =>
+      ScreenShareWindow(
+        windowId: json['window_id'] as String,
+        x: (json['x'] as num).toDouble(),
+        y: (json['y'] as num).toDouble(),
+        width: (json['width'] as num).toDouble(),
+        height: (json['height'] as num).toDouble(),
+      );
+
+  Map<String, dynamic> toJson() => {
+    'window_id': windowId,
+    'x': x,
+    'y': y,
+    'width': width,
+    'height': height,
+  };
+
+  ScreenShareWindow copyWith({
+    double? x,
+    double? y,
+    double? width,
+    double? height,
+  }) => ScreenShareWindow(
+    windowId: windowId,
+    x: x ?? this.x,
+    y: y ?? this.y,
+    width: width ?? this.width,
+    height: height ?? this.height,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ScreenShareWindow &&
+          windowId == other.windowId &&
+          x == other.x &&
+          y == other.y &&
+          width == other.width &&
+          height == other.height);
+
+  @override
+  int get hashCode => Object.hash(windowId, x, y, width, height);
 }
 
 // ---------------------------------------------------------------------------
@@ -302,6 +407,13 @@ class CanvasState {
   /// Keyed by userId (string).  Not persisted — reset when user rejoins.
   final Map<String, AvatarPosition> avatarPositions;
 
+  /// Screen-share window positions, keyed by `windowId` (e.g.
+  /// `screenshare-{participantSid}` for remote shares, `screenshare-local`
+  /// for the host's own preview). Like [avatarPositions], these are
+  /// ephemeral — broadcast over the `screenshare_move` WS event and
+  /// never persisted server-side.
+  final Map<String, ScreenShareWindow> screenSharePositions;
+
   /// Points being accumulated for the currently-in-progress stroke.
   /// Cleared and appended to [strokes] on pointer-up.
   final List<CanvasPoint> activePoints;
@@ -317,6 +429,7 @@ class CanvasState {
     this.strokes = const [],
     this.images = const [],
     this.avatarPositions = const {},
+    this.screenSharePositions = const {},
     this.activePoints = const [],
     this.selectedTool = CanvasTool.none,
     this.currentColor = const Color(0xFFFFFFFF),
@@ -331,6 +444,7 @@ class CanvasState {
     List<CanvasStroke>? strokes,
     List<CanvasImage>? images,
     Map<String, AvatarPosition>? avatarPositions,
+    Map<String, ScreenShareWindow>? screenSharePositions,
     List<CanvasPoint>? activePoints,
     CanvasTool? selectedTool,
     Color? currentColor,
@@ -340,6 +454,7 @@ class CanvasState {
     strokes: strokes ?? this.strokes,
     images: images ?? this.images,
     avatarPositions: avatarPositions ?? this.avatarPositions,
+    screenSharePositions: screenSharePositions ?? this.screenSharePositions,
     activePoints: activePoints ?? this.activePoints,
     selectedTool: selectedTool ?? this.selectedTool,
     currentColor: currentColor ?? this.currentColor,

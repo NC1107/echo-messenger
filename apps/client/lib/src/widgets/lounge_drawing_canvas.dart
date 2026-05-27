@@ -31,15 +31,14 @@ class LoungeDrawingCanvas extends ConsumerStatefulWidget {
 }
 
 class LoungeDrawingCanvasState extends ConsumerState<LoungeDrawingCanvas> {
-  Size _canvasSize = Size.zero;
-
-  CanvasPoint _toNormalized(Offset pixel) {
-    final w = _canvasSize.width;
-    final h = _canvasSize.height;
-    if (w <= 0 || h <= 0) return const CanvasPoint(x: 0, y: 0);
+  /// Pointer events delivered to this Listener arrive in the
+  /// InteractiveViewer-scaled child's coordinate space — i.e. absolute
+  /// canvas-space pixels in the 4096×4096 surface. We just clamp and pass
+  /// through; no per-viewport scaling is needed.
+  CanvasPoint _toCanvasPoint(Offset canvasSpace) {
     return CanvasPoint(
-      x: (pixel.dx / w).clamp(0.0, 1.0),
-      y: (pixel.dy / h).clamp(0.0, 1.0),
+      x: canvasSpace.dx.clamp(0.0, kCanvasWidth),
+      y: canvasSpace.dy.clamp(0.0, kCanvasHeight),
     );
   }
 
@@ -47,14 +46,14 @@ class LoungeDrawingCanvasState extends ConsumerState<LoungeDrawingCanvas> {
     if (event.buttons != kPrimaryButton) return;
     ref
         .read(canvasProvider.notifier)
-        .startStroke(_toNormalized(event.localPosition));
+        .startStroke(_toCanvasPoint(event.localPosition));
   }
 
   void _onPointerMove(PointerMoveEvent event) {
     if (event.buttons != kPrimaryButton) return;
     ref
         .read(canvasProvider.notifier)
-        .continueStroke(_toNormalized(event.localPosition));
+        .continueStroke(_toCanvasPoint(event.localPosition));
   }
 
   void _onPointerUp(PointerUpEvent event) {
@@ -68,18 +67,13 @@ class LoungeDrawingCanvasState extends ConsumerState<LoungeDrawingCanvas> {
   @override
   Widget build(BuildContext context) {
     if (!widget.isActive) return const SizedBox.shrink();
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        _canvasSize = Size(constraints.maxWidth, constraints.maxHeight);
-        return Listener(
-          behavior: HitTestBehavior.opaque,
-          onPointerDown: _onPointerDown,
-          onPointerMove: _onPointerMove,
-          onPointerUp: _onPointerUp,
-          onPointerCancel: _onPointerCancel,
-          child: const SizedBox.expand(),
-        );
-      },
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: _onPointerDown,
+      onPointerMove: _onPointerMove,
+      onPointerUp: _onPointerUp,
+      onPointerCancel: _onPointerCancel,
+      child: const SizedBox.expand(),
     );
   }
 }

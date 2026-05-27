@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/material.dart' show Color;
 import 'package:http/http.dart' as http;
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -23,6 +24,12 @@ class CanvasController extends _$CanvasController {
   /// The channel this canvas is attached to.
   String? _channelId;
 
+  /// The channel currently being attached (set BEFORE the REST fetch
+  /// completes). Used by [handleCanvasEvent] to recognise inbound events
+  /// for the right channel and buffer them while the snapshot is loading
+  /// so they aren't wiped when the fetch result overwrites state.
+  String? _attachingChannelId;
+
   /// Throttle timer for avatar position broadcasts (~20 fps).
   Timer? _avatarThrottle;
   ({String userId, CanvasPoint pos})? _pendingAvatar;
@@ -35,6 +42,16 @@ class CanvasController extends _$CanvasController {
   Timer? _strokeThrottle;
   List<CanvasPoint>? _pendingStrokePoints;
 
+  /// Per-drag identifier bumped by [startStroke]. A late `stroke_partial`
+  /// scheduled mid-drag could otherwise fire AFTER [endStroke] cleared the
+  /// throttle, re-attaching a stale partial placeholder on remotes that
+  /// overlays the now-final stroke. Tracking this id and checking it inside
+  /// [_flushStrokePoints] makes the late timer a no-op once endStroke has
+  /// closed the drag (bug report 2026-05-27 "hold finger at the end of a
+  /// line — local sees it, remotes don't").
+  int _dragId = 0;
+  bool _strokeActive = false;
+
   /// Events buffered while [_channelId] is not yet set (attach race window).
   final List<Map<String, dynamic>> _pendingEvents = [];
 
@@ -44,6 +61,7 @@ class CanvasController extends _$CanvasController {
       _avatarThrottle?.cancel();
       _imageThrottle?.cancel();
       _strokeThrottle?.cancel();
+      _screenShareThrottle?.cancel();
     });
     return const CanvasState();
   }
@@ -53,14 +71,34 @@ class CanvasController extends _$CanvasController {
   // -------------------------------------------------------------------------
 
   /// Load the persisted canvas state from the server and set up WS listener.
+  ///
+  /// Race-safe load order:
+  ///  1. Mark the channel as "attaching" so [handleCanvasEvent] buffers any
+  ///     inbound canvas events for it instead of mutating state directly.
+  ///  2. Reset state.
+  ///  3. Await the REST snapshot fetch — this populates strokes/images from
+  ///     the server's persisted truth.
+  ///  4. Promote `_attachingChannelId` to `_channelId` AFTER the fetch result
+  ///     has been written to state, so the fetched snapshot can't be
+  ///     overwritten by WS events that landed mid-fetch.
+  ///  5. Replay buffered events (typically a no-op, but covers the case where
+  ///     a peer drew while we were fetching).
   Future<void> attach(String conversationId, String channelId) async {
     if (_channelId == channelId) return; // already attached
-    _channelId = channelId;
+    _attachingChannelId = channelId;
+    _channelId = null;
+    _pendingEvents.clear();
     state = const CanvasState(); // reset while loading
 
     await _fetchCanvas(conversationId, channelId);
 
-    // Flush any canvas events that arrived before _channelId was set.
+    // Only promote to "attached" if we're still attaching to this channel —
+    // a second attach() to a different channel may have superseded us.
+    if (_attachingChannelId != channelId) return;
+    _channelId = channelId;
+    _attachingChannelId = null;
+
+    // Flush any canvas events that landed during the fetch.
     final buffered = List<Map<String, dynamic>>.from(_pendingEvents);
     _pendingEvents.clear();
     for (final event in buffered) {
@@ -79,8 +117,13 @@ class CanvasController extends _$CanvasController {
     _strokeThrottle?.cancel();
     _strokeThrottle = null;
     _pendingStrokePoints = null;
+    _strokeActive = false;
+    _screenShareThrottle?.cancel();
+    _screenShareThrottle = null;
+    _pendingScreenShare = null;
     _pendingEvents.clear();
     _channelId = null;
+    _attachingChannelId = null;
     state = const CanvasState();
   }
 
@@ -135,6 +178,17 @@ class CanvasController extends _$CanvasController {
   // -------------------------------------------------------------------------
 
   void startStroke(CanvasPoint point) {
+    // Bump the drag id BEFORE any timer state mutates so a tick scheduled
+    // by the previous drag (still queued after endStroke cancelled it)
+    // can't attach to this new stroke. Also cancel any lingering throttle
+    // defensively — endStroke should have done this already, but the
+    // gesture-arena steal path documented in voice_canvas.dart can skip
+    // endStroke entirely.
+    _strokeThrottle?.cancel();
+    _strokeThrottle = null;
+    _pendingStrokePoints = null;
+    _dragId++;
+    _strokeActive = true;
     state = state.copyWith(activePoints: [point]);
     _pendingStrokePoints = [point];
   }
@@ -167,6 +221,15 @@ class CanvasController extends _$CanvasController {
   }
 
   void _flushStrokePoints() {
+    // If endStroke (or a tool change) has closed the drag, drop any tick
+    // that fires after the close — the final `stroke` event is the source
+    // of truth.
+    if (!_strokeActive) {
+      _strokeThrottle?.cancel();
+      _strokeThrottle = null;
+      _pendingStrokePoints = null;
+      return;
+    }
     final pending = _pendingStrokePoints;
     if (pending == null || pending.isEmpty) {
       _strokeThrottle?.cancel();
@@ -264,13 +327,22 @@ class CanvasController extends _$CanvasController {
   }
 
   void endStroke() {
-    if (state.activePoints.isEmpty) return;
-    if (_channelId == null) return;
-
-    // Flush any remaining pending points immediately.
+    // Always close the drag, even if we have nothing to commit — a gesture
+    // cancel from InteractiveViewer reclaiming the pointer mid-stroke
+    // (Listener.onPointerCancel) still needs to flip `_strokeActive` so a
+    // queued partial-flush tick doesn't fire afterwards.
+    final wasActive = _strokeActive;
+    _strokeActive = false;
+    // Atomic cancel+null — done BEFORE building the final stroke so a
+    // partial timer that races us can't slip a stroke_partial event after
+    // the final stroke is sent.
     _strokeThrottle?.cancel();
     _strokeThrottle = null;
     _pendingStrokePoints = null;
+
+    if (!wasActive) return;
+    if (state.activePoints.isEmpty) return;
+    if (_channelId == null) return;
 
     final tool = state.selectedTool;
     final kind = strokeKindForTool(tool);
@@ -413,8 +485,10 @@ class CanvasController extends _$CanvasController {
     if (_channelId == null) return;
     final idx = state.images.indexWhere((img) => img.id == imageId);
     if (idx == -1) return;
-    final clampedW = width.clamp(0.05, 1.0);
-    final clampedH = height.clamp(0.05, 1.0);
+    // Min 32 px so images never shrink below a usable thumbnail; max is the
+    // full canvas extent so callers don't need to clamp upstream.
+    final clampedW = width.clamp(32.0, kCanvasWidth);
+    final clampedH = height.clamp(32.0, kCanvasHeight);
     final updated = state.images[idx].copyWith(
       width: clampedW,
       height: clampedH,
@@ -445,10 +519,14 @@ class CanvasController extends _$CanvasController {
   // Avatars
   // -------------------------------------------------------------------------
 
-  /// Called while the user is dragging their avatar.  Updates local state
-  /// immediately and queues a throttled WS broadcast. The current scale is
-  /// preserved.
-  void moveLocalAvatar(String userId, CanvasPoint pos) {
+  /// Called while a user is dragging an avatar — either their own or
+  /// somebody else's. Updates local state immediately and queues a
+  /// throttled WS broadcast. The current scale is preserved.
+  ///
+  /// The voice-lounge canvas is a shared whiteboard: any participant
+  /// can move any avatar, and the broadcast carries the *target*
+  /// `userId` in the payload so receivers update the right entry.
+  void moveAvatar(String userId, CanvasPoint pos) {
     final existing = state.avatarPositions[userId];
     final scale = existing?.scale ?? 1.0;
     final updated = Map<String, AvatarPosition>.from(state.avatarPositions);
@@ -466,6 +544,14 @@ class CanvasController extends _$CanvasController {
       (_) => _flushAvatarMove(),
     );
   }
+
+  /// Back-compat alias for [moveAvatar]. The "Local" in the name is
+  /// historical — early builds only let you move your own avatar, but
+  /// the shared-whiteboard model now lets anyone move anyone. Kept as a
+  /// thin alias so older call sites in flight during the rename still
+  /// compile; new code should call [moveAvatar].
+  void moveLocalAvatar(String userId, CanvasPoint pos) =>
+      moveAvatar(userId, pos);
 
   void _flushAvatarMove() {
     final pending = _pendingAvatar;
@@ -495,7 +581,7 @@ class CanvasController extends _$CanvasController {
     final existing = state.avatarPositions[userId];
     final pos = existing != null
         ? CanvasPoint(x: existing.x, y: existing.y)
-        : const CanvasPoint(x: 0.5, y: 0.5);
+        : const CanvasPoint(x: kCanvasWidth / 2, y: kCanvasHeight / 2);
     final updated = Map<String, AvatarPosition>.from(state.avatarPositions);
     updated[userId] = AvatarPosition(
       userId: userId,
@@ -529,8 +615,9 @@ class CanvasController extends _$CanvasController {
     });
   }
 
-  /// Called when the user stops dragging (send final position immediately).
-  void commitLocalAvatarMove(String userId, CanvasPoint pos) {
+  /// Called when the user stops dragging an avatar (any avatar, theirs
+  /// or someone else's). Sends the final position immediately.
+  void commitAvatarMove(String userId, CanvasPoint pos) {
     _avatarThrottle?.cancel();
     _avatarThrottle = null;
     _pendingAvatar = null;
@@ -553,6 +640,92 @@ class CanvasController extends _$CanvasController {
     });
   }
 
+  /// Back-compat alias for [commitAvatarMove]; see [moveLocalAvatar].
+  void commitLocalAvatarMove(String userId, CanvasPoint pos) =>
+      commitAvatarMove(userId, pos);
+
+  // -------------------------------------------------------------------------
+  // Screen-share window positions
+  //
+  // Like avatar moves these are ephemeral — the server relays but does not
+  // persist them. The `screenshare_move` event mirrors `avatar_move` in
+  // shape (window_id, x, y, width, height) so the same throttle/commit
+  // pattern applies, and clients agree on raw CSS pixels (NOT normalized)
+  // since the window has its own intrinsic aspect ratio.
+  // -------------------------------------------------------------------------
+
+  /// Throttle timer for screen-share window broadcasts (~20 fps).
+  Timer? _screenShareThrottle;
+  ScreenShareWindow? _pendingScreenShare;
+
+  /// Called while the user drags a screen-share window. Updates local
+  /// state immediately and queues a throttled WS broadcast.
+  void moveScreenShare({
+    required String windowId,
+    required double x,
+    required double y,
+    required double width,
+    required double height,
+  }) {
+    final updated = Map<String, ScreenShareWindow>.from(
+      state.screenSharePositions,
+    );
+    final window = ScreenShareWindow(
+      windowId: windowId,
+      x: x,
+      y: y,
+      width: width,
+      height: height,
+    );
+    updated[windowId] = window;
+    state = state.copyWith(screenSharePositions: updated);
+
+    _pendingScreenShare = window;
+    _screenShareThrottle ??= Timer.periodic(
+      const Duration(milliseconds: 50),
+      (_) => _flushScreenShareMove(),
+    );
+  }
+
+  void _flushScreenShareMove() {
+    final pending = _pendingScreenShare;
+    if (pending == null) {
+      _screenShareThrottle?.cancel();
+      _screenShareThrottle = null;
+      return;
+    }
+    _pendingScreenShare = null;
+    _sendCanvasEvent('screenshare_move', pending.toJson());
+  }
+
+  /// Called when the user releases a screen-share window drag/resize —
+  /// flushes the pending broadcast immediately.
+  void commitScreenShareMove({
+    required String windowId,
+    required double x,
+    required double y,
+    required double width,
+    required double height,
+  }) {
+    _screenShareThrottle?.cancel();
+    _screenShareThrottle = null;
+    _pendingScreenShare = null;
+
+    final window = ScreenShareWindow(
+      windowId: windowId,
+      x: x,
+      y: y,
+      width: width,
+      height: height,
+    );
+    final updated = Map<String, ScreenShareWindow>.from(
+      state.screenSharePositions,
+    );
+    updated[windowId] = window;
+    state = state.copyWith(screenSharePositions: updated);
+    _sendCanvasEvent('screenshare_move', window.toJson());
+  }
+
   // -------------------------------------------------------------------------
   // Tool / color / width
   // -------------------------------------------------------------------------
@@ -569,8 +742,15 @@ class CanvasController extends _$CanvasController {
     final channelId = json['channel_id'] as String?;
     // Buffer events that arrive before attach() has set _channelId.  They
     // will be replayed once attach() completes and _channelId is known.
+    // Also buffer events that arrive WHILE attach()'s REST snapshot is
+    // in flight for this channel — applying them mid-fetch is unsafe
+    // because the fetch result will overwrite state and discard the
+    // WS-derived stroke (regression: late joiners drawing during another
+    // peer's fetch would vanish on the late-joiner's side).
     if (_channelId == null) {
-      _pendingEvents.add(json);
+      if (_attachingChannelId == null || channelId == _attachingChannelId) {
+        _pendingEvents.add(json);
+      }
       return;
     }
     if (channelId != _channelId) return; // event for a different channel
@@ -654,31 +834,84 @@ class CanvasController extends _$CanvasController {
           state = state.copyWith(images: newImages);
         }
       case 'avatar_move':
-        final x = (payload['x'] as num?)?.toDouble() ?? 0.5;
-        final y = (payload['y'] as num?)?.toDouble() ?? 0.5;
+        // Shared-whiteboard semantics: the *target* user id is carried in
+        // the payload, not derived from the sender. Older clients only
+        // ever moved their own avatar and sent `user_id == from_user_id`,
+        // so falling back to `fromUserId` keeps them compatible.
+        final targetUserId = (payload['user_id'] as String?) ?? fromUserId;
+        if (targetUserId.isEmpty) return;
+        // Coords arrive in canvas-space pixels on the new wire format.
+        // Legacy clients (pre-4096) sent 0..1 normalized — rescale inline
+        // using the same heuristic the model layer applies in fromJson.
+        final rawX = (payload['x'] as num?)?.toDouble() ?? kCanvasWidth / 2;
+        final rawY = (payload['y'] as num?)?.toDouble() ?? kCanvasHeight / 2;
+        final x = rawX <= 1.0 ? rawX * kCanvasWidth : rawX;
+        final y = rawY <= 1.0 ? rawY * kCanvasHeight : rawY;
         // Older clients won't send `scale`; preserve the prior value (or
         // default to 1.0) so a move from an old build doesn't reset the
         // size that a newer participant just resized.
-        final existing = state.avatarPositions[fromUserId];
+        final existing = state.avatarPositions[targetUserId];
         final rawScale = (payload['scale'] as num?)?.toDouble();
         final scale = (rawScale ?? existing?.scale ?? 1.0).clamp(
           AvatarPosition.minScale,
           AvatarPosition.maxScale,
         );
         final updated = Map<String, AvatarPosition>.from(state.avatarPositions);
-        updated[fromUserId] = AvatarPosition(
-          userId: fromUserId,
-          x: x.clamp(0.0, 1.0),
-          y: y.clamp(0.0, 1.0),
+        updated[targetUserId] = AvatarPosition(
+          userId: targetUserId,
+          x: x.clamp(0.0, kCanvasWidth),
+          y: y.clamp(0.0, kCanvasHeight),
           scale: scale,
         );
         state = state.copyWith(avatarPositions: updated);
+      case 'screenshare_move':
+        final windowId = payload['window_id'] as String?;
+        if (windowId == null || windowId.isEmpty) return;
+        final x = (payload['x'] as num?)?.toDouble();
+        final y = (payload['y'] as num?)?.toDouble();
+        if (x == null || y == null) return;
+        final existing = state.screenSharePositions[windowId];
+        final w =
+            (payload['width'] as num?)?.toDouble() ?? existing?.width ?? 320.0;
+        final h =
+            (payload['height'] as num?)?.toDouble() ??
+            existing?.height ??
+            180.0;
+        final updated = Map<String, ScreenShareWindow>.from(
+          state.screenSharePositions,
+        );
+        updated[windowId] = ScreenShareWindow(
+          windowId: windowId,
+          x: x,
+          y: y,
+          width: w,
+          height: h,
+        );
+        state = state.copyWith(screenSharePositions: updated);
     }
   }
 
   // -------------------------------------------------------------------------
   // Helpers
   // -------------------------------------------------------------------------
+
+  // ---------------------------------------------------------------------------
+  // Test-only hooks
+  //
+  // The partial-stroke flush is driven by an internal Timer that we cannot
+  // tick deterministically from a unit test. Exposing a manual flush + the
+  // active-drag flag lets the late-partial regression tests assert that a
+  // tick scheduled mid-drag is dropped after endStroke / on a fresh drag.
+  // ---------------------------------------------------------------------------
+  @visibleForTesting
+  // ignore: invalid_use_of_visible_for_testing_member
+  void debugFlushStrokePoints() => _flushStrokePoints();
+
+  @visibleForTesting
+  bool get debugIsStrokeActive => _strokeActive;
+
+  @visibleForTesting
+  int get debugDragId => _dragId;
 
   void _sendCanvasEvent(String kind, Map<String, dynamic> payload) {
     final cid = _channelId;

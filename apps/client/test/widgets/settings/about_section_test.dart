@@ -77,17 +77,14 @@ void main() {
       expect(find.text('Server'), findsOneWidget);
     });
 
-    testWidgets('renders delete account button', (tester) async {
+    testWidgets('does not render delete account button (moved to Privacy)', (
+      tester,
+    ) async {
+      // Delete Account moved to the Privacy → Danger Zone on 2026-05-27.
+      // About is now informational only.
       await tester.pumpWidget(buildSection());
       await tester.pumpAndSettle();
-
-      // Scroll down to delete account
-      await tester.scrollUntilVisible(
-        find.text('Delete Account'),
-        200,
-        scrollable: find.byType(Scrollable).first,
-      );
-      expect(find.text('Delete Account'), findsOneWidget);
+      expect(find.text('Delete Account'), findsNothing);
     });
   });
 }

@@ -70,7 +70,9 @@ async fn persist_canvas_state(
             }
             true
         }
-        _ => true, // "avatar_move" — ephemeral, no DB write
+        // Ephemeral relays — relayed but never written to the DB.
+        // Covers "avatar_move", "stroke_partial", "screenshare_move".
+        _ => true,
     }
 }
 
@@ -123,7 +125,8 @@ async fn lookup_voice_channel(state: &AppState, sender_id: Uuid, channel_id: Uui
 /// - For persistent event kinds ("stroke", "clear", "image_add",
 ///   "image_move", "image_remove") the canvas DB record is updated so new
 ///   joiners load the current board state.
-/// - "avatar_move" is ephemeral (not persisted).
+/// - "avatar_move", "stroke_partial", and "screenshare_move" are
+///   ephemeral (relayed but not persisted).
 pub(in crate::ws) async fn handle_canvas_event(
     state: &AppState,
     sender_id: Uuid,
@@ -145,6 +148,11 @@ pub(in crate::ws) async fn handle_canvas_event(
         "image_move",
         "image_remove",
         "avatar_move",
+        // Screen-share window position relay. Ephemeral like avatar_move
+        // — the canvas is a shared whiteboard, so when anyone drags a
+        // screen-share window the other participants need to see it move
+        // in real time. Never persisted; clients reconcile on join.
+        "screenshare_move",
     ];
     if !VALID_KINDS.contains(&kind.as_str()) {
         send_error(state, sender_id, "Invalid canvas event kind");

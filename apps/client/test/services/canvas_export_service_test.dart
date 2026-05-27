@@ -5,23 +5,27 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   group('CanvasExportService', () {
     test('encodes + decodes a snapshot losslessly', () {
+      // Coords are in absolute canvas-space pixels (kCanvasWidth × kCanvasHeight).
       final original = const CanvasState(
         strokes: [
           CanvasStroke(
             id: 's1',
             color: '#FFFFFF',
             width: 3.5,
-            points: [CanvasPoint(x: 0.1, y: 0.2), CanvasPoint(x: 0.3, y: 0.4)],
+            points: [
+              CanvasPoint(x: 400, y: 800),
+              CanvasPoint(x: 1200, y: 1600),
+            ],
           ),
         ],
         images: [
           CanvasImage(
             id: 'i1',
             url: 'https://example.com/a.png',
-            x: 0.2,
-            y: 0.3,
-            width: 0.25,
-            height: 0.25,
+            x: 800,
+            y: 1200,
+            width: 1024,
+            height: 1024,
           ),
         ],
       );
@@ -35,7 +39,7 @@ void main() {
       expect(decoded.strokes.first.points, hasLength(2));
       expect(decoded.images, hasLength(1));
       expect(decoded.images.first.id, 'i1');
-      expect(decoded.images.first.width, 0.25);
+      expect(decoded.images.first.width, 1024);
     });
 
     test('rejects a snapshot with a wrong format_version', () {

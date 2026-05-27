@@ -260,6 +260,230 @@ async fn canvas_avatar_move_relayed_but_not_persisted() {
     let _ = bob_ws.close(None).await;
 }
 
+/// A late joiner — connecting AFTER strokes have been drawn — can fetch the
+/// persisted canvas via the REST endpoint and see every prior stroke and
+/// image. This is the primary "voice canvas is global / one source of truth"
+/// guarantee that user testing on 2026-05-27 required.
+///
+/// The flow: Alice draws (WS `stroke` + `image_add`), then Charlie — who was
+/// not connected when Alice drew — registers, joins the group, and GETs the
+/// canvas. The response must contain both the stroke and the image.
+#[tokio::test]
+async fn late_joiner_sees_persisted_strokes_and_images() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    // Alice creates the group and the lounge.
+    let (alice_token, _, _) = common::register_and_login(&client, &base, "cvs_late_alice").await;
+    let group_id =
+        common::create_group(&client, &base, &alice_token, "LateJoinerCanvasGroup").await;
+
+    let resp = client
+        .get(format!("{base}/api/groups/{group_id}/channels"))
+        .header("Authorization", format!("Bearer {alice_token}"))
+        .send()
+        .await
+        .unwrap();
+    let channels: Vec<Value> = resp.json().await.unwrap();
+    let channel_id = channels
+        .iter()
+        .find(|c| c["name"] == "lounge")
+        .expect("default lounge channel must exist")["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Alice connects and draws.
+    let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
+    let mut alice_ws = connect_ws(&base, &alice_ticket).await;
+    common::drain_pending(&mut alice_ws).await;
+
+    // Helper: send one canvas event over Alice's WS and flush. We intentionally
+    // flush + small sleep between sends because the existing single-event
+    // fanout tests in this file (and unit tests on the server) cover the
+    // "race-y back-to-back writes" path; what THIS test guards is the
+    // persist-then-late-joiner-load contract, not concurrent-write semantics.
+    async fn send_event(ws: &mut WsStream, channel_id: &str, kind: &str, payload: Value) {
+        use futures_util::SinkExt;
+        use futures_util::StreamExt;
+        ws.send(Message::Text(
+            serde_json::json!({
+                "type": "canvas_event",
+                "channel_id": channel_id,
+                "kind": kind,
+                "payload": payload,
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .unwrap();
+        ws.flush().await.unwrap();
+        // Drain any back-pressure response frames (errors, fanout echoes
+        // when other members are connected, etc.) so the next send isn't
+        // sitting behind an unread frame. This also surfaces server-side
+        // error frames that would otherwise be invisible — they get
+        // printed via the assert below so test failures show WHY.
+        while let Ok(Some(Ok(msg))) =
+            tokio::time::timeout(std::time::Duration::from_millis(150), ws.next()).await
+        {
+            if let Message::Text(t) = msg
+                && t.contains("\"type\":\"error\"")
+            {
+                panic!("server returned error frame for {kind}: {t}");
+            }
+        }
+    }
+
+    // Drop a freehand stroke (highlighter — a new kind the server must
+    // JSONB-passthrough without rejection).
+    send_event(
+        &mut alice_ws,
+        &channel_id,
+        "stroke",
+        serde_json::json!({
+            "id": "stroke-late-1",
+            "color": "#00FFAA",
+            "width": 4.0,
+            "points": [{"x": 0.1, "y": 0.1}, {"x": 0.4, "y": 0.5}],
+            "kind": "highlighter",
+        }),
+    )
+    .await;
+
+    // Drop a text label (kind="text" — new tool set).
+    send_event(
+        &mut alice_ws,
+        &channel_id,
+        "stroke",
+        serde_json::json!({
+            "id": "stroke-late-2",
+            "color": "#FFCC00",
+            "width": 18.0,
+            "points": [{"x": 0.6, "y": 0.7}],
+            "kind": "text",
+            "text": "hello late joiner",
+        }),
+    )
+    .await;
+
+    // Drop a rect shape (kind="rect" — new tool set).
+    send_event(
+        &mut alice_ws,
+        &channel_id,
+        "stroke",
+        serde_json::json!({
+            "id": "stroke-late-3",
+            "color": "#FF00FF",
+            "width": 2.0,
+            "points": [{"x": 0.2, "y": 0.2}, {"x": 0.5, "y": 0.5}],
+            "kind": "rect",
+        }),
+    )
+    .await;
+
+    // Add an image.
+    send_event(
+        &mut alice_ws,
+        &channel_id,
+        "image_add",
+        serde_json::json!({
+            "id": "img-late-1",
+            "url": "https://example.com/photo.png",
+            "x": 0.3,
+            "y": 0.4,
+            "width": 0.2,
+            "height": 0.2,
+        }),
+    )
+    .await;
+
+    // Allow the server's async DB writes to land before Alice disconnects.
+    // The handler awaits the DB call before broadcasting, so once the next
+    // GET round-trip resolves, the rows are committed. We poll the REST
+    // endpoint until the rows appear instead of sleeping a fixed duration.
+    // The wait is bounded so a server regression (e.g. one stroke kind
+    // being rejected) fails the test loudly instead of hanging the suite.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    let alice_canvas: Value = loop {
+        let v: Value = client
+            .get(format!(
+                "{base}/api/groups/{group_id}/channels/{channel_id}/canvas"
+            ))
+            .header("Authorization", format!("Bearer {alice_token}"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let strokes = v["drawing_data"].as_array().cloned().unwrap_or_default();
+        let images = v["images_data"].as_array().cloned().unwrap_or_default();
+        if strokes.len() == 3 && images.len() == 1 {
+            break v;
+        }
+        if std::time::Instant::now() > deadline {
+            panic!(
+                "timed out waiting for persisted canvas state: strokes={}, images={}, body={v}",
+                strokes.len(),
+                images.len()
+            );
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    };
+    assert_eq!(alice_canvas["drawing_data"].as_array().unwrap().len(), 3);
+    assert_eq!(alice_canvas["images_data"].as_array().unwrap().len(), 1);
+
+    // Alice disconnects — the canvas should still be in the DB.
+    let _ = alice_ws.close(None).await;
+
+    // Charlie is a brand-new user joining the group AFTER all the drawing
+    // happened. He never had a WS connection during the draw events, so the
+    // ONLY way he sees the strokes is via the REST snapshot.
+    let (charlie_token, charlie_id, _) =
+        common::register_and_login(&client, &base, "cvs_late_charlie").await;
+    common::add_member_to_group(&client, &base, &alice_token, &group_id, &charlie_id).await;
+
+    let resp = client
+        .get(format!(
+            "{base}/api/groups/{group_id}/channels/{channel_id}/canvas"
+        ))
+        .header("Authorization", format!("Bearer {charlie_token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status().as_u16(),
+        200,
+        "late joiner must be able to GET the canvas after being added"
+    );
+    let body: Value = resp.json().await.unwrap();
+
+    let strokes = body["drawing_data"].as_array().expect("drawing_data array");
+    assert_eq!(strokes.len(), 3, "all three strokes must be persisted");
+
+    let ids: Vec<&str> = strokes.iter().filter_map(|s| s["id"].as_str()).collect();
+    assert!(ids.contains(&"stroke-late-1"));
+    assert!(ids.contains(&"stroke-late-2"));
+    assert!(ids.contains(&"stroke-late-3"));
+
+    // The new stroke kinds (highlighter, text, rect) must round-trip
+    // verbatim — the server is JSONB passthrough and must NOT reject them.
+    let kinds: Vec<&str> = strokes.iter().filter_map(|s| s["kind"].as_str()).collect();
+    assert!(kinds.contains(&"highlighter"));
+    assert!(kinds.contains(&"text"));
+    assert!(kinds.contains(&"rect"));
+
+    // Text label payload survives round-trip (verifies opaque JSONB column).
+    let text_stroke = strokes.iter().find(|s| s["id"] == "stroke-late-2").unwrap();
+    assert_eq!(text_stroke["text"], "hello late joiner");
+
+    let images = body["images_data"].as_array().expect("images_data array");
+    assert_eq!(images.len(), 1, "image must be persisted for late joiners");
+    assert_eq!(images[0]["id"], "img-late-1");
+    assert_eq!(images[0]["url"], "https://example.com/photo.png");
+}
+
 /// Sending a canvas event to a text channel (not a voice channel) returns an
 /// error frame and does NOT fan out the event.  Exercises the channel-kind guard
 /// added by audit fix 1.
