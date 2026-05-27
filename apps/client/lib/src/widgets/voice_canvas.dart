@@ -703,6 +703,16 @@ class _CanvasPainter extends CustomPainter {
     if (old.canvas.activePoints.length != canvas.activePoints.length) {
       return true;
     }
+    // Shape tools (line/rect/ellipse) replace the trailing point on every
+    // pointer-move so the points list stays at length 2 — comparing only
+    // length leaves the shape frozen at its start position until pointer-up.
+    // Also compare the last point's coordinates so the rubberband preview
+    // tracks the cursor live.
+    if (canvas.activePoints.isNotEmpty && old.canvas.activePoints.isNotEmpty) {
+      final a = canvas.activePoints.last;
+      final b = old.canvas.activePoints.last;
+      if (a.x != b.x || a.y != b.y) return true;
+    }
     if (canvas.strokes.isNotEmpty &&
         canvas.strokes.last.id != old.canvas.strokes.last.id) {
       return true;
