@@ -144,9 +144,15 @@ class _DraggableScreenShareWindowState
   double _width = 320;
   double _height = 180;
   bool _positioned = false;
+  bool _hovered = false;
 
   static const double _minWidth = 160;
   static const double _minHeight = 90;
+  // 16:9 — the source shared-screen content is always rendered with
+  // BoxFit.contain inside the window, so locking the window itself to
+  // the same aspect ratio means the resize gesture scales the window
+  // proportionally and the underlying content never deforms.
+  static const double _aspectRatio = 16.0 / 9.0;
 
   @override
   void initState() {
@@ -175,105 +181,125 @@ class _DraggableScreenShareWindowState
               Positioned(
                 left: _left,
                 top: _top,
-                child: GestureDetector(
-                  onPanUpdate: (d) {
-                    setState(() {
-                      _left += d.delta.dx;
-                      _top += d.delta.dy;
-                    });
-                  },
-                  child: Container(
-                    width: _width,
-                    height: _height,
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.85),
-                      borderRadius: BorderRadius.circular(12),
-                      // Softer accent ring (alpha .25, hairline) so the
-                      // window sits in the canvas without reading as a
-                      // hard frame the user mistakes for the canvas
-                      // boundary.
-                      border: Border.all(
-                        color:
-                            (widget.isLocal ? EchoTheme.danger : context.accent)
-                                .withValues(alpha: 0.25),
-                        width: 0.5,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.5),
-                          blurRadius: 16,
-                          offset: const Offset(0, 4),
+                child: MouseRegion(
+                  onEnter: (_) => setState(() => _hovered = true),
+                  onExit: (_) => setState(() => _hovered = false),
+                  child: GestureDetector(
+                    onPanUpdate: (d) {
+                      setState(() {
+                        _left += d.delta.dx;
+                        _top += d.delta.dy;
+                      });
+                    },
+                    child: Container(
+                      width: _width,
+                      height: _height,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.85),
+                        borderRadius: BorderRadius.circular(12),
+                        // Softer accent ring (alpha .25, hairline) so the
+                        // window sits in the canvas without reading as a
+                        // hard frame the user mistakes for the canvas
+                        // boundary.
+                        border: Border.all(
+                          color:
+                              (widget.isLocal
+                                      ? EchoTheme.danger
+                                      : context.accent)
+                                  .withValues(alpha: 0.25),
+                          width: 0.5,
                         ),
-                      ],
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: Stack(
-                      children: [
-                        Positioned.fill(child: widget.child),
-                        // Label badge
-                        Positioned(
-                          top: 6,
-                          left: 8,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.6),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(
-                                  Icons.screen_share,
-                                  size: 11,
-                                  color: Colors.white70,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  widget.label,
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.5),
+                            blurRadius: 16,
+                            offset: const Offset(0, 4),
                           ),
-                        ),
-                        // Resize handle (bottom-right corner)
-                        Positioned(
-                          right: 0,
-                          bottom: 0,
-                          child: GestureDetector(
-                            onPanUpdate: (d) {
-                              setState(() {
-                                _width = (_width + d.delta.dx).clamp(
-                                  _minWidth,
-                                  constraints.maxWidth - _left,
-                                );
-                                _height = (_height + d.delta.dy).clamp(
-                                  _minHeight,
-                                  constraints.maxHeight - _top,
-                                );
-                              });
-                            },
-                            child: Container(
-                              width: 20,
-                              height: 20,
-                              alignment: Alignment.bottomRight,
-                              child: Icon(
-                                Icons.open_in_full,
-                                size: 12,
-                                color: Colors.white.withValues(alpha: 0.4),
+                        ],
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: Stack(
+                        children: [
+                          Positioned.fill(child: widget.child),
+                          // Label badge — hover-only. The rounded chip used
+                          // to overhang the (rounded) window corner; only
+                          // showing it on hover keeps the screen view clean
+                          // and avoids the corner-collision visual.
+                          if (_hovered)
+                            Positioned(
+                              top: 8,
+                              left: 8,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.6),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.screen_share,
+                                      size: 11,
+                                      color: Colors.white70,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      widget.label,
+                                      style: const TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
-                        ),
-                      ],
+                          // Resize handle (bottom-right corner). Locked to
+                          // _aspectRatio so the underlying screen content
+                          // never deforms — only the bounding window
+                          // scales proportionally.
+                          if (_hovered)
+                            Positioned(
+                              right: 0,
+                              bottom: 0,
+                              child: GestureDetector(
+                                onPanUpdate: (d) {
+                                  setState(() {
+                                    // Use the larger of dx/dy so the gesture
+                                    // feels uniform; derive height from the
+                                    // locked aspect ratio.
+                                    final nextW = (_width + d.delta.dx).clamp(
+                                      _minWidth,
+                                      constraints.maxWidth - _left,
+                                    );
+                                    final aspectH = nextW / _aspectRatio;
+                                    final nextH = aspectH.clamp(
+                                      _minHeight,
+                                      constraints.maxHeight - _top,
+                                    );
+                                    _width = nextH * _aspectRatio;
+                                    _height = nextH;
+                                  });
+                                },
+                                child: Container(
+                                  width: 20,
+                                  height: 20,
+                                  alignment: Alignment.bottomRight,
+                                  child: Icon(
+                                    Icons.open_in_full,
+                                    size: 12,
+                                    color: Colors.white.withValues(alpha: 0.4),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
