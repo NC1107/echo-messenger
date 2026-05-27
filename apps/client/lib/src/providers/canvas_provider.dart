@@ -44,6 +44,7 @@ class CanvasController extends _$CanvasController {
       _avatarThrottle?.cancel();
       _imageThrottle?.cancel();
       _strokeThrottle?.cancel();
+      _screenShareThrottle?.cancel();
     });
     return const CanvasState();
   }
@@ -79,6 +80,9 @@ class CanvasController extends _$CanvasController {
     _strokeThrottle?.cancel();
     _strokeThrottle = null;
     _pendingStrokePoints = null;
+    _screenShareThrottle?.cancel();
+    _screenShareThrottle = null;
+    _pendingScreenShare = null;
     _pendingEvents.clear();
     _channelId = null;
     state = const CanvasState();
@@ -445,10 +449,14 @@ class CanvasController extends _$CanvasController {
   // Avatars
   // -------------------------------------------------------------------------
 
-  /// Called while the user is dragging their avatar.  Updates local state
-  /// immediately and queues a throttled WS broadcast. The current scale is
-  /// preserved.
-  void moveLocalAvatar(String userId, CanvasPoint pos) {
+  /// Called while a user is dragging an avatar — either their own or
+  /// somebody else's. Updates local state immediately and queues a
+  /// throttled WS broadcast. The current scale is preserved.
+  ///
+  /// The voice-lounge canvas is a shared whiteboard: any participant
+  /// can move any avatar, and the broadcast carries the *target*
+  /// `userId` in the payload so receivers update the right entry.
+  void moveAvatar(String userId, CanvasPoint pos) {
     final existing = state.avatarPositions[userId];
     final scale = existing?.scale ?? 1.0;
     final updated = Map<String, AvatarPosition>.from(state.avatarPositions);
@@ -466,6 +474,14 @@ class CanvasController extends _$CanvasController {
       (_) => _flushAvatarMove(),
     );
   }
+
+  /// Back-compat alias for [moveAvatar]. The "Local" in the name is
+  /// historical — early builds only let you move your own avatar, but
+  /// the shared-whiteboard model now lets anyone move anyone. Kept as a
+  /// thin alias so older call sites in flight during the rename still
+  /// compile; new code should call [moveAvatar].
+  void moveLocalAvatar(String userId, CanvasPoint pos) =>
+      moveAvatar(userId, pos);
 
   void _flushAvatarMove() {
     final pending = _pendingAvatar;
@@ -529,8 +545,9 @@ class CanvasController extends _$CanvasController {
     });
   }
 
-  /// Called when the user stops dragging (send final position immediately).
-  void commitLocalAvatarMove(String userId, CanvasPoint pos) {
+  /// Called when the user stops dragging an avatar (any avatar, theirs
+  /// or someone else's). Sends the final position immediately.
+  void commitAvatarMove(String userId, CanvasPoint pos) {
     _avatarThrottle?.cancel();
     _avatarThrottle = null;
     _pendingAvatar = null;
@@ -551,6 +568,92 @@ class CanvasController extends _$CanvasController {
       'y': pos.y,
       'scale': scale,
     });
+  }
+
+  /// Back-compat alias for [commitAvatarMove]; see [moveLocalAvatar].
+  void commitLocalAvatarMove(String userId, CanvasPoint pos) =>
+      commitAvatarMove(userId, pos);
+
+  // -------------------------------------------------------------------------
+  // Screen-share window positions
+  //
+  // Like avatar moves these are ephemeral — the server relays but does not
+  // persist them. The `screenshare_move` event mirrors `avatar_move` in
+  // shape (window_id, x, y, width, height) so the same throttle/commit
+  // pattern applies, and clients agree on raw CSS pixels (NOT normalized)
+  // since the window has its own intrinsic aspect ratio.
+  // -------------------------------------------------------------------------
+
+  /// Throttle timer for screen-share window broadcasts (~20 fps).
+  Timer? _screenShareThrottle;
+  ScreenShareWindow? _pendingScreenShare;
+
+  /// Called while the user drags a screen-share window. Updates local
+  /// state immediately and queues a throttled WS broadcast.
+  void moveScreenShare({
+    required String windowId,
+    required double x,
+    required double y,
+    required double width,
+    required double height,
+  }) {
+    final updated = Map<String, ScreenShareWindow>.from(
+      state.screenSharePositions,
+    );
+    final window = ScreenShareWindow(
+      windowId: windowId,
+      x: x,
+      y: y,
+      width: width,
+      height: height,
+    );
+    updated[windowId] = window;
+    state = state.copyWith(screenSharePositions: updated);
+
+    _pendingScreenShare = window;
+    _screenShareThrottle ??= Timer.periodic(
+      const Duration(milliseconds: 50),
+      (_) => _flushScreenShareMove(),
+    );
+  }
+
+  void _flushScreenShareMove() {
+    final pending = _pendingScreenShare;
+    if (pending == null) {
+      _screenShareThrottle?.cancel();
+      _screenShareThrottle = null;
+      return;
+    }
+    _pendingScreenShare = null;
+    _sendCanvasEvent('screenshare_move', pending.toJson());
+  }
+
+  /// Called when the user releases a screen-share window drag/resize —
+  /// flushes the pending broadcast immediately.
+  void commitScreenShareMove({
+    required String windowId,
+    required double x,
+    required double y,
+    required double width,
+    required double height,
+  }) {
+    _screenShareThrottle?.cancel();
+    _screenShareThrottle = null;
+    _pendingScreenShare = null;
+
+    final window = ScreenShareWindow(
+      windowId: windowId,
+      x: x,
+      y: y,
+      width: width,
+      height: height,
+    );
+    final updated = Map<String, ScreenShareWindow>.from(
+      state.screenSharePositions,
+    );
+    updated[windowId] = window;
+    state = state.copyWith(screenSharePositions: updated);
+    _sendCanvasEvent('screenshare_move', window.toJson());
   }
 
   // -------------------------------------------------------------------------
@@ -654,25 +757,55 @@ class CanvasController extends _$CanvasController {
           state = state.copyWith(images: newImages);
         }
       case 'avatar_move':
+        // Shared-whiteboard semantics: the *target* user id is carried in
+        // the payload, not derived from the sender. Older clients only
+        // ever moved their own avatar and sent `user_id == from_user_id`,
+        // so falling back to `fromUserId` keeps them compatible.
+        final targetUserId = (payload['user_id'] as String?) ?? fromUserId;
+        if (targetUserId.isEmpty) return;
         final x = (payload['x'] as num?)?.toDouble() ?? 0.5;
         final y = (payload['y'] as num?)?.toDouble() ?? 0.5;
         // Older clients won't send `scale`; preserve the prior value (or
         // default to 1.0) so a move from an old build doesn't reset the
         // size that a newer participant just resized.
-        final existing = state.avatarPositions[fromUserId];
+        final existing = state.avatarPositions[targetUserId];
         final rawScale = (payload['scale'] as num?)?.toDouble();
         final scale = (rawScale ?? existing?.scale ?? 1.0).clamp(
           AvatarPosition.minScale,
           AvatarPosition.maxScale,
         );
         final updated = Map<String, AvatarPosition>.from(state.avatarPositions);
-        updated[fromUserId] = AvatarPosition(
-          userId: fromUserId,
+        updated[targetUserId] = AvatarPosition(
+          userId: targetUserId,
           x: x.clamp(0.0, 1.0),
           y: y.clamp(0.0, 1.0),
           scale: scale,
         );
         state = state.copyWith(avatarPositions: updated);
+      case 'screenshare_move':
+        final windowId = payload['window_id'] as String?;
+        if (windowId == null || windowId.isEmpty) return;
+        final x = (payload['x'] as num?)?.toDouble();
+        final y = (payload['y'] as num?)?.toDouble();
+        if (x == null || y == null) return;
+        final existing = state.screenSharePositions[windowId];
+        final w =
+            (payload['width'] as num?)?.toDouble() ?? existing?.width ?? 320.0;
+        final h =
+            (payload['height'] as num?)?.toDouble() ??
+            existing?.height ??
+            180.0;
+        final updated = Map<String, ScreenShareWindow>.from(
+          state.screenSharePositions,
+        );
+        updated[windowId] = ScreenShareWindow(
+          windowId: windowId,
+          x: x,
+          y: y,
+          width: w,
+          height: h,
+        );
+        state = state.copyWith(screenSharePositions: updated);
     }
   }
 

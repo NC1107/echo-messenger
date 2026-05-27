@@ -64,10 +64,12 @@ pub(super) enum ClientMessage {
     #[serde(rename = "call_started")]
     CallStarted { conversation_id: Uuid },
     /// Voice-lounge canvas event.  Relayed to all conversation members and
-    /// persisted for strokes/images (avatar moves are ephemeral).
+    /// persisted for strokes/images (avatar + screen-share moves are
+    /// ephemeral, mid-stroke partials are also ephemeral).
     ///
-    /// `kind` is one of: "stroke", "clear", "image_add", "image_move",
-    ///                    "image_remove", "avatar_move"
+    /// `kind` is one of: "stroke", "stroke_partial", "clear", "image_add",
+    ///                    "image_move", "image_remove", "avatar_move",
+    ///                    "screenshare_move"
     #[serde(rename = "canvas_event")]
     CanvasEvent {
         channel_id: Uuid,
