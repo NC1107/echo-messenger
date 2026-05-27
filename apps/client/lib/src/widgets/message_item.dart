@@ -69,6 +69,11 @@ class MessageItem extends StatefulWidget {
   final void Function(ChatMessage message)? onDelete;
   final void Function(ChatMessage message)? onEdit;
   final void Function(ChatMessage message)? onReply;
+
+  /// Distinct from [onReply]: stamps the reply with the thread root so
+  /// the message vanishes from the main timeline and only shows in the
+  /// thread panel (Slack-style "Reply in thread").
+  final void Function(ChatMessage message)? onReplyInThread;
   final void Function(ChatMessage message)? onViewThread;
   final void Function(String userId)? onAvatarTap;
   final void Function(ChatMessage message)? onPin;
@@ -147,6 +152,7 @@ class MessageItem extends StatefulWidget {
     this.onDelete,
     this.onEdit,
     this.onReply,
+    this.onReplyInThread,
     this.onViewThread,
     this.onAvatarTap,
     this.onPin,
@@ -1402,6 +1408,7 @@ class _MessageItemState extends State<MessageItem>
       mediaUrl: mediaUrl,
       isImageMedia: isImage,
       onReply: _wrapMsgCallback(widget.onReply, msg),
+      onReplyInThread: _wrapMsgCallback(widget.onReplyInThread, msg),
       onForward: _wrapMsgCallback(widget.onForward, msg),
       onRetry: _resolveRetryCallback(msg),
       onCopyText: () => _copyMessageText(msg, mediaUrl),

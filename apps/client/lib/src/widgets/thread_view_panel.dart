@@ -186,8 +186,7 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
       ),
       child: Column(
         children: [
-          _buildHeader(context),
-          Divider(height: 1, color: context.border),
+          _buildHeader(context, replies.length),
           _buildParentMessage(context, parent, replies),
           Divider(height: 1, color: context.border),
           Expanded(child: _buildRepliesList(context, replies)),
@@ -197,23 +196,48 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
+  Widget _buildHeader(BuildContext context, int replyCount) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: context.border)),
+      ),
       child: Row(
         children: [
           Icon(Icons.forum_outlined, size: 18, color: context.accent),
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              'Thread',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: context.textPrimary,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Thread',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: context.textPrimary,
+                    height: 1.1,
+                  ),
+                ),
+                if (replyCount > 0) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    '$replyCount '
+                    '${replyCount == 1 ? "reply" : "replies"} · '
+                    'started by ${widget.parentMessage.fromUsername}',
+                    style: TextStyle(fontSize: 11, color: context.textMuted),
+                  ),
+                ],
+              ],
             ),
           ),
+          if (widget.parentMessage.recentReplierUsernames.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: _ReplierFaceStack(
+                usernames: widget.parentMessage.recentReplierUsernames,
+              ),
+            ),
           Semantics(
             label: 'Close thread',
             button: true,
@@ -482,4 +506,65 @@ void showThreadBottomSheet({
       ),
     ),
   );
+}
+
+/// Up to 3 overlapping initial-circles for recent repliers, rendered in
+/// the thread header so the user can see at a glance who's been
+/// chatting. Smaller cousin of the reply-chip face stack.
+class _ReplierFaceStack extends StatelessWidget {
+  const _ReplierFaceStack({required this.usernames});
+  final List<String> usernames;
+
+  @override
+  Widget build(BuildContext context) {
+    final faces = usernames.take(3).toList();
+    const faceSize = 18.0;
+    const overlap = 6.0;
+    final width = faceSize + (faces.length - 1) * (faceSize - overlap);
+    return SizedBox(
+      width: width,
+      height: faceSize,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          for (var i = 0; i < faces.length; i++)
+            Positioned(
+              left: i * (faceSize - overlap),
+              child: _SmallInitialCircle(name: faces[i], size: faceSize),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SmallInitialCircle extends StatelessWidget {
+  const _SmallInitialCircle({required this.name, required this.size});
+  final String name;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    final hue = (name.hashCode % 360).abs().toDouble();
+    final bg = HSLColor.fromAHSL(1.0, hue, 0.55, 0.45).toColor();
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: bg,
+        shape: BoxShape.circle,
+        border: Border.all(color: context.surface, width: 1.5),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        initial,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: size * 0.55,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
 }

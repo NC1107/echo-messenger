@@ -49,6 +49,12 @@ ContextMenuSection _primarySection(MessageTarget t) {
         icon: Icons.reply_outlined,
         onTap: t.onReply,
       ),
+    if (t.onReplyInThread != null)
+      ContextMenuAction(
+        label: 'Reply in thread',
+        icon: Icons.forum_outlined,
+        onTap: t.onReplyInThread,
+      ),
     if (t.onForward != null)
       ContextMenuAction(
         label: 'Forward',
