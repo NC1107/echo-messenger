@@ -17,6 +17,7 @@ import '../providers/screen_share_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/voice_lounge_background_provider.dart';
 import '../providers/voice_lounge_fullscreen_provider.dart';
+import '../providers/voice_lounge_view_mode_provider.dart';
 import '../providers/voice_settings_provider.dart';
 import '../services/debug_log_service.dart';
 import '../services/pip_controller.dart';
@@ -86,10 +87,12 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   /// Which dock submenu is currently open (null = none).
   DockSubmenu? _activeSubmenu;
 
-  /// When true, force the spotlight/participant grid instead of the canvas.
-  /// Defaults to true so users land in the familiar grid view; the canvas
-  /// (vertex mesh + draggable pucks) is opt-in via the dock toggle.
-  bool _spotlightMode = true;
+  // Spotlight vs canvas selection lives in voiceLoungeViewModeProvider
+  // so toggling fullscreen (which remounts this widget at a different
+  // Row index in HomeScreen's layout) doesn't snap us back to spotlight.
+  // See lib/src/providers/voice_lounge_view_mode_provider.dart.
+  bool get _spotlightMode =>
+      ref.watch(voiceLoungeViewModeProvider) == VoiceLoungeView.spotlight;
 
   /// Pan + zoom controller for the canvas. Identity = 1x, no offset.
   /// The lounge background sits OUTSIDE this transform so zoom/pan only
@@ -1075,13 +1078,17 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       drawingToolsLayerLink: _drawingToolsLayerLink,
       spotlightMode: _spotlightMode,
       onToggleSpotlight: () {
-        setState(() {
-          _spotlightMode = !_spotlightMode;
-          if (_spotlightMode) {
+        final notifier = ref.read(voiceLoungeViewModeProvider.notifier);
+        final next = _spotlightMode
+            ? VoiceLoungeView.canvas
+            : VoiceLoungeView.spotlight;
+        notifier.state = next;
+        if (next == VoiceLoungeView.spotlight) {
+          setState(() {
             _isDrawing = false;
             _activeSubmenu = null;
-          }
-        });
+          });
+        }
       },
     );
 
@@ -1101,27 +1108,39 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       ],
     );
 
-    // Figma-style zoom + pan: the canvas reads as an effectively-infinite
-    // workspace. Background sits in a separate scaffold layer behind this
-    // widget so panning the canvas never reveals "outside" — the bg
-    // image stays put. boundaryMargin is intentionally infinite so the
-    // user is never wall-stopped while exploring.
+    // Figma-style zoom + pan with a finite canvas. The boundaryMargin
+    // is sized so that at minScale the user sees the full workspace —
+    // boundary then doubles as the visible "page edge" + a scale
+    // reference, instead of either a hard wall mid-pan or an infinite
+    // void with no anchor.
+    //
+    // Background sits in a separate scaffold layer behind this widget
+    // so the bg never moves with the canvas.
     //
     // Pan is disabled while drawing so single-pointer drags become
     // strokes, not viewport pans. Pinch + ctrl/trackpad-scroll still
     // zoom regardless.
-    //
-    // Scale range matches Figma's broad envelope: 20% to 800%.
+    const minScale = 0.25;
+    const maxScale = 4.0;
+    final size = MediaQuery.sizeOf(context);
+    // (1 / minScale - 1) / 2 → margin per side that, at minScale, fits
+    // the full workspace into the viewport. With minScale=0.25 the
+    // margin is 1.5× viewport per side, so total canvas = 4× viewport.
+    final marginX = size.width * ((1 / minScale - 1) / 2);
+    final marginY = size.height * ((1 / minScale - 1) / 2);
     final viewportContent = _spotlightMode
         ? mergedContent
         : InteractiveViewer(
             transformationController: _viewport,
-            minScale: 0.2,
-            maxScale: 8.0,
+            minScale: minScale,
+            maxScale: maxScale,
             panEnabled: !_isDrawing,
             scaleEnabled: true,
             trackpadScrollCausesScale: true,
-            boundaryMargin: const EdgeInsets.all(double.infinity),
+            boundaryMargin: EdgeInsets.symmetric(
+              horizontal: marginX,
+              vertical: marginY,
+            ),
             child: mergedContent,
           );
 

@@ -717,29 +717,32 @@ void main() {
       },
     );
 
-    testWidgets('downloading update banner shows percentage and Cancel', (
-      tester,
-    ) async {
-      await tester.pumpApp(
-        ConversationPanel(onConversationTap: (_) {}),
-        overrides: [
-          ...standardOverrides(conversations: const []),
-          updateProvider.overrideWith(
-            () => _FakeUpdateNotifier(
-              const UpdateState(
-                status: UpdateStatus.downloading,
-                latestVersion: '9.9.9',
-                downloadProgress: 0.42,
+    testWidgets(
+      'downloading update banner shows percentage without a cancel button',
+      (tester) async {
+        await tester.pumpApp(
+          ConversationPanel(onConversationTap: (_) {}),
+          overrides: [
+            ...standardOverrides(conversations: const []),
+            updateProvider.overrideWith(
+              () => _FakeUpdateNotifier(
+                const UpdateState(
+                  status: UpdateStatus.downloading,
+                  latestVersion: '9.9.9',
+                  downloadProgress: 0.42,
+                ),
               ),
             ),
-          ),
-        ],
-      );
-      await tester.pump();
+          ],
+        );
+        await tester.pump();
 
-      expect(find.text('Downloading update... 42%'), findsOneWidget);
-      expect(find.text('Cancel'), findsOneWidget);
-    });
+        expect(find.text('Downloading update... 42%'), findsOneWidget);
+        // Cancel button was removed — abort flows left half-fetched
+        // payloads on disk that the next launch had to clean up.
+        expect(find.text('Cancel'), findsNothing);
+      },
+    );
   });
 
   // -------------------------------------------------------------------------

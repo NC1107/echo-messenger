@@ -881,7 +881,8 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
   }
 
   Widget _buildAvatarWithTrail(Widget avatar) {
-    if (_reduceMotion) return avatar;
+    final withRing = _wrapInResizeRing(avatar);
+    if (_reduceMotion) return withRing;
 
     // Keep trail layer mounted (idle painter returns early) to avoid CustomPaint remount when buffer flips empty/non-empty.
     return Stack(
@@ -903,31 +904,91 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
             ),
           ),
         ),
-        avatar,
+        withRing,
       ],
     );
   }
 
+  /// Wraps the avatar tile in a circular click-and-drag resize ring.
+  /// When [onResize] is null (callers that don't want resize, e.g. tests)
+  /// this is a no-op so the avatar renders unwrapped. On hover the ring
+  /// becomes visible and PanUpdate gestures on its 10 px perimeter drive
+  /// the resize callback — clicks dead-center still pass through to the
+  /// avatar's move-drag wrapper.
+  Widget _wrapInResizeRing(Widget avatar) {
+    if (widget.onResize == null) return avatar;
+    const ringThickness = 6.0;
+    final ringSize = _effectiveAvatarSize + ringThickness * 2;
+    return SizedBox(
+      width: ringSize,
+      height: ringSize,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: [
+          // Bottom layer: perimeter gesture catcher + visible ring on
+          // hover. HitTestBehavior.opaque on the full square, but a
+          // smaller centered IgnorePointer hole lets the inner move
+          // drag through (next layer).
+          MouseRegion(
+            cursor: SystemMouseCursors.resizeUpRightDownLeft,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onPanUpdate: (d) => widget.onResize!(d.delta.dx, d.delta.dy),
+              onPanEnd: (_) => widget.onResizeEnd?.call(),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 120),
+                width: ringSize,
+                height: ringSize,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: _hovered
+                        ? context.accent.withValues(alpha: 0.6)
+                        : Colors.transparent,
+                    width: 2,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Top layer: actual avatar tile. Sized to the original
+          // _effectiveAvatarSize so the surrounding ring stays clickable
+          // for resize.
+          avatar,
+        ],
+      ),
+    );
+  }
+
   Widget _buildContent(_ParticipantInfo info, Widget avatarWithTrail) {
+    // Username label appears only on hover — keeps the canvas clean when
+    // there are many participants. The label sits beneath the puck and
+    // is reserved as a 16 px slot at all times so neighbour avatars
+    // don't jump on hover.
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         avatarWithTrail,
         const SizedBox(height: 4),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: context.surface.withValues(alpha: 0.54),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(
-            info.name,
-            style: TextStyle(
-              color: context.textPrimary,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
+        AnimatedOpacity(
+          duration: const Duration(milliseconds: 120),
+          opacity: _hovered ? 1.0 : 0.0,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: context.surface.withValues(alpha: 0.7),
+              borderRadius: BorderRadius.circular(8),
             ),
-            overflow: TextOverflow.ellipsis,
+            child: Text(
+              info.name,
+              style: TextStyle(
+                color: context.textPrimary,
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ),
       ],
@@ -965,33 +1026,8 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
             },
             child: content,
           ),
-          if (_hovered && widget.onResize != null)
-            Positioned(
-              right: -2,
-              bottom: -2,
-              child: MouseRegion(
-                cursor: SystemMouseCursors.resizeDownRight,
-                child: GestureDetector(
-                  onPanUpdate: (d) => widget.onResize!(d.delta.dx, d.delta.dy),
-                  onPanEnd: (_) => widget.onResizeEnd?.call(),
-                  child: Container(
-                    width: 22,
-                    height: 22,
-                    decoration: BoxDecoration(
-                      color: context.surface.withValues(alpha: 0.85),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: context.border),
-                    ),
-                    alignment: Alignment.center,
-                    child: Icon(
-                      Icons.open_in_full,
-                      size: 12,
-                      color: context.textPrimary,
-                    ),
-                  ),
-                ),
-              ),
-            ),
+          // Resize ring lives inside _wrapInResizeRing (avatar-tile
+          // sibling), so no corner button is needed here.
         ],
       ),
     );

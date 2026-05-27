@@ -117,18 +117,10 @@ mixin _ConversationPanelBannersMixin on ConsumerState<ConversationPanel> {
         final pct = (update.downloadProgress * 100).toInt();
         return (
           label: 'Downloading update... $pct%',
-          action: TextButton(
-            onPressed: () => ref.read(updateProvider.notifier).cancelDownload(),
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: Text(
-              'Cancel',
-              style: TextStyle(color: context.textMuted, fontSize: 11),
-            ),
-          ),
+          // Cancel removed — users were aborting downloads halfway, leaving
+          // half-fetched payloads on disk that the next launch had to clean
+          // up. Updates are quick; no in-flight cancel surface.
+          action: null,
           showDismiss: false,
           progress: LinearProgressIndicator(
             value: update.downloadProgress,
