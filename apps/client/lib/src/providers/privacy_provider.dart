@@ -111,8 +111,15 @@ class Privacy extends _$Privacy {
         );
       }
     } catch (e) {
+      // Log the raw error for support / debug logs, but surface a friendly
+      // message to the user — the previous code displayed JSON-parse errors
+      // verbatim (e.g. "FormatException: Unexpected character (at character
+      // 1) <!DOCTYPE html>") when the server returned an HTML error page.
       debugPrint('[Privacy] load failed: $e');
-      state = state.copyWith(isLoading: false, error: e.toString());
+      state = state.copyWith(
+        isLoading: false,
+        error: "Couldn't load privacy settings. Pull to retry.",
+      );
     }
   }
 

@@ -166,6 +166,26 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
   /// the session-cleanup paths actually empty the queue.
   int get pendingDecryptQueueLength => _pendingDecryptQueue.length;
 
+  /// Suppression window after the WS first connects in a session. Backfill
+  /// messages from every group land via `new_message` during this window
+  /// and would otherwise fire a notification toast + chime per message
+  /// (testers reported this as "spam on login"). Reset by
+  /// [openInitialSyncWindow] on every fresh connect.
+  bool _isInInitialSyncWindow = false;
+  Timer? _initialSyncWindowTimer;
+
+  /// Mark the start of a fresh WS session — any inbound `new_message`
+  /// events for the next [duration] are treated as backfill and skip
+  /// the notification fan-out. Calls after the first reset the timer
+  /// so a quick reconnect doesn't double-fire notifications either.
+  void openInitialSyncWindow({Duration duration = const Duration(seconds: 5)}) {
+    _isInInitialSyncWindow = true;
+    _initialSyncWindowTimer?.cancel();
+    _initialSyncWindowTimer = Timer(duration, () {
+      _isInInitialSyncWindow = false;
+    });
+  }
+
   /// Enqueue an envelope that arrived before crypto finished initialising.
   /// Records the currently-authenticated user ID alongside the payload so the
   /// drain step can refuse cross-account leakage (#830 finding 4).
@@ -599,6 +619,12 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
     String displayContent, {
     bool isMention = false,
   }) {
+    // Suppress notification fan-out during the initial WS sync window.
+    // Without this, every backfilled message from every group lands as a
+    // separate toast + chime on login — testers consistently reported
+    // this as "spam on first launch" (2026-05-27 feedback).
+    if (_isInInitialSyncWindow) return;
+
     final conversations = ref.read(conversationsProvider).conversations;
     final conv = conversations.where((c) => c.id == conversationId).firstOrNull;
     final isMuted = conv?.isMuted ?? false;

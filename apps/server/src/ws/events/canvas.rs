@@ -132,8 +132,14 @@ pub(in crate::ws) async fn handle_canvas_event(
     payload: serde_json::Value,
 ) {
     // Validate kind to prevent arbitrary strings reaching the DB.
+    // stroke_partial is an ephemeral live-preview frame the client sends
+    // mid-drag — relayed but never persisted (clients reconcile to the
+    // final `stroke` on pointer-up). Adding it here unblocks remote
+    // participants from seeing live drawings as the artist draws them
+    // (user-reported 2026-05-27).
     const VALID_KINDS: &[&str] = &[
         "stroke",
+        "stroke_partial",
         "clear",
         "image_add",
         "image_move",

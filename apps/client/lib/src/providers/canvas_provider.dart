@@ -185,6 +185,30 @@ class CanvasController extends _$CanvasController {
     });
   }
 
+  /// Reverse of [_strokeKindWire] — used when reconstructing strokes from
+  /// inbound `stroke_partial` events so all stroke kinds (highlighter,
+  /// shapes, text) render correctly mid-drag instead of being coerced to
+  /// plain pen.
+  StrokeKind _wireKindToStrokeKind(String kind) {
+    switch (kind) {
+      case 'eraser':
+        return StrokeKind.eraser;
+      case 'highlighter':
+        return StrokeKind.highlighter;
+      case 'line':
+        return StrokeKind.line;
+      case 'rect':
+        return StrokeKind.rect;
+      case 'ellipse':
+        return StrokeKind.ellipse;
+      case 'text':
+        return StrokeKind.text;
+      case 'pen':
+      default:
+        return StrokeKind.pen;
+    }
+  }
+
   /// Wire `kind` string per protocol — falls back to "pen" for unknown.
   /// Mirrors the mapping in [CanvasStroke.toJson] but kept independent so
   /// stroke_partial events don't need to construct a full stroke.
@@ -587,13 +611,16 @@ class CanvasController extends _$CanvasController {
             ..[existingIdx] = updated;
           state = state.copyWith(strokes: newStrokes);
         } else {
-          // Create new partial stroke.
+          // Honour the wire `kind` so highlighter partials render as a
+          // translucent thick pen on remotes instead of being coerced to
+          // plain pen. Falls through `_strokeKindFromString` for any
+          // value the receiver doesn't recognise.
           final partialStroke = CanvasStroke(
             id: partialId,
             color: color,
             width: width,
             points: pointsList,
-            kind: kind == 'eraser' ? StrokeKind.eraser : StrokeKind.pen,
+            kind: _wireKindToStrokeKind(kind),
           );
           final newStrokes = List<CanvasStroke>.from(state.strokes)
             ..add(partialStroke);
