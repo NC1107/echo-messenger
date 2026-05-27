@@ -361,12 +361,12 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
         onDrag: (norm) {
           ref
               .read(canvasProvider.notifier)
-              .moveLocalAvatar(participant.userId, norm);
+              .moveAvatar(participant.userId, norm);
         },
         onDragEnd: (norm) {
           ref
               .read(canvasProvider.notifier)
-              .commitLocalAvatarMove(participant.userId, norm);
+              .commitAvatarMove(participant.userId, norm);
         },
         onResize: (dx, dy) {
           // Diagonal grip — use the larger of dx + dy so the user feels

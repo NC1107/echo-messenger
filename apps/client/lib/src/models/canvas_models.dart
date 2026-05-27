@@ -278,6 +278,82 @@ class AvatarPosition {
 }
 
 // ---------------------------------------------------------------------------
+// Screen-share window positions
+// ---------------------------------------------------------------------------
+
+/// Position + size of a draggable screen-share window on the canvas.
+///
+/// Coordinates and dimensions are in **CSS pixels** relative to the
+/// lounge viewport's top-left (NOT normalized [0, 1] like
+/// [AvatarPosition]). The window has its own intrinsic aspect ratio so
+/// scaling it by canvas size would distort the underlying video; clients
+/// agree on raw pixel coordinates instead and rely on the canvas size
+/// being roughly consistent across participants.
+///
+/// [windowId] is a stable per-stream identifier — for remote screen
+/// shares it's `screenshare-{participantSid}` and for the host's own
+/// preview it's `screenshare-local`. Broadcast over WebSocket as the
+/// `screenshare_move` event; ephemeral (never persisted server-side).
+class ScreenShareWindow {
+  final String windowId;
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+
+  const ScreenShareWindow({
+    required this.windowId,
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+  });
+
+  factory ScreenShareWindow.fromJson(Map<String, dynamic> json) =>
+      ScreenShareWindow(
+        windowId: json['window_id'] as String,
+        x: (json['x'] as num).toDouble(),
+        y: (json['y'] as num).toDouble(),
+        width: (json['width'] as num).toDouble(),
+        height: (json['height'] as num).toDouble(),
+      );
+
+  Map<String, dynamic> toJson() => {
+    'window_id': windowId,
+    'x': x,
+    'y': y,
+    'width': width,
+    'height': height,
+  };
+
+  ScreenShareWindow copyWith({
+    double? x,
+    double? y,
+    double? width,
+    double? height,
+  }) => ScreenShareWindow(
+    windowId: windowId,
+    x: x ?? this.x,
+    y: y ?? this.y,
+    width: width ?? this.width,
+    height: height ?? this.height,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ScreenShareWindow &&
+          windowId == other.windowId &&
+          x == other.x &&
+          y == other.y &&
+          width == other.width &&
+          height == other.height);
+
+  @override
+  int get hashCode => Object.hash(windowId, x, y, width, height);
+}
+
+// ---------------------------------------------------------------------------
 // Drawing tools
 // ---------------------------------------------------------------------------
 
@@ -331,6 +407,13 @@ class CanvasState {
   /// Keyed by userId (string).  Not persisted — reset when user rejoins.
   final Map<String, AvatarPosition> avatarPositions;
 
+  /// Screen-share window positions, keyed by `windowId` (e.g.
+  /// `screenshare-{participantSid}` for remote shares, `screenshare-local`
+  /// for the host's own preview). Like [avatarPositions], these are
+  /// ephemeral — broadcast over the `screenshare_move` WS event and
+  /// never persisted server-side.
+  final Map<String, ScreenShareWindow> screenSharePositions;
+
   /// Points being accumulated for the currently-in-progress stroke.
   /// Cleared and appended to [strokes] on pointer-up.
   final List<CanvasPoint> activePoints;
@@ -346,6 +429,7 @@ class CanvasState {
     this.strokes = const [],
     this.images = const [],
     this.avatarPositions = const {},
+    this.screenSharePositions = const {},
     this.activePoints = const [],
     this.selectedTool = CanvasTool.none,
     this.currentColor = const Color(0xFFFFFFFF),
@@ -360,6 +444,7 @@ class CanvasState {
     List<CanvasStroke>? strokes,
     List<CanvasImage>? images,
     Map<String, AvatarPosition>? avatarPositions,
+    Map<String, ScreenShareWindow>? screenSharePositions,
     List<CanvasPoint>? activePoints,
     CanvasTool? selectedTool,
     Color? currentColor,
@@ -369,6 +454,7 @@ class CanvasState {
     strokes: strokes ?? this.strokes,
     images: images ?? this.images,
     avatarPositions: avatarPositions ?? this.avatarPositions,
+    screenSharePositions: screenSharePositions ?? this.screenSharePositions,
     activePoints: activePoints ?? this.activePoints,
     selectedTool: selectedTool ?? this.selectedTool,
     currentColor: currentColor ?? this.currentColor,

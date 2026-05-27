@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 import 'package:livekit_client/livekit_client.dart' as lk;
 
+import '../../providers/canvas_provider.dart';
 import '../../providers/livekit_voice/livekit_voice_provider.dart';
 import '../../providers/screen_share_provider.dart';
 import '../../theme/echo_theme.dart';
@@ -249,7 +250,7 @@ class _ScreenShareViewerState extends ConsumerState<ScreenShareViewer> {
 typedef ScreenShareChildBuilder =
     Widget Function(BuildContext context, ValueNotifier<double?> aspectRatio);
 
-class DraggableScreenShareWindow extends StatefulWidget {
+class DraggableScreenShareWindow extends ConsumerStatefulWidget {
   /// Optional initial top offset from the canvas top edge. When null the
   /// window spawns centred in the visible canvas area instead of
   /// anchoring to a corner — matches user expectation that "starting a
@@ -258,6 +259,15 @@ class DraggableScreenShareWindow extends StatefulWidget {
   final double? initialRight;
   final String label;
   final bool isLocal;
+
+  /// Stable per-stream identifier used to sync window position over
+  /// the canvas WebSocket. `screenshare-local` for the host's own
+  /// preview, `screenshare-{participantSid}` for remote shares. When
+  /// null, position sync is disabled (the window moves only locally) —
+  /// kept for backwards compatibility, but new call sites should
+  /// always pass a stable id so every participant sees the same window
+  /// position.
+  final String? windowId;
 
   /// Either a static [child] or a [childBuilder] that consumes the
   /// window's own aspect-ratio notifier. Exactly one must be provided.
@@ -273,6 +283,7 @@ class DraggableScreenShareWindow extends StatefulWidget {
     this.initialRight,
     required this.label,
     this.isLocal = false,
+    this.windowId,
     this.child,
     this.childBuilder,
   }) : assert(
@@ -281,12 +292,12 @@ class DraggableScreenShareWindow extends StatefulWidget {
        );
 
   @override
-  State<DraggableScreenShareWindow> createState() =>
+  ConsumerState<DraggableScreenShareWindow> createState() =>
       _DraggableScreenShareWindowState();
 }
 
 class _DraggableScreenShareWindowState
-    extends State<DraggableScreenShareWindow> {
+    extends ConsumerState<DraggableScreenShareWindow> {
   late double _top;
   late double _left;
   double _width = 320;
@@ -346,8 +357,54 @@ class _DraggableScreenShareWindowState
     });
   }
 
+  /// Broadcasts the current window geometry on the canvas. No-op when
+  /// [windowId] is null (legacy callers without sync).
+  void _broadcastMove() {
+    final id = widget.windowId;
+    if (id == null) return;
+    ref
+        .read(canvasProvider.notifier)
+        .moveScreenShare(
+          windowId: id,
+          x: _left,
+          y: _top,
+          width: _width,
+          height: _height,
+        );
+  }
+
+  /// Flushes the position broadcast immediately on drag/resize end.
+  void _commitMove() {
+    final id = widget.windowId;
+    if (id == null) return;
+    ref
+        .read(canvasProvider.notifier)
+        .commitScreenShareMove(
+          windowId: id,
+          x: _left,
+          y: _top,
+          width: _width,
+          height: _height,
+        );
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Prefer the shared canvas state if a remote (or this client's own
+    // prior commit) has set a position for this window. This makes the
+    // window track moves from any participant — the canvas is a shared
+    // whiteboard.
+    final id = widget.windowId;
+    final shared = id == null
+        ? null
+        : ref.watch(canvasProvider.select((s) => s.screenSharePositions[id]));
+    if (shared != null) {
+      _left = shared.x;
+      _top = shared.y;
+      _width = shared.width;
+      _height = shared.height;
+      _positioned = true;
+    }
     // Stack requires Positioned children: wrap in Positioned.fill, then inner Stack for LayoutBuilder.
     return Positioned.fill(
       child: LayoutBuilder(
@@ -383,7 +440,10 @@ class _DraggableScreenShareWindowState
                         _left += d.delta.dx;
                         _top += d.delta.dy;
                       });
+                      _broadcastMove();
                     },
+                    onPanEnd: (_) => _commitMove(),
+                    onPanCancel: _commitMove,
                     child: Container(
                       width: _width,
                       height: _height,
@@ -483,7 +543,10 @@ class _DraggableScreenShareWindowState
                                     _width = nextH * _aspectRatio;
                                     _height = nextH;
                                   });
+                                  _broadcastMove();
                                 },
+                                onPanEnd: (_) => _commitMove(),
+                                onPanCancel: _commitMove,
                                 child: Container(
                                   width: 20,
                                   height: 20,

@@ -291,6 +291,10 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
               initialTop: 16.0 + idx * 30,
               label: "$name's screen",
               isLocal: false,
+              // Stable id so every participant updates the same entry
+              // in CanvasState.screenSharePositions when anyone drags
+              // this window.
+              windowId: 'screenshare-$sid',
               // Builder form so the window reshapes itself to match the
               // remote source — a phone share comes in portrait, not
               // 16:9.
@@ -432,6 +436,10 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
               initialTop: 16,
               label: 'Your screen',
               isLocal: true,
+              // Same stable id every client uses for the local preview
+              // so move-broadcasts from any participant land on the
+              // same entry.
+              windowId: kScreenshareLocal,
               // Builder form so the window matches a portrait phone
               // share instead of letterboxing it into landscape.
               childBuilder: (ctx, aspect) => GestureDetector(
