@@ -200,9 +200,35 @@ class CanvasController extends _$CanvasController {
         return 'rect';
       case StrokeKind.ellipse:
         return 'ellipse';
+      case StrokeKind.text:
+        return 'text';
       case StrokeKind.pen:
         return 'pen';
     }
+  }
+
+  /// Commit a text label at [anchor]. Persisted as a stroke (kind=text) so
+  /// it round-trips through the existing canvas tables — no schema change.
+  void addTextLabel({
+    required CanvasPoint anchor,
+    required String text,
+    required double fontSize,
+    required Color color,
+  }) {
+    if (_channelId == null) return;
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return;
+    final stroke = CanvasStroke(
+      id: newCanvasId(),
+      color: colorToHex(color),
+      width: fontSize,
+      points: [anchor],
+      kind: StrokeKind.text,
+      text: trimmed,
+    );
+    final newStrokes = List<CanvasStroke>.from(state.strokes)..add(stroke);
+    state = state.copyWith(strokes: newStrokes);
+    _sendCanvasEvent('stroke', stroke.toJson());
   }
 
   /// Eraser is rendered 3× the selected width so the user can wipe a

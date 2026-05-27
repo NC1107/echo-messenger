@@ -115,6 +115,50 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
     return Offset(norm.x * size.width, norm.y * size.height);
   }
 
+  /// Opens a small text-entry dialog and commits the result as a text label
+  /// at [anchor]. Returns immediately when the canvas isn't usable (no
+  /// channel id yet) so the user doesn't see a no-op dialog.
+  Future<void> _promptTextLabel(CanvasPoint anchor) async {
+    final controller = TextEditingController();
+    final canvas = ref.read(canvasProvider);
+    // Cache the values so the closure doesn't re-read provider mid-dialog.
+    final fontSize = canvas.strokeWidth.clamp(10.0, 64.0);
+    final color = canvas.currentColor;
+    final committed = await showDialog<String?>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add text'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 200,
+          decoration: const InputDecoration(hintText: 'Type a label…'),
+          onSubmitted: (v) => Navigator.of(ctx).pop(v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(null),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text),
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (committed == null || committed.trim().isEmpty) return;
+    ref
+        .read(canvasProvider.notifier)
+        .addTextLabel(
+          anchor: anchor,
+          text: committed,
+          fontSize: fontSize,
+          color: color,
+        );
+  }
+
   @override
   Widget build(BuildContext context) {
     final canvas = ref.watch(canvasProvider);
@@ -145,6 +189,8 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
                               ref
                                   .read(canvasProvider.notifier)
                                   .startStroke(_toNormalized(offset));
+                            } else if (tool == CanvasTool.text) {
+                              _promptTextLabel(_toNormalized(offset));
                             }
                           },
                           onPointerMove: (offset) {
@@ -550,6 +596,29 @@ class _CanvasPainter extends CustomPainter {
 
   void _paintStroke(Canvas c, Size size, CanvasStroke stroke) {
     if (stroke.points.isEmpty) return;
+
+    // Text label: render its content at the anchor and bail out before
+    // freehand-stroke logic gets a chance to draw a stray dot.
+    if (stroke.kind == StrokeKind.text) {
+      final label = stroke.text;
+      if (label == null || label.isEmpty) return;
+      final anchor = stroke.points.first;
+      final tp = TextPainter(
+        text: TextSpan(
+          text: label,
+          style: TextStyle(
+            color: _parseColor(stroke.color),
+            fontSize: stroke.width,
+            fontWeight: FontWeight.w500,
+            shadows: const [Shadow(color: Color(0xAA000000), blurRadius: 2)],
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+        textAlign: TextAlign.left,
+      )..layout(maxWidth: size.width);
+      tp.paint(c, Offset(anchor.x * size.width, anchor.y * size.height));
+      return;
+    }
 
     final paint = Paint()
       ..strokeCap = StrokeCap.round

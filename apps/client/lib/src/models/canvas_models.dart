@@ -44,8 +44,11 @@ class CanvasPoint {
 /// Brush type. `pen` and `eraser` are the original freehand modes;
 /// `highlighter` is a thick translucent pen; `line`, `rect`, `ellipse`
 /// are two-point shapes recorded as `[first, last]` and rendered as
-/// straight geometry by the painter.
-enum StrokeKind { pen, eraser, highlighter, line, rect, ellipse }
+/// straight geometry by the painter. `text` is a single-anchor text label;
+/// `points[0]` is the top-left anchor, `width` is the font size in
+/// logical pixels, and the optional `text` field on [CanvasStroke] holds
+/// the label content.
+enum StrokeKind { pen, eraser, highlighter, line, rect, ellipse, text }
 
 /// `true` if the kind is a two-point geometric shape rather than a freehand
 /// stroke. Shape kinds always store exactly two points: the gesture's start
@@ -67,6 +70,8 @@ StrokeKind _strokeKindFromString(String? raw) {
       return StrokeKind.rect;
     case 'ellipse':
       return StrokeKind.ellipse;
+    case 'text':
+      return StrokeKind.text;
     case 'pen':
     default:
       return StrokeKind.pen;
@@ -85,6 +90,8 @@ String _strokeKindToString(StrokeKind kind) {
       return 'rect';
     case StrokeKind.ellipse:
       return 'ellipse';
+    case StrokeKind.text:
+      return 'text';
     case StrokeKind.pen:
       return 'pen';
   }
@@ -98,12 +105,18 @@ class CanvasStroke {
   final List<CanvasPoint> points;
   final StrokeKind kind;
 
+  /// Only set for `kind == StrokeKind.text`; otherwise `null`. Stored on the
+  /// stroke so text labels round-trip through the existing strokes JSONB
+  /// without needing a new server-side column.
+  final String? text;
+
   const CanvasStroke({
     required this.id,
     required this.color,
     required this.width,
     required this.points,
     this.kind = StrokeKind.pen,
+    this.text,
   });
 
   factory CanvasStroke.fromJson(Map<String, dynamic> json) => CanvasStroke(
@@ -114,6 +127,7 @@ class CanvasStroke {
         .map((p) => CanvasPoint.fromJson(p as Map<String, dynamic>))
         .toList(),
     kind: _strokeKindFromString(json['kind'] as String?),
+    text: json['text'] as String?,
   );
 
   Map<String, dynamic> toJson() => {
@@ -122,6 +136,7 @@ class CanvasStroke {
     'width': width,
     'points': points.map((p) => p.toJson()).toList(),
     'kind': _strokeKindToString(kind),
+    if (text != null) 'text': text,
   };
 
   CanvasStroke copyWith({
@@ -130,12 +145,14 @@ class CanvasStroke {
     double? width,
     List<CanvasPoint>? points,
     StrokeKind? kind,
+    String? text,
   }) => CanvasStroke(
     id: id ?? this.id,
     color: color ?? this.color,
     width: width ?? this.width,
     points: points ?? this.points,
     kind: kind ?? this.kind,
+    text: text ?? this.text,
   );
 }
 
@@ -235,10 +252,11 @@ class AvatarPosition {
 // Drawing tools
 // ---------------------------------------------------------------------------
 
-enum CanvasTool { none, pen, eraser, highlighter, line, rect, ellipse }
+enum CanvasTool { none, pen, eraser, highlighter, line, rect, ellipse, text }
 
 /// `true` for any tool that records a freehand or shape stroke (i.e. the
-/// drawing-layer should grab pointer events for it).
+/// drawing-layer should grab pointer events for it). Text is excluded —
+/// it uses a tap-to-place flow handled separately in the canvas widget.
 bool isDrawingTool(CanvasTool tool) =>
     tool == CanvasTool.pen ||
     tool == CanvasTool.eraser ||
@@ -260,6 +278,8 @@ StrokeKind strokeKindForTool(CanvasTool tool) {
       return StrokeKind.rect;
     case CanvasTool.ellipse:
       return StrokeKind.ellipse;
+    case CanvasTool.text:
+      return StrokeKind.text;
     case CanvasTool.pen:
     case CanvasTool.none:
       return StrokeKind.pen;

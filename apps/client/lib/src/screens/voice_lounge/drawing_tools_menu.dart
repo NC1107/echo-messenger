@@ -123,6 +123,7 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
             'Ellipse',
             CanvasTool.ellipse,
           ),
+          _toolChip(context, Icons.text_fields, 'Text', CanvasTool.text),
           _toolChip(context, Icons.auto_fix_high, 'Erase', CanvasTool.eraser),
         ],
       ),
