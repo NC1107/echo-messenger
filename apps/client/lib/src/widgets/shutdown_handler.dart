@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import '../providers/websocket_provider.dart';
+import '../services/message_cache.dart';
 
 /// Wraps the widget tree with a lifecycle observer that performs a graceful
 /// shutdown when the OS requests app termination.
@@ -48,8 +51,20 @@ class _ShutdownHandlerState extends ConsumerState<ShutdownHandler>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
-    if (lifecycleState == AppLifecycleState.detached) {
-      _handleShutdown();
+    switch (lifecycleState) {
+      case AppLifecycleState.paused:
+        // `paused` is the OS warning that we're about to be backgrounded /
+        // terminated, but we can still safely await. Use the breathing room
+        // to flush message-cache writes to disk — once `detached` fires we
+        // can only fire-and-forget Hive.close(), and a hard kill mid-write
+        // would otherwise corrupt the cache box (#1182).
+        unawaited(MessageCache.flushAll());
+      case AppLifecycleState.detached:
+        _handleShutdown();
+      case AppLifecycleState.resumed:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+        break;
     }
   }
 
@@ -62,7 +77,9 @@ class _ShutdownHandlerState extends ConsumerState<ShutdownHandler>
       // Provider may already be disposed during forced teardown — ignore.
     }
 
-    // 2. Fire-and-forget Hive.close (sync callback can't await); starting close beats mid-write kill.
+    // 2. Fire-and-forget Hive.close (sync callback can't await); the
+    //    `paused` branch above already flushed pending writes, so the
+    //    in-flight close window is minimal.
     Hive.close().ignore();
   }
 
