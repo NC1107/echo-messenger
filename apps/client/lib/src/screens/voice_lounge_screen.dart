@@ -27,6 +27,7 @@ import '../widgets/echo_bottom_sheet.dart';
 import '../widgets/lounge_drawing_canvas.dart';
 import '../widgets/vertex_mesh_background.dart';
 import '../widgets/voice_canvas.dart';
+import 'voice_lounge/call_metrics_chip.dart';
 import 'voice_lounge/dock_submenus.dart';
 import 'voice_lounge/drawing_tools_menu.dart';
 import 'voice_lounge/floating_dock.dart';
@@ -896,8 +897,16 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
         Positioned(
           top: 16,
           left: 60,
-          child: _buildHeaderBadge(context, channelName, totalParticipants),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildHeaderBadge(context, channelName, totalParticipants),
+              const SizedBox(width: 8),
+              const CallMetricsChip(),
+            ],
+          ),
         ),
+      if (isFull) const Positioned(top: 16, left: 60, child: CallMetricsChip()),
       Positioned(
         top: 16,
         right: 16,
@@ -938,6 +947,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
               onBackToChat: widget.onBackToChat,
               membersSidebarCollapsed: !widget.membersPanelVisible,
               onToggleMembers: widget.onToggleMembersPanel,
+              trailing: const CallMetricsChip(),
             ),
           Expanded(child: contentArea),
           const SizedBox(height: 80),
