@@ -193,7 +193,10 @@ void main() {
 
       final state = container.read(privacyProvider);
       expect(state.isLoading, isFalse);
-      expect(state.error, contains('Network timeout'));
+      // Friendly message replaces the raw exception text (2026-05-27 fix —
+      // see privacy_provider.dart). The raw error still goes to debugPrint
+      // for support / debug logs.
+      expect(state.error, contains("Couldn't load privacy settings"));
     });
 
     test('setReadReceiptsEnabled() updates state and sends PATCH', () async {
