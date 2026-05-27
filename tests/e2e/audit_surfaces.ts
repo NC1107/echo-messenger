@@ -154,20 +154,21 @@ export const SURFACES: Surface[] = [
 
   // -------------------------------------------------------------------------
   // home/
+  // The real route is `/home`; the spec previously used `/` and got 404s.
   // -------------------------------------------------------------------------
   {
     id: 'wide-3pane',
     area: 'home',
     reach: async (p, { goto }) => {
-      await goto('#/');
-      await p.waitForTimeout(600);
+      await goto('#/home');
+      await p.waitForTimeout(800);
     },
   },
   {
     id: 'desktop-2pane',
     area: 'home',
     reach: async (p, { goto }) => {
-      await goto('#/');
+      await goto('#/home');
       await p.setViewportSize({ width: 1280, height: 800 });
       await p.waitForTimeout(800);
     },
@@ -177,8 +178,8 @@ export const SURFACES: Surface[] = [
     id: 'conv-list-populated',
     area: 'home',
     reach: async (p, { goto }) => {
-      await goto('#/');
-      await p.waitForTimeout(600);
+      await goto('#/home');
+      await p.waitForTimeout(800);
     },
     variants: {
       mobile: true,
@@ -189,7 +190,7 @@ export const SURFACES: Surface[] = [
     id: 'no-conversation-placeholder',
     area: 'home',
     reach: async (p, { goto }) => {
-      await goto('#/');
+      await goto('#/home');
       await p.waitForTimeout(800);
     },
     notes: 'Default empty right-pane state — no conv selected.',
@@ -198,7 +199,8 @@ export const SURFACES: Surface[] = [
     id: 'quick-switcher',
     area: 'home',
     reach: async (p, { goto }) => {
-      await goto('#/');
+      await goto('#/home');
+      await p.waitForTimeout(600);
       await p.keyboard.press('Control+k');
       await p.waitForTimeout(600);
     },
@@ -207,7 +209,8 @@ export const SURFACES: Surface[] = [
     id: 'global-search',
     area: 'home',
     reach: async (p, { goto }) => {
-      await goto('#/');
+      await goto('#/home');
+      await p.waitForTimeout(600);
       await p.keyboard.press('Control+Shift+f');
       await p.waitForTimeout(600);
     },
@@ -216,7 +219,8 @@ export const SURFACES: Surface[] = [
     id: 'keyboard-shortcuts',
     area: 'home',
     reach: async (p, { goto }) => {
-      await goto('#/');
+      await goto('#/home');
+      await p.waitForTimeout(600);
       await p.keyboard.press('Control+/');
       await p.waitForTimeout(600);
     },
@@ -225,8 +229,8 @@ export const SURFACES: Surface[] = [
     id: 'collapsed-sidebar',
     area: 'home',
     reach: async (p, { goto, click }) => {
-      await goto('#/');
-      await p.waitForTimeout(400);
+      await goto('#/home');
+      await p.waitForTimeout(600);
       await click(/collapse sidebar|hide sidebar/i, 1500);
       await p.waitForTimeout(600);
     },
@@ -234,13 +238,14 @@ export const SURFACES: Surface[] = [
   },
 
   // -------------------------------------------------------------------------
-  // chat/
+  // chat/ — all flows go through /home first.
   // -------------------------------------------------------------------------
   {
     id: 'dm',
     area: 'chat',
     reach: async (p, { goto }) => {
-      await goto('#/');
+      await goto('#/home');
+      await p.waitForTimeout(800);
       const conv = p.locator('flt-semantics[role="button"]').first();
       if (await conv.isVisible({ timeout: 1500 }).catch(() => false)) {
         await conv.click();
@@ -256,8 +261,8 @@ export const SURFACES: Surface[] = [
     id: 'group',
     area: 'chat',
     reach: async (p, { goto }) => {
-      await goto('#/');
-      await p.waitForTimeout(400);
+      await goto('#/home');
+      await p.waitForTimeout(600);
       const group = p.getByText(/audit group/i).first();
       if (await group.isVisible({ timeout: 1500 }).catch(() => false)) {
         await group.click();
@@ -270,7 +275,8 @@ export const SURFACES: Surface[] = [
     id: 'message-context-menu',
     area: 'chat',
     reach: async (p, { goto }) => {
-      await goto('#/');
+      await goto('#/home');
+      await p.waitForTimeout(600);
       const conv = p.locator('flt-semantics[role="button"]').first();
       if (await conv.isVisible({ timeout: 1500 }).catch(() => false)) {
         await conv.click();
@@ -309,10 +315,12 @@ export const SURFACES: Surface[] = [
   {
     id: 'safety-number',
     area: 'chat',
-    reach: async (p, { goto }) => {
-      await goto('#/safety-number');
-      await p.waitForTimeout(1000);
-    },
+    reach: async () => {},
+    skip: true,
+    skipReason:
+      'Route is /safety-number/:peerId — needs a concrete peer user id we can ' +
+      'derive at runtime from the seeded peer. Will be reachable from a chat ' +
+      'header tap once that flow is scripted.',
   },
   // Surfaces that need state we aren't currently seeding — flagged manual.
   {
@@ -379,7 +387,7 @@ export const SURFACES: Surface[] = [
     id: 'discover',
     area: 'group',
     reach: async (p, { goto }) => {
-      await goto('#/discover');
+      await goto('#/discover-groups');
       await p.waitForTimeout(1000);
     },
     variants: { mobile: true },
@@ -388,7 +396,7 @@ export const SURFACES: Surface[] = [
     id: 'create-group',
     area: 'group',
     reach: async (p, { goto }) => {
-      await goto('#/groups/new');
+      await goto('#/create-group');
       await p.waitForTimeout(1000);
     },
     variants: { mobile: true },
@@ -396,18 +404,18 @@ export const SURFACES: Surface[] = [
   {
     id: 'join-group',
     area: 'group',
-    reach: async (p, { goto }) => {
-      await goto('#/groups/join');
-      await p.waitForTimeout(1000);
-    },
-    variants: { mobile: true },
+    reach: async () => {},
+    skip: true,
+    skipReason:
+      '/join/:groupId needs a concrete invite id. Capture from a real invite ' +
+      'link or seed an invite via API in a follow-up.',
   },
   {
     id: 'info-owner',
     area: 'group',
     reach: async (p, { goto }) => {
-      await goto('#/');
-      await p.waitForTimeout(600);
+      await goto('#/home');
+      await p.waitForTimeout(800);
       const group = p.getByText(/audit group/i).first();
       if (await group.isVisible({ timeout: 1500 }).catch(() => false)) {
         await group.click();
@@ -500,38 +508,59 @@ export const SURFACES: Surface[] = [
 
   // -------------------------------------------------------------------------
   // settings/
+  // Settings is a SINGLE route (/settings) with section tiles tapped to
+  // open the section's content. There are no per-section URLs. Each
+  // capture below navigates to /settings then taps the tile by its
+  // visible label.
   // -------------------------------------------------------------------------
   ...(
     [
-      ['account', '#/settings/account'],
-      ['appearance', '#/settings/appearance'],
-      ['advanced-theme', '#/settings/appearance/advanced'],
-      ['accessibility', '#/settings/accessibility'],
-      ['notifications', '#/settings/notifications'],
-      ['privacy', '#/settings/privacy'],
-      ['voice', '#/settings/voice'],
-      ['devices', '#/settings/devices'],
-      ['language', '#/settings/language'],
-      ['data-storage', '#/settings/data'],
-      ['status', '#/settings/status'],
-      ['about', '#/settings/about'],
+      ['account', 'Profile'],           // SettingsSection.profile renders the account view
+      ['appearance', 'Appearance'],
+      ['accessibility', 'Accessibility'],
+      ['notifications', 'Notifications'],
+      ['privacy', 'Privacy'],
+      ['voice', 'Voice & Video'],
+      ['devices', 'Devices'],
+      ['language', 'Language'],
+      ['data-storage', 'Storage'],
+      ['status', 'Status'],
+      ['about', 'About'],
     ] as const
-  ).map<Surface>(([id, hash]) => ({
+  ).map<Surface>(([id, label]) => ({
     id,
     area: 'settings',
-    reach: async (p, { goto }) => {
-      await goto(hash);
-      await p.waitForTimeout(1000);
+    reach: async (p, { goto, click }) => {
+      await goto('#/settings');
+      await p.waitForTimeout(800);
+      await click(new RegExp(`^${label}$`, 'i'), 2000);
+      await p.waitForTimeout(800);
     },
     variants: { mobile: true },
   })),
   {
+    id: 'advanced-theme',
+    area: 'settings',
+    reach: async (p, { goto, click }) => {
+      await goto('#/settings');
+      await p.waitForTimeout(800);
+      await click(/^Appearance$/i, 2000);
+      await p.waitForTimeout(800);
+      await click(/advanced|custom theme|customise|customize/i, 1500);
+      await p.waitForTimeout(800);
+    },
+  },
+  {
     id: 'advanced-theme-color-dialog',
     area: 'settings',
     reach: async (p, { goto, click }) => {
-      await goto('#/settings/appearance/advanced');
+      await goto('#/settings');
       await p.waitForTimeout(800);
-      await click(/pick custom accent|custom accent|choose colour/i, 1500);
+      await click(/^Appearance$/i, 2000);
+      await p.waitForTimeout(800);
+      await click(/advanced|custom theme|customise|customize/i, 1500);
+      await p.waitForTimeout(800);
+      await click(/pick custom accent|custom accent|choose colour|choose color/i, 1500);
       await p.waitForTimeout(800);
     },
   },
@@ -539,7 +568,9 @@ export const SURFACES: Surface[] = [
     id: 'about-feedback-dialog',
     area: 'settings',
     reach: async (p, { goto, click }) => {
-      await goto('#/settings/about');
+      await goto('#/settings');
+      await p.waitForTimeout(800);
+      await click(/^About$/i, 2000);
       await p.waitForTimeout(800);
       await click(/send feedback|feedback/i, 1500);
       await p.waitForTimeout(600);
@@ -590,39 +621,37 @@ export const SURFACES: Surface[] = [
   {
     id: 'new-message-screen',
     area: 'profiles',
-    reach: async (p, { goto }) => {
-      await goto('#/new-message');
-      await p.waitForTimeout(1000);
-    },
-    variants: { mobile: true },
+    reach: async () => {},
+    skip: true,
+    skipReason:
+      'No /new-message route — surface is a bottom-sheet opened from the home ' +
+      'screen via the "+" or "Start a new chat" button. Will be reached via ' +
+      'click flow in a follow-up.',
   },
   {
     id: 'username-invite',
     area: 'profiles',
-    reach: async (p, { goto }) => {
-      await goto('#/invite');
-      await p.waitForTimeout(1000);
-    },
-    variants: { mobile: true },
+    reach: async () => {},
+    skip: true,
+    skipReason:
+      'No standalone /invite route — username-invite is a sub-screen inside ' +
+      'Contacts/Settings. Capture via click flow in a follow-up.',
   },
   {
     id: 'user-profile-screen',
     area: 'profiles',
-    reach: async (p, { goto }) => {
-      await goto('#/profile');
-      await p.waitForTimeout(1000);
-    },
-    variants: { mobile: true },
+    reach: async () => {},
+    skip: true,
+    skipReason:
+      '/profile/:userId requires a userId — bare /profile redirects to /home. ' +
+      'Reach by tapping a user header (DM) in a follow-up.',
   },
   {
     id: 'user-profile-qr',
     area: 'profiles',
-    reach: async (p, { goto, click }) => {
-      await goto('#/profile');
-      await p.waitForTimeout(800);
-      await click(/show qr|qr code|share/i, 1500);
-      await p.waitForTimeout(600);
-    },
+    reach: async () => {},
+    skip: true,
+    skipReason: 'Requires the user-profile-screen to load first; same skip rationale.',
   },
 
   // -------------------------------------------------------------------------
