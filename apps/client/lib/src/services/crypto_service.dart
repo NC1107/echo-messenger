@@ -246,7 +246,7 @@ class CryptoService {
       }
     }
     DebugLogService.instance.log(
-      LogLevel.info,
+      LogLevel.fine,
       'Crypto',
       'Loaded ${_sessions.length} session(s) from storage on init',
     );

@@ -8,7 +8,14 @@ import 'package:path_provider/path_provider.dart';
 import '../version.dart' show appVersion;
 
 /// Severity level for debug log entries.
-enum LogLevel { info, warning, error, fatal }
+///
+/// Ordered low-to-high: `fine` is the most verbose (trace-style breadcrumbs
+/// that are useful when debugging but shouldn't dominate production logs);
+/// `fatal` is reserved for unrecoverable errors that immediately precede a
+/// crash. Production-noise breadcrumbs (lifecycle transitions, routine
+/// crypto init, swallowed benign errors) should log at `fine` so they stay
+/// in the on-disk ring buffer for triage without spamming the in-app viewer.
+enum LogLevel { fine, info, warning, error, fatal }
 
 /// A single timestamped log entry captured by [DebugLogService].
 class DebugLogEntry {
@@ -297,6 +304,7 @@ class DebugLogService with ChangeNotifier {
       final m = e.timestamp.minute.toString().padLeft(2, '0');
       final s = e.timestamp.second.toString().padLeft(2, '0');
       final level = switch (e.level) {
+        LogLevel.fine => 'FIN',
         LogLevel.info => 'INF',
         LogLevel.warning => 'WRN',
         LogLevel.error => 'ERR',

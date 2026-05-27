@@ -689,6 +689,7 @@ class _DebugLogsSubpageState extends State<_DebugLogsSubpage> {
       final m = e.timestamp.minute.toString().padLeft(2, '0');
       final s = e.timestamp.second.toString().padLeft(2, '0');
       final level = switch (e.level) {
+        LogLevel.fine => 'FIN',
         LogLevel.info => 'INF',
         LogLevel.warning => 'WRN',
         LogLevel.error => 'ERR',
@@ -839,6 +840,7 @@ class _DebugLogEntryTileState extends State<_DebugLogEntryTile> {
     final m = entry.timestamp.minute.toString().padLeft(2, '0');
     final s = entry.timestamp.second.toString().padLeft(2, '0');
     final level = switch (entry.level) {
+      LogLevel.fine => 'FIN',
       LogLevel.info => 'INF',
       LogLevel.warning => 'WRN',
       LogLevel.error => 'ERR',
@@ -937,6 +939,7 @@ class _DebugLevelBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (String label, Color color) = switch (level) {
+      LogLevel.fine => ('FIN', EchoTheme.textMuted),
       LogLevel.info => ('INF', EchoTheme.online),
       LogLevel.warning => ('WRN', EchoTheme.warning),
       LogLevel.error => ('ERR', EchoTheme.danger),

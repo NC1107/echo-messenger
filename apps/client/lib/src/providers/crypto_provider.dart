@@ -138,7 +138,7 @@ class CryptoNotifier extends _$CryptoNotifier {
       try {
         await crypto.uploadKeys();
         DebugLogService.instance.log(
-          LogLevel.info,
+          LogLevel.fine,
           'Crypto',
           'Keys uploaded to server (attempt $attempt)',
         );
@@ -214,7 +214,7 @@ class CryptoNotifier extends _$CryptoNotifier {
         );
       } else {
         DebugLogService.instance.log(
-          LogLevel.info,
+          LogLevel.fine,
           'Crypto',
           'Initialized successfully',
         );
