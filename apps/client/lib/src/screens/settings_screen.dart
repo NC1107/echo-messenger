@@ -410,7 +410,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Are you sure you want to log out?',
+            'Log out of this account?',
             style: TextStyle(
               color: context.textSecondary,
               fontSize: 14,
@@ -418,11 +418,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          const Text(
-            'Your local encryption keys will be cleared. '
-            'Old encrypted messages on this device may become unreadable.',
+          // Reality check: `AuthNotifier.logout` clears the access /
+          // refresh tokens + the in-memory user scope, but does NOT
+          // delete Signal identity keys, session keys, or the message
+          // cache. Logging back in restores everything; old encrypted
+          // history is still readable.
+          Text(
+            'Your messages and encryption keys stay on this device — '
+            "they'll be ready when you sign back in.",
             style: TextStyle(
-              color: EchoTheme.danger,
+              color: context.textMuted,
               fontSize: 13,
               height: 1.5,
             ),
@@ -430,7 +435,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ],
       ),
       confirmLabel: _logOutLabel,
-      destructive: true,
+      destructive: false,
     );
 
     if (!confirmed) return;

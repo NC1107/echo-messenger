@@ -6,7 +6,7 @@ part of 'canvas_provider.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$canvasControllerHash() => r'986f62b66aded43670c20785c0d34ffa8918c3ec';
+String _$canvasControllerHash() => r'6015196c4955e30fe73599947565a9d9f6139f65';
 
 /// See also [CanvasController].
 @ProviderFor(CanvasController)

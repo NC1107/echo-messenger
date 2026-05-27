@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../providers/auth_provider.dart';
+import '../providers/remembered_accounts_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../theme/echo_theme.dart';
 import '../utils/version_utils.dart';
@@ -142,6 +143,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           // brand-new user sees it before signing up and a
                           // returning tester sees it on every login.
                           BetaBanner.standard(),
+                          _buildRememberedAccountsRow(),
                           _buildUsernameField(),
                           const SizedBox(height: EchoSpacing.lg),
                           _buildPasswordField(),
@@ -225,6 +227,68 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     );
   }
 
+  /// Chrome-style quick-switch row. Renders one tile per account that
+  /// has signed in on this device (provider hydrates from prefs).
+  /// Tapping a tile pre-fills the username + focuses the password
+  /// field; long-press shows a "Forget" sheet so the tile can be
+  /// removed without affecting the cached account data.
+  Widget _buildRememberedAccountsRow() {
+    final accounts = ref.watch(rememberedAccountsProvider);
+    final serverUrl = ref.watch(serverUrlProvider);
+    // Scope to the active server — switching servers (#1063) hides
+    // tiles for accounts that lived on the other origin.
+    final visible = accounts.where((a) => a.serverUrl == serverUrl).toList();
+    if (visible.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: EchoSpacing.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Continue as',
+            style: TextStyle(
+              color: context.textMuted,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.4,
+            ),
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final acc in visible)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 10),
+                    child: _RememberedAccountTile(
+                      account: acc,
+                      onTap: () => _usePreviousAccount(acc),
+                      onForget: () => ref
+                          .read(rememberedAccountsProvider.notifier)
+                          .forget(userId: acc.userId, serverUrl: acc.serverUrl),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: EchoSpacing.lg),
+          Divider(color: context.border, height: 1),
+          const SizedBox(height: EchoSpacing.lg),
+        ],
+      ),
+    );
+  }
+
+  void _usePreviousAccount(RememberedAccount acc) {
+    _usernameController.text = acc.username;
+    _passwordController.clear();
+    // No FocusNode plumbed to the password field today, so we can't
+    // imperatively move focus. The username is pre-filled and the
+    // user taps Password — fine for the first iteration.
+  }
+
   Widget _buildUsernameField() {
     return TextFormField(
       controller: _usernameController,
@@ -299,6 +363,123 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Text('Log in'),
+        ),
+      ),
+    );
+  }
+}
+
+/// Tile for the "Continue as" row on the login screen. Renders the
+/// account's avatar (or initial-circle fallback) and username; tap to
+/// pre-fill, long-press to forget.
+class _RememberedAccountTile extends StatelessWidget {
+  const _RememberedAccountTile({
+    required this.account,
+    required this.onTap,
+    required this.onForget,
+  });
+
+  final RememberedAccount account;
+  final VoidCallback onTap;
+  final VoidCallback onForget;
+
+  @override
+  Widget build(BuildContext context) {
+    final initial = account.username.isNotEmpty
+        ? account.username[0].toUpperCase()
+        : '?';
+    final hue = (account.username.hashCode % 360).abs().toDouble();
+    final bg = HSLColor.fromAHSL(1.0, hue, 0.55, 0.45).toColor();
+    final hasAvatar =
+        account.avatarUrl != null && account.avatarUrl!.isNotEmpty;
+    final resolvedAvatar = hasAvatar
+        ? (account.avatarUrl!.startsWith('http')
+              ? account.avatarUrl!
+              : '${account.serverUrl}${account.avatarUrl!}')
+        : null;
+
+    return Semantics(
+      label: 'Continue as ${account.username}',
+      button: true,
+      child: GestureDetector(
+        onLongPress: () => _showForgetMenu(context),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(12),
+            hoverColor: context.surfaceHover,
+            child: Container(
+              width: 88,
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: context.border),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircleAvatar(
+                    radius: 24,
+                    backgroundColor: bg,
+                    foregroundImage: resolvedAvatar != null
+                        ? NetworkImage(resolvedAvatar)
+                        : null,
+                    child: resolvedAvatar == null
+                        ? Text(
+                            initial,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          )
+                        : null,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    account.username,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: context.textPrimary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showForgetMenu(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(
+                Icons.person_remove_outlined,
+                color: EchoTheme.danger,
+              ),
+              title: const Text('Forget this account'),
+              subtitle: const Text(
+                'Hide this sign-in suggestion. Your messages and keys '
+                'stay on this device.',
+              ),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                onForget();
+              },
+            ),
+          ],
         ),
       ),
     );

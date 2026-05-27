@@ -13,6 +13,7 @@ import '../../services/message_cache.dart';
 import '../../services/secure_key_store.dart';
 import '../../services/user_data_dir.dart';
 import '../../utils/friendly_error.dart';
+import '../remembered_accounts_provider.dart';
 import '../server_url_provider.dart';
 
 part 'auth_provider.g.dart';
@@ -189,6 +190,16 @@ class AuthNotifier extends _$AuthNotifier
           onboardingCompleted: false,
           isAdmin: isAdmin,
         );
+
+        unawaited(
+          ref
+              .read(rememberedAccountsProvider.notifier)
+              .upsert(
+                userId: userId,
+                username: username,
+                serverUrl: _serverUrl,
+              ),
+        );
       } else {
         String errorMsg = 'Registration failed';
         try {
@@ -258,6 +269,18 @@ class AuthNotifier extends _$AuthNotifier
           refreshToken: refreshToken,
           avatarUrl: avatarUrl,
           isAdmin: isAdmin,
+        );
+
+        // Quick-switch tile on the login screen for this account.
+        unawaited(
+          ref
+              .read(rememberedAccountsProvider.notifier)
+              .upsert(
+                userId: userId,
+                username: username,
+                serverUrl: _serverUrl,
+                avatarUrl: avatarUrl,
+              ),
         );
 
         // Start background service to keep WebSocket alive on mobile
