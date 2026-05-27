@@ -77,10 +77,31 @@ pub async fn generate_token(
         .ok_or_else(|| AppError::not_found("User not found"))?;
 
     let username = user.username;
-    let identity = body.identity.unwrap_or_else(|| username.clone());
 
-    // Identity must be the username or user_id — prevents impersonation.
-    if identity != username && identity != auth.user_id.to_string() {
+    // Identity collision fix: when the client doesn't supply an explicit
+    // identity we append a per-issuance nonce so successive join attempts
+    // present as distinct participants to the LiveKit SFU. Without this,
+    // a rejoin within the SFU's ~15-second participant-idle window collides
+    // with the previous (still-tracked) participant of the same identity
+    // and publish requests time out (LiveKit `TimeoutException` after 10s
+    // on `setMicrophoneEnabled`). The display name is set separately via
+    // `setName(username)` on the client, so the nonce never reaches the UI.
+    //
+    // Identity max length on LiveKit is 64; an 8-char nonce keeps the
+    // composite well under that even with a 30-char max username.
+    let nonce = uuid::Uuid::new_v4().simple().to_string();
+    let nonce = &nonce[..8];
+    let default_identity = format!("{username}#{nonce}");
+    let identity = body.identity.unwrap_or(default_identity);
+
+    // Identity must be the username, the nonced default, or the user_id —
+    // prevents impersonation while permitting the new `username#nonce` form.
+    let is_valid_identity = identity == username
+        || identity == auth.user_id.to_string()
+        || identity
+            .strip_prefix(&format!("{username}#"))
+            .is_some_and(|tail| tail.len() == 8 && tail.chars().all(|c| c.is_ascii_hexdigit()));
+    if !is_valid_identity {
         return Err(AppError::bad_request(
             "Identity must match authenticated user",
         ));
