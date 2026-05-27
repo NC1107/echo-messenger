@@ -525,9 +525,17 @@ class _DrawingLayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final behavior = canvas.selectedTool == CanvasTool.none
-        ? HitTestBehavior.deferToChild
-        : HitTestBehavior.translucent;
+    // When a drawing/text tool is in hand the layer must own every pointer
+    // event so the InteractiveViewer parent can't reclassify a slow drag as
+    // a pan. `opaque` blocks pass-through hit-testing; without it mobile
+    // testers reported the canvas panning when they tried to drag a shape
+    // (image #57, 2026-05-27). `deferToChild` is preserved for the idle
+    // "no tool" case so avatars + images remain draggable underneath.
+    final tool = canvas.selectedTool;
+    final toolActive = isDrawingTool(tool) || tool == CanvasTool.text;
+    final behavior = toolActive
+        ? HitTestBehavior.opaque
+        : HitTestBehavior.deferToChild;
     return Listener(
       behavior: behavior,
       onPointerDown: (e) {

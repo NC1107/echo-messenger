@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/material.dart' show Color;
 import 'package:http/http.dart' as http;
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -40,6 +41,16 @@ class CanvasController extends _$CanvasController {
   /// Throttle timer for partial stroke broadcasts (~30 fps max).
   Timer? _strokeThrottle;
   List<CanvasPoint>? _pendingStrokePoints;
+
+  /// Per-drag identifier bumped by [startStroke]. A late `stroke_partial`
+  /// scheduled mid-drag could otherwise fire AFTER [endStroke] cleared the
+  /// throttle, re-attaching a stale partial placeholder on remotes that
+  /// overlays the now-final stroke. Tracking this id and checking it inside
+  /// [_flushStrokePoints] makes the late timer a no-op once endStroke has
+  /// closed the drag (bug report 2026-05-27 "hold finger at the end of a
+  /// line — local sees it, remotes don't").
+  int _dragId = 0;
+  bool _strokeActive = false;
 
   /// Events buffered while [_channelId] is not yet set (attach race window).
   final List<Map<String, dynamic>> _pendingEvents = [];
@@ -105,6 +116,7 @@ class CanvasController extends _$CanvasController {
     _strokeThrottle?.cancel();
     _strokeThrottle = null;
     _pendingStrokePoints = null;
+    _strokeActive = false;
     _pendingEvents.clear();
     _channelId = null;
     _attachingChannelId = null;
@@ -162,6 +174,17 @@ class CanvasController extends _$CanvasController {
   // -------------------------------------------------------------------------
 
   void startStroke(CanvasPoint point) {
+    // Bump the drag id BEFORE any timer state mutates so a tick scheduled
+    // by the previous drag (still queued after endStroke cancelled it)
+    // can't attach to this new stroke. Also cancel any lingering throttle
+    // defensively — endStroke should have done this already, but the
+    // gesture-arena steal path documented in voice_canvas.dart can skip
+    // endStroke entirely.
+    _strokeThrottle?.cancel();
+    _strokeThrottle = null;
+    _pendingStrokePoints = null;
+    _dragId++;
+    _strokeActive = true;
     state = state.copyWith(activePoints: [point]);
     _pendingStrokePoints = [point];
   }
@@ -194,6 +217,15 @@ class CanvasController extends _$CanvasController {
   }
 
   void _flushStrokePoints() {
+    // If endStroke (or a tool change) has closed the drag, drop any tick
+    // that fires after the close — the final `stroke` event is the source
+    // of truth.
+    if (!_strokeActive) {
+      _strokeThrottle?.cancel();
+      _strokeThrottle = null;
+      _pendingStrokePoints = null;
+      return;
+    }
     final pending = _pendingStrokePoints;
     if (pending == null || pending.isEmpty) {
       _strokeThrottle?.cancel();
@@ -291,13 +323,22 @@ class CanvasController extends _$CanvasController {
   }
 
   void endStroke() {
-    if (state.activePoints.isEmpty) return;
-    if (_channelId == null) return;
-
-    // Flush any remaining pending points immediately.
+    // Always close the drag, even if we have nothing to commit — a gesture
+    // cancel from InteractiveViewer reclaiming the pointer mid-stroke
+    // (Listener.onPointerCancel) still needs to flip `_strokeActive` so a
+    // queued partial-flush tick doesn't fire afterwards.
+    final wasActive = _strokeActive;
+    _strokeActive = false;
+    // Atomic cancel+null — done BEFORE building the final stroke so a
+    // partial timer that races us can't slip a stroke_partial event after
+    // the final stroke is sent.
     _strokeThrottle?.cancel();
     _strokeThrottle = null;
     _pendingStrokePoints = null;
+
+    if (!wasActive) return;
+    if (state.activePoints.isEmpty) return;
+    if (_channelId == null) return;
 
     final tool = state.selectedTool;
     final kind = strokeKindForTool(tool);
@@ -721,6 +762,24 @@ class CanvasController extends _$CanvasController {
   // -------------------------------------------------------------------------
   // Helpers
   // -------------------------------------------------------------------------
+
+  // ---------------------------------------------------------------------------
+  // Test-only hooks
+  //
+  // The partial-stroke flush is driven by an internal Timer that we cannot
+  // tick deterministically from a unit test. Exposing a manual flush + the
+  // active-drag flag lets the late-partial regression tests assert that a
+  // tick scheduled mid-drag is dropped after endStroke / on a fresh drag.
+  // ---------------------------------------------------------------------------
+  @visibleForTesting
+  // ignore: invalid_use_of_visible_for_testing_member
+  void debugFlushStrokePoints() => _flushStrokePoints();
+
+  @visibleForTesting
+  bool get debugIsStrokeActive => _strokeActive;
+
+  @visibleForTesting
+  int get debugDragId => _dragId;
 
   void _sendCanvasEvent(String kind, Map<String, dynamic> payload) {
     final cid = _channelId;

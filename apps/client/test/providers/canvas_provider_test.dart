@@ -1,6 +1,7 @@
-import 'package:flutter_test/flutter_test.dart';
-
 import 'package:echo_app/src/models/canvas_models.dart';
+import 'package:echo_app/src/providers/canvas_provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 // ---------------------------------------------------------------------------
 // These tests cover the pure-state logic of CanvasNotifier -- all WS / HTTP
@@ -375,6 +376,140 @@ void main() {
         isEmpty,
         reason: 'events for a different channel must always be dropped',
       );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Late-partial / drag-id regression (2026-05-27)
+  //
+  // Bug: holding a finger still at the end of a stroke for a few seconds let
+  // the partial-broadcast Timer fire AFTER endStroke had built and sent the
+  // final stroke. Remotes saw the late partial, recreated the
+  // `partial_<uid>_in_progress` placeholder on top of the final stroke, and
+  // never cleared it again — local user saw the line, remote callers didn't.
+  //
+  // Fix: a `_strokeActive` flag flips false inside endStroke (and inside
+  // startStroke of the next drag) BEFORE any state work, so a late tick is
+  // a no-op. `_dragId` increments per drag so we can assert each drag is
+  // distinct without relying on Timer ordering.
+  // ---------------------------------------------------------------------------
+
+  group('stroke lifecycle – late partial defence', () {
+    test(
+      'endStroke flips _strokeActive false even with no committed channel',
+      () {
+        final container = ProviderContainer();
+        addTearDown(container.dispose);
+        final notifier = container.read(canvasProvider.notifier);
+
+        notifier.setTool(CanvasTool.pen);
+        notifier.startStroke(const CanvasPoint(x: 0.1, y: 0.1));
+        // ignore: invalid_use_of_visible_for_testing_member
+        expect(notifier.debugIsStrokeActive, isTrue);
+        notifier.continueStroke(const CanvasPoint(x: 0.2, y: 0.2));
+        notifier.endStroke();
+        // ignore: invalid_use_of_visible_for_testing_member
+        expect(notifier.debugIsStrokeActive, isFalse);
+      },
+    );
+
+    test('flush after endStroke is a no-op (no late partial broadcast)', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(canvasProvider.notifier);
+
+      notifier.setTool(CanvasTool.pen);
+      notifier.startStroke(const CanvasPoint(x: 0.0, y: 0.0));
+      notifier.continueStroke(const CanvasPoint(x: 0.5, y: 0.5));
+      notifier.endStroke();
+
+      // Simulate the partial Timer firing AFTER endStroke — this is the
+      // exact race that produced the bug. The flush must be a no-op:
+      // _strokeActive stays false and no exception is thrown.
+      // ignore: invalid_use_of_visible_for_testing_member
+      notifier.debugFlushStrokePoints();
+      // ignore: invalid_use_of_visible_for_testing_member
+      expect(notifier.debugIsStrokeActive, isFalse);
+      // Repeated late flushes also stay no-op.
+      // ignore: invalid_use_of_visible_for_testing_member
+      notifier.debugFlushStrokePoints();
+      // ignore: invalid_use_of_visible_for_testing_member
+      expect(notifier.debugIsStrokeActive, isFalse);
+    });
+
+    test('startStroke bumps drag id and arms the active flag', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(canvasProvider.notifier);
+
+      notifier.setTool(CanvasTool.pen);
+      // ignore: invalid_use_of_visible_for_testing_member
+      final id0 = notifier.debugDragId;
+      notifier.startStroke(const CanvasPoint(x: 0.0, y: 0.0));
+      // ignore: invalid_use_of_visible_for_testing_member
+      final id1 = notifier.debugDragId;
+      // ignore: invalid_use_of_visible_for_testing_member
+      expect(notifier.debugIsStrokeActive, isTrue);
+      expect(id1, greaterThan(id0));
+
+      notifier.endStroke();
+      notifier.startStroke(const CanvasPoint(x: 0.1, y: 0.1));
+      // ignore: invalid_use_of_visible_for_testing_member
+      expect(notifier.debugDragId, greaterThan(id1));
+    });
+
+    test(
+      'late partial from a previous drag does not leak into the new drag',
+      () {
+        final container = ProviderContainer();
+        addTearDown(container.dispose);
+        final notifier = container.read(canvasProvider.notifier);
+
+        notifier.setTool(CanvasTool.pen);
+
+        // Drag 1: start → continue → end.
+        notifier.startStroke(const CanvasPoint(x: 0.0, y: 0.0));
+        notifier.continueStroke(const CanvasPoint(x: 0.1, y: 0.1));
+        notifier.endStroke();
+
+        // Drag 2: start → continue → simulate a STALE late tick from drag 1
+        // arriving before this drag finishes → end.
+        notifier.startStroke(const CanvasPoint(x: 0.5, y: 0.5));
+        notifier.continueStroke(const CanvasPoint(x: 0.6, y: 0.6));
+
+        // A late tick scheduled by drag 1 cannot leak its points — when the
+        // tick fires, startStroke has already cleared _pendingStrokePoints
+        // and the per-drag id changed. Manually call the flush to simulate.
+        // ignore: invalid_use_of_visible_for_testing_member
+        notifier.debugFlushStrokePoints();
+
+        // Drag 2's active points must still be (0.5, 0.6) — untouched by
+        // any phantom drag-1 state.
+        final pts = container.read(canvasProvider).activePoints;
+        expect(pts.length, 2);
+        expect(pts.first.x, closeTo(0.5, 1e-10));
+        expect(pts.last.x, closeTo(0.6, 1e-10));
+
+        notifier.endStroke();
+        // ignore: invalid_use_of_visible_for_testing_member
+        expect(notifier.debugIsStrokeActive, isFalse);
+      },
+    );
+
+    test('endStroke is safe to call on a cancelled (never-active) drag', () {
+      // Mirrors the gesture-arena-steal path: InteractiveViewer grabs the
+      // pointer mid-stroke, Listener fires onPointerCancel → onPointerUp →
+      // endStroke. activePoints might be empty if start never landed.
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(canvasProvider.notifier);
+
+      notifier.setTool(CanvasTool.pen);
+      // No startStroke — directly end.
+      notifier.endStroke();
+      // ignore: invalid_use_of_visible_for_testing_member
+      expect(notifier.debugIsStrokeActive, isFalse);
+      expect(container.read(canvasProvider).activePoints, isEmpty);
     });
   });
 }
