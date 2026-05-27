@@ -255,7 +255,14 @@ jobs:
           trap 'rm -f "$PUSH_ERR"' EXIT
 
           for attempt in 1 2 3 4 5; do
-            LATEST=$(git tag -l 'v*' --sort=-v:refname | head -1)
+            # for-each-ref --count=1 writes exactly one line and exits
+            # cleanly. The previous `git tag -l | head -1` was racy under
+            # `set -o pipefail`: once the tag list grew past ~450 entries,
+            # `head` closed the pipe before `git tag` finished writing,
+            # `git tag` got SIGPIPE, and the pipeline exited 141 on the
+            # first loop iteration — masking the actual reserve logic.
+            LATEST=$(git for-each-ref --count=1 --sort=-v:refname \
+              --format='%(refname:short)' 'refs/tags/v*')
             if [ -z "$LATEST" ]; then
               LATEST="v0.0.0"
             fi
