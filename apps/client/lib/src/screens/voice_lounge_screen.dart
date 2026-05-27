@@ -262,11 +262,15 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
               initialTop: 16.0 + idx * 30,
               label: "$name's screen",
               isLocal: false,
-              child: GestureDetector(
+              // Builder form so the window reshapes itself to match the
+              // remote source — a phone share comes in portrait, not
+              // 16:9.
+              childBuilder: (ctx, aspect) => GestureDetector(
                 onDoubleTap: () =>
                     setState(() => _focusedTileKey = 'screenshare-$sid'),
-                child: lk.VideoTrackRenderer(
-                  track,
+                child: AspectAwareVideoTrack(
+                  track: track,
+                  aspectRatio: aspect,
                   fit: lk.VideoViewFit.contain,
                 ),
               ),
@@ -399,10 +403,12 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
               initialTop: 16,
               label: 'Your screen',
               isLocal: true,
-              child: GestureDetector(
+              // Builder form so the window matches a portrait phone
+              // share instead of letterboxing it into landscape.
+              childBuilder: (ctx, aspect) => GestureDetector(
                 onDoubleTap: () =>
                     setState(() => _focusedTileKey = kScreenshareLocal),
-                child: LocalScreenShareTrack(ref: ref),
+                child: LocalScreenShareTrack(ref: ref, aspectRatio: aspect),
               ),
             ),
         ],
