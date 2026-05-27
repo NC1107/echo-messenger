@@ -451,14 +451,18 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
   }
 
   void _addImageFromUrl(String url) {
-    final rng = math.Random();
+    // Spawn dead-centre. The drag-and-drop or paste action that lands here
+    // already represents intent — the user shouldn't have to chase a
+    // random off-centre placement to start working with the image.
+    const w = 0.25;
+    const h = 0.25;
     final img = CanvasImage(
       id: newCanvasId(),
       url: url,
-      x: 0.2 + rng.nextDouble() * 0.3,
-      y: 0.2 + rng.nextDouble() * 0.3,
-      width: 0.25,
-      height: 0.25,
+      x: 0.5 - w / 2,
+      y: 0.5 - h / 2,
+      width: w,
+      height: h,
     );
     ref.read(canvasProvider.notifier).addImage(img);
   }

@@ -117,16 +117,20 @@ class ScreenShareViewer extends ConsumerWidget {
 // ---------------------------------------------------------------------------
 
 class DraggableScreenShareWindow extends StatefulWidget {
-  final double initialTop;
-  final double initialRight;
+  /// Optional initial top offset from the canvas top edge. When null the
+  /// window spawns centred in the visible canvas area instead of
+  /// anchoring to a corner — matches user expectation that "starting a
+  /// screen share" puts the window where they're already looking.
+  final double? initialTop;
+  final double? initialRight;
   final String label;
   final bool isLocal;
   final Widget child;
 
   const DraggableScreenShareWindow({
     super.key,
-    this.initialTop = 16,
-    this.initialRight = 16,
+    this.initialTop,
+    this.initialRight,
     required this.label,
     this.isLocal = false,
     required this.child,
@@ -157,8 +161,8 @@ class _DraggableScreenShareWindowState
   @override
   void initState() {
     super.initState();
-    _top = widget.initialTop;
-    _left = 0; // Will be calculated in build
+    _top = widget.initialTop ?? 0; // overridden in build when null
+    _left = 0; // overridden in build
   }
 
   @override
@@ -168,7 +172,12 @@ class _DraggableScreenShareWindowState
       child: LayoutBuilder(
         builder: (ctx, constraints) {
           if (!_positioned) {
-            _left = constraints.maxWidth - widget.initialRight - _width;
+            // initialTop/initialRight null → centre. Otherwise anchor to
+            // the requested top-right offset (legacy callers).
+            _top = widget.initialTop ?? (constraints.maxHeight - _height) / 2;
+            _left = widget.initialRight != null
+                ? constraints.maxWidth - widget.initialRight! - _width
+                : (constraints.maxWidth - _width) / 2;
             _positioned = true;
           }
           // Clamp position within bounds
