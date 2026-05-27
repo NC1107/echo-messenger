@@ -228,6 +228,7 @@ class CanvasController extends _$CanvasController {
     );
     final newStrokes = List<CanvasStroke>.from(state.strokes)..add(stroke);
     state = state.copyWith(strokes: newStrokes);
+    _myStrokeIds.add(stroke.id);
     _sendCanvasEvent('stroke', stroke.toJson());
   }
 
@@ -261,6 +262,7 @@ class CanvasController extends _$CanvasController {
     // Append locally.
     final newStrokes = List<CanvasStroke>.from(state.strokes)..add(stroke);
     state = state.copyWith(strokes: newStrokes, activePoints: []);
+    _myStrokeIds.add(stroke.id);
 
     // Broadcast complete stroke and persist via WebSocket.
     _sendCanvasEvent('stroke', stroke.toJson());
@@ -269,8 +271,37 @@ class CanvasController extends _$CanvasController {
   void clearDrawing() {
     if (_channelId == null) return;
     state = state.copyWith(strokes: [], images: []);
+    _myStrokeIds.clear();
     _sendCanvasEvent('clear', {});
   }
+
+  /// Clear only the strokes / images that THIS client created in the current
+  /// session. Other participants' content is preserved. Tracked via
+  /// [_myStrokeIds] which is appended to whenever this client commits a
+  /// stroke or text label. The set is session-local so a rejoined client
+  /// can't reach back and delete strokes from a prior session — that's a
+  /// feature, not a bug; reattribution would need server-side sender IDs.
+  void clearMyDrawings() {
+    if (_channelId == null) return;
+    if (_myStrokeIds.isEmpty) return;
+    final remainingStrokes = state.strokes
+        .where((s) => !_myStrokeIds.contains(s.id))
+        .toList();
+    final remainingImages = state.images
+        .where((img) => !_myImageIds.contains(img.id))
+        .toList();
+    _myStrokeIds.clear();
+    _myImageIds.clear();
+    // importSnapshot broadcasts the new state (clear + re-add) so remote
+    // peers converge on the same set of strokes + images.
+    importSnapshot(strokes: remainingStrokes, images: remainingImages);
+  }
+
+  /// IDs of strokes this client originated in the current session. Used by
+  /// [clearMyDrawings] to scope the clear to "mine" rather than wiping the
+  /// whole canvas.
+  final Set<String> _myStrokeIds = {};
+  final Set<String> _myImageIds = {};
 
   /// Replace the local canvas state with a previously-exported snapshot and
   /// broadcast it to the rest of the participants. Used by the JSON import
@@ -299,6 +330,7 @@ class CanvasController extends _$CanvasController {
     if (_channelId == null) return;
     final newImages = List<CanvasImage>.from(state.images)..add(image);
     state = state.copyWith(images: newImages);
+    _myImageIds.add(image.id);
     _sendCanvasEvent('image_add', image.toJson());
   }
 

@@ -107,25 +107,66 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
   }
 
   Widget _buildToolSelector(BuildContext context) {
+    // Single tight row of icon-only buttons. Tooltips carry the label so
+    // the menu stays compact (the previous wrapping labelled chips made
+    // the popup nearly twice as tall — user feedback 2026-05-27).
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-      child: Wrap(
-        spacing: 6,
-        runSpacing: 6,
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          _toolChip(context, Icons.edit, 'Pen', CanvasTool.pen),
-          _toolChip(context, Icons.brush, 'Highlight', CanvasTool.highlighter),
-          _toolChip(context, Icons.show_chart, 'Line', CanvasTool.line),
-          _toolChip(context, Icons.crop_square, 'Rectangle', CanvasTool.rect),
-          _toolChip(
+          _toolIcon(context, Icons.edit, 'Pen', CanvasTool.pen),
+          _toolIcon(context, Icons.brush, 'Highlight', CanvasTool.highlighter),
+          _toolIcon(context, Icons.show_chart, 'Line', CanvasTool.line),
+          _toolIcon(context, Icons.crop_square, 'Rectangle', CanvasTool.rect),
+          _toolIcon(
             context,
             Icons.circle_outlined,
             'Ellipse',
             CanvasTool.ellipse,
           ),
-          _toolChip(context, Icons.text_fields, 'Text', CanvasTool.text),
-          _toolChip(context, Icons.auto_fix_high, 'Erase', CanvasTool.eraser),
+          _toolIcon(context, Icons.text_fields, 'Text', CanvasTool.text),
+          _toolIcon(context, Icons.auto_fix_high, 'Erase', CanvasTool.eraser),
         ],
+      ),
+    );
+  }
+
+  Widget _toolIcon(
+    BuildContext context,
+    IconData icon,
+    String label,
+    CanvasTool tool,
+  ) {
+    final isSelected = _selectedTool == tool;
+    return Tooltip(
+      message: label,
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          setState(() => _selectedTool = tool);
+          ref.read(canvasProvider.notifier).setTool(tool);
+        },
+        child: AnimatedContainer(
+          duration: MotionDurations.quick,
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: isSelected
+                ? context.accent.withValues(alpha: 0.18)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isSelected ? context.accent : Colors.transparent,
+              width: 1.5,
+            ),
+          ),
+          child: Icon(
+            icon,
+            size: 18,
+            color: isSelected ? context.accent : context.textSecondary,
+          ),
+        ),
       ),
     );
   }
@@ -235,16 +276,25 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: ctx.surface,
-        contentPadding: const EdgeInsets.all(12),
-        content: SingleChildScrollView(
+        // Tight dialog — 260px wide, single column. The previous default
+        // layout sprawled the saturation box left + hue slider right with
+        // significant whitespace; this is more usable in a hover popup.
+        insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+        contentPadding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+        actionsPadding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+        content: SizedBox(
+          width: 260,
           child: ColorPicker(
             pickerColor: _selectedColor,
             onColorChanged: (c) => picked = c,
             enableAlpha: false,
             labelTypes: const [],
-            pickerAreaHeightPercent: 0.65,
+            // Slightly taller saturation area now that the picker is single-column.
+            pickerAreaHeightPercent: 0.85,
+            colorPickerWidth: 236,
             displayThumbColor: true,
             paletteType: PaletteType.hsvWithHue,
+            pickerAreaBorderRadius: const BorderRadius.all(Radius.circular(6)),
           ),
         ),
         actions: [
@@ -294,37 +344,59 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
               ),
             ],
           ),
-          Row(
-            children: [
-              // Live preview dot tracks the slider value so users can eyeball
-              // the brush thickness without dragging in mid-air.
-              SizedBox(
-                width: 28,
-                height: 28,
-                child: Center(
-                  child: Container(
-                    width: _selectedSize.clamp(2.0, 24.0),
-                    height: _selectedSize.clamp(2.0, 24.0),
-                    decoration: BoxDecoration(
-                      color: _selectedColor,
-                      shape: BoxShape.circle,
+          // Slider sits in its own subtly-tinted track so it reads as
+          // interactive instead of blending into the colour swatches
+          // above it (user feedback 2026-05-27).
+          Container(
+            margin: const EdgeInsets.only(top: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: context.surfaceHover.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                // Live preview dot.
+                SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: Center(
+                    child: Container(
+                      width: _selectedSize.clamp(2.0, 24.0),
+                      height: _selectedSize.clamp(2.0, 24.0),
+                      decoration: BoxDecoration(
+                        color: _selectedColor,
+                        shape: BoxShape.circle,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              Expanded(
-                child: Slider(
-                  value: _selectedSize.clamp(1.0, 48.0),
-                  min: 1,
-                  max: 48,
-                  divisions: 47,
-                  onChanged: (v) {
-                    setState(() => _selectedSize = v);
-                    ref.read(canvasProvider.notifier).setStrokeWidth(v);
-                  },
+                Expanded(
+                  child: SliderTheme(
+                    data: SliderThemeData(
+                      trackHeight: 3,
+                      activeTrackColor: context.accent,
+                      inactiveTrackColor: context.border,
+                      thumbColor: context.accent,
+                      overlayColor: context.accent.withValues(alpha: 0.15),
+                      thumbShape: const RoundSliderThumbShape(
+                        enabledThumbRadius: 7,
+                      ),
+                    ),
+                    child: Slider(
+                      value: _selectedSize.clamp(1.0, 48.0),
+                      min: 1,
+                      max: 48,
+                      divisions: 47,
+                      onChanged: (v) {
+                        setState(() => _selectedSize = v);
+                        ref.read(canvasProvider.notifier).setStrokeWidth(v);
+                      },
+                    ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -355,6 +427,28 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
                 style: TextButton.styleFrom(
                   foregroundColor: context.accent,
                   textStyle: const TextStyle(fontSize: 12),
+                ),
+              ),
+            ),
+          ),
+          // Scoped clear: wipes only THIS user's drawings + images from
+          // the current session, leaves everyone else's content. The
+          // global "Clear board" lives in the lounge corner controls and
+          // still asks for confirmation (image #39 feedback).
+          Tooltip(
+            message: 'Clear only your strokes and images',
+            child: SizedBox(
+              width: double.infinity,
+              child: TextButton.icon(
+                onPressed: () {
+                  HapticFeedback.selectionClick();
+                  ref.read(canvasProvider.notifier).clearMyDrawings();
+                },
+                icon: const Icon(Icons.cleaning_services_outlined, size: 14),
+                label: const Text('Clear my drawings'),
+                style: TextButton.styleFrom(
+                  foregroundColor: context.textSecondary,
+                  textStyle: const TextStyle(fontSize: 11),
                 ),
               ),
             ),
@@ -641,55 +735,6 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
       default:
         return 'image/png';
     }
-  }
-
-  Widget _toolChip(
-    BuildContext context,
-    IconData icon,
-    String label,
-    CanvasTool tool,
-  ) {
-    final isSelected = _selectedTool == tool;
-    // Wrap-friendly: no Expanded. Width auto-sizes to icon + short label so
-    // 6 tools fit two rows of three on the 280px menu.
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.selectionClick();
-        setState(() => _selectedTool = tool);
-        ref.read(canvasProvider.notifier).setTool(tool);
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? context.accent.withValues(alpha: 0.12)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isSelected ? context.accent : context.border,
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              icon,
-              size: 16,
-              color: isSelected ? context.accent : context.textSecondary,
-            ),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? context.accent : context.textPrimary,
-                fontSize: 12,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
 
