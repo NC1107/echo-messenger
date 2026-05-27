@@ -12,8 +12,10 @@ import 'debug_log_service.dart';
 /// occur during app startup and voice-channel entry on iOS, where the audio
 /// session activation can trigger lifecycle events before the first frame.
 ///
-/// Each lifecycle event is logged at [LogLevel.info]. For states that are
-/// close to the process going away (paused, detached, hidden) the write is
+/// Each lifecycle event is logged at [LogLevel.fine] — these breadcrumbs are
+/// useful when triaging a specific issue but are far too noisy to keep at
+/// INF in production (every backgrounding event fires one). For states close
+/// to the process going away (paused, detached, hidden) the write is
 /// force-flushed immediately so the breadcrumb survives even if the OS kills
 /// the process within milliseconds.
 ///
@@ -38,7 +40,7 @@ class AppLifecycleLogger with WidgetsBindingObserver {
     if (!needsImmediateFlush) return;
 
     DebugLogService.instance.log(
-      LogLevel.info,
+      LogLevel.fine,
       'Lifecycle',
       'state=${state.name}',
     );
