@@ -3,8 +3,6 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math' as math;
-
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -51,8 +49,6 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
   CanvasTool _selectedTool = CanvasTool.pen;
   Color _selectedColor = Colors.white;
   double _selectedSize = 4.0;
-
-  static final _rng = math.Random();
 
   static const _penColors = [
     Colors.white,
@@ -527,13 +523,17 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
   void _addImageByUrl(String url) {
     if (!mounted) return;
     // Broadcast via canvasProvider only — local _canvas?.addImageFromUrl caused a "stuck twin" (#752).
+    // Spawn dead-centre: the user just confirmed an image; they shouldn't
+    // have to hunt for it in a random off-centre quadrant.
+    const w = 0.25;
+    const h = 0.25;
     final img = CanvasImage(
       id: newCanvasId(),
       url: url,
-      x: 0.2 + _rng.nextDouble() * 0.3,
-      y: 0.2 + _rng.nextDouble() * 0.3,
-      width: 0.25,
-      height: 0.25,
+      x: 0.5 - w / 2,
+      y: 0.5 - h / 2,
+      width: w,
+      height: h,
     );
     ref.read(canvasProvider.notifier).addImage(img);
   }
