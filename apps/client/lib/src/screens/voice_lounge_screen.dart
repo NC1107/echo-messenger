@@ -10,6 +10,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../providers/auth_provider.dart';
+import '../providers/canvas_provider.dart';
 import '../providers/channels_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/livekit_voice/livekit_voice_provider.dart';
@@ -24,6 +25,7 @@ import '../services/pip_controller.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/canvas_utils.dart';
+import '../widgets/confirm_dialog.dart';
 import '../widgets/echo_bottom_sheet.dart';
 import '../widgets/lounge_drawing_canvas.dart';
 import '../widgets/vertex_mesh_background.dart';
@@ -820,6 +822,49 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     );
   }
 
+  /// Top-right "Clear board" affordance with a confirmation dialog.
+  /// Wipes everyone's strokes + images. Lives outside the drawing menu
+  /// because it's a destructive action that shouldn't share neighbours
+  /// with the pen / color / size pickers.
+  Widget _buildClearBoardButton(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Clear the canvas board for everyone',
+      child: Material(
+        color: Colors.black54,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: () => _confirmClearBoard(context),
+          child: const Padding(
+            padding: EdgeInsets.all(8),
+            child: Icon(
+              Icons.delete_sweep_outlined,
+              size: 18,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmClearBoard(BuildContext context) async {
+    final confirmed = await showEchoConfirmDialog(
+      context,
+      title: 'Clear board?',
+      content: Text(
+        "This removes every drawing and image on the canvas for "
+        'everyone in the call.',
+        style: TextStyle(color: context.textSecondary, fontSize: 14),
+      ),
+      confirmLabel: 'Clear board',
+      destructive: true,
+    );
+    if (!confirmed) return;
+    ref.read(canvasProvider.notifier).clearDrawing();
+  }
+
   /// Small circular icon button that opens the background-picker menu.  This
   /// is the ONE settings entry-point for the customizable voice-lounge
   /// background feature.
@@ -929,6 +974,10 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
               _buildResetViewButton(context),
               const SizedBox(width: 8),
             ],
+            if (!_spotlightMode) ...[
+              _buildClearBoardButton(context),
+              const SizedBox(width: 8),
+            ],
             _buildBackgroundPickerButton(context),
           ],
         ),
@@ -975,6 +1024,10 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
             const SizedBox(width: 8),
             if (_viewportTransformed && !_spotlightMode) ...[
               _buildResetViewButton(context),
+              const SizedBox(width: 8),
+            ],
+            if (!_spotlightMode) ...[
+              _buildClearBoardButton(context),
               const SizedBox(width: 8),
             ],
             _buildBackgroundPickerButton(context),

@@ -39,6 +39,7 @@ import '../widgets/global_search_overlay.dart';
 import '../widgets/whats_new_modal.dart';
 import '../widgets/quick_switcher_overlay.dart';
 import '../widgets/system_chrome.dart';
+import '../widgets/voice_dock.dart';
 import '../widgets/voice_footer.dart';
 import '../widgets/window_chrome.dart';
 import 'contacts_screen.dart';

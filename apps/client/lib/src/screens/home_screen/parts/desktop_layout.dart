@@ -163,6 +163,30 @@ mixin _HomeScreenDesktopLayoutMixin
               },
             ),
           ),
+          // Active-voice strip — vertical mic / deafen / hangup column
+          // shown above the settings icon when a call is in progress.
+          // Without this the dock vanishes the moment the user collapses
+          // the sidebar (image #41).
+          Builder(
+            builder: (context) {
+              final voiceLk = ref.watch(livekitVoiceProvider);
+              if (!voiceLk.isActive || voiceLk.channelId == null) {
+                return const SizedBox.shrink();
+              }
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Center(
+                  child: VoiceDock(
+                    collapsed: true,
+                    onNavigateToLounge: () => setState(() {
+                      _self._showingLounge = true;
+                      _self._userDismissedLounge = false;
+                    }),
+                  ),
+                ),
+              );
+            },
+          ),
           // Settings icon at bottom
           Container(
             height: 60,
