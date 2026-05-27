@@ -1,218 +1,186 @@
 # Screen catalogue
 
-Single source of truth for the audit. The Playwright spec at
-`tests/e2e/audit_tour.spec.ts` reads filenames from this list, and the
-auditor uses it as a checklist.
+_Generated from `tests/e2e/audit_surfaces.ts` — do not edit by hand. Run the `generate-areas-md` test in the `audit` Playwright project to refresh._
 
-Built by sweeping `apps/client/lib/src/screens/` and
-`apps/client/lib/src/widgets/` for every distinct user-visible surface:
-top-level screens, dialogs (`showDialog`), bottom sheets
-(`showEchoBottomSheet`), popup menus, right-click context menus
-(`onSecondaryTap*`), and inline overlays.
+**45 active surfaces** (captured by the spec) + **49 skipped** (manual or out of scope) = 94 catalogued.
 
 ## auth/
+
 - `splash.png`
-- `login.png`
-- `register.png`
+  > Splash screen — captured by bootstrap, brief window.
+- `login.png` _(+mobile)_
+- `register.png` _(+mobile)_
 - `forgot-password.png`
-- `reset-password.png`
+- `reset-password.png` ⚠️ skipped
+  > _skip: Requires reset-token email out-of-band; not worth scripting._
 - `server-picker.png`
-- `onboarding-wizard-welcome.png`
-- `onboarding-wizard-presets.png`
-- `onboarding-wizard-final.png`
+  > Triggered from login screen "Change server" link.
+- `onboarding-welcome.png`
+  > Captured during fresh-account bootstrap.
+- `onboarding-presets.png`
+  > The "familiar with" preset picker.
+- `onboarding-final.png`
 
 ## home/
-- `conv-list-empty.png`
-- `conv-list-populated.png`
-- `desktop-2pane.png`
+
 - `wide-3pane.png`
-- `narrow-mobile.png`
-- `collapsed-sidebar.png`
+- `desktop-2pane.png`
+  > 2-pane fits a 1280-wide window — narrower than wide-3pane.
+- `conv-list-populated.png` _(+mobile, ×3 densities)_
+- `no-conversation-placeholder.png`
+  > Default empty right-pane state — no conv selected.
 - `quick-switcher.png`
 - `global-search.png`
 - `keyboard-shortcuts.png`
-- `whats-new.png`
-- `welcome-card.png` — first-launch welcome card on empty chat
-- `no-conversation-placeholder.png` — empty right pane when no conv selected
-- `sidebar-create-menu.png` — right-click in sidebar empty area
-- `conversation-context-menu.png` — right-click on a conv row
-- `voice-dock-collapsed.png` — 60px sidebar
-- `voice-dock-narrow.png` — 180px sidebar
-- `voice-dock-full.png` — default sidebar
-- `compose-fab.png` — mobile floating compose button
+- `collapsed-sidebar.png`
+  > 60px sidebar — drag handle pull-through OR collapse button.
 
 ## chat/
-- `dm.png`
-- `group.png`
-- `empty-conversation.png` — newly created chat, no messages yet
-- `thread-panel.png`
-- `threads-inbox.png`
-- `hover-bar.png`
-- `message-context-menu.png` — right-click on a message
-- `reactions-stack.png` — message with overflow reaction stack
-- `reactions-picker.png` — emoji picker for adding a reaction
-- `reply-composer.png`
-- `pin-pane.png`
-- `forward-dialog.png`
-- `image-gallery.png` — image gallery viewer (fullscreen media)
-- `video-player.png` — fullscreen video player
-- `mentions-autocomplete.png`
-- `media-picker-sheet-mobile.png`
-- `media-picker-panel-desktop.png`
-- `gif-picker.png`
-- `photo-gallery-picker.png`
-- `drop-overlay.png` — drag-and-drop highlight active
-- `message-search.png` — in-chat message search overlay
-- `disappearing-msgs-sheet.png` — TTL picker
+
+- `dm.png` _(+mobile, ×3 layouts)_
+- `group.png` _(+mobile)_
+- `message-context-menu.png`
+- `threads-inbox.png` _(+mobile)_
+- `saved-messages.png` _(+mobile)_
 - `safety-number.png`
-- `saved-messages.png`
-- `chat-header-menu.png` — chat header overflow menu open
-- `new-messages-pill.png` — "N new messages" pill visible
-- `date-divider.png` — Today / Yesterday divider in scroll
-- `unread-divider.png` — unread divider in scroll
-- `system-timeline-message.png` — system event in timeline
+- `reactions-stack.png` ⚠️ skipped
+  > _skip: Needs a message with 6+ reactions; not yet seeded._
+- `reactions-picker.png` ⚠️ skipped
+  > _skip: Needs hover-then-react flow; brittle from script._
+- `hover-bar.png` ⚠️ skipped
+  > _skip: Hover state is brittle in CanvasKit; capture manually._
+- `pin-pane.png` ⚠️ skipped
+  > _skip: Requires pinned message; not yet seeded._
+- `image-gallery.png` ⚠️ skipped
+  > _skip: Requires uploaded image attachment; expensive to seed._
+- `video-player.png` ⚠️ skipped
+  > _skip: Requires uploaded video attachment; expensive to seed._
+- `gif-picker.png` ⚠️ skipped
+  > _skip: Needs Tenor API key + visible GIF results; capture manually._
+- `drop-overlay.png` ⚠️ skipped
+  > _skip: DragEnter must come from outside the browser; capture manually._
 
 ## group/
-- `info-owner.png`
-- `info-member.png`
-- `info-header-section.png` — header section close-up (name, avatar, description)
-- `info-members-section.png` — full member list scrolled
-- `info-channels-section.png` — text + voice channel list
-- `info-invite-section.png` — invite section
-- `info-disappearing-section.png` — disappearing-messages config section
-- `info-danger-section.png` — danger zone (owner only)
-- `member-context-menu.png` — right-click on a member
-- `add-member-dialog.png`
-- `invite-link-sheet.png`
-- `delete-confirm.png`
-- `leave-confirm.png`
-- `kick-confirm.png`
-- `discover.png`
-- `discover-detail-sheet.png`
-- `discover-empty.png` — no groups in discover yet
-- `create-group.png`
-- `join-group.png`
-- `join-preview.png` — join preview scaffold (token / link preview)
-- `token-join.png`
-- `channel-create-dialog.png`
-- `group-members-sheet.png` — from chat header
+
+- `discover.png` _(+mobile)_
+- `create-group.png` _(+mobile)_
+- `join-group.png` _(+mobile)_
+- `info-owner.png` _(+mobile)_
+  > Owner sees danger zone (delete group).
+- `info-member.png` ⚠️ skipped
+  > _skip: Requires logging in as PEER user; second login session needed._
+- `member-context-menu.png` ⚠️ skipped
+  > _skip: Right-click on member; brittle from a single-client script._
 
 ## voice/
-- `waiting.png`
-- `1-participant.png`
-- `multi-participants.png`
-- `spotlight.png`
-- `canvas-empty.png`
-- `canvas-with-strokes.png`
-- `canvas-with-image.png`
-- `canvas-with-text.png`
-- `screen-share-active.png`
-- `screen-share-window-draggable.png`
-- `screen-select-dialog.png`
-- `fullscreen.png`
-- `participant-context-menu.png`
-- `dock-mic-submenu.png`
-- `dock-camera-submenu.png`
-- `dock-screenshare-submenu.png`
-- `dock-draw-submenu.png`
-- `call-metrics-chip.png`
-- `clear-board-confirm.png`
-- `lounge-header.png` — lounge header bar close-up
-- `participant-volume-popover.png` — per-participant volume slider
+
+- `waiting.png` ⚠️ skipped
+  > _skip: Requires LiveKit channel; capture from a real call._
+- `1-participant.png` ⚠️ skipped
+  > _skip: Requires LiveKit channel; capture from a real call._
+- `multi-participants.png` ⚠️ skipped
+  > _skip: Requires LiveKit channel; capture from a real call._
+- `spotlight.png` ⚠️ skipped
+  > _skip: Requires LiveKit channel; capture from a real call._
+- `canvas-empty.png` ⚠️ skipped
+  > _skip: Requires LiveKit channel; capture from a real call._
+- `canvas-with-strokes.png` ⚠️ skipped
+  > _skip: Requires LiveKit channel; capture from a real call._
+- `canvas-with-image.png` ⚠️ skipped
+  > _skip: Requires LiveKit channel; capture from a real call._
+- `canvas-with-text.png` ⚠️ skipped
+  > _skip: Requires LiveKit channel; capture from a real call._
+- `screen-share-active.png` ⚠️ skipped
+  > _skip: Requires LiveKit channel; capture from a real call._
+- `screen-share-window-draggable.png` ⚠️ skipped
+  > _skip: Requires LiveKit channel; capture from a real call._
+- `fullscreen.png` ⚠️ skipped
+  > _skip: Requires LiveKit channel; capture from a real call._
+- `participant-context-menu.png` ⚠️ skipped
+  > _skip: Requires LiveKit channel; capture from a real call._
+- `dock-mic-submenu.png` ⚠️ skipped
+  > _skip: Requires LiveKit channel; capture from a real call._
+- `dock-camera-submenu.png` ⚠️ skipped
+  > _skip: Requires LiveKit channel; capture from a real call._
+- `dock-screenshare-submenu.png` ⚠️ skipped
+  > _skip: Requires LiveKit channel; capture from a real call._
+- `dock-draw-submenu.png` ⚠️ skipped
+  > _skip: Requires LiveKit channel; capture from a real call._
+- `call-metrics-chip.png` ⚠️ skipped
+  > _skip: Requires LiveKit channel; capture from a real call._
+- `lounge-header.png` ⚠️ skipped
+  > _skip: Requires LiveKit channel; capture from a real call._
 
 ## canvas/
-- `drawing-menu-pen.png`
-- `drawing-menu-highlighter.png`
-- `drawing-menu-line.png`
-- `drawing-menu-rect.png`
-- `drawing-menu-ellipse.png`
-- `drawing-menu-text.png`
-- `drawing-menu-eraser.png`
-- `color-picker-dialog.png`
-- `background-dialog-desktop.png`
-- `background-dialog-mobile.png`
-- `text-input-dialog.png`
+
+- `drawing-menu-pen.png` ⚠️ skipped
+  > _skip: Dock is lounge-only; capture from a real voice channel._
+- `drawing-menu-highlighter.png` ⚠️ skipped
+  > _skip: Dock is lounge-only; capture from a real voice channel._
+- `drawing-menu-line.png` ⚠️ skipped
+  > _skip: Dock is lounge-only; capture from a real voice channel._
+- `drawing-menu-rect.png` ⚠️ skipped
+  > _skip: Dock is lounge-only; capture from a real voice channel._
+- `drawing-menu-ellipse.png` ⚠️ skipped
+  > _skip: Dock is lounge-only; capture from a real voice channel._
+- `drawing-menu-text.png` ⚠️ skipped
+  > _skip: Dock is lounge-only; capture from a real voice channel._
+- `drawing-menu-eraser.png` ⚠️ skipped
+  > _skip: Dock is lounge-only; capture from a real voice channel._
+- `color-picker-dialog.png` ⚠️ skipped
+  > _skip: Dock is lounge-only; capture from a real voice channel._
+- `background-dialog-desktop.png` ⚠️ skipped
+  > _skip: Dock is lounge-only; capture from a real voice channel._
+- `background-dialog-mobile.png` ⚠️ skipped
+  > _skip: Dock is lounge-only; capture from a real voice channel._
+- `text-input-dialog.png` ⚠️ skipped
+  > _skip: Dock is lounge-only; capture from a real voice channel._
 
 ## settings/
-- `account.png`
-- `account-change-password-dialog.png`
-- `account-edit-profile.png`
-- `account-avatar-crop.png`
-- `account-qr-display.png`
-- `appearance.png`
-- `advanced-theme.png`
-- `advanced-theme-color-dialog.png`
-- `accessibility.png`
-- `notifications.png`
-- `notifications-sound-picker.png`
-- `notifications-quiet-hours.png` — time picker tile
-- `privacy.png`
-- `privacy-destructive-dialog.png`
-- `voice.png`
-- `voice-device-picker.png`
-- `devices.png`
-- `devices-revoke-confirm.png`
-- `language.png`
-- `data-storage.png`
-- `data-export-dialog.png`
-- `status.png`
-- `status-picker.png`
-- `about.png`
-- `about-feedback-dialog.png`
-- `about-safety-number.png`
 
-## admin/
-- `admin-dashboard.png` — admin dashboard screen (admin only)
+- `account.png` _(+mobile)_
+- `appearance.png` _(+mobile)_
+- `advanced-theme.png` _(+mobile)_
+- `accessibility.png` _(+mobile)_
+- `notifications.png` _(+mobile)_
+- `privacy.png` _(+mobile)_
+- `voice.png` _(+mobile)_
+- `devices.png` _(+mobile)_
+- `language.png` _(+mobile)_
+- `data-storage.png` _(+mobile)_
+- `status.png` _(+mobile)_
+- `about.png` _(+mobile)_
+- `advanced-theme-color-dialog.png`
+- `about-feedback-dialog.png`
+- `account-change-password-dialog.png` ⚠️ skipped
+  > _skip: Triggered from account section but needs current password input — capture manually._
+- `account-avatar-crop.png` ⚠️ skipped
+  > _skip: Requires real file-upload; capture manually._
+- `notifications-sound-picker.png` ⚠️ skipped
+  > _skip: Nested under a tile that requires a real tap; brittle from script._
+- `voice-device-picker.png` ⚠️ skipped
+  > _skip: Web build does not expose device enumeration; capture from native._
 
 ## profiles/
-- `user-profile-sheet.png` — bottom sheet variant
-- `user-profile-screen.png` — full-screen variant
-- `user-profile-qr.png` — user profile QR card
-- `username-invite.png`
-- `contacts.png`
-- `contacts-empty.png`
-- `contact-add-by-username.png`
-- `new-message-screen.png`
-- `new-message-empty.png`
+
+- `contacts.png` _(+mobile)_
+- `new-message-screen.png` _(+mobile)_
+- `username-invite.png` _(+mobile)_
+- `user-profile-screen.png` _(+mobile)_
+- `user-profile-qr.png`
 
 ## modals/
-- `confirm-destructive.png` — generic destructive confirm
-- `confirm-non-destructive.png` — generic non-destructive confirm
-- `bottom-sheet-shell.png` — generic Echo bottom sheet chrome
-- `input-dialog.png` — generic input-dialog
-- `toast-success.png`
-- `toast-error.png`
-- `toast-info.png`
-- `skeleton-loader.png` — skeleton loading state
-- `notification-permission.png` — native prompt (manual, not Playwright)
 
-## audit format
+- `confirm-destructive.png` ⚠️ skipped
+  > _skip: Captured by group/info-owner (Delete group is the canonical example)._
+- `toast-success.png` ⚠️ skipped
+  > _skip: Toasts are <2s and theme inherits — not worth a flake-prone capture._
+- `toast-error.png` ⚠️ skipped
+  > _skip: Same as toast-success._
+- `skeleton-loader.png` ⚠️ skipped
+  > _skip: Transient — would need a slowed server to time correctly._
 
-Per area, an auditor records issues in `findings.md` (one per area):
+## admin/
 
-```
-| Theme | Screen | Issue | Severity |
-|-------|--------|-------|----------|
-| ember | drawing-menu-highlighter.png | Slider thumb invisible on amber bg | high |
-```
-
-Severities: **blocker** (broken UI), **high** (WCAG fail / clearly off
-brand), **medium** (inconsistent), **low** (nice-to-have).
-
-## what to look for, per screen
-
-- **Hardcoded white / black** — text on accent buttons, badges, dialogs
-- **Contrast** — pinned text, status pills, hover states meet WCAG AA (4.5:1)
-- **Borders + dividers** — invisible in one theme, garish in another
-- **Sent-message bubble** — uses theme accent, not hardcoded blue
-- **Icons** — readable on both surface and surface-hover backgrounds
-- **Toast / sheet shadows** — depth visible in light theme
-- **Empty-state illustrations** — legible at default text-secondary alpha
-
-## not in scope
-
-- **iOS / Android-only OS dialogs** (broadcast picker, ReplayKit alert,
-  FCM preview, CallKit). Manual capture into `screenshot_audit/_native/`.
-- **Tooltips** (transient, inherit theme).
-- **Loading skeletons** outside `modals/skeleton-loader.png` (covered by
-  major screens captured before content loads).
+- `admin-dashboard.png` ⚠️ skipped
+  > _skip: Admin role required; capture manually with a privileged account._
