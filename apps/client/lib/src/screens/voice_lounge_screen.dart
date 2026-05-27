@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -672,37 +673,36 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
           ),
           content: SizedBox(
             width: MediaQuery.sizeOf(dialogCtx).width.clamp(320.0, 440.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Choose a custom image',
-                  style: TextStyle(
-                    color: dialogCtx.textSecondary,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                FilledButton.icon(
-                  icon: const Icon(Icons.image_outlined),
-                  label: const Text('Browse files'),
-                  onPressed: () {
-                    Navigator.of(dialogCtx).pop();
-                    _pickBackground();
-                  },
-                ),
-                if (hasCustom) ...[
-                  const SizedBox(height: 16),
-                  TextButton.icon(
-                    icon: const Icon(Icons.restore),
-                    label: const Text('Reset to default'),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  FilledButton.icon(
+                    icon: const Icon(Icons.image_outlined),
+                    label: const Text('Custom image'),
                     onPressed: () {
                       Navigator.of(dialogCtx).pop();
-                      _clearBackground();
+                      _pickBackground();
                     },
                   ),
+                  if (hasCustom) ...[
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      icon: const Icon(Icons.restore),
+                      label: const Text('Remove image'),
+                      onPressed: () {
+                        Navigator.of(dialogCtx).pop();
+                        _clearBackground();
+                      },
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  Divider(height: 1, color: dialogCtx.border),
+                  const SizedBox(height: 12),
+                  const _VertexTunableControls(),
                 ],
-              ],
+              ),
             ),
           ),
           shape: RoundedRectangleBorder(
@@ -715,27 +715,34 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       await showEchoBottomSheet<void>(
         ctx,
         builder: (sheetCtx) {
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.image_outlined),
-                title: const Text('Choose voice lounge background'),
-                onTap: () {
-                  Navigator.of(sheetCtx).pop();
-                  _pickBackground();
-                },
-              ),
-              if (hasCustom)
+          return SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
                 ListTile(
-                  leading: const Icon(Icons.restore),
-                  title: const Text('Reset to default'),
+                  leading: const Icon(Icons.image_outlined),
+                  title: const Text('Choose voice lounge background'),
                   onTap: () {
                     Navigator.of(sheetCtx).pop();
-                    _clearBackground();
+                    _pickBackground();
                   },
                 ),
-            ],
+                if (hasCustom)
+                  ListTile(
+                    leading: const Icon(Icons.restore),
+                    title: const Text('Remove image'),
+                    onTap: () {
+                      Navigator.of(sheetCtx).pop();
+                      _clearBackground();
+                    },
+                  ),
+                const Divider(height: 1),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: _VertexTunableControls(),
+                ),
+              ],
+            ),
           );
         },
       );
@@ -749,6 +756,9 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   Widget _buildBackground(BuildContext context) {
     final bg = ref.watch(voiceLoungeBackgroundProvider);
     final path = bg.customBackgroundPath;
+    final vertexColor = bg.vertexColor ?? context.accent;
+    final vertexCount = bg.vertexCount;
+    final connectionDistance = bg.connectionDistance;
     if (customBackgroundFileExists(path)) {
       return Stack(
         fit: StackFit.expand,
@@ -757,8 +767,10 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
             File(path!),
             fit: BoxFit.cover,
             errorBuilder: (_, _, _) => VertexMeshBackground(
-              accentColor: context.accent,
+              accentColor: vertexColor,
               backgroundColor: context.mainBg,
+              vertexCount: vertexCount,
+              connectionDistance: connectionDistance,
             ),
           ),
           const ColoredBox(color: Color(0x80000000)),
@@ -766,8 +778,10 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       );
     }
     return VertexMeshBackground(
-      accentColor: context.accent,
+      accentColor: vertexColor,
       backgroundColor: context.mainBg,
+      vertexCount: vertexCount,
+      connectionDistance: connectionDistance,
     );
   }
 
@@ -1210,6 +1224,156 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
           totalParticipants,
         );
       },
+    );
+  }
+}
+
+/// Sliders + colour disk for the built-in vertex-mesh background.
+/// Lives in this file because the parent dialog is owned here; lifting it
+/// to its own file would force exporting private theme accessors.
+class _VertexTunableControls extends ConsumerWidget {
+  const _VertexTunableControls();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final bg = ref.watch(voiceLoungeBackgroundProvider);
+    final notifier = ref.read(voiceLoungeBackgroundProvider.notifier);
+    final dotColor = bg.vertexColor ?? context.accent;
+    final isCustomColor = bg.vertexColor != null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Mesh',
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Text(
+              'Dot colour',
+              style: TextStyle(color: context.textPrimary, fontSize: 13),
+            ),
+            const Spacer(),
+            GestureDetector(
+              onTap: () async {
+                Color picked = dotColor;
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    backgroundColor: ctx.surface,
+                    content: SingleChildScrollView(
+                      child: ColorPicker(
+                        pickerColor: dotColor,
+                        onColorChanged: (c) => picked = c,
+                        enableAlpha: false,
+                        labelTypes: const [],
+                        pickerAreaHeightPercent: 0.6,
+                      ),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(ctx).pop(false),
+                        child: const Text('Cancel'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.of(ctx).pop(true),
+                        child: const Text('Use colour'),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed == true) {
+                  await notifier.setVertexColor(picked);
+                }
+              },
+              child: Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: dotColor,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: isCustomColor ? context.accent : context.border,
+                    width: isCustomColor ? 2 : 1,
+                  ),
+                ),
+              ),
+            ),
+            if (isCustomColor)
+              IconButton(
+                tooltip: 'Reset dot colour',
+                icon: Icon(
+                  Icons.refresh,
+                  size: 16,
+                  color: context.textSecondary,
+                ),
+                onPressed: () => notifier.setVertexColor(null),
+              ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            Expanded(
+              flex: 2,
+              child: Text(
+                'Density',
+                style: TextStyle(color: context.textPrimary, fontSize: 13),
+              ),
+            ),
+            Expanded(
+              flex: 5,
+              child: Slider(
+                value: bg.vertexCount.toDouble(),
+                min: 10,
+                max: 120,
+                divisions: 22,
+                label: '${bg.vertexCount}',
+                onChanged: (v) => notifier.setVertexCount(v.round()),
+              ),
+            ),
+          ],
+        ),
+        Row(
+          children: [
+            Expanded(
+              flex: 2,
+              child: Text(
+                'Reach',
+                style: TextStyle(color: context.textPrimary, fontSize: 13),
+              ),
+            ),
+            Expanded(
+              flex: 5,
+              child: Slider(
+                value: bg.connectionDistance,
+                min: 40,
+                max: 240,
+                divisions: 20,
+                label: '${bg.connectionDistance.round()}',
+                onChanged: notifier.setConnectionDistance,
+              ),
+            ),
+          ],
+        ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            icon: Icon(Icons.restore, size: 16, color: context.textSecondary),
+            label: Text(
+              'Reset mesh',
+              style: TextStyle(color: context.textSecondary, fontSize: 12),
+            ),
+            onPressed: notifier.resetVertexDefaults,
+          ),
+        ),
+      ],
     );
   }
 }

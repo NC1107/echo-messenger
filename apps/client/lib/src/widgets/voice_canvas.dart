@@ -115,6 +115,50 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
     return Offset(norm.x * size.width, norm.y * size.height);
   }
 
+  /// Opens a small text-entry dialog and commits the result as a text label
+  /// at [anchor]. Returns immediately when the canvas isn't usable (no
+  /// channel id yet) so the user doesn't see a no-op dialog.
+  Future<void> _promptTextLabel(CanvasPoint anchor) async {
+    final controller = TextEditingController();
+    final canvas = ref.read(canvasProvider);
+    // Cache the values so the closure doesn't re-read provider mid-dialog.
+    final fontSize = canvas.strokeWidth.clamp(10.0, 64.0);
+    final color = canvas.currentColor;
+    final committed = await showDialog<String?>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add text'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 200,
+          decoration: const InputDecoration(hintText: 'Type a label…'),
+          onSubmitted: (v) => Navigator.of(ctx).pop(v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(null),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text),
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (committed == null || committed.trim().isEmpty) return;
+    ref
+        .read(canvasProvider.notifier)
+        .addTextLabel(
+          anchor: anchor,
+          text: committed,
+          fontSize: fontSize,
+          color: color,
+        );
+  }
+
   @override
   Widget build(BuildContext context) {
     final canvas = ref.watch(canvasProvider);
@@ -141,24 +185,23 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
                         child: _DrawingLayer(
                           canvas: canvas,
                           onPointerDown: (offset) {
-                            if (tool == CanvasTool.pen ||
-                                tool == CanvasTool.eraser) {
+                            if (isDrawingTool(tool)) {
                               ref
                                   .read(canvasProvider.notifier)
                                   .startStroke(_toNormalized(offset));
+                            } else if (tool == CanvasTool.text) {
+                              _promptTextLabel(_toNormalized(offset));
                             }
                           },
                           onPointerMove: (offset) {
-                            if (tool == CanvasTool.pen ||
-                                tool == CanvasTool.eraser) {
+                            if (isDrawingTool(tool)) {
                               ref
                                   .read(canvasProvider.notifier)
                                   .continueStroke(_toNormalized(offset));
                             }
                           },
                           onPointerUp: () {
-                            if (tool == CanvasTool.pen ||
-                                tool == CanvasTool.eraser) {
+                            if (isDrawingTool(tool)) {
                               ref.read(canvasProvider.notifier).endStroke();
                             }
                           },
@@ -536,13 +579,14 @@ class _CanvasPainter extends CustomPainter {
 
     if (canvas.activePoints.isNotEmpty) {
       final tool = canvas.selectedTool;
-      final isEraser = tool == CanvasTool.eraser;
+      final kind = strokeKindForTool(tool);
+      final isEraser = kind == StrokeKind.eraser;
       final activeStroke = CanvasStroke(
         id: '__active__',
         color: isEraser ? '#000000' : colorToHex(canvas.currentColor),
         width: isEraser ? canvas.strokeWidth * 3 : canvas.strokeWidth,
         points: canvas.activePoints,
-        kind: isEraser ? StrokeKind.eraser : StrokeKind.pen,
+        kind: kind,
       );
       _paintStroke(c, size, activeStroke);
     }
@@ -552,6 +596,29 @@ class _CanvasPainter extends CustomPainter {
 
   void _paintStroke(Canvas c, Size size, CanvasStroke stroke) {
     if (stroke.points.isEmpty) return;
+
+    // Text label: render its content at the anchor and bail out before
+    // freehand-stroke logic gets a chance to draw a stray dot.
+    if (stroke.kind == StrokeKind.text) {
+      final label = stroke.text;
+      if (label == null || label.isEmpty) return;
+      final anchor = stroke.points.first;
+      final tp = TextPainter(
+        text: TextSpan(
+          text: label,
+          style: TextStyle(
+            color: _parseColor(stroke.color),
+            fontSize: stroke.width,
+            fontWeight: FontWeight.w500,
+            shadows: const [Shadow(color: Color(0xAA000000), blurRadius: 2)],
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+        textAlign: TextAlign.left,
+      )..layout(maxWidth: size.width);
+      tp.paint(c, Offset(anchor.x * size.width, anchor.y * size.height));
+      return;
+    }
 
     final paint = Paint()
       ..strokeCap = StrokeCap.round
@@ -563,6 +630,13 @@ class _CanvasPainter extends CustomPainter {
       paint
         ..blendMode = BlendMode.clear
         ..color = const Color(0x00000000);
+    } else if (stroke.kind == StrokeKind.highlighter) {
+      // Translucent + multiply blend: stacks underneath dark UI without
+      // washing out the canvas, and double-passes deepen the colour the
+      // way a real highlighter does.
+      paint
+        ..blendMode = BlendMode.srcOver
+        ..color = _parseColor(stroke.color).withValues(alpha: 0.35);
     } else {
       paint
         ..blendMode = BlendMode.srcOver
@@ -571,13 +645,34 @@ class _CanvasPainter extends CustomPainter {
 
     final first = stroke.points.first;
 
-    if (stroke.points.length == 1) {
+    // Single-point freehand stroke: a dot.
+    if (stroke.points.length == 1 && !isShapeKind(stroke.kind)) {
       c.drawCircle(
         Offset(first.x * size.width, first.y * size.height),
         stroke.width / 2,
         paint..style = PaintingStyle.fill,
       );
       return;
+    }
+
+    // Two-point shape kinds — straight geometry from first to last.
+    if (isShapeKind(stroke.kind) && stroke.points.length >= 2) {
+      final last = stroke.points.last;
+      final p1 = Offset(first.x * size.width, first.y * size.height);
+      final p2 = Offset(last.x * size.width, last.y * size.height);
+      switch (stroke.kind) {
+        case StrokeKind.line:
+          c.drawLine(p1, p2, paint);
+          return;
+        case StrokeKind.rect:
+          c.drawRect(Rect.fromPoints(p1, p2), paint);
+          return;
+        case StrokeKind.ellipse:
+          c.drawOval(Rect.fromPoints(p1, p2), paint);
+          return;
+        default:
+          break;
+      }
     }
 
     final path = Path();
@@ -691,6 +786,12 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
     with SingleTickerProviderStateMixin {
   CanvasPoint? _localPos;
   bool _hovered = false;
+
+  /// Distance from the ring centre at the start of a resize pan, in local
+  /// (ring-relative) pixels. Used to translate radial pointer motion into
+  /// per-frame scale deltas, so the gesture feels uniform regardless of
+  /// which side of the ring the user grabbed.
+  double? _resizeStartRadius;
 
   /// Buffer of recent positions used to paint the presence trail
   /// (Phase 3a sub-slice 2 of `docs/ux-roadmap.md`).
@@ -916,13 +1017,18 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
   /// Wraps the avatar tile in a circular click-and-drag resize ring.
   /// When [onResize] is null (callers that don't want resize, e.g. tests)
   /// this is a no-op so the avatar renders unwrapped. On hover the ring
-  /// becomes visible and PanUpdate gestures on its 10 px perimeter drive
-  /// the resize callback — clicks dead-center still pass through to the
-  /// avatar's move-drag wrapper.
+  /// becomes visible. The gesture is radial: pulling the cursor away from
+  /// the avatar centre grows it, pushing toward the centre shrinks it —
+  /// regardless of which side of the ring the user grabbed. Previously
+  /// the code averaged `(dx + dy) / 2` of the per-frame delta, which felt
+  /// inverted on the left and top quadrants of the ring (dragging
+  /// outward in those directions returned negative deltas and shrank
+  /// the avatar).
   Widget _wrapInResizeRing(Widget avatar) {
     if (widget.onResize == null) return avatar;
     const ringThickness = 6.0;
     final ringSize = _effectiveAvatarSize + ringThickness * 2;
+    final ringCenter = Offset(ringSize / 2, ringSize / 2);
     return SizedBox(
       width: ringSize,
       height: ringSize,
@@ -938,8 +1044,27 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
             cursor: SystemMouseCursors.resizeUpRightDownLeft,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onPanUpdate: (d) => widget.onResize!(d.delta.dx, d.delta.dy),
-              onPanEnd: (_) => widget.onResizeEnd?.call(),
+              dragStartBehavior: DragStartBehavior.down,
+              onPanStart: (d) {
+                _resizeStartRadius = (d.localPosition - ringCenter).distance;
+              },
+              onPanUpdate: (d) {
+                final start = _resizeStartRadius;
+                if (start == null || start <= 0) return;
+                final currentRadius = (d.localPosition - ringCenter).distance;
+                // Per-frame radial delta. Positive when the pointer moved
+                // away from centre, negative when toward — true to user
+                // intuition regardless of which quadrant the gesture
+                // started in.
+                final delta = currentRadius - start;
+                _resizeStartRadius = currentRadius;
+                widget.onResize!(delta, delta);
+              },
+              onPanEnd: (_) {
+                _resizeStartRadius = null;
+                widget.onResizeEnd?.call();
+              },
+              onPanCancel: () => _resizeStartRadius = null,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 120),
                 width: ringSize,
@@ -1009,6 +1134,11 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
         children: [
           GestureDetector(
             behavior: HitTestBehavior.translucent,
+            // Win the gesture arena on pointer-down (see _CanvasImageWidget
+            // for full rationale). Avatars are smaller targets and a brief
+            // moment of arena-fight with InteractiveViewer can detach them
+            // mid-drag.
+            dragStartBehavior: DragStartBehavior.down,
             onDoubleTap: widget.onDoubleTap,
             onPanUpdate: (details) {
               final s = widget.canvasSize;
@@ -1090,6 +1220,13 @@ class _CanvasImageWidgetState extends State<_CanvasImageWidget> {
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(
+        // DragStartBehavior.down: the inner image's pan recognizer wins
+        // the gesture arena on pointer-down instead of waiting for
+        // kPanSlop. Without this, a fast drag occasionally lost
+        // arbitration to the parent InteractiveViewer's PanGestureRecognizer
+        // mid-gesture and detached, forcing the user to click and start
+        // the drag over (user-reported 2026-05-27).
+        dragStartBehavior: DragStartBehavior.down,
         onPanUpdate: (d) => widget.onMove(d.delta.dx, d.delta.dy),
         onPanEnd: (_) => widget.onMoveEnd(),
         child: Stack(
@@ -1169,6 +1306,7 @@ class _CanvasImageWidgetState extends State<_CanvasImageWidget> {
                 child: MouseRegion(
                   cursor: SystemMouseCursors.resizeDownRight,
                   child: GestureDetector(
+                    dragStartBehavior: DragStartBehavior.down,
                     onPanUpdate: (d) => widget.onResize(d.delta.dx, d.delta.dy),
                     onPanEnd: (_) => widget.onResizeEnd(),
                     child: Container(

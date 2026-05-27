@@ -3,6 +3,7 @@ library;
 
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
+import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -374,6 +375,9 @@ class _DraggableScreenShareWindowState
                   onEnter: (_) => setState(() => _hovered = true),
                   onExit: (_) => setState(() => _hovered = false),
                   child: GestureDetector(
+                    // Win the arena on pointer-down so InteractiveViewer's
+                    // pan recognizer can't steal a fast drag mid-gesture.
+                    dragStartBehavior: DragStartBehavior.down,
                     onPanUpdate: (d) {
                       setState(() {
                         _left += d.delta.dx;
@@ -461,6 +465,7 @@ class _DraggableScreenShareWindowState
                               right: 0,
                               bottom: 0,
                               child: GestureDetector(
+                                dragStartBehavior: DragStartBehavior.down,
                                 onPanUpdate: (d) {
                                   setState(() {
                                     // Use the larger of dx/dy so the gesture
