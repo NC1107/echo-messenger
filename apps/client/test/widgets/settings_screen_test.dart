@@ -101,9 +101,9 @@ void main() {
       await tester.pumpAndSettle();
 
       // Profile is reached via the UserHeaderCard at the top, not a row.
-      // Encryption keys is gone (was redundant with Privacy).
-      // Status was removed from the sidebar in batch 3.
-      expect(find.text('Status'), findsNothing);
+      // Status was promoted out of "buried in Settings" into the
+      // Account bucket as its own row (#1223).
+      expect(find.text('Status'), findsOneWidget);
       expect(find.text('Appearance'), findsOneWidget);
       expect(find.text('Language'), findsOneWidget);
       expect(find.text('Notifications'), findsOneWidget);
@@ -123,7 +123,12 @@ void main() {
       await tester.pumpWidget(_rootApp());
       await tester.pumpAndSettle();
 
-      expect(find.text('Account preferences'), findsOneWidget);
+      // The single "Account preferences" bucket was split into four
+      // section headers in #1223 — Account, App, Communication, Data.
+      expect(find.text('Account'), findsOneWidget);
+      expect(find.text('App'), findsOneWidget);
+      expect(find.text('Communication'), findsOneWidget);
+      expect(find.text('Data'), findsOneWidget);
       expect(find.text('Echo'), findsOneWidget);
     });
 
@@ -218,8 +223,9 @@ void main() {
         await tester.pumpWidget(_settingsScreenApp());
         await tester.pumpAndSettle();
 
-        // Section list is visible -- mobile root page.
-        expect(find.text('Account preferences'), findsOneWidget);
+        // Section list is visible -- mobile root page. The "Account
+        // preferences" bucket was split into four headers in #1223.
+        expect(find.text('Account'), findsOneWidget);
         expect(find.text('Privacy'), findsOneWidget);
         expect(find.text('Log out'), findsOneWidget);
 
@@ -249,8 +255,11 @@ void main() {
       await tester.pumpAndSettle();
 
       // Detail page has an AppBar with the section title. The root list's
-      // "Account preferences" group header should no longer be in the tree.
-      expect(find.text('Account preferences'), findsNothing);
+      // group headers (Account / App / Communication / Data / Echo) should
+      // no longer be in the tree once we push into a detail page.
+      // Note: "Privacy" is the AppBar title, so we can't assert its absence
+      // here — the group header "Account" disappearing is enough proof.
+      expect(find.text('Account'), findsNothing);
       // The AppBar title surfaces the section name.
       expect(find.text('Privacy'), findsWidgets);
     });

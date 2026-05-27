@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -47,20 +48,37 @@ Future<void> _pumpDraggable(
 
 void main() {
   group('DraggableScreenShareWindow', () {
-    testWidgets('renders the label and the embedded child', (tester) async {
-      await _pumpDraggable(
-        tester,
-        const Center(child: Text('inner')),
-        label: 'Alice — Screen 1',
-      );
+    testWidgets(
+      'renders the embedded child and surfaces label/handle on hover (#1225)',
+      (tester) async {
+        await _pumpDraggable(
+          tester,
+          const Center(child: Text('inner')),
+          label: 'Alice — Screen 1',
+        );
 
-      expect(find.text('Alice — Screen 1'), findsOneWidget);
-      expect(find.text('inner'), findsOneWidget);
-      // The screen-share badge icon should appear next to the label.
-      expect(find.byIcon(Icons.screen_share), findsOneWidget);
-      // The resize handle icon sits in the bottom-right corner.
-      expect(find.byIcon(Icons.open_in_full), findsOneWidget);
-    });
+        // Child content is always visible.
+        expect(find.text('inner'), findsOneWidget);
+
+        // Label + handle are hover-only — neither appears at rest.
+        expect(find.text('Alice — Screen 1'), findsNothing);
+        expect(find.byIcon(Icons.screen_share), findsNothing);
+        expect(find.byIcon(Icons.open_in_full), findsNothing);
+
+        // Drive a mouse hover over the window so MouseRegion flips on.
+        final gesture = await tester.createGesture(
+          kind: PointerDeviceKind.mouse,
+        );
+        addTearDown(gesture.removePointer);
+        await gesture.addPointer(location: Offset.zero);
+        await gesture.moveTo(tester.getCenter(find.text('inner')));
+        await tester.pump();
+
+        expect(find.text('Alice — Screen 1'), findsOneWidget);
+        expect(find.byIcon(Icons.screen_share), findsOneWidget);
+        expect(find.byIcon(Icons.open_in_full), findsOneWidget);
+      },
+    );
 
     testWidgets('mounts in local mode without throwing', (tester) async {
       await _pumpDraggable(
@@ -69,7 +87,9 @@ void main() {
         label: 'Local',
         isLocal: true,
       );
-      expect(find.text('Local'), findsOneWidget);
+      // Label is hover-only post-#1225; reaching this expectation
+      // without an exception is what the test cares about.
+      expect(find.text('Local'), findsNothing);
     });
   });
 }
