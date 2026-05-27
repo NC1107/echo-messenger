@@ -78,15 +78,28 @@ async function tryClickByText(
   label: RegExp,
   timeoutMs = 1500,
 ): Promise<boolean> {
+  // Per-click timeout (5 s) — without it, the click inherits the test
+  // budget (900 s) and a single stuck click (overlay, animation, etc.)
+  // wedges the whole theme. The audit prefers skipping a surface over
+  // hanging — failures land as console warnings in the safe() wrapper.
+  const clickTimeoutMs = 5000;
   const btn = page.getByRole('button', { name: label }).first();
   if (await btn.isVisible({ timeout: timeoutMs }).catch(() => false)) {
-    await btn.click();
-    return true;
+    try {
+      await btn.click({ timeout: clickTimeoutMs });
+      return true;
+    } catch (_) {
+      // fall through to text-locator path
+    }
   }
   const txt = page.getByText(label).first();
   if (await txt.isVisible({ timeout: timeoutMs }).catch(() => false)) {
-    await txt.click();
-    return true;
+    try {
+      await txt.click({ timeout: clickTimeoutMs });
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
   return false;
 }
