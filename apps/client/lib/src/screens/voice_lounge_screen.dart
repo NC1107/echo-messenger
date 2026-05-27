@@ -121,13 +121,20 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     _viewport
       ..removeListener(_onViewportChanged)
       ..dispose();
-    // Clear fullscreen so the user doesn't return to an immersive HomeScreen
-    // (no sidebar / no title bar) the next time they open the lounge.
-    Future.microtask(() {
-      if (ref.read(voiceLoungeFullscreenProvider)) {
-        ref.read(voiceLoungeFullscreenProvider.notifier).state = false;
-      }
-    });
+    // Clear fullscreen so the user doesn't return to an immersive
+    // HomeScreen (no sidebar / no title bar) the next time they open
+    // the lounge. Read the provider's notifier synchronously now —
+    // ConsumerState's `ref` is invalidated the moment `super.dispose`
+    // runs, so a deferred `Future.microtask(() => ref.read(...))`
+    // crashes with "Cannot use 'ref' after the widget was disposed".
+    try {
+      final notifier = ref.read(voiceLoungeFullscreenProvider.notifier);
+      if (notifier.state) notifier.state = false;
+    } catch (_) {
+      // Ref may already be invalid in narrow edge cases (route swap
+      // during teardown). Silently skip — the next mount will pick up
+      // whatever value the provider holds.
+    }
     DebugLogService.instance.log(
       LogLevel.info,
       'VoiceLoungeUI',
