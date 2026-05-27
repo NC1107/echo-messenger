@@ -157,7 +157,9 @@ class SettingsRootView extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           UserHeaderCard(onTap: () => onTap(SettingsSection.profile)),
-          const SectionHeader('Account preferences'),
+          // Account: identity, presence, who-can-reach-you. Stuff that
+          // travels with the user across devices.
+          const SectionHeader('Account'),
           _CardGroup(
             children: [
               if (onSavedMessages != null)
@@ -167,6 +169,31 @@ class SettingsRootView extends ConsumerWidget {
                   label: 'Saved Messages',
                   onTap: onSavedMessages!,
                 ),
+              _row(
+                context,
+                icon: Icons.mood_outlined,
+                iconColor: context.settingsIconPalette.info,
+                section: SettingsSection.status,
+              ),
+              _row(
+                context,
+                icon: Icons.devices_outlined,
+                iconColor: context.settingsIconPalette.devices,
+                section: SettingsSection.devices,
+              ),
+              _row(
+                context,
+                icon: Icons.lock_outline,
+                iconColor: context.settingsIconPalette.privacy,
+                section: SettingsSection.privacy,
+              ),
+            ],
+          ),
+          // App: visual + input + locale + assistive prefs. Per-install
+          // rather than per-identity.
+          const SectionHeader('App'),
+          _CardGroup(
+            children: [
               _row(
                 context,
                 icon: Icons.palette_outlined,
@@ -183,6 +210,18 @@ class SettingsRootView extends ConsumerWidget {
               ),
               _row(
                 context,
+                icon: Icons.accessibility_outlined,
+                iconColor: context.settingsIconPalette.accessibility,
+                section: SettingsSection.accessibility,
+              ),
+            ],
+          ),
+          // Communication: chat / voice routing + alerting.
+          const SectionHeader('Communication'),
+          _CardGroup(
+            children: [
+              _row(
+                context,
                 icon: Icons.notifications_outlined,
                 iconColor: context.settingsIconPalette.notifications,
                 section: SettingsSection.notifications,
@@ -193,29 +232,17 @@ class SettingsRootView extends ConsumerWidget {
                 iconColor: context.settingsIconPalette.voiceVideo,
                 section: SettingsSection.voiceVideo,
               ),
-              _row(
-                context,
-                icon: Icons.lock_outline,
-                iconColor: context.settingsIconPalette.privacy,
-                section: SettingsSection.privacy,
-              ),
-              _row(
-                context,
-                icon: Icons.devices_outlined,
-                iconColor: context.settingsIconPalette.devices,
-                section: SettingsSection.devices,
-              ),
+            ],
+          ),
+          // Data: caches, exports, on-device footprint.
+          const SectionHeader('Data'),
+          _CardGroup(
+            children: [
               _row(
                 context,
                 icon: Icons.sd_storage_outlined,
                 iconColor: context.textPrimary,
                 section: SettingsSection.dataStorage,
-              ),
-              _row(
-                context,
-                icon: Icons.accessibility_outlined,
-                iconColor: context.settingsIconPalette.accessibility,
-                section: SettingsSection.accessibility,
               ),
             ],
           ),
