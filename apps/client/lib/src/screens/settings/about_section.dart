@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -555,22 +556,27 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
           subtitle: 'Verifies the URL before adding it to your list.',
           onTap: _showAddServerDialog,
         ),
-        const SizedBox(height: 16),
-        Divider(color: context.border),
-        const SizedBox(height: 16),
-        // Debug logs entry (absorbed from former Debug section).
-        SettingsListTile(
-          icon: Icons.bug_report_outlined,
-          title: 'Debug Logs',
-          subtitle: 'View recent in-app log entries.',
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const _DebugLogsSubpage(),
-              ),
-            );
-          },
-        ),
+        // Debug logs entry (absorbed from former Debug section). Hidden in
+        // release builds — users were complaining about the technical log
+        // viewer being reachable from settings (2026-05-27 prod feedback).
+        // Still available in debug builds for developer triage.
+        if (kDebugMode) ...[
+          const SizedBox(height: 16),
+          Divider(color: context.border),
+          const SizedBox(height: 16),
+          SettingsListTile(
+            icon: Icons.bug_report_outlined,
+            title: 'Debug Logs',
+            subtitle: 'View recent in-app log entries.',
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const _DebugLogsSubpage(),
+                ),
+              );
+            },
+          ),
+        ],
         const SizedBox(height: 8),
         // Beta-prep #4c: surface the feedback dialog from About so testers
         // have a one-tap path to report issues without leaving the app.
