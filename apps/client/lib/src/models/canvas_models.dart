@@ -25,6 +25,20 @@ const double kCanvasHeight = 100000;
 /// so users never notice the canvas got bigger underneath them.
 const double _kLegacyNormalisedScale = 4096;
 
+/// Running count of how many times [_migrateLegacyCoord] has applied the
+/// 0..1 → 4096-scale heuristic since app launch. Used to determine when it
+/// is safe to delete the helper (see docs/voice-lounge/01-coordinate-policy.md
+/// "Legacy-coord migration sunset").
+int _legacyMigrationCount = 0;
+
+/// Number of times the legacy-coord migration heuristic has fired in this
+/// app session.
+int get legacyMigrationCount => _legacyMigrationCount;
+
+/// Resets [legacyMigrationCount] to zero. Call this between tests or at
+/// app-start if you want a clean per-session counter.
+void resetLegacyMigrationCount() => _legacyMigrationCount = 0;
+
 /// Migrates very old (pre-4096) coordinates persisted as normalized 0..1
 /// fractions of the viewport. Returns absolute canvas-space pixels.
 ///
@@ -35,7 +49,10 @@ const double _kLegacyNormalisedScale = 4096;
 /// pass through unchanged. The `axisExtent` parameter is now unused but
 /// kept for call-site compatibility; remove on the next sweep.
 double _migrateLegacyCoord(double value, double axisExtent) {
-  if (value <= 1.0) return value * _kLegacyNormalisedScale;
+  if (value <= 1.0) {
+    _legacyMigrationCount++;
+    return value * _kLegacyNormalisedScale;
+  }
   return value;
 }
 

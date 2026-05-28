@@ -61,6 +61,41 @@ The stroke coord migration heuristic (`_migrateLegacyCoord`) is **not** revisite
 
 - **Per-aspect-ratio refinement for screen-share overlay placement** — the normalization treats a 16:9 desktop and a 9:19 phone identically, which is good enough for v1 but may want a future "anchor + offset" model (`{anchor: 'top-right', x_offset_norm: 0.05}`). Pickup trigger: tester reports that proportional placement looks wrong on a particular device class.
 
+## Legacy-coord migration sunset
+
+`_migrateLegacyCoord` in `canvas_models.dart` silently rescales any coordinate `≤ 1.0` by **4096** (the pre-#1253 canvas size). A session-level counter (`legacyMigrationCount` in `canvas_models.dart`) increments each time the heuristic fires and is logged once per session by `CanvasController.attach` via `DebugLogService`:
+
+```
+[Canvas] [legacy-coord] migrations this session = N
+```
+
+### Trigger to remove `_migrateLegacyCoord`
+
+Remove the helper (and `_kLegacyNormalisedScale`) once:
+
+- **N = 14 consecutive days** of session reports show **zero** legacy migrations, AND
+- at least **K = 5 distinct active users** are represented in those reports.
+
+Equivalently, if a structured metrics pipeline lands, the removal gate is:
+
+```sql
+SELECT user_id, MAX(legacy_count)
+FROM session_metrics
+WHERE day >= now() - interval '14 days'
+GROUP BY user_id
+HAVING MAX(legacy_count) > 0
+```
+
+The removal is safe when this query returns **zero rows**.
+
+### What "removal" looks like
+
+1. Delete `_migrateLegacyCoord` and `_kLegacyNormalisedScale` from `canvas_models.dart`.
+2. Delete `legacyMigrationCount`, `resetLegacyMigrationCount`, and `_legacyMigrationCount` from `canvas_models.dart`.
+3. Delete `_legacyCoordLogged` and the log call from `canvas_provider.dart`.
+4. In `CanvasPoint.fromJson` and `CanvasImage.fromJson`, replace the migration call with a direct `(json['x'] as num).toDouble()` read. Optionally add an assertion that rejects `value ≤ 1.0` as a malformed payload to catch any stale client still emitting legacy coords.
+5. If any persisted strokes in the database still use the legacy 0..1 form (check with `SELECT COUNT(*) FROM canvas_strokes WHERE (drawing_data -> 0 -> 'points' -> 0 ->> 'x')::float <= 1.0`), run a one-time migration script or bump the wire format major version.
+
 ## Confirmed by review (2026-05-28)
 
 - **Resize sync uses the same viewport-normalization as position.** `w_norm` and `h_norm` ride in 0..1 of the sender's viewport. The receiver multiplies by its own viewport size **and** clamps to a `w_min_px` / `h_min_px` floor (120 px) so phone-side windows don't shrink below readable size. This preserves "looks proportional across devices" while preventing the worst-case "tiny window on a phone" outcome.
