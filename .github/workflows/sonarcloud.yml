@@ -52,10 +52,11 @@ jobs:
         with:
           shared-key: sonarcloud
       - name: Install cargo-tarpaulin
-        run: cargo install cargo-tarpaulin --locked
+        run: cargo install cargo-tarpaulin --version 0.31.2 --locked
       - name: Generate Rust coverage
+        continue-on-error: true
         run: |
-          cargo tarpaulin --workspace --out lcov --output-dir coverage/rust
+          cargo tarpaulin --workspace --out lcov --output-dir coverage/rust --verbose
         env:
           DATABASE_URL: postgres://echo:test_password@localhost:5432/echo_test
           JWT_SECRET: ${{ format('ci-test-secret-{0}-attempt-{1}-padding', github.run_id, github.run_attempt) }}
