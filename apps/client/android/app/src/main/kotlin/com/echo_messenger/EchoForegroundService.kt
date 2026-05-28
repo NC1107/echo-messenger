@@ -1,4 +1,4 @@
-package us.echomessenger.echo_app
+package com.echo_messenger
 
 import android.app.Notification
 import android.app.NotificationChannel

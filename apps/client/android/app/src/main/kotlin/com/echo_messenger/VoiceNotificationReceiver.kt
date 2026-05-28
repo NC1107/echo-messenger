@@ -1,4 +1,4 @@
-package us.echomessenger.echo_app
+package com.echo_messenger
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -15,8 +15,8 @@ import android.content.Intent
 class VoiceNotificationReceiver : BroadcastReceiver() {
 
     companion object {
-        const val ACTION_TOGGLE_MUTE = "us.echomessenger.echo_app.action.TOGGLE_MUTE"
-        const val ACTION_LEAVE = "us.echomessenger.echo_app.action.LEAVE"
+        const val ACTION_TOGGLE_MUTE = "com.echo_messenger.action.TOGGLE_MUTE"
+        const val ACTION_LEAVE = "com.echo_messenger.action.LEAVE"
         const val EXTRA_NEW_MUTED = "new_muted"
     }
 
