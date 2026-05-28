@@ -441,8 +441,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     ref.read(websocketProvider.notifier).disconnect();
     ref.read(chatProvider.notifier).clear();
     await ref.read(cryptoProvider.notifier).resetState();
-    ref.read(authProvider.notifier).logout();
-    if (mounted) context.go('/login');
+
+    final auth = ref.read(authProvider.notifier);
+    final nextAccount = await auth.logoutAndPickNextAccount();
+
+    if (!mounted) return;
+    if (nextAccount != null) {
+      final ok = await auth.switchToAccount(nextAccount.id);
+      if (!mounted) return;
+      if (ok) {
+        context.go('/home');
+        return;
+      }
+    }
+    context.go('/login');
   }
 
   void _openSavedMessages() {
