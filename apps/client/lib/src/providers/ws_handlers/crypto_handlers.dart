@@ -31,6 +31,105 @@ extension CryptoHandlersOn on WsMessageHandler {
     ref.read(cryptoServiceProvider).invalidateBundleCache(fromUserId);
   }
 
+  /// #1131: Server fans this out the moment a peer lands their FIRST prekey
+  /// bundle. Drop the negative cache for that peer and retry every failed
+  /// outgoing message whose conversation involves them, so the user doesn't
+  /// have to wait out the 5-minute bundle-cache TTL on the sender.
+  void _handlePeerKeysPublished(Map<String, dynamic> json) {
+    final peerId = json['user_id'] as String? ?? '';
+    if (peerId.isEmpty) return;
+
+    final myUserId = ref.read(authProvider).userId ?? '';
+    if (peerId == myUserId) return; // self-publish doesn't unstick anything.
+
+    _invalidatePeer(peerId);
+    unawaited(_retryStuckMessages(peerId));
+  }
+
+  void _invalidatePeer(String peerId) {
+    ref.read(cryptoServiceProvider).invalidateBundleCache(peerId);
+    DebugLogService.instance.log(
+      LogLevel.info,
+      'Bootstrap',
+      '[bootstrap-retry] peer=$peerId bundle-cache invalidated',
+    );
+  }
+
+  /// Walk the failed-messages snapshot and re-send any whose peer just
+  /// published a bundle. Logs `[bootstrap-retry] peer=PEER msg=MSG
+  /// success_after_ms=DELTA` on success so we can verify the wiring
+  /// in prod logs without a metrics endpoint.
+  Future<void> _retryStuckMessages(String peerId) async {
+    final chat = ref.read(chatProvider.notifier);
+    final convsState = ref.read(conversationsProvider);
+    final stuck = chat.failedMessagesSnapshot();
+
+    for (final entry in stuck) {
+      final conv = convsState.conversations
+          .where((c) => c.id == entry.conversationId)
+          .firstOrNull;
+      if (conv == null) continue;
+      if (!_conversationInvolvesPeer(conv, peerId)) continue;
+
+      await _retryOneStuckMessage(
+        peerId: peerId,
+        conv: conv,
+        message: entry.message,
+      );
+    }
+  }
+
+  bool _conversationInvolvesPeer(Conversation conv, String peerId) {
+    return conv.members.any((m) => m.userId == peerId);
+  }
+
+  Future<void> _retryOneStuckMessage({
+    required String peerId,
+    required Conversation conv,
+    required ChatMessage message,
+  }) async {
+    final myUserId = ref.read(authProvider).userId ?? '';
+    final ws = ref.read(websocketProvider.notifier);
+    final chat = ref.read(chatProvider.notifier);
+    final original = message.failedContent ?? message.content;
+    final startedAt = DateTime.now();
+
+    chat.updateMessageStatus(conv.id, message.id, MessageStatus.sending);
+    try {
+      if (conv.isGroup) {
+        await ws.sendGroupMessage(
+          conv.id,
+          original,
+          channelId: message.channelId,
+          replyToId: message.replyToId,
+          threadRootId: message.threadRootId,
+        );
+      } else {
+        final dmPeerId = conv.members
+            .where((m) => m.userId != myUserId)
+            .firstOrNull
+            ?.userId;
+        if (dmPeerId == null) return;
+        await ws.sendMessage(
+          dmPeerId,
+          original,
+          conversationId: conv.id,
+          replyToId: message.replyToId,
+          threadRootId: message.threadRootId,
+        );
+      }
+      final elapsedMs = DateTime.now().difference(startedAt).inMilliseconds;
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'Bootstrap',
+        '[bootstrap-retry] peer=$peerId msg=${message.id} '
+            'success_after_ms=$elapsedMs',
+      );
+    } catch (_) {
+      chat.updateMessageStatus(conv.id, message.id, MessageStatus.failed);
+    }
+  }
+
   void _handleSessionReplaced(Map<String, dynamic> json) {
     final reason = json['reason'] as String? ?? 'Signed in on another device';
     DebugLogService.instance.log(
