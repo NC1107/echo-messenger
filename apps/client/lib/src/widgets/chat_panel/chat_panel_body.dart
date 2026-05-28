@@ -216,8 +216,6 @@ Widget buildChatContentBox(
 ) {
   final chatGradient = context.chatBgGradient;
   final dec = _resolveColumnLayout(context, ref, p);
-  final useColumn = dec.useColumn;
-  final useColumnDrawer = dec.useColumnDrawer;
   final chatArea = DecoratedBox(
     decoration: chatGradient != null
         ? BoxDecoration(gradient: chatGradient)
@@ -240,9 +238,9 @@ Widget buildChatContentBox(
               onMembersToggle: p.onMembersToggle,
               onGroupInfo: p.onGroupInfo,
               // Column-mode rail already shows group identity; suppress duplicate label here.
-              hideGroupIdentity: useColumn,
+              hideGroupIdentity: dec.useColumn,
             ),
-            if (p.conv.isGroup && !useColumn && !useColumnDrawer)
+            if (p.conv.isGroup && !dec.useColumn && !dec.useColumnDrawer)
               ChannelBar(
                 conversationId: p.conv.id,
                 selectedTextChannelId: p.selectedTextChannelId,
@@ -263,96 +261,7 @@ Widget buildChatContentBox(
             Expanded(
               child: GestureDetector(
                 onTap: () => FocusScope.of(context).unfocus(),
-                child: Stack(
-                  children: [
-                    ChatMessageList(
-                      conv: p.conv,
-                      messages: p.messages,
-                      memberAvatars: p.memberAvatars,
-                      myUserId: p.myUserId,
-                      serverUrl: p.serverUrl,
-                      authToken: p.authToken,
-                      mediaTicket: p.mediaTicket,
-                      channelId: p.selectedChannelId,
-                      isLoadingHistory: p.isLoadingHistory,
-                      hasMoreHistory: p.hasMoreHistory,
-                      displayName: p.displayName,
-                      scrollController: p.scrollController,
-                      messageKeys: p.messageKeys,
-                      savedIds: p.savedIds,
-                      highlightedMessageId: p.highlightedMessageId,
-                      unreadBoundaryMessageId: p.unreadBoundaryMessageId,
-                      unreadBoundaryCount: p.unreadBoundaryCount,
-                      onReactionTap: p.onShowReactionPicker,
-                      onToggleReaction: p.onToggleReaction,
-                      onMoreReactions: p.onShowFullReactionPicker,
-                      onDeleteFailed: p.onDeleteFailed,
-                      onConfirmDelete: p.onConfirmDelete,
-                      onRetryMessage: p.onRetryMessage,
-                      onEnterEditMode: (msg) {
-                        p.chatInputBarKey.currentState?.enterEditMode(msg);
-                      },
-                      onReply: (msg) {
-                        ref.read(chatProvider.notifier).setReplyTo(msg);
-                        p.chatInputBarKey.currentState?.requestInputFocus();
-                      },
-                      onReplyInThread: (msg) {
-                        // Stamp the reply with the thread root so the
-                        // outbound message lands in the thread panel,
-                        // not the main timeline.
-                        ref
-                            .read(chatProvider.notifier)
-                            .setReplyTo(msg, asThread: true);
-                        // Open the thread panel so the user sees the
-                        // active conversation context while typing.
-                        p.onOpenThread(msg);
-                      },
-                      onOpenThread: p.onOpenThread,
-                      onPin: p.onPinMessage,
-                      onUnpin: p.onUnpinMessage,
-                      onForward: p.onForwardMessage,
-                      onSaveMessage: p.onSaveMessage,
-                      onUnsaveMessage: p.onUnsaveMessage,
-                      onJumpToReplyQuote: p.onJumpToReplyQuote,
-                      onAvatarTap: (userId) {
-                        UserProfileScreen.show(context, ref, userId);
-                      },
-                      onVerifyIdentity: p.conv.isGroup
-                          ? null
-                          : (message) {
-                              final myName =
-                                  ref.read(authProvider).username ?? 'You';
-                              SafetyNumberScreen.show(
-                                context,
-                                ref,
-                                peerUserId: message.fromUserId,
-                                peerUsername: message.fromUsername,
-                                myUsername: myName,
-                              );
-                            },
-                      onImageTap: p.onOpenImageGallery,
-                      isMessageSaved: (id) =>
-                          SavedMessagesService.instance.isMessageSaved(id),
-                      onSayHi: () {
-                        p.chatInputBarKey.currentState?.preFillText(
-                          'Hey! \u{1F44B}',
-                        );
-                      },
-                    ),
-                    if (p.floatingDate != null)
-                      FloatingDatePill(
-                        visible: p.floatingDateVisible,
-                        date: p.floatingDate,
-                      ),
-                    if (p.hasNewMessagesBelow)
-                      NewMessagesPill(
-                        text: p.newMessagesBannerText,
-                        onTap: p.onScrollToBottom,
-                      ),
-                    // Live region moved to the outer Stack so its index
-                    // in the tree is stable across pill toggles (#630).
-                  ],
-                ),
+                child: _buildMessageListStack(context, ref, p),
               ),
             ),
             ChatInputBar(
@@ -381,4 +290,100 @@ Widget buildChatContentBox(
   );
 
   return _wrapForColumnLayout(chatArea, p, dec);
+}
+
+Widget _buildMessageListStack(
+  BuildContext context,
+  WidgetRef ref,
+  ChatPanelBodyParams p,
+) {
+  return Stack(
+    children: [
+      ChatMessageList(
+        conv: p.conv,
+        messages: p.messages,
+        memberAvatars: p.memberAvatars,
+        myUserId: p.myUserId,
+        serverUrl: p.serverUrl,
+        authToken: p.authToken,
+        mediaTicket: p.mediaTicket,
+        channelId: p.selectedChannelId,
+        isLoadingHistory: p.isLoadingHistory,
+        hasMoreHistory: p.hasMoreHistory,
+        displayName: p.displayName,
+        scrollController: p.scrollController,
+        messageKeys: p.messageKeys,
+        savedIds: p.savedIds,
+        highlightedMessageId: p.highlightedMessageId,
+        unreadBoundaryMessageId: p.unreadBoundaryMessageId,
+        unreadBoundaryCount: p.unreadBoundaryCount,
+        onReactionTap: p.onShowReactionPicker,
+        onToggleReaction: p.onToggleReaction,
+        onMoreReactions: p.onShowFullReactionPicker,
+        onDeleteFailed: p.onDeleteFailed,
+        onConfirmDelete: p.onConfirmDelete,
+        onRetryMessage: p.onRetryMessage,
+        onEnterEditMode: (msg) {
+          p.chatInputBarKey.currentState?.enterEditMode(msg);
+        },
+        onReply: (msg) {
+          ref.read(chatProvider.notifier).setReplyTo(msg);
+          p.chatInputBarKey.currentState?.requestInputFocus();
+        },
+        onReplyInThread: (msg) {
+          // Stamp the reply with the thread root so the
+          // outbound message lands in the thread panel,
+          // not the main timeline.
+          ref.read(chatProvider.notifier).setReplyTo(msg, asThread: true);
+          // Open the thread panel so the user sees the
+          // active conversation context while typing.
+          p.onOpenThread(msg);
+        },
+        onOpenThread: p.onOpenThread,
+        onPin: p.onPinMessage,
+        onUnpin: p.onUnpinMessage,
+        onForward: p.onForwardMessage,
+        onSaveMessage: p.onSaveMessage,
+        onUnsaveMessage: p.onUnsaveMessage,
+        onJumpToReplyQuote: p.onJumpToReplyQuote,
+        onAvatarTap: (userId) {
+          UserProfileScreen.show(context, ref, userId);
+        },
+        onVerifyIdentity: _buildVerifyIdentityCallback(context, ref, p),
+        onImageTap: p.onOpenImageGallery,
+        isMessageSaved: (id) =>
+            SavedMessagesService.instance.isMessageSaved(id),
+        onSayHi: () {
+          p.chatInputBarKey.currentState?.preFillText('Hey! \u{1F44B}');
+        },
+      ),
+      if (p.floatingDate != null)
+        FloatingDatePill(visible: p.floatingDateVisible, date: p.floatingDate),
+      if (p.hasNewMessagesBelow)
+        NewMessagesPill(
+          text: p.newMessagesBannerText,
+          onTap: p.onScrollToBottom,
+        ),
+      // Live region moved to the outer Stack so its index
+      // in the tree is stable across pill toggles (#630).
+    ],
+  );
+}
+
+void Function(ChatMessage)? _buildVerifyIdentityCallback(
+  BuildContext context,
+  WidgetRef ref,
+  ChatPanelBodyParams p,
+) {
+  if (p.conv.isGroup) return null;
+  return (message) {
+    final myName = ref.read(authProvider).username ?? 'You';
+    SafetyNumberScreen.show(
+      context,
+      ref,
+      peerUserId: message.fromUserId,
+      peerUsername: message.fromUsername,
+      myUsername: myName,
+    );
+  };
 }

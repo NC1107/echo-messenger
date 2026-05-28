@@ -761,43 +761,78 @@ class GroupCryptoService {
         .toList();
     final identityKeys = await Future.wait(userIds.map(fetchIdentityKey));
 
-    // TD-21: abort if self's identity key is unavailable — uploading without
-    // self wedges us until the next rotation includes us back in.
-    if (selfUserId != null) {
-      for (var i = 0; i < userIds.length; i++) {
-        if (userIds[i] == selfUserId && identityKeys[i] == null) {
-          debugPrint(
-            '[GroupCrypto] performRotation aborted: local identity '
-            'key unavailable (keyring locked?). Retry when crypto '
-            'is ready.',
-          );
-          return null;
-        }
-      }
-    }
+    if (!_checkSelfKeyPresent(userIds, identityKeys, selfUserId)) return null;
 
-    // TD-4: TOFU bypass guard — abort rotation if any member's identity key
-    // changed silently; admins must acknowledge in the chat header.
     if (hasIdentityKeyChanged != null) {
-      final changedFlags = await Future.wait(
-        userIds.map(hasIdentityKeyChanged),
-      );
-      final changedUsers = <String>[
-        for (var i = 0; i < userIds.length; i++)
-          if (changedFlags[i]) userIds[i],
-      ];
-      if (changedUsers.isNotEmpty) {
-        debugPrint(
-          '[GroupCrypto] performRotation aborted: identity key '
-          'changed for ${changedUsers.join(', ')} (TOFU flag set). '
-          'Acknowledge the change and retry.',
-        );
-        return null;
-      }
+      final aborted = await _hasToFuAbort(userIds, hasIdentityKeyChanged);
+      if (aborted) return null;
     }
 
-    // Refuse partial rotation: unkeyed members hit the __envelope__ sentinel
-    // and produce silent decrypt failures. All-or-nothing.
+    if (!_allMemberKeysPresent(userIds, identityKeys)) return null;
+
+    final envelopes = await _buildRotationEnvelopes(
+      userIds: userIds,
+      identityKeys: identityKeys,
+      newKeyBytes: newKeyBytes,
+    );
+
+    if (envelopes.isEmpty) {
+      debugPrint('[GroupCrypto] performRotation: no envelopes built');
+      return null;
+    }
+
+    return _uploadRotationEnvelopes(
+      conversationId: conversationId,
+      keyVersion: keyVersion,
+      newKeyB64: newKeyB64,
+      envelopes: envelopes,
+      triggeredByEvent: triggeredByEvent,
+    );
+  }
+
+  bool _checkSelfKeyPresent(
+    List<String> userIds,
+    List<Uint8List?> identityKeys,
+    String? selfUserId,
+  ) {
+    if (selfUserId == null) return true;
+    for (var i = 0; i < userIds.length; i++) {
+      if (userIds[i] == selfUserId && identityKeys[i] == null) {
+        debugPrint(
+          '[GroupCrypto] performRotation aborted: local identity '
+          'key unavailable (keyring locked?). Retry when crypto '
+          'is ready.',
+        );
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Future<bool> _hasToFuAbort(
+    List<String> userIds,
+    Future<bool> Function(String) hasIdentityKeyChanged,
+  ) async {
+    final changedFlags = await Future.wait(userIds.map(hasIdentityKeyChanged));
+    final changedUsers = <String>[
+      for (var i = 0; i < userIds.length; i++)
+        if (changedFlags[i]) userIds[i],
+    ];
+    if (changedUsers.isNotEmpty) {
+      debugPrint(
+        '[GroupCrypto] performRotation aborted: identity key '
+        'changed for ${changedUsers.join(', ')} (TOFU flag set). '
+        'Acknowledge the change and retry.',
+      );
+      return true;
+    }
+    return false;
+  }
+
+  bool _allMemberKeysPresent(
+    List<String> userIds,
+    List<Uint8List?> identityKeys,
+  ) {
     final missingKeyUserIds = <String>[
       for (var i = 0; i < userIds.length; i++)
         if (identityKeys[i] == null) userIds[i],
@@ -809,9 +844,16 @@ class GroupCryptoService {
         "to have published an identity key — partial rotation would wedge "
         'the unkeyed member(s) on the sentinel envelope row.',
       );
-      return null;
+      return false;
     }
+    return true;
+  }
 
+  Future<List<Map<String, dynamic>>> _buildRotationEnvelopes({
+    required List<String> userIds,
+    required List<Uint8List?> identityKeys,
+    required Uint8List newKeyBytes,
+  }) async {
     final envelopes = <Map<String, dynamic>>[];
     for (var i = 0; i < userIds.length; i++) {
       final userId = userIds[i];
@@ -822,12 +864,16 @@ class GroupCryptoService {
       );
       envelopes.add({'user_id': userId, 'encrypted_key': wrapped});
     }
+    return envelopes;
+  }
 
-    if (envelopes.isEmpty) {
-      debugPrint('[GroupCrypto] performRotation: no envelopes built');
-      return null;
-    }
-
+  Future<int?> _uploadRotationEnvelopes({
+    required String conversationId,
+    required int keyVersion,
+    required String newKeyB64,
+    required List<Map<String, dynamic>> envelopes,
+    required String triggeredByEvent,
+  }) async {
     try {
       final response = await http.post(
         Uri.parse('$serverUrl/api/groups/$conversationId/keys'),
