@@ -32,6 +32,7 @@ export default defineConfig({
         'echo_e2e.spec.ts',
         'qa_comprehensive.spec.ts',
         'ws_check.spec.ts',
+        'voice_lounge_canvas_sync.spec.ts',
       ],
       use: { browserName: 'chromium' },
     },
