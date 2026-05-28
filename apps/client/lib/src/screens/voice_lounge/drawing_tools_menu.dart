@@ -86,7 +86,10 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
     // 16 px margin per side so the popup never overflows on narrow
     // phones (iPhone SE at 320 logical width has exactly 288 usable
     // and the old fixed 280 risked off-screen popup chrome).
-    final maxAllowed = (MediaQuery.sizeOf(context).width - 32).clamp(220.0, 320.0);
+    final maxAllowed = (MediaQuery.sizeOf(context).width - 32).clamp(
+      220.0,
+      320.0,
+    );
     final menuWidth = math.min(280.0, maxAllowed);
     return SizedBox(
       width: menuWidth,

@@ -176,8 +176,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     final fitTranslation = fitPose.getTranslation();
     final cur = _viewport.value;
     final scaleDiff = (cur.getMaxScaleOnAxis() - fitScale).abs();
-    final translationDiff =
-        (cur.getTranslation() - fitTranslation).length;
+    final translationDiff = (cur.getTranslation() - fitTranslation).length;
     // Tolerances: scale within 0.1% of fit, translation within 0.5 px.
     final transformed = scaleDiff > fitScale * 1e-3 || translationDiff > 0.5;
     if (transformed != _viewportTransformed) {
@@ -238,10 +237,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     final pad = math.max(contentW, contentH) * 0.1;
     final paddedW = contentW + pad * 2;
     final paddedH = contentH + pad * 2;
-    final fit = math.min(
-      viewport.width / paddedW,
-      viewport.height / paddedH,
-    );
+    final fit = math.min(viewport.width / paddedW, viewport.height / paddedH);
     // Anchor: bbox top-left lands at (-pad, -pad) of the visible region
     // so the padding shows on every side.
     return Matrix4.identity()
@@ -1381,10 +1377,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
                 final canvas = ref.read(canvasProvider);
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (!mounted) return;
-                  _viewport.value = _computeInitialPose(
-                    canvas,
-                    viewportSize,
-                  );
+                  _viewport.value = _computeInitialPose(canvas, viewportSize);
                 });
               }
 
