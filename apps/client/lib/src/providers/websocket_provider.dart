@@ -27,6 +27,7 @@ export 'ws_message_handler.dart' show WsMessageHandler, WebSocketState;
 part 'websocket_provider.g.dart';
 part 'websocket/websocket_typing.dart';
 part 'websocket/websocket_receive_dispatcher.dart';
+part 'websocket/websocket_lifecycle.dart';
 
 @Riverpod(keepAlive: true)
 class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
@@ -110,44 +111,8 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
       _voiceSignalController.stream;
 
   /// Request a short-lived WebSocket ticket from the server.
-  ///
-  /// Returns the ticket string on success, or null on failure. If the
-  /// request returns 401, attempts to refresh the access token once and
-  /// retries. Includes device_id in the request body for multi-device support.
-  Future<String?> _fetchWsTicket() async {
-    final serverUrl = ref.read(serverUrlProvider);
-    // Include device_id in the ticket request for multi-device routing.
-    // The crypto service may not be initialized yet on first connect.
-    final crypto = ref.read(cryptoServiceProvider);
-    final deviceId = crypto.isInitialized ? crypto.deviceId : 0;
-    try {
-      final response = await ref
-          .read(authProvider.notifier)
-          .authenticatedRequest(
-            (token) => http.post(
-              Uri.parse('$serverUrl/api/auth/ws-ticket'),
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer $token',
-              },
-              body: jsonEncode({'device_id': deviceId}),
-            ),
-          );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        return data['ticket'] as String?;
-      }
-    } catch (e) {
-      debugLog('Failed to fetch ws ticket: $e', 'WebSocket');
-      DebugLogService.instance.log(
-        LogLevel.error,
-        'WebSocket',
-        'Failed to fetch ws ticket: $e',
-      );
-    }
-    return null;
-  }
+  /// Implementation in `websocket/websocket_lifecycle.dart`.
+  Future<String?> _fetchWsTicket() => _fetchWsTicketImpl();
 
   void connect() {
     final token = ref.read(authProvider).token;
@@ -237,35 +202,28 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
 
     _subscription = _channel!.stream.listen(
       (data) => _onMessage(data as String),
-      onDone: () {
-        // Null these so the guard in _connectWithTicketOrFallback passes next time.
-        _subscription = null;
-        _channel = null;
-        DebugLogService.instance.log(
-          LogLevel.warning,
-          'WebSocket',
-          'Connection closed (onDone)',
-        );
-        // (#436) Mark peers offline; reconnect's presence_list reconciles.
-        clearOnlineUsers();
-        state = state.copyWith(isConnected: false);
-        _scheduleReconnect();
-      },
-      onError: (_) {
-        // Same cleanup as onDone.
-        _subscription = null;
-        _channel = null;
-        DebugLogService.instance.log(
-          LogLevel.error,
-          'WebSocket',
-          'Connection error (onError)',
-        );
-        // Same as onDone: clear stale presence before reconnect snapshot.
-        clearOnlineUsers();
-        state = state.copyWith(isConnected: false);
-        _scheduleReconnect();
-      },
+      onDone: () => _handleChannelClosed(
+        level: LogLevel.warning,
+        message: 'Connection closed (onDone)',
+      ),
+      onError: (_) => _handleChannelClosed(
+        level: LogLevel.error,
+        message: 'Connection error (onError)',
+      ),
     );
+  }
+
+  /// Shared onDone/onError teardown: reset transport, log, clear peer
+  /// presence (#436), drop `isConnected`, and schedule a reconnect.
+  void _handleChannelClosed({
+    required LogLevel level,
+    required String message,
+  }) {
+    _resetTransportAfterDisconnect();
+    DebugLogService.instance.log(level, 'WebSocket', message);
+    clearOnlineUsers();
+    state = state.copyWith(isConnected: false);
+    _scheduleReconnect();
   }
 
   /// Schedule a reconnection attempt with exponential backoff.
@@ -298,12 +256,9 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
       return;
     }
 
-    final baseDelay = math.min(
-      1000 * math.pow(2, _reconnectAttempts).toInt(),
-      60000,
-    );
-    // Add jitter (0–50% of base) to avoid thundering herd after server restart
-    final delayMs = baseDelay + _random.nextInt(math.max(baseDelay ~/ 2, 1));
+    // Backoff math (exponential + 0-50% jitter, capped 60s) lives in
+    // websocket/websocket_lifecycle.dart so it's testable in isolation.
+    final delayMs = wsComputeBackoffMs(_reconnectAttempts, _random);
     _reconnectAttempts++;
     state = state.copyWith(reconnectAttempts: _reconnectAttempts);
 
