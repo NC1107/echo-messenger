@@ -7,6 +7,7 @@
 final RegExp _imgPattern = RegExp(r'\[img:[^\]]*\]');
 final RegExp _filePattern = RegExp(r'\[file:[^\]]*\]');
 final RegExp _voicePattern = RegExp(r'\[voice:[^\]]*\]');
+final RegExp _audioPattern = RegExp(r'\[audio:[^\]]*\]');
 final RegExp _videoPattern = RegExp(r'\[video:[^\]]*\]');
 final RegExp _unknownTokenPattern = RegExp(r'\[\w+:[^\]]*\]');
 final RegExp _whitespacePattern = RegExp(r'\s+');
@@ -16,6 +17,7 @@ String previewForSemantics(String content) {
       .replaceAll(_imgPattern, 'Image')
       .replaceAll(_filePattern, 'File')
       .replaceAll(_voicePattern, 'Voice message')
+      .replaceAll(_audioPattern, 'Voice message')
       .replaceAll(_videoPattern, 'Video')
       .replaceAll(_unknownTokenPattern, '')
       .replaceAll(_whitespacePattern, ' ')
