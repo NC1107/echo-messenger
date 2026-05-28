@@ -12,7 +12,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/canvas_models.dart'
-    show CanvasTool, kCanvasHeight, kCanvasWidth;
+    show CanvasState, CanvasTool, kCanvasHeight, kCanvasWidth;
 import '../providers/auth_provider.dart';
 import '../providers/canvas_provider.dart';
 import '../providers/channels_provider.dart';
@@ -156,68 +156,111 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   }
 
   void _onViewportChanged() {
-    // The reset-view button only needs to appear when the user has actively
-    // panned or zoomed away from the initial fit-to-screen pose. The fit
-    // pose itself isn't identity (it's a uniform scale), so use the matrix
-    // translation + a tolerance check on scale instead.
-    final m = _viewport.value;
+    // Show the reset-view affordance whenever the user is no longer at
+    // the auto-fit pose (either scale or translation differs by more
+    // than a tolerance). Computing the fit pose here is cheap because
+    // _computeInitialPose is O(strokes + images) and runs only on
+    // transform changes (1× per pan/zoom frame, throttled by Flutter).
     final size = MediaQuery.maybeSizeOf(context) ?? Size.zero;
-    final fit = size.width <= 0 || size.height <= 0
-        ? 1.0
-        : math.min(size.width / kCanvasWidth, size.height / kCanvasHeight);
-    final scaleDiff = (m.getMaxScaleOnAxis() - fit).abs();
-    final translated = m.getTranslation().length > 0.5;
-    final transformed = scaleDiff > 1e-3 || translated;
+    if (size.width <= 0 || size.height <= 0) return;
+    final fitPose = _computeInitialPose(ref.read(canvasProvider), size);
+    final fitScale = fitPose.getMaxScaleOnAxis();
+    final fitTranslation = fitPose.getTranslation();
+    final cur = _viewport.value;
+    final scaleDiff = (cur.getMaxScaleOnAxis() - fitScale).abs();
+    final translationDiff =
+        (cur.getTranslation() - fitTranslation).length;
+    // Tolerances: scale within 0.1% of fit, translation within 0.5 px.
+    final transformed = scaleDiff > fitScale * 1e-3 || translationDiff > 0.5;
     if (transformed != _viewportTransformed) {
       setState(() => _viewportTransformed = transformed);
     }
   }
 
   void _resetViewport() {
-    // Reset to the same starting pose used on first mount: canvas top-left
-    // at viewport top-left, scaled so the entire 4096-px surface fits.
+    // Recompute the same auto-fit pose used on first mount so the user
+    // can always get back to "looking at the existing content".
     final size = MediaQuery.sizeOf(context);
     if (size.width <= 0 || size.height <= 0) {
       _viewport.value = Matrix4.identity();
       return;
     }
-    final fit = math.min(
-      size.width / kCanvasWidth,
-      size.height / kCanvasHeight,
-    );
-    _viewport.value = Matrix4.identity()..scaleByDouble(fit, fit, fit, 1);
+    _viewport.value = _computeInitialPose(ref.read(canvasProvider), size);
   }
 
-  /// Toggle between fit-to-screen and a 2× zoom centred on the tap point.
-  /// `tapPoint` is in viewport-local pixels (where the user touched);
-  /// `minScale` is the fit-to-screen scale for the current viewport.
-  ///
-  /// This is the recommended mobile UX: pinch is fiddly with one hand,
-  /// and the gesture arena gets noisy with a drawing tool in hand. A
-  /// double-tap is unambiguous and works in either drawing or idle mode.
-  void _toggleDoubleTapZoom(Offset tapPoint, double minScale) {
+  /// Compute the matrix that frames the existing canvas content inside
+  /// [viewport]. Auto-fit semantics:
+  ///   - Bounding box of every stroke point + image rect (NOT avatars —
+  ///     they jitter every audio tick).
+  ///   - +10% padding so content doesn't touch the edges.
+  ///   - Empty canvas → identity at origin (user can pan to find their
+  ///     own drawing space).
+  Matrix4 _computeInitialPose(CanvasState canvas, Size viewport) {
+    // Walk strokes + images for the bbox.
+    double minX = double.infinity, minY = double.infinity;
+    double maxX = double.negativeInfinity, maxY = double.negativeInfinity;
+    for (final s in canvas.strokes) {
+      for (final p in s.points) {
+        if (p.x < minX) minX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y > maxY) maxY = p.y;
+      }
+    }
+    for (final img in canvas.images) {
+      if (img.x < minX) minX = img.x;
+      if (img.y < minY) minY = img.y;
+      if (img.x + img.width > maxX) maxX = img.x + img.width;
+      if (img.y + img.height > maxY) maxY = img.y + img.height;
+    }
+    final hasContent =
+        minX != double.infinity && (maxX > minX) && (maxY > minY);
+    if (!hasContent) {
+      // Empty canvas — identity at origin. User starts at (0,0) at 1×,
+      // pans to wherever they want to draw.
+      return Matrix4.identity();
+    }
+    final contentW = maxX - minX;
+    final contentH = maxY - minY;
+    // 10% padding around the bbox so strokes don't kiss the edges.
+    final pad = math.max(contentW, contentH) * 0.1;
+    final paddedW = contentW + pad * 2;
+    final paddedH = contentH + pad * 2;
+    final fit = math.min(
+      viewport.width / paddedW,
+      viewport.height / paddedH,
+    );
+    // Anchor: bbox top-left lands at (-pad, -pad) of the visible region
+    // so the padding shows on every side.
+    return Matrix4.identity()
+      ..scaleByDouble(fit, fit, fit, 1)
+      ..setTranslationRaw(-(minX - pad) * fit, -(minY - pad) * fit, 0);
+  }
+
+  /// Toggle between auto-fit and a 2× zoom centred on the tap point.
+  /// `tapPoint` is viewport-local pixels.
+  void _toggleDoubleTapZoom(Offset tapPoint) {
     final current = _viewport.value.getMaxScaleOnAxis();
-    final isFit = (current - minScale).abs() < 1e-3;
-    if (isFit) {
+    final size = MediaQuery.maybeSizeOf(context) ?? Size.zero;
+    final fitPose = _computeInitialPose(ref.read(canvasProvider), size);
+    final fitScale = fitPose.getMaxScaleOnAxis();
+    final isAtFit = (current - fitScale).abs() < 1e-3;
+    if (isAtFit) {
       // Zoom in. The transform's scale * canvasPoint + translate = tap,
-      // so translate = tap - scale * canvasPoint. We want the tap point
-      // to stay anchored on the same pixel of the canvas under the
-      // finger as it zooms in.
+      // so translate = tap - scale * canvasPoint, anchoring the tap on
+      // the same canvas pixel.
       const targetScale = 2.0;
       final inverse = Matrix4.copy(_viewport.value)..invert();
       final canvasPoint = MatrixUtils.transformPoint(inverse, tapPoint);
-      final m = Matrix4.identity()
+      _viewport.value = Matrix4.identity()
         ..scaleByDouble(targetScale, targetScale, targetScale, 1)
         ..setTranslationRaw(
           tapPoint.dx - canvasPoint.dx * targetScale,
           tapPoint.dy - canvasPoint.dy * targetScale,
           0,
         );
-      _viewport.value = m;
     } else {
-      // Snap back to fit-to-screen.
-      _viewport.value = Matrix4.identity()
-        ..scaleByDouble(minScale, minScale, minScale, 1);
+      _viewport.value = fitPose;
     }
   }
 
@@ -1290,6 +1333,13 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     // Background sits in a separate scaffold layer behind this widget
     // so it never moves with the canvas.
     const maxScale = 4.0;
+    // Floor on how far the user can keep pinching out. Below this scale
+    // the 100k canvas would render under one logical pixel and the math
+    // collapses; in practice a user pinches to fit-content + a couple
+    // more outs and stops. Picked an order of magnitude past
+    // viewport/canvas so the Figma "zoom out forever" feel survives
+    // without giving Flutter a degenerate transform to deal with.
+    const minScaleFloor = 0.0001;
 
     final viewportContent = _spotlightMode
         ? mergedContent
@@ -1297,37 +1347,29 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
             builder: (ctx, constraints) {
               final viewportW = constraints.maxWidth;
               final viewportH = constraints.maxHeight;
-              final minScale = viewportW <= 0 || viewportH <= 0
-                  ? 0.1
-                  : math.min(
-                      viewportW / kCanvasWidth,
-                      viewportH / kCanvasHeight,
-                    );
-
-              // Initial pose: canvas top-left at the viewport top-left,
-              // scaled to fit. Re-applied if the viewport size changes
-              // (rotation, sidebar toggle, etc.) so the user never gets
-              // stuck off-canvas.
+              // Initial pose: auto-fit to the bbox of existing strokes +
+              // images so a late joiner doesn't have to hunt for the
+              // content. Falls back to identity-at-origin when the
+              // canvas is empty.
               if (!_viewportInitialised && viewportW > 0 && viewportH > 0) {
                 _viewportInitialised = true;
+                final canvas = ref.read(canvasProvider);
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (!mounted) return;
-                  _viewport.value = Matrix4.identity()
-                    ..scaleByDouble(minScale, minScale, minScale, 1);
+                  _viewport.value = _computeInitialPose(
+                    canvas,
+                    Size(viewportW, viewportH),
+                  );
                 });
               }
 
               return GestureDetector(
-                // Double-tap to toggle zoom — single-finger UX that
-                // doesn't fight the gesture arena. Tap once at fit-to-
-                // screen to jump to 2x at the tap point; tap again to
-                // return to fit.
                 behavior: HitTestBehavior.translucent,
                 onDoubleTapDown: (details) =>
-                    _toggleDoubleTapZoom(details.localPosition, minScale),
+                    _toggleDoubleTapZoom(details.localPosition),
                 child: InteractiveViewer(
                   transformationController: _viewport,
-                  minScale: minScale,
+                  minScale: minScaleFloor,
                   maxScale: maxScale,
                   panEnabled: !_isDrawing,
                   scaleEnabled: true,

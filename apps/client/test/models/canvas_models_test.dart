@@ -4,9 +4,13 @@ import 'package:echo_app/src/models/canvas_models.dart';
 
 void main() {
   group('CanvasPoint', () {
-    test('canvas dimensions are the agreed 4096 px square', () {
-      expect(kCanvasWidth, 4096);
-      expect(kCanvasHeight, 4096);
+    test('canvas dimensions are the 100k-px figma-style surface', () {
+      // The 100k value is the "feels infinite" virtual canvas; in 2026-05
+      // we bumped from the original 4096 to give users true Figma-style
+      // pan/zoom. The auto-fit-on-join logic frames the bbox of existing
+      // content so users never have to find the corner.
+      expect(kCanvasWidth, 100000);
+      expect(kCanvasHeight, 100000);
     });
 
     test('round-trips through JSON in canvas-space pixels', () {
@@ -24,12 +28,13 @@ void main() {
       expect(p.y, 200.0);
     });
 
-    test('legacy 0..1 normalized coords migrate to canvas-space pixels', () {
+    test('legacy 0..1 normalized coords migrate to legacy-4096 space', () {
       // Strokes persisted before the fixed-size canvas migration stored
-      // x/y as fractions of the participant's viewport. The fromJson
-      // heuristic (value ≤ 1.0 = legacy) rescales them to the shared
-      // 4096-px space so circles drawn on a phone display as circles on
-      // desktop after the upgrade.
+      // x/y as fractions of the participant's viewport. After the 100k
+      // bump, those are rescaled by 4096 (NOT by kCanvasWidth) so the
+      // old drawings stay in their original spatial relationships in
+      // the top-left 4% of the new 100k space. Auto-fit-to-content on
+      // join zooms users to that region naturally.
       final p = CanvasPoint.fromJson({'x': 0.5, 'y': 0.25});
       expect(p.x, closeTo(2048.0, 1e-9));
       expect(p.y, closeTo(1024.0, 1e-9));
@@ -103,7 +108,11 @@ void main() {
       expect(restored.height, closeTo(800, 1e-9));
     });
 
-    test('legacy 0..1 image coords migrate to canvas-space pixels', () {
+    test('legacy 0..1 image coords migrate to legacy-4096 space', () {
+      // Same rationale as the stroke-point test: legacy normalised
+      // values rescale by 4096 (not 100k) so old persisted images keep
+      // their relative positions in the top-left of the new space.
+      const legacyExtent = 4096.0;
       final restored = CanvasImage.fromJson({
         'id': 'img-legacy',
         'url': 'https://example.com/old.png',
@@ -112,10 +121,10 @@ void main() {
         'width': 0.5,
         'height': 0.25,
       });
-      expect(restored.x, closeTo(kCanvasWidth * 0.1, 1e-9));
-      expect(restored.y, closeTo(kCanvasHeight * 0.2, 1e-9));
-      expect(restored.width, closeTo(kCanvasWidth * 0.5, 1e-9));
-      expect(restored.height, closeTo(kCanvasHeight * 0.25, 1e-9));
+      expect(restored.x, closeTo(legacyExtent * 0.1, 1e-9));
+      expect(restored.y, closeTo(legacyExtent * 0.2, 1e-9));
+      expect(restored.width, closeTo(legacyExtent * 0.5, 1e-9));
+      expect(restored.height, closeTo(legacyExtent * 0.25, 1e-9));
     });
 
     test('copyWith updates only specified fields', () {
