@@ -90,6 +90,55 @@ curl https://your-domain.com/api/health
 # Expected: {"status":"ok","version":"0.1.0","server":"Echo Messenger"}
 ```
 
+## Prometheus Metrics
+
+Echo exposes a Prometheus text-format scrape endpoint at `GET /api/metrics`.
+
+### Enable scraping
+
+The endpoint is disabled by default.  Set the `METRICS_TOKEN` environment
+variable on the server container to enable it:
+
+```bash
+METRICS_TOKEN=$(openssl rand -base64 32)
+```
+
+Add it to your `.env` file and pass it through in `docker-compose.prod.yml`:
+
+```yaml
+server:
+  environment:
+    METRICS_TOKEN: ${METRICS_TOKEN}
+```
+
+### Configure Prometheus
+
+```yaml
+scrape_configs:
+  - job_name: echo_server
+    scheme: https
+    metrics_path: /api/metrics
+    authorization:
+      credentials: <your METRICS_TOKEN>
+    static_configs:
+      - targets: ["us-east.echo-messenger.us"]
+```
+
+### Exposed metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `echo_ws_connections` | gauge | Active WebSocket connections across all users and devices |
+| `echo_messages_per_second` | gauge | WS relay rate, trailing 60-second window |
+| `echo_failed_logins_total` | counter | Failed login attempts since process start |
+| `echo_voice_tokens_issued_total` | counter | LiveKit tokens issued since process start |
+
+### Auth errors
+
+- No `METRICS_TOKEN` set → `503 metrics disabled`
+- Wrong token → `401 Unauthorized`
+- Correct token → `200` with Prometheus text body
+
 ## Backups
 
 ### Database backup

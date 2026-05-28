@@ -86,6 +86,15 @@ impl Hub {
             .collect()
     }
 
+    /// Total number of active WebSocket connections across all users and devices.
+    pub fn connection_count(&self) -> usize {
+        self.inner
+            .connections
+            .iter()
+            .map(|entry| entry.value().len())
+            .sum()
+    }
+
     /// Number of devices currently registered for `user_id`.  Used by the
     /// presence broadcaster to gate `online`/`offline` events on
     /// first-device-up / last-device-down so a user with three devices

@@ -258,6 +258,7 @@ pub async fn login(
     let user = match maybe_user {
         Some(u) if valid => u,
         _ => {
+            state.failed_logins.inc();
             return Err(AppError::with_code(
                 ErrorCode::InvalidCredentials,
                 "Invalid username or password",
