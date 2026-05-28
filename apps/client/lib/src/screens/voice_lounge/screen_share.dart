@@ -362,30 +362,30 @@ class _DraggableScreenShareWindowState
   void _broadcastMove() {
     final id = widget.windowId;
     if (id == null) return;
-    ref
-        .read(canvasProvider.notifier)
-        .moveScreenShare(
-          windowId: id,
-          x: _left,
-          y: _top,
-          width: _width,
-          height: _height,
-        );
+    final notifier = ref.read(canvasProvider.notifier);
+    notifier.moveScreenShare(
+      windowId: id,
+      x: _left,
+      y: _top,
+      width: _width,
+      height: _height,
+      viewportSize: notifier.localViewportSize,
+    );
   }
 
   /// Flushes the position broadcast immediately on drag/resize end.
   void _commitMove() {
     final id = widget.windowId;
     if (id == null) return;
-    ref
-        .read(canvasProvider.notifier)
-        .commitScreenShareMove(
-          windowId: id,
-          x: _left,
-          y: _top,
-          width: _width,
-          height: _height,
-        );
+    final notifier = ref.read(canvasProvider.notifier);
+    notifier.commitScreenShareMove(
+      windowId: id,
+      x: _left,
+      y: _top,
+      width: _width,
+      height: _height,
+      viewportSize: notifier.localViewportSize,
+    );
   }
 
   @override
