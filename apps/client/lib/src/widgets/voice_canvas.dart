@@ -164,7 +164,6 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
     final canvas = ref.watch(canvasProvider);
     final authState = ref.watch(authProvider);
     final myUserId = authState.userId ?? '';
-    final tool = canvas.selectedTool;
 
     return Focus(
       focusNode: _focusNode,
@@ -188,27 +187,17 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
                 Positioned.fill(
                   child: _DrawingLayer(
                     canvas: canvas,
-                    onPointerDown: (offset) {
-                      if (isDrawingTool(tool)) {
-                        ref
-                            .read(canvasProvider.notifier)
-                            .startStroke(_toCanvasPoint(offset));
-                      } else if (tool == CanvasTool.text) {
-                        _promptTextLabel(_toCanvasPoint(offset));
-                      }
-                    },
-                    onPointerMove: (offset) {
-                      if (isDrawingTool(tool)) {
-                        ref
-                            .read(canvasProvider.notifier)
-                            .continueStroke(_toCanvasPoint(offset));
-                      }
-                    },
-                    onPointerUp: () {
-                      if (isDrawingTool(tool)) {
-                        ref.read(canvasProvider.notifier).endStroke();
-                      }
-                    },
+                    // Drawing-tool pointer input is owned by
+                    // LoungeDrawingCanvas (an opaque overlay placed by
+                    // voice_lounge_screen.dart). That widget uses a
+                    // PanGestureRecognizer so a second pointer cancels and
+                    // InteractiveViewer can pinch — semantics that a bare
+                    // Listener can't replicate. _DrawingLayer keeps the
+                    // text-tool tap-to-place because the prompt closure
+                    // lives in this widget's State (audit Finding 1,
+                    // 2026-05-28).
+                    onTextTap: (offset) =>
+                        _promptTextLabel(_toCanvasPoint(offset)),
                   ),
                 ),
                 ..._buildImages(canvas, authState),
@@ -430,8 +419,18 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
                 .firstOrNull;
             final curX = current?.x ?? img.x;
             final curY = current?.y ?? img.y;
-            final newX = (curX + dx).clamp(0.0, kCanvasWidth);
-            final newY = (curY + dy).clamp(0.0, kCanvasHeight);
+            final w = current?.width ?? img.width;
+            final h = current?.height ?? img.height;
+            // Clamp the LEFT edge to (0, canvas - width) so the whole
+            // image stays inside the canvas. Previously clamped to
+            // (0, canvas) which let the right edge drift off-screen by
+            // the image's full width (audit Finding 7, 2026-05-28).
+            // Guard against an oversized image (w > canvas) by allowing
+            // x = 0 in that case rather than producing a negative clamp.
+            final maxX = (kCanvasWidth - w).clamp(0.0, kCanvasWidth);
+            final maxY = (kCanvasHeight - h).clamp(0.0, kCanvasHeight);
+            final newX = (curX + dx).clamp(0.0, maxX);
+            final newY = (curY + dy).clamp(0.0, maxY);
             ref.read(canvasProvider.notifier).moveImage(img.id, newX, newY);
           },
           onMoveEnd: () {
@@ -510,44 +509,35 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
   }
 }
 
+/// Painter overlay + text-tool tap target.
+///
+/// Used to also handle drawing-tool pointer input, but that role was
+/// transferred to [LoungeDrawingCanvas] in 2026-05-28 (audit Finding 1)
+/// because a bare [Listener] can't cancel mid-gesture when a second
+/// pointer arrives — which broke pinch-to-zoom on mobile and risked
+/// double-dispatching strokes alongside the overlay. Now the only input
+/// path here is a single tap when the text tool is selected.
 class _DrawingLayer extends StatelessWidget {
   final CanvasState canvas;
-  final void Function(Offset) onPointerDown;
-  final void Function(Offset) onPointerMove;
-  final VoidCallback onPointerUp;
+  final void Function(Offset) onTextTap;
 
-  const _DrawingLayer({
-    required this.canvas,
-    required this.onPointerDown,
-    required this.onPointerMove,
-    required this.onPointerUp,
-  });
+  const _DrawingLayer({required this.canvas, required this.onTextTap});
 
   @override
   Widget build(BuildContext context) {
-    // When a drawing/text tool is in hand the layer must own every pointer
-    // event so the InteractiveViewer parent can't reclassify a slow drag as
-    // a pan. `opaque` blocks pass-through hit-testing; without it mobile
-    // testers reported the canvas panning when they tried to drag a shape
-    // (image #57, 2026-05-27). `deferToChild` is preserved for the idle
-    // "no tool" case so avatars + images remain draggable underneath.
-    final tool = canvas.selectedTool;
-    final toolActive = isDrawingTool(tool) || tool == CanvasTool.text;
-    final behavior = toolActive
-        ? HitTestBehavior.opaque
-        : HitTestBehavior.deferToChild;
+    final isText = canvas.selectedTool == CanvasTool.text;
     return Listener(
-      behavior: behavior,
-      onPointerDown: (e) {
-        if (e.buttons != kPrimaryButton) return;
-        onPointerDown(e.localPosition);
-      },
-      onPointerMove: (e) {
-        if (e.buttons != kPrimaryButton) return;
-        onPointerMove(e.localPosition);
-      },
-      onPointerUp: (_) => onPointerUp(),
-      onPointerCancel: (_) => onPointerUp(),
+      // `deferToChild` so avatars and images stay draggable underneath
+      // when no drawing/text tool is active and so the
+      // LoungeDrawingCanvas overlay (above this in the parent Stack)
+      // remains the sole owner of drag pointer events.
+      behavior: isText ? HitTestBehavior.opaque : HitTestBehavior.deferToChild,
+      onPointerDown: isText
+          ? (e) {
+              if (e.buttons != kPrimaryButton) return;
+              onTextTap(e.localPosition);
+            }
+          : null,
       child: RepaintBoundary(
         child: CustomPaint(
           painter: _CanvasPainter(canvas: canvas),

@@ -469,10 +469,14 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
               initialTop: 16,
               label: 'Your screen',
               isLocal: true,
-              // Same stable id every client uses for the local preview
-              // so move-broadcasts from any participant land on the
-              // same entry.
-              windowId: kScreenshareLocal,
+              // Per-participant id so two concurrent sharers don't
+              // overwrite each other's local-preview positions in the
+              // shared canvas state (audit Finding 2, 2026-05-28). The
+              // local key (kScreenshareLocal) is still used for the
+              // *focus-tile* state because that's a per-client UI
+              // selection, not a synced canvas object.
+              windowId:
+                  '$kScreenshareLocal-${ref.read(authProvider).userId ?? "anon"}',
               // Builder form so the window matches a portrait phone
               // share instead of letterboxing it into landscape.
               childBuilder: (ctx, aspect) => GestureDetector(
@@ -1246,6 +1250,14 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     // the viewport (zoom + pan) differs between devices. See
     // `apps/client/lib/src/models/canvas_models.dart` for the
     // kCanvasWidth/kCanvasHeight constants and migration heuristic.
+    // LoungeDrawingCanvas is the single owner of drawing-tool pointer
+    // input (pen/highlight/shapes/eraser). Text tool is excluded — it's
+    // a single tap handled by _DrawingLayer inside voice_canvas.dart so
+    // the prompt closure can live where the State is. Including the
+    // text tool here would double-dispatch the down event (Audit
+    // Finding 1, 2026-05-28).
+    final isDrawingOverlayActive =
+        _isDrawing && selectedTool != CanvasTool.text;
     final mergedContent = SizedBox(
       width: kCanvasWidth,
       height: kCanvasHeight,
@@ -1254,7 +1266,9 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
         children: [
           contentArea,
           if (!_spotlightMode)
-            Positioned.fill(child: LoungeDrawingCanvas(isActive: _isDrawing)),
+            Positioned.fill(
+              child: LoungeDrawingCanvas(isActive: isDrawingOverlayActive),
+            ),
         ],
       ),
     );
