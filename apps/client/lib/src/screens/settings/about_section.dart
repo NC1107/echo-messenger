@@ -430,10 +430,15 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
           ),
         ),
         const SizedBox(height: 12),
-        Container(
-          decoration: BoxDecoration(
-            color: context.surface,
-            border: Border.all(color: context.border),
+        // Material (not Container w/ BoxDecoration) — Material's `color`
+        // sits BELOW the InkResponse layer so ListTile ripples stay
+        // visible. The previous Container-with-decoration triggered the
+        // "ListTile background color may be invisible" debug assertion
+        // in test (failing CI on #1247).
+        Material(
+          color: context.surface,
+          shape: RoundedRectangleBorder(
+            side: BorderSide(color: context.border),
             borderRadius: BorderRadius.circular(12),
           ),
           clipBehavior: Clip.antiAlias,
