@@ -7,7 +7,7 @@ part of 'livekit_voice_provider.dart';
 // **************************************************************************
 
 String _$liveKitVoiceNotifierHash() =>
-    r'02a029d7f9f884457c93289991431636c6093894';
+    r'98be3148985eeb2c43e6f753d7ceb27ef061142b';
 
 /// Facade for the LiveKit voice notifier — owns shared state, connection
 /// lifecycle (`joinChannel` / `leaveChannel` / `dispose`), the room event

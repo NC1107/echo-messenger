@@ -153,6 +153,10 @@ pub(in crate::ws) async fn cleanup_user_voice_sessions(state: &AppState, user_id
         };
 
     for (channel_id, conversation_id) in removed_sessions {
+        // Clear per-lounge canvas authority so the next device to draw
+        // reclaims fresh. See docs/voice-lounge/03-multi-device.md.
+        state.canvas_authority.clear_on_leave(user_id, channel_id);
+
         let member_ids = typing_service::get_member_ids_cached(&state.pool, conversation_id).await;
         if let Ok(member_ids) = member_ids {
             let event = serde_json::json!({

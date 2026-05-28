@@ -11,6 +11,8 @@ import '../services/canvas_perf.dart';
 import '../services/debug_log_service.dart';
 import '../utils/canvas_utils.dart';
 import 'auth_provider.dart';
+import 'canvas_authority_provider.dart';
+import 'crypto_provider.dart';
 import 'server_url_provider.dart';
 import 'websocket_provider.dart';
 
@@ -987,6 +989,40 @@ class CanvasController extends _$CanvasController {
   }
 
   // -------------------------------------------------------------------------
+  // Canvas authority
+  // -------------------------------------------------------------------------
+
+  /// Returns true when this device is allowed to send canvas events.
+  ///
+  /// A device may write when:
+  /// - No authority has been claimed yet (null → first writer wins); OR
+  /// - This device IS the current authority.
+  ///
+  /// When false the caller should skip the WS send (server drops it anyway;
+  /// early exit saves the round-trip and honestly reflects read-only state).
+  bool _canIWrite() {
+    final cid = _channelId;
+    if (cid == null) return false;
+    final authority = ref.read(canvasAuthorityNotifierProvider(cid));
+    if (authority == null) return true;
+    final myDeviceId = ref.read(cryptoServiceProvider).deviceId;
+    return authority == myDeviceId;
+  }
+
+  /// Emit a `canvas_authority_claim` event so the server grants this device
+  /// the canvas write lock for [channelId]. The server's 1-second grace period
+  /// prevents rapid back-and-forth between devices.
+  void sendCanvasAuthorityClaim(String channelId) {
+    ref
+        .read(websocketProvider.notifier)
+        .sendCanvasEvent(
+          channelId: channelId,
+          kind: 'canvas_authority_claim',
+          payload: const {},
+        );
+  }
+
+  // -------------------------------------------------------------------------
   // Helpers
   // -------------------------------------------------------------------------
 
@@ -1134,6 +1170,7 @@ class CanvasController extends _$CanvasController {
   void _sendCanvasEvent(String kind, Map<String, dynamic> payload) {
     final cid = _channelId;
     if (cid == null) return;
+    if (!_canIWrite()) return;
 
     ref
         .read(websocketProvider.notifier)
