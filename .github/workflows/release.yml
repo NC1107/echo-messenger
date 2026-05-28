@@ -764,7 +764,11 @@ jobs:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEY_PROPERTIES: ${{ secrets.ANDROID_KEY_PROPERTIES }}
         run: |
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > apps/client/android/echo-release.jks
+          # gradle's `file(storeFile)` in app/build.gradle resolves relative to
+          # the `app/` module dir, not the `android/` dir — so the decoded
+          # keystore must land at app/ alongside build.gradle for
+          # `storeFile=echo-release.jks` in key.properties to resolve.
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > apps/client/android/app/echo-release.jks
           echo "$ANDROID_KEY_PROPERTIES" > apps/client/android/key.properties
       - name: Build APK
         working-directory: apps/client
