@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart' show FocusNode, TextEditingController;
 import 'package:record/record.dart';
 
 import '../models/chat_message.dart';
+import 'chat_input/markdown_editing_controller.dart';
 import 'input/mention_controller.dart';
 import 'input/pending_attachments_strip.dart' show PendingAttachment;
 
@@ -16,7 +17,7 @@ class ChatInputController extends ChangeNotifier {
   ChatInputController({MentionComposerController? mentionController})
     : mention = mentionController ?? MentionComposerController();
 
-  final TextEditingController text = TextEditingController();
+  final TextEditingController text = MarkdownTextEditingController();
   final FocusNode focus = FocusNode();
   final MentionComposerController mention;
 

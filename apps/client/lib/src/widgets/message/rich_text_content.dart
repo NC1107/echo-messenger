@@ -7,38 +7,24 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../providers/theme_provider.dart' show UIDensity;
+import 'markdown_patterns.dart';
 
-/// Regex for detecting URLs in message text.
-final urlRegex = RegExp(r'https?://[^\s]+');
+// Re-export urlRegex for callers that imported it from this file.
+export 'markdown_patterns.dart' show urlRegex;
 
-/// Regex for detecting fenced code blocks: ```\n...\n``` (multiline).
-final _codeBlockRegex = RegExp(r'```\n?([\s\S]*?)```', multiLine: true);
-
-/// Regex for detecting inline code: `...` (single backtick, no nesting).
-final _inlineCodeRegex = RegExp(r'`([^`\n]+)`');
-
-/// Regex for detecting bold text: **...**
-final _boldRegex = RegExp(r'\*\*(.+?)\*\*');
-
-/// Regex for detecting italic text: *...*
-/// Negative lookahead/lookbehind to avoid matching ** (bold delimiters).
-final _italicRegex = RegExp(r'(?<!\*)\*([^*]+?)\*(?!\*)');
-
-/// Regex for detecting underline text: __...__
-/// Negative lookahead/lookbehind to avoid matching bold+italic combos.
-final _underlineRegex = RegExp(r'(?<!_)__([^_]+?)__(?!_)');
-
-/// Regex for detecting strikethrough text: ~~...~~
-final _strikethroughRegex = RegExp(r'~~(.+?)~~');
-
-/// Regex for detecting spoiler text: ||...||
-final _spoilerRegex = RegExp(r'\|\|(.+?)\|\|');
-
-/// Regex for detecting masked links: [text](url)
-final _maskedLinkRegex = RegExp(r'\[([^\]]+)\]\((https?://[^\s)]+)\)');
-
-/// Regex for detecting @mentions in message text.
-final _mentionRegex = RegExp(r'@(\w+)');
+// ---------------------------------------------------------------------------
+// Internal aliases — keep existing private names pointing at shared regexes
+// so none of the methods below need changing.
+// ---------------------------------------------------------------------------
+final _codeBlockRegex = mdCodeBlockRegex;
+final _inlineCodeRegex = mdInlineCodeRegex;
+final _boldRegex = mdBoldRegex;
+final _italicRegex = mdItalicRegex;
+final _underlineRegex = mdUnderlineRegex;
+final _strikethroughRegex = mdStrikethroughRegex;
+final _spoilerRegex = mdSpoilerRegex;
+final _maskedLinkRegex = mdMaskedLinkRegex;
+final _mentionRegex = mdMentionRegex;
 
 /// A widget that renders message text with Discord-style markdown formatting,
 /// clickable URLs, and @mentions with accent styling.

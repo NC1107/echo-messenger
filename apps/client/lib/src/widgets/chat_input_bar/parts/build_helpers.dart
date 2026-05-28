@@ -142,6 +142,19 @@ extension _BuildHelpers on ChatInputBarState {
             onPickFile: _pickFile,
             onShowMobileMenu: _showMobileAttachMenu,
           ),
+        if (!_isEditing) const SizedBox(width: 4),
+        if (!_isEditing)
+          AaToggleButton(
+            active: _showFormattingBar,
+            onToggle: () {
+              setState(() => _showFormattingBar = !_showFormattingBar);
+              if (_showFormattingBar) {
+                _formattingBarAnim.forward();
+              } else {
+                _formattingBarAnim.reverse();
+              }
+            },
+          ),
         if (!_isEditing) const SizedBox(width: EchoSpacing.sm),
         Expanded(
           child: Container(
@@ -155,20 +168,31 @@ extension _BuildHelpers on ChatInputBarState {
               borderRadius: BorderRadius.circular(22),
               border: Border.all(color: pillBorderColor, width: 1),
             ),
-            child: Row(
-              crossAxisAlignment: _isMultiline
-                  ? CrossAxisAlignment.end
-                  : CrossAxisAlignment.center,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildTextField(
-                  showMediaPicker: showMediaPicker,
-                  isMobileLayout: isMobileLayout,
-                  voiceSettings: voiceSettings,
-                  effectiveActiveVoiceChannelId: effectiveActiveVoiceChannelId,
+                FormattingToolbar(
+                  controller: _messageController,
+                  animationController: _formattingBarAnim,
                 ),
-                MediaPickerToggle(
-                  showMediaPicker: showMediaPicker,
-                  onToggle: () => _toggleMediaPicker(isMobileLayout),
+                Row(
+                  crossAxisAlignment: _isMultiline
+                      ? CrossAxisAlignment.end
+                      : CrossAxisAlignment.center,
+                  children: [
+                    _buildTextField(
+                      showMediaPicker: showMediaPicker,
+                      isMobileLayout: isMobileLayout,
+                      voiceSettings: voiceSettings,
+                      effectiveActiveVoiceChannelId:
+                          effectiveActiveVoiceChannelId,
+                    ),
+                    MediaPickerToggle(
+                      showMediaPicker: showMediaPicker,
+                      onToggle: () => _toggleMediaPicker(isMobileLayout),
+                    ),
+                  ],
                 ),
               ],
             ),

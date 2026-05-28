@@ -118,6 +118,10 @@ extension _KeyboardHandling on ChatInputBarState {
         !HardwareKeyboard.instance.isShiftPressed) {
       return _applyMarkdownWrap(open: '*', close: '*');
     }
+    if (event.logicalKey == LogicalKeyboardKey.keyE &&
+        !HardwareKeyboard.instance.isShiftPressed) {
+      return _applyMarkdownWrap(open: '`', close: '`');
+    }
     return KeyEventResult.ignored;
   }
 
