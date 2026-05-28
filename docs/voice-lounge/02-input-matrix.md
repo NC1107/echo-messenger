@@ -69,6 +69,9 @@ These apply across all device classes; they exist to make gesture-arena behavior
 
 ## Open questions
 
-- **Right-click context menu** — the matrix lists right-click as "tool-cancel / Escape" today, but a real context menu (Cut / Copy / Paste / Bring forward / Send back) would be useful for canvas objects. Pickup trigger: first feature request for canvas-object reordering or copy-paste.
 - **Pen / stylus support** — currently treated as touch. iPad pencil / Wacom may want pressure-sensitive stroke width. Pickup trigger: tester with a stylus reports unsatisfying stroke quality.
-- **Trackpad scroll-wheel zoom without modifier** — some apps treat unmodified trackpad scroll as zoom (Figma) vs pan (most browsers). Today we use modifier-required. Pickup trigger: user feedback prefers unmodified zoom.
+
+## Confirmed by review (2026-05-28)
+
+- **Right-click on canvas = cancel draw / clear selection** (same as Escape). No full context menu in v1; defer Cut/Copy/Paste/z-order until first feature request.
+- **Trackpad scroll-wheel zoom stays modifier-required** (Ctrl/Cmd + scroll). Unmodified two-finger scroll pans. Predictable across web + desktop; revisit if testers report friction.

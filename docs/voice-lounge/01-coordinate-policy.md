@@ -60,4 +60,8 @@ The stroke coord migration heuristic (`_migrateLegacyCoord`) is **not** revisite
 ## Open questions
 
 - **Per-aspect-ratio refinement for screen-share overlay placement** — the normalization treats a 16:9 desktop and a 9:19 phone identically, which is good enough for v1 but may want a future "anchor + offset" model (`{anchor: 'top-right', x_offset_norm: 0.05}`). Pickup trigger: tester reports that proportional placement looks wrong on a particular device class.
-- **Whether resize sync uses the same normalization or stays in absolute pixels** — current implementation syncs `w_norm` and `h_norm` per this decision. Open to revisit if windows end up at unreadable sizes on small screens; the simple fix would be to clamp `w_min_px` / `h_min_px` on the receive side.
+
+## Confirmed by review (2026-05-28)
+
+- **Resize sync uses the same viewport-normalization as position.** `w_norm` and `h_norm` ride in 0..1 of the sender's viewport. The receiver multiplies by its own viewport size **and** clamps to a `w_min_px` / `h_min_px` floor (120 px) so phone-side windows don't shrink below readable size. This preserves "looks proportional across devices" while preventing the worst-case "tiny window on a phone" outcome.
+- **Strokes, shapes, avatars are unchanged.** They live in canvas-world (100k) coordinates and zoom/pan with the InteractiveViewer transform, so they already appear in the same logical position on every device. The resize-sync change only affects the screen-share window overlay, not whiteboard content.

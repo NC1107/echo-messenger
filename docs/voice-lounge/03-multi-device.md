@@ -74,5 +74,8 @@ This is **not** a multi-device E2E protocol change — it's a single-writer-per-
 ## Open questions
 
 - **Device-name display** — how do we surface the device name? `device_name` is collected during key upload (per the device-aware server work). Need to confirm it propagates into the lounge presence payload. Pickup: during implementation, if not present, decide between adding to presence vs. inline lookup via `/api/devices/<id>`.
-- **Cross-lounge authority** — does the authority device for lounge A automatically also become authority for lounge B if the user joins B? Default answer: no, authority is per-lounge. Open to revisit if testers find that confusing.
 - **Voice-attribution UX** — currently muting on one device doesn't visually distinguish which device is muted on the avatar. That's a voice-system issue, not a canvas one, and is out of scope here. Captured for future routing to the voice surface.
+
+## Confirmed by review (2026-05-28)
+
+- **Authority is per-lounge.** Joining lounge B with a desktop that was authority in lounge A starts fresh — whoever draws first in B becomes B's authority. No cross-lounge state to track.
