@@ -770,15 +770,33 @@ jobs:
           # `storeFile=echo-release.jks` in key.properties to resolve.
           echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > apps/client/android/app/echo-release.jks
           echo "$ANDROID_KEY_PROPERTIES" > apps/client/android/key.properties
+      - name: Compute build number
+        id: build_number
+        # versionCode = patch component of the auto-incrementing semver from
+        # the `version` job (e.g. 0.0.481 -> 481). Play Store rejects re-uploads
+        # of the same versionCode; this guarantees monotonic uniqueness without
+        # needing to maintain a separate counter.
+        run: |
+          BUILD_NUM=$(echo "${{ needs.version.outputs.version }}" | cut -d. -f3)
+          echo "build_number=$BUILD_NUM" >> "$GITHUB_OUTPUT"
+          echo "Using versionCode = $BUILD_NUM"
       - name: Build APK
         working-directory: apps/client
-        run: flutter build apk --release --dart-define=APP_VERSION=${{ needs.version.outputs.version }}
+        run: |
+          flutter build apk --release \
+            --dart-define=APP_VERSION=${{ needs.version.outputs.version }} \
+            --build-name=${{ needs.version.outputs.version }} \
+            --build-number=${{ steps.build_number.outputs.build_number }}
       - name: Build AAB
         # The AAB is what Play Store accepts; APK stays for GitHub Release
         # side-loaders. Two separate `flutter build` invocations because each
         # produces a different artifact and there's no `--all` flag.
         working-directory: apps/client
-        run: flutter build appbundle --release --dart-define=APP_VERSION=${{ needs.version.outputs.version }}
+        run: |
+          flutter build appbundle --release \
+            --dart-define=APP_VERSION=${{ needs.version.outputs.version }} \
+            --build-name=${{ needs.version.outputs.version }} \
+            --build-number=${{ steps.build_number.outputs.build_number }}
       - name: Rename artifacts
         run: |
           cp apps/client/build/app/outputs/flutter-apk/app-release.apk \
