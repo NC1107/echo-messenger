@@ -367,7 +367,12 @@ class CanvasController extends _$CanvasController {
   void clearDrawing() {
     if (_channelId == null) return;
     state = state.copyWith(strokes: [], images: []);
+    // Reset BOTH mine-sets — the previous code only cleared strokes, so
+    // a subsequent "Clear my drawings" would believe the user still had
+    // images to scope-clear and replay an empty snapshot (audit Finding
+    // 5, 2026-05-28).
     _myStrokeIds.clear();
+    _myImageIds.clear();
     _sendCanvasEvent('clear', {});
   }
 
@@ -545,14 +550,6 @@ class CanvasController extends _$CanvasController {
     );
   }
 
-  /// Back-compat alias for [moveAvatar]. The "Local" in the name is
-  /// historical — early builds only let you move your own avatar, but
-  /// the shared-whiteboard model now lets anyone move anyone. Kept as a
-  /// thin alias so older call sites in flight during the rename still
-  /// compile; new code should call [moveAvatar].
-  void moveLocalAvatar(String userId, CanvasPoint pos) =>
-      moveAvatar(userId, pos);
-
   void _flushAvatarMove() {
     final pending = _pendingAvatar;
     if (pending == null) {
@@ -639,10 +636,6 @@ class CanvasController extends _$CanvasController {
       'scale': scale,
     });
   }
-
-  /// Back-compat alias for [commitAvatarMove]; see [moveLocalAvatar].
-  void commitLocalAvatarMove(String userId, CanvasPoint pos) =>
-      commitAvatarMove(userId, pos);
 
   // -------------------------------------------------------------------------
   // Screen-share window positions
@@ -762,15 +755,19 @@ class CanvasController extends _$CanvasController {
     switch (kind) {
       case 'stroke_partial':
         // Partial stroke delta: points arriving incrementally.
-        // Build a temporary stroke and add it for live display.
-        final pointsList = (payload['points'] as List? ?? [])
-            .map(
-              (p) => CanvasPoint(
-                x: (p['x'] as num?)?.toDouble() ?? 0.0,
-                y: (p['y'] as num?)?.toDouble() ?? 0.0,
-              ),
-            )
-            .toList();
+        // Build a temporary stroke and add it for live display. Apply the
+        // legacy 0..1 → pixel migration heuristic inline — without this,
+        // a pre-4096 client's partial strokes paint into the top-left
+        // 1×1 pixel and only "jump" to the right place when the final
+        // stroke arrives (audit Finding 6, 2026-05-28).
+        final pointsList = (payload['points'] as List? ?? []).map((p) {
+          final rawX = (p['x'] as num?)?.toDouble() ?? 0.0;
+          final rawY = (p['y'] as num?)?.toDouble() ?? 0.0;
+          return CanvasPoint(
+            x: rawX <= 1.0 ? rawX * kCanvasWidth : rawX,
+            y: rawY <= 1.0 ? rawY * kCanvasHeight : rawY,
+          );
+        }).toList();
         final color = payload['color'] as String? ?? '#000000';
         final width = (payload['width'] as num?)?.toDouble() ?? 2.0;
         final kind = payload['kind'] as String? ?? 'pen';
@@ -815,6 +812,10 @@ class CanvasController extends _$CanvasController {
         state = state.copyWith(strokes: strokes);
       case 'clear':
         state = state.copyWith(strokes: [], images: []);
+        // Remote clear wipes the board for us too — drop the mine-sets so
+        // "Clear my drawings" reflects the now-empty canvas.
+        _myStrokeIds.clear();
+        _myImageIds.clear();
       case 'image_add':
         final image = CanvasImage.fromJson(payload);
         final newImages = List<CanvasImage>.from(state.images)..add(image);

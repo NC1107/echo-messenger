@@ -31,8 +31,17 @@ async fn persist_canvas_state(
             }
         },
         "clear" => {
-            if let Err(e) = db::canvas::clear_drawing(&state.pool, channel_id).await {
-                tracing::error!("canvas: failed to clear drawing for channel {channel_id}: {e:?}");
+            // The client's "Clear board" wipes both drawings AND images
+            // locally and broadcasts a single `clear` event. Server used
+            // to only erase drawing_data, leaving images_data persisted —
+            // so the next user to join the channel saw ghost images that
+            // the live participants had already cleared. Route to
+            // clear_all to keep persisted state aligned with live state
+            // (audit Finding 3, 2026-05-28).
+            if let Err(e) = db::canvas::clear_all(&state.pool, channel_id).await {
+                tracing::error!(
+                    "canvas: failed to clear-all for channel {channel_id}: {e:?}"
+                );
             }
             true
         }
