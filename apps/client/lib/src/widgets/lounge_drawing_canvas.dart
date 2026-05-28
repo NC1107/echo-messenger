@@ -1,4 +1,3 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -42,10 +41,14 @@ class LoungeDrawingCanvasState extends ConsumerState<LoungeDrawingCanvas> {
     if (!widget.isActive) return const SizedBox.shrink();
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      // DragStartBehavior.down so the inner pan claims the gesture arena
-      // immediately on pointer-down instead of waiting for slop —
-      // otherwise a fast first stroke can get reclassified.
-      dragStartBehavior: DragStartBehavior.down,
+      // Default `DragStartBehavior.start` (NOT `.down`) — `.down` claimed
+      // the gesture arena immediately on first-pointer-down, which
+      // blocked the parent InteractiveViewer's ScaleGestureRecognizer
+      // from ever taking over a two-finger pinch. With `.start`, the pan
+      // recogniser waits for a few pixels of slop before claiming, which
+      // gives the multi-touch path a window to assert ownership. Strokes
+      // have a tiny startup delay (kPanSlop ≈ 18 px) but pinch-to-zoom
+      // works on mobile again — see user feedback 2026-05-28.
       onPanStart: (details) {
         ref
             .read(canvasProvider.notifier)

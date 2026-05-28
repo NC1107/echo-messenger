@@ -184,6 +184,22 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     }
   }
 
+  /// Toggle drawing mode from the dock's pencil button. When turning OFF,
+  /// also resets `selectedTool` to `CanvasTool.none` — otherwise the
+  /// auto-enable watch in `build()` (which flips `_isDrawing = true`
+  /// whenever a non-none tool is selected) immediately re-enables
+  /// drawing, leaving the user with no way to exit drawing mode (user
+  /// feedback 2026-05-28).
+  void _toggleDrawingMode() {
+    final wasDrawing = _isDrawing;
+    setState(() => _isDrawing = !wasDrawing);
+    if (wasDrawing) {
+      // Exiting drawing mode — clear the tool so the build watch doesn't
+      // immediately auto-re-enable on the next frame.
+      ref.read(canvasProvider.notifier).setTool(CanvasTool.none);
+    }
+  }
+
   void _resetViewport() {
     // Recompute the same auto-fit pose used on first mount so the user
     // can always get back to "looking at the existing content". Uses
@@ -1190,7 +1206,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       case DockSubmenu.draw:
         link = _drawingToolsLayerLink;
         content = DrawingToolsMenu(
-          onToggleDrawing: () => setState(() => _isDrawing = !_isDrawing),
+          onToggleDrawing: _toggleDrawingMode,
           isDrawing: _isDrawing,
           conversationId: conversationId,
           onRequestClose: _closeSubmenu,
@@ -1267,7 +1283,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       conversationId: conversationId,
       channelId: channelId,
       isDrawing: _isDrawing,
-      onToggleDrawing: () => setState(() => _isDrawing = !_isDrawing),
+      onToggleDrawing: _toggleDrawingMode,
       activeSubmenu: _activeSubmenu,
       onToggleSubmenu: (submenu) {
         setState(() {
