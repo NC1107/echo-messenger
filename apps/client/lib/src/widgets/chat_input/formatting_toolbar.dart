@@ -74,7 +74,9 @@ class FormattingToolbar extends StatelessWidget {
         parent: animationController,
         curve: MotionCurves.entrance,
       ),
+      // ignore: deprecated_member_use
       axisAlignment: -1.0,
+
       child: Padding(
         padding: const EdgeInsets.only(bottom: 4),
         child: SizedBox(
