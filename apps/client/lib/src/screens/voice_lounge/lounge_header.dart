@@ -29,42 +29,82 @@ class LoungeHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final participantTooltip =
+        '$participantCount participant${participantCount != 1 ? 's' : ''}';
     return Container(
       height: 56,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
         color: context.surface,
         border: Border(bottom: BorderSide(color: context.border, width: 1)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.graphic_eq, size: 20, color: EchoTheme.online),
-          const SizedBox(width: 10),
-          Text(
-            channelName,
-            style: TextStyle(
-              color: context.textPrimary,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
+          // Compact back: chevron only. The previous "Back to chat" text
+          // button ate ~110 px and collided with the call-metrics chip
+          // + participant pill on phones (user feedback 2026-05-28).
+          if (onBackToChat != null)
+            IconButton(
+              tooltip: 'Back to chat',
+              onPressed: onBackToChat,
+              icon: const Icon(Icons.chevron_left, size: 24),
+              style: IconButton.styleFrom(
+                foregroundColor: context.textSecondary,
+                minimumSize: const Size(40, 40),
+                padding: EdgeInsets.zero,
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: context.surfaceHover,
-              borderRadius: BorderRadius.circular(10),
-            ),
+          const Icon(Icons.graphic_eq, size: 18, color: EchoTheme.online),
+          const SizedBox(width: 6),
+          // Lounge name takes whatever space is left, ellipsis-truncated
+          // if needed so the trailing metrics/eye don't get pushed off
+          // the right edge of a narrow phone.
+          Flexible(
             child: Text(
-              '$participantCount participant${participantCount != 1 ? 's' : ''}',
+              channelName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: context.textSecondary,
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
+                color: context.textPrimary,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
-          if (trailing != null) ...[const SizedBox(width: 8), trailing!],
+          const SizedBox(width: 6),
+          // Icon + number instead of "N participant(s)". The full text
+          // moves to a tooltip so screen readers + hover users still get it.
+          Tooltip(
+            message: participantTooltip,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: context.surfaceHover,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.person_outline,
+                    size: 12,
+                    color: context.textSecondary,
+                  ),
+                  const SizedBox(width: 3),
+                  Text(
+                    '$participantCount',
+                    style: TextStyle(
+                      color: context.textSecondary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (trailing != null) ...[const SizedBox(width: 6), trailing!],
           const Spacer(),
           if (onToggleMembers != null)
             IconButton(
@@ -80,17 +120,8 @@ class LoungeHeader extends StatelessWidget {
               ),
               style: IconButton.styleFrom(
                 foregroundColor: context.textSecondary,
-                minimumSize: const Size(44, 44),
-              ),
-            ),
-          if (onBackToChat != null)
-            TextButton.icon(
-              onPressed: onBackToChat,
-              icon: const Icon(Icons.chat_outlined, size: 16),
-              label: const Text('Back to chat'),
-              style: TextButton.styleFrom(
-                foregroundColor: context.textSecondary,
-                textStyle: const TextStyle(fontSize: 13),
+                minimumSize: const Size(40, 40),
+                padding: EdgeInsets.zero,
               ),
             ),
         ],
