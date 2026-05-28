@@ -503,6 +503,41 @@ void main() {
     });
 
     testWidgets(
+      'rapid double-tap on leave calls leaveChannel exactly once, no crash',
+      (tester) async {
+        // Simulate the user mashing the leave button before the first
+        // disconnect resolves.  leaveChannel is async; we complete the pump
+        // after both taps so the test verifies the idempotency guard.
+        final livekit = _FakeLiveKitNotifier();
+        final channels = _FakeChannelsNotifier();
+
+        await tester.pumpApp(
+          const _DockHarness(
+            voiceState: LiveKitVoiceState.empty,
+            voiceSettings: VoiceSettingsState(),
+            screenShare: ScreenShareState.empty,
+          ),
+          overrides: _overrides(livekit: livekit, channels: channels),
+        );
+        await tester.pump();
+
+        // First tap — starts the leave sequence.
+        await tester.tap(find.byIcon(Icons.call_end));
+        // Second tap fires BEFORE the first async sequence drains.
+        // After the first tap, _isLeaving=true so the button is disabled;
+        // the second tap must be a no-op.
+        await tester.tap(find.byIcon(Icons.call_end));
+        // Let both async tasks complete.
+        await tester.pumpAndSettle();
+
+        // leaveChannel must have been called exactly once, not twice.
+        expect(livekit.leaveChannelCalls, 1);
+        expect(channels.leaveVoiceCalls, 1);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
       'leaving while screen-sharing also stops the share before tearing down',
       (tester) async {
         final livekit = _FakeLiveKitNotifier();
