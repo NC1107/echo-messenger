@@ -109,11 +109,19 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   /// transform differs from identity (any zoom or pan applied).
   bool _viewportTransformed = false;
 
-  /// True once the viewport has been initialised to the "canvas top-left at
-  /// viewport top-left, fully zoomed out" pose. Reset to false when this
-  /// widget is rebuilt for a different conversation/channel so each lounge
-  /// session starts from a clean canvas overview.
+  /// True once the viewport has been initialised to the auto-fit-content
+  /// pose. Reset to false when this widget is rebuilt for a different
+  /// conversation/channel so each lounge session starts from a clean
+  /// canvas overview.
   bool _viewportInitialised = false;
+
+  /// Tracks the actual InteractiveViewer region (from LayoutBuilder
+  /// constraints) so listener-driven callbacks like [_onViewportChanged]
+  /// + [_resetViewport] + [_toggleDoubleTapZoom] use the same dimensions
+  /// the initial pose was computed against. MediaQuery.sizeOf would
+  /// over-count by the header band + dock + members panel on tablets
+  /// and desktops, leaving reset/double-tap landing in the wrong pose.
+  Size? _interactiveViewportSize;
 
   /// Captured at initState so dispose() can clear fullscreen without
   /// touching `ref` (which becomes invalid the moment the element is
@@ -158,11 +166,11 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   void _onViewportChanged() {
     // Show the reset-view affordance whenever the user is no longer at
     // the auto-fit pose (either scale or translation differs by more
-    // than a tolerance). Computing the fit pose here is cheap because
-    // _computeInitialPose is O(strokes + images) and runs only on
-    // transform changes (1× per pan/zoom frame, throttled by Flutter).
-    final size = MediaQuery.maybeSizeOf(context) ?? Size.zero;
-    if (size.width <= 0 || size.height <= 0) return;
+    // than a tolerance). Uses the actual InteractiveViewer constraints
+    // captured by the LayoutBuilder — MediaQuery.sizeOf would over-count
+    // by the header band + dock + members panel.
+    final size = _interactiveViewportSize;
+    if (size == null || size.width <= 0 || size.height <= 0) return;
     final fitPose = _computeInitialPose(ref.read(canvasProvider), size);
     final fitScale = fitPose.getMaxScaleOnAxis();
     final fitTranslation = fitPose.getTranslation();
@@ -179,9 +187,13 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
 
   void _resetViewport() {
     // Recompute the same auto-fit pose used on first mount so the user
-    // can always get back to "looking at the existing content".
-    final size = MediaQuery.sizeOf(context);
-    if (size.width <= 0 || size.height <= 0) {
+    // can always get back to "looking at the existing content". Uses
+    // the actual InteractiveViewer region (captured by LayoutBuilder)
+    // so the reset lands in the right place on any device — tablets +
+    // desktops include sidebars / members panel that MediaQuery
+    // doesn't subtract.
+    final size = _interactiveViewportSize;
+    if (size == null || size.width <= 0 || size.height <= 0) {
       _viewport.value = Matrix4.identity();
       return;
     }
@@ -241,7 +253,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   /// `tapPoint` is viewport-local pixels.
   void _toggleDoubleTapZoom(Offset tapPoint) {
     final current = _viewport.value.getMaxScaleOnAxis();
-    final size = MediaQuery.maybeSizeOf(context) ?? Size.zero;
+    final size = _interactiveViewportSize ?? Size.zero;
     final fitPose = _computeInitialPose(ref.read(canvasProvider), size);
     final fitScale = fitPose.getMaxScaleOnAxis();
     final isAtFit = (current - fitScale).abs() < 1e-3;
@@ -1347,6 +1359,19 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
             builder: (ctx, constraints) {
               final viewportW = constraints.maxWidth;
               final viewportH = constraints.maxHeight;
+              final viewportSize = Size(viewportW, viewportH);
+              // Cache the actual InteractiveViewer region so the
+              // listener-driven helpers (_onViewportChanged,
+              // _resetViewport, _toggleDoubleTapZoom) compute the same
+              // pose on tablets / desktops as the initial-mount path.
+              // MediaQuery.sizeOf includes the header + dock + members
+              // panel and would mis-anchor the reset / double-tap.
+              if (_interactiveViewportSize != viewportSize) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) return;
+                  _interactiveViewportSize = viewportSize;
+                });
+              }
               // Initial pose: auto-fit to the bbox of existing strokes +
               // images so a late joiner doesn't have to hunt for the
               // content. Falls back to identity-at-origin when the
@@ -1358,7 +1383,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
                   if (!mounted) return;
                   _viewport.value = _computeInitialPose(
                     canvas,
-                    Size(viewportW, viewportH),
+                    viewportSize,
                   );
                 });
               }
