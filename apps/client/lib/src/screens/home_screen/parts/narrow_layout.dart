@@ -92,6 +92,13 @@ mixin _HomeScreenNarrowLayoutMixin
     );
   }
 
+  void _openLoungeFromFooter() {
+    setState(() {
+      _self._showingLounge = true;
+      _self._userDismissedLounge = false;
+    });
+  }
+
   /// Select a conversation from the column-mode channel drawer.
   void _selectConversationFromDrawer(String id) {
     final next = ref
@@ -240,12 +247,7 @@ mixin _HomeScreenNarrowLayoutMixin
           // Show the voice footer between the content and the tab bar when
           // the user is in a call but has dismissed the lounge overlay.
           if (voiceActive && !_self._showingLounge)
-            VoiceFooter(
-              onNavigateToLounge: () => setState(() {
-                _self._showingLounge = true;
-                _self._userDismissedLounge = false;
-              }),
-            ),
+            VoiceFooter(onNavigateToLounge: _openLoungeFromFooter),
         ],
       ),
       bottomNavigationBar: _buildMobileTabBar(),
