@@ -32,6 +32,7 @@ import '../utils/canvas_utils.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/echo_bottom_sheet.dart';
 import '../widgets/lounge_drawing_canvas.dart';
+import '../widgets/voice_lounge/encrypted_canvas_notice.dart';
 import '../widgets/vertex_mesh_background.dart';
 import '../widgets/voice_canvas.dart';
 import 'voice_lounge/call_metrics_chip.dart';
@@ -195,6 +196,18 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
           'conversationId=${voiceLk.conversationId ?? "none"}',
     );
     DebugLogService.instance.forceFlush().ignore();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final convId = ref.read(livekitVoiceProvider).conversationId;
+      if (convId == null || convId.isEmpty) return;
+      final conv = ref
+          .read(conversationsProvider)
+          .conversations
+          .where((c) => c.id == convId)
+          .firstOrNull;
+      if (conv == null) return;
+      EncryptedCanvasNotice.maybeShow(context, isEncrypted: conv.isEncrypted);
+    });
   }
 
   @override
