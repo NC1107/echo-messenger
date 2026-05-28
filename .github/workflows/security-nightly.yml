@@ -31,7 +31,7 @@ jobs:
         with:
           shared-key: security-nightly
       - name: Cache cargo-audit + cargo-deny binaries
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/bin/cargo-audit
@@ -82,7 +82,7 @@ jobs:
           EOF
       - name: Open issue on failure
         if: failure()
-        uses: peter-evans/create-issue-from-file@e8ef132d6df98ed982188e460ebb3b5d4ef3a9cd # v5.0.1
+        uses: peter-evans/create-issue-from-file@fca9117c27cdc29c6c4db3b86c48e4115a786710 # v6.0.0
         with:
           title: "Security: nightly cargo audit/deny failure"
           content-filepath: /tmp/security-issue.md
