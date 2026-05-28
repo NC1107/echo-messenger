@@ -12,6 +12,7 @@ import '../utils/crypto_utils.dart';
 import 'auth_provider.dart';
 import 'chat_provider.dart';
 import 'crypto_provider.dart';
+import 'encrypted_preview_provider.dart';
 import 'privacy_provider.dart';
 import 'server_url_provider.dart';
 
@@ -188,10 +189,18 @@ class ConversationsNotifier extends _$ConversationsNotifier
   }
 
   /// Replace encrypted previews with cached decrypted text or placeholder.
+  ///
+  /// When [showEncryptedPreviewsProvider] is false the cache is skipped
+  /// entirely and every encrypted preview is forced to `[Encrypted]`.
   Future<void> _decryptPreviews(List<Conversation> conversations) async {
+    final showPreviews = ref.read(showEncryptedPreviewsProvider);
     for (var i = 0; i < conversations.length; i++) {
       final conv = conversations[i];
       if (conv.lastMessage != null && looksEncrypted(conv.lastMessage!)) {
+        if (!showPreviews) {
+          conversations[i] = conv.copyWith(lastMessage: '[Encrypted]');
+          continue;
+        }
         var cached = _decryptedPreviews[conv.id];
         if (cached == null) {
           cached = await MessageCache.getLatestCachedPreview(conv.id);
