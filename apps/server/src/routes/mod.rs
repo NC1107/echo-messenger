@@ -11,6 +11,7 @@ pub mod link_preview;
 pub mod media;
 pub mod media_chunked;
 pub mod messages;
+pub mod metrics_route;
 pub mod polls;
 pub mod push;
 pub mod reactions;
@@ -46,7 +47,7 @@ use uuid::Uuid;
 pub const REQUEST_ID_HEADER: &str = "x-request-id";
 
 use crate::auth::TokenInvalidator;
-use crate::metrics::MessageRateCounter;
+use crate::metrics::{MessageRateCounter, SimpleCounter};
 use crate::middleware::rate_limit;
 use crate::ws::hub::Hub;
 
@@ -74,6 +75,15 @@ pub struct AppState {
     /// for the affected user, immediately invalidating every outstanding
     /// 15-minute access token instead of waiting for the JWT TTL.
     pub token_invalidator: TokenInvalidator,
+    /// Total failed login attempts since server start (wrong password / unknown user).
+    pub failed_logins: Arc<SimpleCounter>,
+    /// Total LiveKit voice tokens issued since server start.
+    pub voice_tokens_issued: Arc<SimpleCounter>,
+    /// Bearer token that Prometheus scrapers must present.  `None` means the
+    /// operator did not set `METRICS_TOKEN` — the `/api/metrics` endpoint will
+    /// return 503 for every request.  Read once at startup so tests can control
+    /// the value per-server-instance without relying on shared process env state.
+    pub metrics_token: Option<String>,
 }
 
 /// Narrow view of [`AppState`] for the auth handlers (`register`, `login`,
@@ -93,6 +103,9 @@ pub struct AuthExtract {
     pub jwt_secret: String,
     pub ticket_store: TicketStore,
     pub token_invalidator: TokenInvalidator,
+    /// Forwarded from [`AppState`] so the login handler can increment the
+    /// failed-login counter without access to the full state.
+    pub failed_logins: Arc<SimpleCounter>,
 }
 
 impl FromRef<Arc<AppState>> for AuthExtract {
@@ -102,6 +115,7 @@ impl FromRef<Arc<AppState>> for AuthExtract {
             jwt_secret: state.jwt_secret.clone(),
             ticket_store: Arc::clone(&state.ticket_store),
             token_invalidator: state.token_invalidator.clone(),
+            failed_logins: Arc::clone(&state.failed_logins),
         }
     }
 }
@@ -467,6 +481,7 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpNet>) -> Route
         .route("/api/admin/stats/realtime", get(admin::get_realtime_stats))
         .route("/api/admin/feedback", get(admin::list_feedback))
         .route("/api/admin/promote/{user_id}", post(admin::promote_user))
+        .route("/api/metrics", get(metrics_route::get_metrics))
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/api/health", get(health))

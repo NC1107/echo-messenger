@@ -39,7 +39,13 @@ static MIGRATIONS: OnceCell<()> = OnceCell::const_new();
 
 /// Spawn a test server and return its base URL (e.g. `http://127.0.0.1:12345`).
 pub async fn spawn_server() -> String {
-    spawn_server_inner(vec![]).await
+    spawn_server_with_metrics(vec![], None).await
+}
+
+/// Spawn a test server with a specific `METRICS_TOKEN` value.
+/// Pass `None` to leave the endpoint disabled (503).
+pub async fn spawn_server_with_metrics_token(token: Option<&str>) -> String {
+    spawn_server_with_metrics(vec![], token.map(str::to_string)).await
 }
 
 /// Spawn a test server that treats `trusted_proxies` as trusted reverse proxies
@@ -50,10 +56,13 @@ pub async fn spawn_server() -> String {
 /// router so the internal type is always `Vec<IpNet>`.
 pub async fn spawn_server_with_trusted_proxies(trusted_proxies: Vec<IpAddr>) -> String {
     let nets: Vec<IpNet> = trusted_proxies.into_iter().map(IpNet::from).collect();
-    spawn_server_inner(nets).await
+    spawn_server_with_metrics(nets, None).await
 }
 
-async fn spawn_server_inner(trusted_proxies: Vec<IpNet>) -> String {
+async fn spawn_server_with_metrics(
+    trusted_proxies: Vec<IpNet>,
+    metrics_token: Option<String>,
+) -> String {
     let database_url = std::env::var("TEST_DATABASE_URL")
         .or_else(|_| std::env::var("DATABASE_URL"))
         .expect("TEST_DATABASE_URL or DATABASE_URL must be set for integration tests");
@@ -77,6 +86,9 @@ async fn spawn_server_inner(trusted_proxies: Vec<IpNet>) -> String {
         media_tickets: Arc::new(dashmap::DashMap::new()),
         message_rate: Arc::new(echo_server::metrics::MessageRateCounter::new()),
         token_invalidator: echo_server::auth::TokenInvalidator::new(),
+        failed_logins: Arc::new(echo_server::metrics::SimpleCounter::new()),
+        voice_tokens_issued: Arc::new(echo_server::metrics::SimpleCounter::new()),
+        metrics_token,
     });
 
     let app = routes::create_router(state, trusted_proxies);
