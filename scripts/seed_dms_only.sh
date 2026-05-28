@@ -79,6 +79,8 @@ for idx in "${!PAIRS[@]}"; do
   done
 done
 
+seed_ws_close_all
+
 cat <<EOF
 
 ==> seed v2 dms-only complete

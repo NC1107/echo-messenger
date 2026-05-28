@@ -213,16 +213,38 @@ seed_group_invite_accept() {
 # ---------------------------------------------------------------------------
 # Messaging
 # ---------------------------------------------------------------------------
+
+# _seed_fake_dm_ciphertext
+#   Emit a properly-padded standard-base64 string shaped like an Echo "normal"
+#   Signal wire frame (header_len=40 prefix) so the server's
+#   is_valid_ciphertext_shape gate passes on encrypted DM conversations
+#   (#1131 made DMs always-encrypted).
+#   NOT real ciphertext — messages stored via this function are placeholder
+#   blobs and will not decrypt in a real client.
+_seed_fake_dm_ciphertext() {
+  # Layout: 4-byte LE header_len=40 + 40-byte header + 12-byte nonce +
+  #         32-byte ciphertext body + 16-byte AEAD tag = 104 bytes total.
+  # We write the bytes to a temp file to avoid bash command-substitution
+  # stripping null bytes.  base64 output is kept with standard padding (=)
+  # because the Rust STANDARD engine requires it.  Newlines are stripped to
+  # produce a single-line string for embedding in JSON.
+  local tmp
+  tmp=$(mktemp /tmp/seed_ct_XXXXXX)
+  {
+    printf '\x28\x00\x00\x00'
+    head -c 100 /dev/urandom
+  } > "$tmp"
+  base64 < "$tmp" | tr -d '\n'
+  rm -f "$tmp"
+}
+
 # seed_dm_message <sender_token> <recipient_user_id> <plaintext>
-#   1:1 message via REST: POST /api/conversations/dm to ensure the conversation
-#   exists (idempotent — server returns the existing conversation_id), then
-#   the WS protocol's storage layer is NOT used here; we rely on the same
-#   POST-then-fetch shape the client uses today.  The actual send goes
-#   through the WS /ws endpoint via ws-ticket, mirroring what seed_full_demo
-#   does.  Confirmed the only server-side message-write paths are:
-#     - WS `send_message` frame (apps/server/src/ws/message_service/mod.rs)
-#     - There is NO REST POST /api/messages — get/list/edit/delete only.
-#   So we use a transient WS connection per send.
+#   1:1 DM via WS.  DM conversations are always end-to-end encrypted since
+#   #1131 (is_encrypted=true hardcoded on create); the WS gate requires both
+#   a ciphertext-shaped `content` field AND a non-empty
+#   `recipient_device_contents` map with per-device ciphertexts for the peer.
+#   We send fake-but-shape-valid Signal normal-frame blobs.  The `plaintext`
+#   argument is accepted for API stability but is not stored.
 #   Populates: SEED_DM_CONVERSATION_ID, SEED_MESSAGE_ID (best-effort)
 seed_dm_message() {
   local sender_token="$1" recipient_user_id="$2" plaintext="$3"
@@ -236,7 +258,23 @@ seed_dm_message() {
     return 1
   fi
   SEED_DM_CONVERSATION_ID="$cid"
-  seed_group_message "$sender_token" "$cid" "$plaintext"
+  # DMs are always encrypted (#1131). Build a properly-shaped send_message
+  # frame: ciphertext-shaped `content` (canonical) plus
+  # `recipient_device_contents` keyed by peer user_id → device_id → ct.
+  local canonical_ct per_device_ct payload
+  canonical_ct="$(_seed_fake_dm_ciphertext)"
+  per_device_ct="$(_seed_fake_dm_ciphertext)"
+  payload=$(jq -nc \
+    --arg cid "$cid" \
+    --arg ct "$canonical_ct" \
+    --arg rid "$recipient_user_id" \
+    --arg rct "$per_device_ct" \
+    '{type:"send_message", conversation_id:$cid, content:$ct,
+      recipient_device_contents:{($rid):{"0":$rct}}}')
+  _seed_ws_send "$sender_token" "$payload"
+  local msg_resp
+  msg_resp=$(_seed_curl GET "/api/messages/$cid?limit=1" "$sender_token" || true)
+  SEED_MESSAGE_ID=$(jq -r '.[0].id // empty' <<<"$msg_resp" 2>/dev/null || echo "")
 }
 
 # seed_group_message <sender_token> <conversation_id> <plaintext> [reply_to_id]
@@ -263,29 +301,212 @@ seed_group_message() {
   SEED_MESSAGE_ID=$(jq -r '.[0].id // empty' <<<"$resp" 2>/dev/null || echo "")
 }
 
-# Internal: send one WS frame and tear the socket down.  Requires websocat.
-_seed_ws_send() {
-  local token="$1" payload="$2"
+# ---------------------------------------------------------------------------
+# Persistent WS session pool — one connection per access-token.
+# This avoids the 10-tickets/60s rate limit by reusing a single WS ticket
+# and keeping the connection alive for the lifetime of the seed script.
+#
+# Design:
+#   - Each session owns a named FIFO opened in read+write mode (<>) on a
+#     per-session bash fd.  Opening with <> never blocks regardless of
+#     whether the peer (websocat) has opened the other end yet.
+#   - websocat reads from the FIFO via its stdin; the parent writes to the
+#     FIFO path directly.  The <> open on the parent side keeps the FIFO's
+#     "writer present" flag set so websocat never sees a spurious EOF.
+#   - Sessions are indexed by a short stable key derived from the token.
+#
+# Session state maps (bash 4+):
+#   _SEED_WS_PID[key]  — background websocat PID
+#   _SEED_WS_FIFO[key] — FIFO path
+#   _SEED_WS_FD[key]   — fd number holding the FIFO open (read+write)
+# ---------------------------------------------------------------------------
+declare -A _SEED_WS_PID  || true
+declare -A _SEED_WS_FIFO || true
+declare -A _SEED_WS_FD   || true
+# Track the next available fd number (start at 10 to avoid common defaults).
+_SEED_WS_NEXT_FD=10
+
+# _seed_ws_token_key <token>
+#   Returns a short, safe map key derived from the first 16 chars of the token.
+_seed_ws_token_key() {
+  printf '%s' "$1" | head -c 16 | tr -dc 'A-Za-z0-9_-'
+}
+
+# _seed_ws_open <token>
+#   Opens a persistent WS session for <token> if one isn't already open.
+#   Retries up to 4 times (65s back-off) when the ticket endpoint is
+#   rate-limited (10 requests/60s/IP per the server's ticket_limiter).
+_seed_ws_open() {
+  local token="$1"
+  local key
+  key=$(_seed_ws_token_key "$token")
+  # Reuse existing live session.
+  if [ -n "${_SEED_WS_PID[$key]:-}" ] && kill -0 "${_SEED_WS_PID[$key]}" 2>/dev/null; then
+    return 0
+  fi
   if ! command -v websocat >/dev/null 2>&1; then
     seed_log error "websocat is required for WS sends (cargo install websocat)"
     return 1
   fi
-  local ticket_resp ticket ws_base
-  ticket_resp=$(_seed_curl POST /api/auth/ws-ticket "$token" '{}')
-  ticket=$(jq -r '.ticket // empty' <<<"$ticket_resp")
+  local ticket_resp ticket attempt=0
+  while [ $attempt -lt 4 ]; do
+    ticket_resp=$(_seed_curl POST /api/auth/ws-ticket "$token" '{}')
+    ticket=$(jq -r '.ticket // empty' <<<"$ticket_resp" 2>/dev/null || true)
+    if [ -n "$ticket" ]; then
+      break
+    fi
+    attempt=$((attempt + 1))
+    seed_log warn "ws-ticket rate-limited (attempt $attempt/4); sleeping 65s"
+    sleep 65
+  done
   if [ -z "$ticket" ]; then
-    seed_log warn "ws-ticket failed (rate limit?); skipping send"
+    seed_log error "ws-ticket failed after retries: $ticket_resp"
     return 1
   fi
+  local ws_base fifo fd_num
   ws_base="$(printf '%s' "$SEED_SERVER" \
     | sed -e 's|^http://|ws://|' -e 's|^https://|wss://|')"
-  printf '%s' "$payload" \
-    | websocat --no-close -E "$ws_base/ws?ticket=$ticket" \
-        >/dev/null 2>&1 &
-  local pid=$!
-  sleep 0.6
-  kill "$pid" 2>/dev/null || true
-  wait "$pid" 2>/dev/null || true
+  fifo=$(mktemp -u /tmp/seed_ws_XXXXXX)
+  mkfifo "$fifo"
+
+  # Allocate a dedicated fd for this session.  Opening with <> (read+write)
+  # never blocks — no need to wait for websocat to open the read end first.
+  fd_num="$_SEED_WS_NEXT_FD"
+  _SEED_WS_NEXT_FD=$(( _SEED_WS_NEXT_FD + 1 ))
+  eval "exec ${fd_num}<>\"$fifo\""
+
+  # Start websocat reading from the FIFO.  It blocks until the first frame
+  # arrives; the <> open above keeps the FIFO "live" so it won't get EOF.
+  websocat --no-close "$ws_base/ws?ticket=$ticket" < "$fifo" >/dev/null 2>&1 &
+  local ws_pid=$!
+
+  sleep 0.3  # let websocat complete the WS handshake
+
+  _SEED_WS_PID["$key"]="$ws_pid"
+  _SEED_WS_FIFO["$key"]="$fifo"
+  _SEED_WS_FD["$key"]="$fd_num"
+}
+
+# Internal: send one WS frame on the persistent session for <token>.
+# Opens (or reopens) the session automatically.
+_seed_ws_send() {
+  local token="$1" payload="$2"
+  local key
+  key=$(_seed_ws_token_key "$token")
+  # (Re)open the session if it's dead or never opened.
+  if [ -z "${_SEED_WS_PID[$key]:-}" ] || ! kill -0 "${_SEED_WS_PID[$key]}" 2>/dev/null; then
+    _seed_ws_open "$token" || return 1
+    key=$(_seed_ws_token_key "$token")
+  fi
+  local fifo="${_SEED_WS_FIFO[$key]:-}"
+  if [ -z "$fifo" ] || [ ! -p "$fifo" ]; then
+    seed_log error "no FIFO for WS session key=$key"
+    return 1
+  fi
+  # Write the JSON frame + newline directly to the FIFO path.
+  # Because the parent holds the FIFO open via <>, this write never blocks
+  # on waiting for a reader.
+  if ! printf '%s\n' "$payload" > "$fifo" 2>/dev/null; then
+    seed_log warn "WS FIFO write failed (session dropped?); reopening"
+    local old_fd="${_SEED_WS_FD[$key]:-}"
+    [ -n "$old_fd" ] && eval "exec ${old_fd}>&-" 2>/dev/null || true
+    unset "_SEED_WS_PID[$key]" "_SEED_WS_FIFO[$key]" "_SEED_WS_FD[$key]" 2>/dev/null || true
+    _seed_ws_open "$token" || return 1
+    key=$(_seed_ws_token_key "$token")
+    printf '%s\n' "$payload" > "${_SEED_WS_FIFO[$key]}" 2>/dev/null || return 1
+  fi
+  # Short pause so the server processes the frame before callers refetch
+  # the latest message-id.  Tunable via SEED_WS_SEND_PAUSE.
+  sleep "${SEED_WS_SEND_PAUSE:-0.3}"
+}
+
+# seed_ws_close_all
+#   Tear down all open WS sessions.  Call at the end of a seed script to
+#   avoid leaving background websocat processes running.
+seed_ws_close_all() {
+  local key
+  for key in "${!_SEED_WS_PID[@]}"; do
+    local pid="${_SEED_WS_PID[$key]:-}"
+    local fifo="${_SEED_WS_FIFO[$key]:-}"
+    local fd_num="${_SEED_WS_FD[$key]:-}"
+    [ -n "$fd_num" ] && eval "exec ${fd_num}>&-" 2>/dev/null || true
+    [ -n "$pid"    ] && kill "$pid" 2>/dev/null || true
+    [ -n "$fifo"   ] && rm -f "$fifo" 2>/dev/null || true
+  done
+  _SEED_WS_PID=()
+  _SEED_WS_FIFO=()
+  _SEED_WS_FD=()
+}
+
+# ---------------------------------------------------------------------------
+# Key upload (needed before creating encrypted groups)
+# ---------------------------------------------------------------------------
+# seed_upload_dummy_keys <token>
+#   Uploads a throwaway-but-cryptographically-valid Signal key bundle for the
+#   authenticated user so the server's `has_publishable_keys` gate passes.
+#   Keys are disposable (no private key material is retained); the encrypted
+#   group created by the seed can only be used for UI/placeholder testing, not
+#   real decryption from a real client.
+#   Requires: python3 with the `cryptography` package installed.
+#   No-ops silently when the user already has keys (409 identity_key_conflict
+#   is treated as success).
+seed_upload_dummy_keys() {
+  local token="$1"
+  if ! command -v python3 >/dev/null 2>&1; then
+    seed_log warn "python3 not found; skipping key upload (encrypted group will be skipped)"
+    return 1
+  fi
+  local bundle
+  bundle=$(python3 - <<'PYEOF'
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+import base64, json, sys
+
+try:
+    ed_priv = Ed25519PrivateKey.generate()
+    ed_pub = ed_priv.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    ik_priv = X25519PrivateKey.generate()
+    ik_pub = ik_priv.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    spk_priv = X25519PrivateKey.generate()
+    spk_pub = spk_priv.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    sig = ed_priv.sign(spk_pub)
+    otps = []
+    for i in range(20):
+        otp_priv = X25519PrivateKey.generate()
+        otp_pub = otp_priv.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+        otps.append({"key_id": i + 1, "public_key": base64.b64encode(otp_pub).decode()})
+    print(json.dumps({
+        "identity_key": base64.b64encode(ik_pub).decode(),
+        "signing_key": base64.b64encode(ed_pub).decode(),
+        "signed_prekey": base64.b64encode(spk_pub).decode(),
+        "signed_prekey_signature": base64.b64encode(sig).decode(),
+        "signed_prekey_id": 1,
+        "device_id": 0,
+        "one_time_prekeys": otps,
+    }))
+except Exception as e:
+    print("", end="")
+    sys.exit(1)
+PYEOF
+  ) || true
+  if [ -z "$bundle" ]; then
+    seed_log warn "key generation failed (missing cryptography package?); encrypted group will be skipped"
+    return 1
+  fi
+  local resp
+  resp=$(_seed_curl POST /api/keys/upload "$token" "$bundle" || true)
+  # 409 identity_key_conflict means keys already exist — treat as success.
+  local code
+  code=$(jq -r '.code // empty' <<<"$resp" 2>/dev/null || true)
+  if [ "$code" = "identity_key_conflict" ]; then
+    return 0
+  fi
+  if jq -e '.error' <<<"$resp" >/dev/null 2>&1; then
+    seed_log warn "key upload returned error: $resp"
+    return 1
+  fi
+  return 0
 }
 
 # ---------------------------------------------------------------------------
