@@ -43,6 +43,39 @@ import 'voice_lounge/lounge_header.dart';
 import 'voice_lounge/participant_grid.dart';
 import 'voice_lounge/screen_share.dart';
 
+/// Returns a new transform that scales the lounge canvas to
+/// [targetScale] while keeping the canvas-space point currently under
+/// [tapPoint] (in InteractiveViewer-region-local pixels) anchored to
+/// the same viewport pixel — i.e. the user's tap stays under their
+/// finger.
+///
+/// The transform `T` maps canvas-space points to viewport-space
+/// points. For a point `p` under the tap, `T(p) = tapPoint`, so
+/// `p = T⁻¹(tapPoint)`. The output `T'` is constructed so that
+/// `T'(p) = tapPoint` at `scale = targetScale`:
+///
+///   T'.x = s · p.x + tx   where   tx = tapPoint.dx − s · p.x
+///   T'.y = s · p.y + ty   where   ty = tapPoint.dy − s · p.y
+///
+/// Exposed as a top-level function so the math is unit-testable
+/// without spinning up a full lounge widget tree.
+@visibleForTesting
+Matrix4 zoomAroundPoint({
+  required Matrix4 current,
+  required Offset tapPoint,
+  required double targetScale,
+}) {
+  final inverse = Matrix4.copy(current)..invert();
+  final canvasPoint = MatrixUtils.transformPoint(inverse, tapPoint);
+  return Matrix4.identity()
+    ..scaleByDouble(targetScale, targetScale, targetScale, 1)
+    ..setTranslationRaw(
+      tapPoint.dx - canvasPoint.dx * targetScale,
+      tapPoint.dy - canvasPoint.dy * targetScale,
+      0,
+    );
+}
+
 /// Discord-style voice lounge that replaces the chat content area when the
 /// user is in a voice call and chooses to view the lounge.
 /// Voice lounge screen. The hide-members toggle in the header actually
@@ -270,19 +303,12 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     final fitScale = fitPose.getMaxScaleOnAxis();
     final isAtFit = (current - fitScale).abs() < 1e-3;
     if (isAtFit) {
-      // Zoom in. The transform's scale * canvasPoint + translate = tap,
-      // so translate = tap - scale * canvasPoint, anchoring the tap on
-      // the same canvas pixel.
-      const targetScale = 2.0;
-      final inverse = Matrix4.copy(_viewport.value)..invert();
-      final canvasPoint = MatrixUtils.transformPoint(inverse, tapPoint);
-      _viewport.value = Matrix4.identity()
-        ..scaleByDouble(targetScale, targetScale, targetScale, 1)
-        ..setTranslationRaw(
-          tapPoint.dx - canvasPoint.dx * targetScale,
-          tapPoint.dy - canvasPoint.dy * targetScale,
-          0,
-        );
+      // Zoom in 2× anchored on the tap point.
+      _viewport.value = zoomAroundPoint(
+        current: _viewport.value,
+        tapPoint: tapPoint,
+        targetScale: 2.0,
+      );
     } else {
       _viewport.value = fitPose;
     }
