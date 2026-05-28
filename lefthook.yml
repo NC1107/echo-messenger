@@ -35,3 +35,40 @@ commit-msg:
   commands:
     commitlint:
       run: npx commitlint --edit {1}
+
+# Pre-push gate: re-runs the same format + analyze + clippy checks the
+# pre-commit hook applies, but against the WHOLE working tree instead of
+# just staged files. The reason: pre-commit can be bypassed with
+# `git commit --no-verify` (and the lefthook re-format step has racing
+# corner cases — see fix/dart-format-canvas, PR #1255). pre-push runs
+# after all commits, so even a `--no-verify`'d commit gets caught here
+# before it reaches origin — and CI's format gate doesn't fail post-merge.
+#
+# Bypassable with `git push --no-verify` if you really need to, but
+# that's an explicit + deliberate override.
+pre-push:
+  parallel: true
+  commands:
+    rust-fmt:
+      # `glob` on pre-push gates the command to runs that include
+      # matching files in the to-be-pushed diff. cargo fmt itself walks
+      # the whole workspace so we don't need a file list.
+      glob: "*.rs"
+      run: cargo fmt --all -- --check
+    rust-clippy:
+      glob: "*.rs"
+      run: cargo clippy --workspace --all-targets -- -D warnings
+    dart-format:
+      glob: "*.dart"
+      run: |
+        FLUTTER_BIN=$(dirname "$(which flutter 2>/dev/null || echo "$HOME/.flutter/bin/flutter")")
+        export PATH="$FLUTTER_BIN:$PATH"
+        unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX
+        cd apps/client && dart format --set-exit-if-changed .
+    flutter-analyze:
+      glob: "*.dart"
+      run: |
+        FLUTTER_BIN=$(dirname "$(which flutter 2>/dev/null || echo "$HOME/.flutter/bin/flutter")")
+        export PATH="$FLUTTER_BIN:$PATH"
+        unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX
+        cd apps/client && flutter analyze --fatal-infos
