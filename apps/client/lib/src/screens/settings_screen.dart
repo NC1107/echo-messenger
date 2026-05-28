@@ -11,6 +11,7 @@ import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
 import '../version.dart';
+import '../widgets/account_switcher_sheet.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/settings/card_row.dart';
 import '../widgets/settings/section_header.dart';
@@ -267,6 +268,24 @@ class SettingsRootView extends ConsumerWidget {
                 iconColor: context.settingsIconPalette.appearance,
                 section: SettingsSection.about,
                 trailing: 'v$appVersion',
+              ),
+            ],
+          ),
+          // Switch account → opens AccountSwitcherSheet. Sits in a card
+          // above Log out so the user sees "switch" before the
+          // destructive "Log out" row.
+          const SizedBox(height: EchoSectionTokens.groupGap),
+          _CardGroup(
+            children: [
+              Semantics(
+                label: 'settings switch account',
+                button: true,
+                child: CardRow(
+                  icon: Icons.switch_account_outlined,
+                  iconColor: context.settingsIconPalette.info,
+                  label: 'Switch account',
+                  onTap: () => showAccountSwitcherSheet(context),
+                ),
               ),
             ],
           ),

@@ -27,7 +27,8 @@ class _FakeAuthWithStatus extends AuthNotifier {
   Future<bool> tryAutoLogin() async => false;
 
   @override
-  Future<void> logout({String? serverUrl}) async => state = const AuthState();
+  Future<void> logout({String? serverUrl, bool forgetAccount = true}) async =>
+      state = const AuthState();
 
   @override
   Future<void> setStatusText(String? text) async {

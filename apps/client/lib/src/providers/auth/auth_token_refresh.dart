@@ -19,7 +19,7 @@ mixin AuthTokenRefreshMixin on Notifier<AuthState>, AuthTokenStorageMixin {
   /// `logout` is provided by [AuthNotifier]; refresh-failure paths call
   /// it so the user is redirected back to the login screen on a stale
   /// or revoked token.
-  Future<void> logout({String? serverUrl});
+  Future<void> logout({String? serverUrl, bool forgetAccount});
 
   /// Try to auto-login using stored refresh token (native) or HttpOnly cookie (web).
   ///
