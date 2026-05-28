@@ -26,6 +26,7 @@ export 'ws_message_handler.dart' show WsMessageHandler, WebSocketState;
 
 part 'websocket_provider.g.dart';
 part 'websocket/websocket_typing.dart';
+part 'websocket/websocket_receive_dispatcher.dart';
 
 @Riverpod(keepAlive: true)
 class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
@@ -914,11 +915,12 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     });
   }
 
+  /// Stream listener entry point. Decoding + dispatch is in
+  /// `websocket/websocket_receive_dispatcher.dart`; this wrapper retains
+  /// the post-dispatch session-replaced teardown because it touches the
+  /// Notifier `state` setter and the lifecycle-owned connection fields.
   void _onMessage(String data) {
-    _lastMessageTime = DateTime.now();
-    final json = jsonDecode(data) as Map<String, dynamic>;
-    final myUserId = ref.read(authProvider).userId ?? '';
-    handleServerMessage(json, myUserId);
+    _decodeAndDispatchInbound(data);
 
     // session_replaced: disconnect, do NOT auto-reconnect (other session is active).
     if (state.wasReplaced) {
