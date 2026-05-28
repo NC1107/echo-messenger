@@ -36,7 +36,8 @@ class _TrackingAuthNotifier extends AuthNotifier {
   Future<bool> tryAutoLogin() async => false;
 
   @override
-  Future<void> logout({String? serverUrl}) async => state = const AuthState();
+  Future<void> logout({bool forgetAccount = true, String? serverUrl}) async =>
+      state = const AuthState();
 
   @override
   Future<void> setPresenceStatus(String status) async {

@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../services/accounts_storage.dart';
 import '../../services/background_service.dart' show BackgroundService;
 import '../../services/debug_log_service.dart';
 import '../../services/http_client_factory.dart';
@@ -18,6 +19,7 @@ import '../server_url_provider.dart';
 part 'auth_provider.g.dart';
 part 'auth_token_storage.dart';
 part 'auth_token_refresh.dart';
+part 'auth_account_switcher.dart';
 
 const _kJsonHeaders = {'Content-Type': 'application/json'};
 
@@ -114,7 +116,10 @@ const Object _kKeep = Object();
 ///   401-retrying `authenticatedRequest` helper.
 @Riverpod(keepAlive: true)
 class AuthNotifier extends _$AuthNotifier
-    with AuthTokenStorageMixin, AuthTokenRefreshMixin {
+    with
+        AuthTokenStorageMixin,
+        AuthTokenRefreshMixin,
+        AuthAccountSwitcherMixin {
   @override
   AuthState build() => const AuthState();
 
@@ -189,6 +194,11 @@ class AuthNotifier extends _$AuthNotifier
           onboardingCompleted: false,
           isAdmin: isAdmin,
         );
+        await _recordActiveAccount(
+          userId: userId,
+          username: username,
+          refreshToken: refreshToken,
+        );
       } else {
         String errorMsg = 'Registration failed';
         try {
@@ -258,6 +268,12 @@ class AuthNotifier extends _$AuthNotifier
           refreshToken: refreshToken,
           avatarUrl: avatarUrl,
           isAdmin: isAdmin,
+        );
+        await _recordActiveAccount(
+          userId: userId,
+          username: username,
+          refreshToken: refreshToken,
+          avatarUrl: avatarUrl,
         );
 
         // Start background service to keep WebSocket alive on mobile
@@ -360,7 +376,7 @@ class AuthNotifier extends _$AuthNotifier
   /// so logout always succeeds locally; the server-side refresh row will
   /// expire on its own if the call never landed.
   @override
-  Future<void> logout({String? serverUrl}) async {
+  Future<void> logout({String? serverUrl, bool forgetAccount = true}) async {
     final origin = serverUrl ?? _serverUrl;
     final accessToken = state.token;
 
@@ -389,7 +405,24 @@ class AuthNotifier extends _$AuthNotifier
     SecureKeyStore.instance.clearUserScope();
     UserDataDir.instance.clearUser();
     await _clearStoredTokens();
+    if (forgetAccount) {
+      await _forgetActiveAccount();
+    }
     state = const AuthState();
+  }
+
+  /// Logout the active session and, when another account is stored on
+  /// this device, return that account so the caller can immediately
+  /// switch into it. Returns null when no other account is stored —
+  /// caller should navigate to the login screen.
+  ///
+  /// This is the entry point that fixes the Discord/Slack-style
+  /// "log out → drop into next account" behaviour the original bug
+  /// report flagged.
+  Future<StoredAccount?> logoutAndPickNextAccount() async {
+    await logout(forgetAccount: true);
+    final snap = await accountsStorage.load();
+    return _mostRecent(snap.accounts);
   }
 
   // ---------------------------------------------------------------------------
