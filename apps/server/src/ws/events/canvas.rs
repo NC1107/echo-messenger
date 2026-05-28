@@ -1,12 +1,104 @@
 //! Voice-lounge canvas event handling: validate, persist, relay.
 
+use std::sync::OnceLock;
+
 use uuid::Uuid;
 
 use crate::db;
 use crate::routes::AppState;
 use crate::ws::error::send_error;
+use crate::ws::events::canvas_validation::{self, ValidationError};
 use crate::ws::protocol::ServerMessage;
 use crate::ws::typing_service;
+
+/// Rollout phase for the per-kind geometry/schema validators.
+///
+/// `LogOnly` runs the validators but never blocks the event — the canvas
+/// behavior is unchanged from before validation existed, and mismatches
+/// emit a structured `warn!` we can grep production logs for. After we've
+/// observed `log_only` for ~2 weeks and confirmed legitimate clients pass,
+/// the env flips to `enforce` and rejections start dropping events.
+///
+/// `Off` is an escape hatch in case of a false-positive incident.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ValidationMode {
+    Off,
+    LogOnly,
+    Enforce,
+}
+
+impl ValidationMode {
+    fn from_env_str(raw: Option<&str>) -> Self {
+        match raw.map(|s| s.trim().to_ascii_lowercase()).as_deref() {
+            Some("off") => Self::Off,
+            Some("enforce") => Self::Enforce,
+            // Default + any unrecognized value: log_only. Unrecognized
+            // values fall through to log_only so a typo doesn't accidentally
+            // disable validation entirely.
+            _ => Self::LogOnly,
+        }
+    }
+}
+
+fn validation_mode() -> ValidationMode {
+    // Read once per process. Env changes require a server restart, which
+    // matches every other env-driven knob in `config.rs`.
+    static MODE: OnceLock<ValidationMode> = OnceLock::new();
+    *MODE.get_or_init(|| {
+        let mode =
+            ValidationMode::from_env_str(std::env::var("CANVAS_VALIDATION_MODE").ok().as_deref());
+        tracing::info!("CANVAS_VALIDATION_MODE = {:?}", mode);
+        mode
+    })
+}
+
+/// Apply per-kind validation per the active `CANVAS_VALIDATION_MODE`.
+///
+/// Returns `false` if the caller should stop processing the event (only
+/// happens in `Enforce` mode on validation failure).  In `LogOnly` mode a
+/// rejection is logged and the event continues through the pipeline.
+fn apply_validation(
+    state: &AppState,
+    sender_id: Uuid,
+    channel_id: Uuid,
+    kind: &str,
+    payload: &serde_json::Value,
+) -> bool {
+    let mode = validation_mode();
+    if matches!(mode, ValidationMode::Off) {
+        return true;
+    }
+    let Err(err) = canvas_validation::validate(kind, payload) else {
+        return true;
+    };
+    log_validation_failure(sender_id, channel_id, kind, payload, &err);
+    if matches!(mode, ValidationMode::Enforce) {
+        send_error(state, sender_id, &err.code);
+        return false;
+    }
+    true
+}
+
+fn log_validation_failure(
+    sender_id: Uuid,
+    channel_id: Uuid,
+    kind: &str,
+    payload: &serde_json::Value,
+    err: &ValidationError,
+) {
+    // Truncate payload to 256 bytes so a misbehaving client can't flood
+    // disk via the log pipeline.
+    let snippet = serde_json::to_string(payload).unwrap_or_default();
+    let truncated: String = snippet.chars().take(256).collect();
+    tracing::warn!(
+        sender_id = %sender_id,
+        channel_id = %channel_id,
+        kind = %kind,
+        reason = %err.code,
+        payload_snippet = %truncated,
+        "canvas validation rejected payload",
+    );
+}
 
 /// Persist canvas state for non-ephemeral event kinds.
 /// Returns early if a hard error (cap reached) prevents broadcast.
@@ -166,6 +258,14 @@ pub(in crate::ws) async fn handle_canvas_event(
         return;
     }
 
+    // Per-kind schema/geometry validation. In the default `log_only` mode
+    // mismatches emit a `warn!` and the event continues unchanged; once
+    // `CANVAS_VALIDATION_MODE=enforce` is set, mismatches return a
+    // `canvas.validation.*` error code and drop the event.
+    if !apply_validation(state, sender_id, channel_id, &kind, &payload) {
+        return;
+    }
+
     let conversation_id = match lookup_voice_channel(state, sender_id, channel_id).await {
         Some(cid) => cid,
         None => return,
@@ -196,5 +296,51 @@ pub(in crate::ws) async fn handle_canvas_event(
         state
             .hub
             .broadcast_json(&member_ids, &json, Some(sender_id));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validation_mode_defaults_to_log_only_when_unset() {
+        assert_eq!(ValidationMode::from_env_str(None), ValidationMode::LogOnly);
+    }
+
+    #[test]
+    fn validation_mode_parses_enforce() {
+        assert_eq!(
+            ValidationMode::from_env_str(Some("enforce")),
+            ValidationMode::Enforce
+        );
+    }
+
+    #[test]
+    fn validation_mode_parses_off() {
+        assert_eq!(
+            ValidationMode::from_env_str(Some("off")),
+            ValidationMode::Off
+        );
+    }
+
+    #[test]
+    fn validation_mode_is_case_insensitive() {
+        assert_eq!(
+            ValidationMode::from_env_str(Some("ENFORCE")),
+            ValidationMode::Enforce
+        );
+        assert_eq!(
+            ValidationMode::from_env_str(Some("  Off  ")),
+            ValidationMode::Off
+        );
+    }
+
+    #[test]
+    fn validation_mode_unknown_falls_back_to_log_only() {
+        assert_eq!(
+            ValidationMode::from_env_str(Some("strict")),
+            ValidationMode::LogOnly
+        );
     }
 }

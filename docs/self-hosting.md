@@ -139,6 +139,30 @@ scrape_configs:
 - Wrong token → `401 Unauthorized`
 - Correct token → `200` with Prometheus text body
 
+## Voice-lounge canvas validation
+
+The voice-lounge canvas server runs per-event-kind schema and geometry
+validation on every incoming `canvas_event` (stroke points, image coords,
+screen-share window position, etc.). The rollout phase is controlled by the
+`CANVAS_VALIDATION_MODE` environment variable on the server container:
+
+| Value | Behavior |
+|-------|----------|
+| `log_only` (default) | Validators run; mismatches emit a structured `warn!` with the reason code and a 256-byte payload snippet, but the event is **relayed and persisted unchanged**. Use this to watch logs for legitimate clients that might be sending unexpected payloads before tightening. |
+| `enforce` | Validators run; mismatches return a `canvas.validation.<kind>.<field>.<reason>` error to the sender and the event is **dropped** (not relayed, not persisted). |
+| `off` | Validators do not run. Escape hatch for false-positive incidents. |
+
+Add it to your `.env` file and pass it through in `docker-compose.prod.yml`:
+
+```yaml
+server:
+  environment:
+    CANVAS_VALIDATION_MODE: log_only
+```
+
+Unset or unrecognized values fall through to `log_only`, so a typo cannot
+accidentally disable validation entirely.
+
 ## Backups
 
 ### Database backup
