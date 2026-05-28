@@ -77,10 +77,14 @@ class _ShutdownHandlerState extends ConsumerState<ShutdownHandler>
       // Provider may already be disposed during forced teardown — ignore.
     }
 
-    // 2. Fire-and-forget Hive.close (sync callback can't await); the
-    //    `paused` branch above already flushed pending writes, so the
-    //    in-flight close window is minimal.
-    Hive.close().ignore();
+    // 2. Race Hive.close() against a 500 ms deadline (#1182).
+    //    The `paused` branch above already flushed pending writes, so the
+    //    in-flight close window is minimal; the timeout ensures we never
+    //    stall the OS shutdown sequence indefinitely.
+    Future.any([
+      Hive.close(),
+      Future<void>.delayed(const Duration(milliseconds: 500)),
+    ]).ignore();
   }
 
   @override

@@ -279,4 +279,46 @@ void main() {
       expect(ex.message, "test error");
     });
   });
+
+  // #1182 — corrupt-box recovery: hard-kill mid-write can leave a truncated
+  // or garbage-filled .hive file. On next launch _openBox must delete the
+  // file and return an empty box instead of throwing.
+  group("MessageCache corrupt-box recovery", () {
+    test("opens empty box after corrupt .hive file on disk", () async {
+      await MessageCache.initForUser("user-corrupt", "example.com");
+
+      // Prime the box so the .hive file exists on disk.
+      final goodMsg = _msg(id: "pre-corrupt-msg", conversationId: "conv-cr");
+      await MessageCache.cacheMessages("conv-cr", [goodMsg]);
+
+      // Locate the .hive file and overwrite it with garbage bytes to
+      // simulate a hard-kill mid-write truncation (#1182).
+      final hiveFile = File(
+        '${tempDir.path}/echo_msg_user_corrupt_example_com_c_conv_cr.hive',
+      );
+      expect(
+        hiveFile.existsSync(),
+        isTrue,
+        reason: 'box file must exist after caching',
+      );
+      await hiveFile.writeAsBytes(List.filled(64, 0xFF));
+
+      // Force the in-memory box reference to be dropped so _boxForConv
+      // re-opens from disk on the next read.
+      await MessageCache.initForUser("user-other-recover", "example.com");
+      await MessageCache.initForUser("user-corrupt", "example.com");
+
+      // The read must not throw — it should return an empty list because
+      // the corrupt box was wiped and replaced with a fresh empty box.
+      final messages = await MessageCache.getCachedMessages(
+        "conv-cr",
+        "user-corrupt",
+      );
+      expect(
+        messages,
+        isEmpty,
+        reason: 'corrupt box wipe must produce an empty cache, not a crash',
+      );
+    });
+  });
 }

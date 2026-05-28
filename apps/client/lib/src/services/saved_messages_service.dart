@@ -21,6 +21,11 @@ class SavedMessagesService {
   ///
   /// Retries up to 3 times with exponential backoff to handle lock-file
   /// conflicts when another instance holds the Hive box (errno 11).
+  ///
+  /// If all retries fail (e.g. corrupt box from a hard-kill mid-write,
+  /// #1182), deletes the corrupt file and opens a fresh empty box so the
+  /// app launches rather than crashing. Bookmarks are lost, but that is
+  /// preferable to an app that won't start.
   Future<void> init() async {
     for (var attempt = 0; attempt < 3; attempt++) {
       try {
@@ -37,6 +42,22 @@ class SavedMessagesService {
           );
         }
       }
+    }
+    // All retries exhausted — corrupt box. Delete it and open fresh.
+    debugLog(
+      'SavedMessagesService: recovering from corrupt box, wiping $_boxName',
+      'SavedMessagesService',
+    );
+    try {
+      await Hive.deleteBoxFromDisk(_boxName);
+    } catch (_) {}
+    try {
+      _box = await Hive.openBox<Map>(_boxName);
+    } catch (e) {
+      debugLog(
+        'SavedMessagesService: recovery open also failed: $e',
+        'SavedMessagesService',
+      );
     }
   }
 
