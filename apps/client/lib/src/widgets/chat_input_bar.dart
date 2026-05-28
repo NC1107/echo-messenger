@@ -46,6 +46,7 @@ import 'chat_input_bar/recording_row.dart';
 import 'chat_input_bar/send_button.dart';
 import 'chat_input_bar/upload_helpers.dart';
 import 'message/image_attachment.dart' show cacheImageDimensions;
+import 'chat_input/formatting_toolbar.dart';
 import 'input/markdown_toolbar.dart';
 import 'input/pending_attachments_strip.dart';
 import 'input/input_status_bar.dart';
@@ -112,7 +113,8 @@ class ChatInputBar extends ConsumerStatefulWidget {
 /// handler reading as `up` / `down`.
 enum _MentionMove { up, down }
 
-class ChatInputBarState extends ConsumerState<ChatInputBar> {
+class ChatInputBarState extends ConsumerState<ChatInputBar>
+    with SingleTickerProviderStateMixin {
   // Text, focus, edit, mention state lives on [_controller]; getters preserve old call-site shape.
   late final ChatInputController _controller;
   TextEditingController get _messageController => _controller.text;
@@ -141,6 +143,12 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   /// toggled on via the "Aa" entry in the attach (+) sheet. On desktop the
   /// toolbar is always visible and this flag is ignored.
   bool _showFormatToolbarOnMobile = false;
+
+  /// Whether the inline "Aa" formatting toolbar is expanded.
+  bool _showFormattingBar = false;
+
+  /// Drives the SizeTransition on the [FormattingToolbar].
+  late final AnimationController _formattingBarAnim;
 
   /// Last known keyboard height -- used to size the inline picker so it
   /// occupies the same space the keyboard did.
@@ -195,6 +203,10 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   void initState() {
     super.initState();
     _controller = ChatInputController();
+    _formattingBarAnim = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 150),
+    );
     _messageController.addListener(_onTextChanged);
     _mentionController.addListener(_onMentionChanged);
     _loadDraft(widget.conversation.id);
@@ -226,6 +238,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   @override
   void dispose() {
     _draftSaveTimer?.cancel();
+    _formattingBarAnim.dispose();
     _messageController.removeListener(_onTextChanged);
     _mentionController.removeListener(_onMentionChanged);
     // _controller.dispose tears down all sub-controllers in the right order (#513, #623).
