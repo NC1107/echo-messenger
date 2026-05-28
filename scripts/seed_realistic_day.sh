@@ -63,6 +63,8 @@ for i in "${!USERNAMES[@]}"; do
   USER_TOKEN["${USERNAMES[$i]}"]="$SEED_USER_TOKEN"
   USER_TOPIC["${USERNAMES[$i]}"]="$topic"
   printf "    %-12s %s  [%s]\n" "$uname" "$SEED_USER_ID" "$status"
+  # Upload dummy Signal key bundle so the encrypted-group gate passes.
+  seed_upload_dummy_keys "$SEED_USER_TOKEN" || true
 done
 
 # ---------------------------------------------------------------------------
@@ -86,16 +88,21 @@ seed_group "${USER_TOKEN[$OWNER]}" "Daily Standup ($STAMP)" \
 PLAINTEXT_GROUP="$SEED_GROUP_ID"
 seed_log ok "plaintext group: $PLAINTEXT_GROUP"
 
-seed_group "${USER_TOKEN[$OWNER]}" "Secure Room ($STAMP)" \
-  "encrypted team channel" 1
-ENCRYPTED_GROUP="$SEED_GROUP_ID"
-seed_log ok "encrypted group: $ENCRYPTED_GROUP"
+ENCRYPTED_GROUP=""
+if seed_group "${USER_TOKEN[$OWNER]}" "Secure Room ($STAMP)" \
+    "encrypted team channel" 1 2>/dev/null; then
+  ENCRYPTED_GROUP="$SEED_GROUP_ID"
+  seed_log ok "encrypted group: $ENCRYPTED_GROUP"
+else
+  seed_log warn "encrypted group skipped (key bundle unavailable or upload failed)"
+fi
 
 # Everyone else joins both groups.
 for u in "${USERNAMES[@]}"; do
   [ "$u" = "$OWNER" ] && continue
   seed_group_invite_accept "${USER_TOKEN[$OWNER]}" "${USER_TOKEN[$u]}" "$PLAINTEXT_GROUP"
-  seed_group_invite_accept "${USER_TOKEN[$OWNER]}" "${USER_TOKEN[$u]}" "$ENCRYPTED_GROUP"
+  [ -n "$ENCRYPTED_GROUP" ] && \
+    seed_group_invite_accept "${USER_TOKEN[$OWNER]}" "${USER_TOKEN[$u]}" "$ENCRYPTED_GROUP"
 done
 
 # ---------------------------------------------------------------------------
@@ -246,17 +253,28 @@ done
 # ciphertext — this is for UI exercise only.
 # ---------------------------------------------------------------------------
 seed_log info "phase 6 — encrypted group placeholders"
-random_b64() {
-  # Approx 120-char base64 string, no =, no newlines.
-  head -c 90 /dev/urandom | base64 | tr -d '=\n' | head -c 120
+# Group messages must pass the GRP1: ciphertext-shape gate:
+#   content = "GRP1:" + standard-padded-base64(≥28 bytes)
+# See apps/server/src/ws/message_service/validate.rs is_valid_ciphertext_shape.
+random_group_fake_ct() {
+  # 12-byte nonce + 32-byte body + 16-byte tag = 60 bytes, well above the 28-byte floor.
+  local tmp
+  tmp=$(mktemp /tmp/seed_grpct_XXXXXX)
+  head -c 60 /dev/urandom > "$tmp"
+  printf 'GRP1:%s' "$(base64 < "$tmp" | tr -d '\n')"
+  rm -f "$tmp"
 }
 ENCRYPTED_MSG_COUNT=8
-for ((i=0; i<ENCRYPTED_MSG_COUNT; i++)); do
-  sender="${USERNAMES[$((i % ${#USERNAMES[@]}))]}"
-  fake_ct="$(random_b64)"
-  seed_group_message "${USER_TOKEN[$sender]}" "$ENCRYPTED_GROUP" "$fake_ct"
-  TOTAL_GROUP_MSGS=$((TOTAL_GROUP_MSGS + 1))
-done
+if [ -n "$ENCRYPTED_GROUP" ]; then
+  for ((i=0; i<ENCRYPTED_MSG_COUNT; i++)); do
+    sender="${USERNAMES[$((i % ${#USERNAMES[@]}))]}"
+    fake_ct="$(random_group_fake_ct)"
+    seed_group_message "${USER_TOKEN[$sender]}" "$ENCRYPTED_GROUP" "$fake_ct"
+    TOTAL_GROUP_MSGS=$((TOTAL_GROUP_MSGS + 1))
+  done
+else
+  seed_log warn "phase 6 skipped — no encrypted group"
+fi
 
 # ---------------------------------------------------------------------------
 # Reactions
@@ -279,13 +297,16 @@ fi
 # ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
+seed_ws_close_all
+
+ENCRYPTED_GROUP_DISPLAY="${ENCRYPTED_GROUP:-"skipped (no key bundle)"}"
 cat <<EOF
 
 ==> seed v2 realistic-day complete
 
   users created       : ${#USERNAMES[@]}  (prefix _$STAMP, password $PASSWORD)
   plaintext group     : Daily Standup ($STAMP) = $PLAINTEXT_GROUP
-  encrypted group     : Secure Room ($STAMP)  = $ENCRYPTED_GROUP
+  encrypted group     : Secure Room ($STAMP)  = $ENCRYPTED_GROUP_DISPLAY
   pairwise DM threads : ${#PAIRS[@]}
   total DM messages   : $TOTAL_DMS
   total group msgs    : $TOTAL_GROUP_MSGS
