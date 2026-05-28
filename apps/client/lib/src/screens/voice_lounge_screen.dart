@@ -1423,10 +1423,21 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
                 });
               }
 
+              // Double-tap-to-zoom is gated on `!_isDrawing`. With a
+              // drawing tool active, mouse double-clicks (and fast
+              // drag-then-tap sequences) used to zoom the canvas
+              // mid-stroke because the drawing layer's pan recogniser
+              // only claims after kPanSlop (~18 px) — so a snappy
+              // double-click never reached the drawing layer and fell
+              // through to InteractiveViewer's double-tap (user
+              // feedback 2026-05-28). Returning null keeps the tap
+              // unrecognised by this layer so it dies in the gesture
+              // arena rather than firing a zoom.
               return GestureDetector(
                 behavior: HitTestBehavior.translucent,
-                onDoubleTapDown: (details) =>
-                    _toggleDoubleTapZoom(details.localPosition),
+                onDoubleTapDown: _isDrawing
+                    ? null
+                    : (details) => _toggleDoubleTapZoom(details.localPosition),
                 child: InteractiveViewer(
                   transformationController: _viewport,
                   minScale: minScaleFloor,
