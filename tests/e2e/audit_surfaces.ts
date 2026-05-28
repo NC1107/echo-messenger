@@ -446,9 +446,14 @@ export const SURFACES: Surface[] = [
   },
 
   // -------------------------------------------------------------------------
-  // voice/ — every surface requires being inside a LiveKit channel with at
-  // least one peer, which a single Playwright client can't fake. All marked
-  // skip for now; revisit with a 2-client harness later.
+  // voice/ — every screenshot here requires the lounge UI to actually render
+  // with at least one peer present, which still depends on a LiveKit room.
+  //
+  // The 2-client harness landed (see tests/e2e/harness/two-client.ts +
+  // voice_lounge_canvas_sync.spec.ts) and unblocks WS-protocol-level
+  // assertions for canvas sync — but the audit tour captures visual state,
+  // not protocol state, so the LiveKit-room requirement still applies to
+  // these particular surfaces. Revisit once LiveKit-in-CI is wired up.
   // -------------------------------------------------------------------------
   ...(
     [

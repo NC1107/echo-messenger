@@ -25,6 +25,7 @@ import '../utils/presence.dart';
 import '../utils/semantics_preview.dart';
 import '../utils/uuid_bytes.dart';
 import 'auth_provider.dart';
+import 'canvas_authority_provider.dart';
 import 'canvas_provider.dart';
 import 'channels_provider.dart';
 import 'chat_provider.dart';
@@ -336,6 +337,8 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
         _handleCallStarted(json);
       case 'canvas_event':
         _handleCanvasEvent(json);
+      case 'canvas_authority_changed':
+        _handleCanvasAuthorityChanged(json);
       case 'member_added':
         _handleMemberAdded(json);
       default:
@@ -671,6 +674,18 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
 
   void _handleCanvasEvent(Map<String, dynamic> json) {
     ref.read(canvasProvider.notifier).handleCanvasEvent(json);
+  }
+
+  /// Inbound `canvas_authority_changed` — update the per-channel authority
+  /// notifier so the canvas provider and lounge UI reflect who holds the
+  /// write lock. See docs/voice-lounge/03-multi-device.md.
+  void _handleCanvasAuthorityChanged(Map<String, dynamic> json) {
+    final channelId = json['channel_id'] as String?;
+    final deviceId = (json['device_id'] as num?)?.toInt();
+    if (channelId == null || channelId.isEmpty || deviceId == null) return;
+    ref
+        .read(canvasAuthorityNotifierProvider(channelId).notifier)
+        .setAuthority(deviceId);
   }
 }
 

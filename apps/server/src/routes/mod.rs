@@ -49,6 +49,7 @@ pub const REQUEST_ID_HEADER: &str = "x-request-id";
 use crate::auth::TokenInvalidator;
 use crate::metrics::{MessageRateCounter, SimpleCounter};
 use crate::middleware::rate_limit;
+use crate::ws::events::canvas_authority::CanvasAuthority;
 use crate::ws::hub::Hub;
 
 /// Map from ticket string to (user_id, device_id, created_at).
@@ -84,6 +85,12 @@ pub struct AppState {
     /// return 503 for every request.  Read once at startup so tests can control
     /// the value per-server-instance without relying on shared process env state.
     pub metrics_token: Option<String>,
+    /// Per-lounge canvas authority map. See
+    /// `docs/voice-lounge/03-multi-device.md` — a user with multiple devices
+    /// in the same lounge has exactly one device that may emit
+    /// `avatar_move` / `stroke` / `image_*` events; other devices' canvas
+    /// frames are silently dropped at `handle_canvas_event`.
+    pub canvas_authority: CanvasAuthority,
 }
 
 /// Narrow view of [`AppState`] for the auth handlers (`register`, `login`,

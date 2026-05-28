@@ -51,6 +51,7 @@ async fn main() {
         failed_logins: Arc::new(echo_server::metrics::SimpleCounter::new()),
         voice_tokens_issued: Arc::new(echo_server::metrics::SimpleCounter::new()),
         metrics_token,
+        canvas_authority: ws::CanvasAuthority::new(),
     });
 
     // TD-37: cooperative shutdown so DELETE/UPDATE batches finish cleanly.

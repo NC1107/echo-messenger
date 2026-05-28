@@ -6,7 +6,7 @@ part of 'ui_style_provider.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$uiStyleNotifierHash() => r'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0';
+String _$uiStyleNotifierHash() => r'75618b00eb37e27984dd1fd9b7a61ec1fc72bf64';
 
 /// See also [UiStyleNotifier].
 @ProviderFor(UiStyleNotifier)

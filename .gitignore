@@ -105,6 +105,7 @@ tests/e2e/*.spec.ts
 !tests/e2e/screenshot_tour.spec.ts
 !tests/e2e/theme_tour.spec.ts
 !tests/e2e/audit_tour.spec.ts
+!tests/e2e/voice_lounge_canvas_sync.spec.ts
 test-results/
 
 # Uploaded media files

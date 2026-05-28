@@ -1,15 +1,18 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
-import 'package:flutter/material.dart' show Color;
+import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
+import 'package:flutter/material.dart' show Color, Size;
 import 'package:http/http.dart' as http;
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../models/canvas_models.dart';
+import '../services/canvas_perf.dart';
 import '../services/debug_log_service.dart';
 import '../utils/canvas_utils.dart';
 import 'auth_provider.dart';
+import 'canvas_authority_provider.dart';
+import 'crypto_provider.dart';
 import 'server_url_provider.dart';
 import 'websocket_provider.dart';
 
@@ -42,6 +45,10 @@ class CanvasController extends _$CanvasController {
   Timer? _strokeThrottle;
   List<CanvasPoint>? _pendingStrokePoints;
 
+  /// Periodic breadcrumb timer — logs a [CanvasPerf.snapshot] to the debug
+  /// log every 30 s while a lounge is active.  Mirrors the PR E pattern.
+  Timer? _perfLogTimer;
+
   /// Per-drag identifier bumped by [startStroke]. A late `stroke_partial`
   /// scheduled mid-drag could otherwise fire AFTER [endStroke] cleared the
   /// throttle, re-attaching a stale partial placeholder on remotes that
@@ -51,6 +58,11 @@ class CanvasController extends _$CanvasController {
   /// line — local sees it, remotes don't").
   int _dragId = 0;
   bool _strokeActive = false;
+
+  /// Guards the once-per-session legacy-coord telemetry log so it only
+  /// fires on the first [attach] call (i.e. when the user first joins a
+  /// lounge this session, not on every channel switch).
+  bool _legacyCoordLogged = false;
 
   /// Events buffered while [_channelId] is not yet set (attach race window).
   final List<Map<String, dynamic>> _pendingEvents = [];
@@ -62,6 +74,7 @@ class CanvasController extends _$CanvasController {
       _imageThrottle?.cancel();
       _strokeThrottle?.cancel();
       _screenShareThrottle?.cancel();
+      _perfLogTimer?.cancel();
     });
     return const CanvasState();
   }
@@ -98,12 +111,40 @@ class CanvasController extends _$CanvasController {
     _channelId = channelId;
     _attachingChannelId = null;
 
+    // Once per session: log the legacy-coord migration counter so we can
+    // track when it is safe to delete _migrateLegacyCoord (see
+    // docs/voice-lounge/01-coordinate-policy.md "Legacy-coord migration sunset").
+    if (!_legacyCoordLogged) {
+      _legacyCoordLogged = true;
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'Canvas',
+        '[legacy-coord] migrations this session = $legacyMigrationCount',
+      );
+    }
+
     // Flush any canvas events that landed during the fetch.
     final buffered = List<Map<String, dynamic>>.from(_pendingEvents);
     _pendingEvents.clear();
     for (final event in buffered) {
       handleCanvasEvent(event);
     }
+
+    // Start the periodic perf breadcrumb (30 s interval, matches PR E pattern).
+    _perfLogTimer?.cancel();
+    _perfLogTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _logPerfSnapshot(),
+    );
+  }
+
+  void _logPerfSnapshot() {
+    final snap = CanvasPerf.snapshot();
+    DebugLogService.instance.log(
+      LogLevel.fine,
+      'CanvasPerf',
+      '[canvas-perf] ${snap.toString()}',
+    );
   }
 
   /// Detach from the current channel (called when the voice session ends).
@@ -121,6 +162,8 @@ class CanvasController extends _$CanvasController {
     _screenShareThrottle?.cancel();
     _screenShareThrottle = null;
     _pendingScreenShare = null;
+    _perfLogTimer?.cancel();
+    _perfLogTimer = null;
     _pendingEvents.clear();
     _channelId = null;
     _attachingChannelId = null;
@@ -194,6 +237,7 @@ class CanvasController extends _$CanvasController {
   }
 
   void continueStroke(CanvasPoint point) {
+    final sw = Stopwatch()..start();
     final tool = state.selectedTool;
     List<CanvasPoint> pts;
     if (isShapeKind(strokeKindForTool(tool))) {
@@ -218,6 +262,9 @@ class CanvasController extends _$CanvasController {
         (_) => _flushStrokePoints(),
       );
     }
+    sw.stop();
+    CanvasPerf.recordPaintMs(sw.elapsedMicroseconds / 1000.0);
+    _warnIfPerfDegraded();
   }
 
   void _flushStrokePoints() {
@@ -246,6 +293,7 @@ class CanvasController extends _$CanvasController {
       'width': _effectiveStrokeWidth(kind),
       'kind': _strokeKindWire(kind),
     });
+    CanvasPerf.recordSendEvent();
   }
 
   /// Reverse of [_strokeKindWire] — used when reconstructing strokes from
@@ -640,25 +688,64 @@ class CanvasController extends _$CanvasController {
   // -------------------------------------------------------------------------
   // Screen-share window positions
   //
-  // Like avatar moves these are ephemeral — the server relays but does not
-  // persist them. The `screenshare_move` event mirrors `avatar_move` in
-  // shape (window_id, x, y, width, height) so the same throttle/commit
-  // pattern applies, and clients agree on raw CSS pixels (NOT normalized)
-  // since the window has its own intrinsic aspect ratio.
+  // Wire format (coord_v: 2): {window_id, x_norm, y_norm, w_norm, h_norm,
+  // coord_v: 2} where each _norm is in [0.0, 1.0] of the sender's
+  // interactive viewport. Receivers multiply by their own viewport size
+  // before applying. A 120 px minimum is enforced on receive so small
+  // phone viewports don't collapse windows below readable size.
+  //
+  // Legacy payloads (coord_v absent or 1) contain raw CSS pixels
+  // {window_id, x, y, width, height} and are passed through unchanged —
+  // the LayoutBuilder in screen_share.dart clamps them on render.
+  //
+  // See docs/voice-lounge/01-coordinate-policy.md for the full decision.
   // -------------------------------------------------------------------------
 
   /// Throttle timer for screen-share window broadcasts (~20 fps).
   Timer? _screenShareThrottle;
   ScreenShareWindow? _pendingScreenShare;
 
+  /// Viewport size used for the last queued throttled broadcast. Kept in
+  /// sync with the [viewportSize] passed to [moveScreenShare].
+  Size? _pendingScreenShareViewport;
+
+  /// Builds a normalized-coord `screenshare_move` payload (coord_v: 2).
+  /// Returns null when [viewportSize] is unavailable or zero — caller must
+  /// short-circuit without emitting garbage.
+  Map<String, dynamic>? _buildNormalizedPayload({
+    required String windowId,
+    required double x,
+    required double y,
+    required double width,
+    required double height,
+    required Size? viewportSize,
+  }) {
+    final vp = viewportSize;
+    if (vp == null || vp.width <= 0 || vp.height <= 0) return null;
+    return {
+      'window_id': windowId,
+      'x_norm': (x / vp.width).clamp(0.0, 1.0),
+      'y_norm': (y / vp.height).clamp(0.0, 1.0),
+      'w_norm': (width / vp.width).clamp(0.0, 1.0),
+      'h_norm': (height / vp.height).clamp(0.0, 1.0),
+      'coord_v': 2,
+    };
+  }
+
   /// Called while the user drags a screen-share window. Updates local
   /// state immediately and queues a throttled WS broadcast.
+  ///
+  /// [viewportSize] is the lounge's InteractiveViewer region as reported
+  /// by its LayoutBuilder. Pass null only if the viewport is not yet
+  /// measured — the broadcast will be suppressed rather than emitting
+  /// stale raw pixels.
   void moveScreenShare({
     required String windowId,
     required double x,
     required double y,
     required double width,
     required double height,
+    Size? viewportSize,
   }) {
     final updated = Map<String, ScreenShareWindow>.from(
       state.screenSharePositions,
@@ -674,6 +761,7 @@ class CanvasController extends _$CanvasController {
     state = state.copyWith(screenSharePositions: updated);
 
     _pendingScreenShare = window;
+    _pendingScreenShareViewport = viewportSize;
     _screenShareThrottle ??= Timer.periodic(
       const Duration(milliseconds: 50),
       (_) => _flushScreenShareMove(),
@@ -688,21 +776,35 @@ class CanvasController extends _$CanvasController {
       return;
     }
     _pendingScreenShare = null;
-    _sendCanvasEvent('screenshare_move', pending.toJson());
+    final payload = _buildNormalizedPayload(
+      windowId: pending.windowId,
+      x: pending.x,
+      y: pending.y,
+      width: pending.width,
+      height: pending.height,
+      viewportSize: _pendingScreenShareViewport,
+    );
+    if (payload == null) return; // viewport not yet measured — skip
+    _sendCanvasEvent('screenshare_move', payload);
   }
 
   /// Called when the user releases a screen-share window drag/resize —
   /// flushes the pending broadcast immediately.
+  ///
+  /// [viewportSize] is the lounge's InteractiveViewer region. When null
+  /// (lounge not yet measured) the broadcast is suppressed.
   void commitScreenShareMove({
     required String windowId,
     required double x,
     required double y,
     required double width,
     required double height,
+    Size? viewportSize,
   }) {
     _screenShareThrottle?.cancel();
     _screenShareThrottle = null;
     _pendingScreenShare = null;
+    _pendingScreenShareViewport = null;
 
     final window = ScreenShareWindow(
       windowId: windowId,
@@ -716,7 +818,17 @@ class CanvasController extends _$CanvasController {
     );
     updated[windowId] = window;
     state = state.copyWith(screenSharePositions: updated);
-    _sendCanvasEvent('screenshare_move', window.toJson());
+
+    final payload = _buildNormalizedPayload(
+      windowId: windowId,
+      x: x,
+      y: y,
+      width: width,
+      height: height,
+      viewportSize: viewportSize,
+    );
+    if (payload == null) return; // viewport not yet measured — skip
+    _sendCanvasEvent('screenshare_move', payload);
   }
 
   // -------------------------------------------------------------------------
@@ -866,30 +978,48 @@ class CanvasController extends _$CanvasController {
         );
         state = state.copyWith(avatarPositions: updated);
       case 'screenshare_move':
-        final windowId = payload['window_id'] as String?;
-        if (windowId == null || windowId.isEmpty) return;
-        final x = (payload['x'] as num?)?.toDouble();
-        final y = (payload['y'] as num?)?.toDouble();
-        if (x == null || y == null) return;
-        final existing = state.screenSharePositions[windowId];
-        final w =
-            (payload['width'] as num?)?.toDouble() ?? existing?.width ?? 320.0;
-        final h =
-            (payload['height'] as num?)?.toDouble() ??
-            existing?.height ??
-            180.0;
+        final resolved = _resolveScreenShareMove(payload);
+        if (resolved == null) return;
         final updated = Map<String, ScreenShareWindow>.from(
           state.screenSharePositions,
         );
-        updated[windowId] = ScreenShareWindow(
-          windowId: windowId,
-          x: x,
-          y: y,
-          width: w,
-          height: h,
-        );
+        updated[resolved.windowId] = resolved;
         state = state.copyWith(screenSharePositions: updated);
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Canvas authority
+  // -------------------------------------------------------------------------
+
+  /// Returns true when this device is allowed to send canvas events.
+  ///
+  /// A device may write when:
+  /// - No authority has been claimed yet (null → first writer wins); OR
+  /// - This device IS the current authority.
+  ///
+  /// When false the caller should skip the WS send (server drops it anyway;
+  /// early exit saves the round-trip and honestly reflects read-only state).
+  bool _canIWrite() {
+    final cid = _channelId;
+    if (cid == null) return false;
+    final authority = ref.read(canvasAuthorityNotifierProvider(cid));
+    if (authority == null) return true;
+    final myDeviceId = ref.read(cryptoServiceProvider).deviceId;
+    return authority == myDeviceId;
+  }
+
+  /// Emit a `canvas_authority_claim` event so the server grants this device
+  /// the canvas write lock for [channelId]. The server's 1-second grace period
+  /// prevents rapid back-and-forth between devices.
+  void sendCanvasAuthorityClaim(String channelId) {
+    ref
+        .read(websocketProvider.notifier)
+        .sendCanvasEvent(
+          channelId: channelId,
+          kind: 'canvas_authority_claim',
+          payload: const {},
+        );
   }
 
   // -------------------------------------------------------------------------
@@ -904,6 +1034,88 @@ class CanvasController extends _$CanvasController {
   // active-drag flag lets the late-partial regression tests assert that a
   // tick scheduled mid-drag is dropped after endStroke / on a fresh drag.
   // ---------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // Local viewport size (receiver side)
+  //
+  // The lounge screen pushes its InteractiveViewer region here so the
+  // inbound screenshare_move handler can de-normalize coord_v:2 payloads
+  // using the local device's viewport. Updated every time LayoutBuilder
+  // reports a new size; null until first measurement.
+  // -------------------------------------------------------------------------
+
+  /// The local InteractiveViewer size, updated by [setViewportSize].
+  Size? _localViewportSize;
+
+  /// Called by the lounge screen whenever its LayoutBuilder measures a new
+  /// InteractiveViewer region. Updates the local viewport used for both
+  /// sender normalization (via the explicit [viewportSize] param on
+  /// [moveScreenShare] / [commitScreenShareMove]) and receiver
+  /// de-normalization of inbound coord_v:2 payloads.
+  void setViewportSize(Size size) {
+    if (size.width > 0 && size.height > 0) {
+      _localViewportSize = size;
+    }
+  }
+
+  /// Resolves an inbound `screenshare_move` payload to a [ScreenShareWindow]
+  /// in local CSS pixels, or returns null if the payload is malformed.
+  ///
+  /// - coord_v: 2 → de-normalize using [_localViewportSize]; enforce 120 px min.
+  /// - legacy (no coord_v or coord_v: 1) → use raw x/y/width/height unchanged.
+  ScreenShareWindow? _resolveScreenShareMove(Map<String, dynamic> payload) {
+    const double kMinWindowPx = 120.0;
+    final windowId = payload['window_id'] as String?;
+    if (windowId == null || windowId.isEmpty) return null;
+
+    final coordV = payload['coord_v'] as int?;
+    if (coordV == 2) {
+      return _resolveNormalizedScreenShare(payload, windowId, kMinWindowPx);
+    }
+    return _resolveLegacyScreenShare(payload, windowId);
+  }
+
+  ScreenShareWindow? _resolveNormalizedScreenShare(
+    Map<String, dynamic> payload,
+    String windowId,
+    double minPx,
+  ) {
+    final xNorm = (payload['x_norm'] as num?)?.toDouble();
+    final yNorm = (payload['y_norm'] as num?)?.toDouble();
+    if (xNorm == null || yNorm == null) return null;
+    final vp = _localViewportSize;
+    if (vp == null || vp.width <= 0 || vp.height <= 0) return null;
+    final wNorm = (payload['w_norm'] as num?)?.toDouble() ?? 0.0;
+    final hNorm = (payload['h_norm'] as num?)?.toDouble() ?? 0.0;
+    return ScreenShareWindow(
+      windowId: windowId,
+      x: xNorm * vp.width,
+      y: yNorm * vp.height,
+      width: (wNorm * vp.width).clamp(minPx, double.infinity),
+      height: (hNorm * vp.height).clamp(minPx, double.infinity),
+    );
+  }
+
+  ScreenShareWindow? _resolveLegacyScreenShare(
+    Map<String, dynamic> payload,
+    String windowId,
+  ) {
+    final x = (payload['x'] as num?)?.toDouble();
+    final y = (payload['y'] as num?)?.toDouble();
+    if (x == null || y == null) return null;
+    final existing = state.screenSharePositions[windowId];
+    final w =
+        (payload['width'] as num?)?.toDouble() ?? existing?.width ?? 320.0;
+    final h =
+        (payload['height'] as num?)?.toDouble() ?? existing?.height ?? 180.0;
+    return ScreenShareWindow(
+      windowId: windowId,
+      x: x,
+      y: y,
+      width: w,
+      height: h,
+    );
+  }
+
   @visibleForTesting
   // ignore: invalid_use_of_visible_for_testing_member
   void debugFlushStrokePoints() => _flushStrokePoints();
@@ -914,9 +1126,51 @@ class CanvasController extends _$CanvasController {
   @visibleForTesting
   int get debugDragId => _dragId;
 
+  // ---------------------------------------------------------------------------
+  // Dev-mode budget guard
+  //
+  // Fires a warning log when paint_p99 crosses 2× budget (32 ms) for 5+
+  // consecutive calls.  Not an assert and not fatal — purely visibility.
+  // Only active in kDebugMode so release builds pay zero cost.
+  // ---------------------------------------------------------------------------
+
+  /// Number of consecutive [continueStroke] calls whose elapsed time was
+  /// recorded after the p99 exceeded 32 ms.  Resets whenever p99 drops
+  /// back under budget.
+  int _consecutiveOverBudget = 0;
+
+  void _warnIfPerfDegraded() {
+    if (!kDebugMode) return;
+    final snap = CanvasPerf.snapshot();
+    const double kBudgetWarnMs = 32.0; // 2× the 16 ms budget
+    const int kWarnAfterCount = 5;
+    if (snap.paintP99Ms > kBudgetWarnMs) {
+      _consecutiveOverBudget++;
+      if (_consecutiveOverBudget == kWarnAfterCount) {
+        DebugLogService.instance.log(
+          LogLevel.warning,
+          'CanvasPerf',
+          '[canvas-perf] paint p99 exceeded 2× budget: ${snap.toString()}',
+        );
+      }
+    } else {
+      _consecutiveOverBudget = 0;
+    }
+  }
+
+  /// The most recent local InteractiveViewer region pushed via [setViewportSize].
+  /// Read by [screen_share.dart] to pass as the [viewportSize] argument to
+  /// [moveScreenShare] / [commitScreenShareMove] without threading the Size
+  /// through the widget tree.
+  Size? get localViewportSize => _localViewportSize;
+
+  @visibleForTesting
+  Size? get debugLocalViewportSize => _localViewportSize;
+
   void _sendCanvasEvent(String kind, Map<String, dynamic> payload) {
     final cid = _channelId;
     if (cid == null) return;
+    if (!_canIWrite()) return;
 
     ref
         .read(websocketProvider.notifier)

@@ -21,11 +21,15 @@ void main() {
   group('handleCanvasEvent – stroke', () {
     test('appends stroke to state', () {
       var state = const CanvasState(isLoaded: true);
+      // 100k-space absolute coords — no legacy migration triggered.
       final stroke = const CanvasStroke(
         id: 'stroke-1',
         color: '#FFFFFF',
         width: 3.0,
-        points: [CanvasPoint(x: 0.1, y: 0.2), CanvasPoint(x: 0.3, y: 0.4)],
+        points: [
+          CanvasPoint(x: 10000.0, y: 20000.0),
+          CanvasPoint(x: 30000.0, y: 40000.0),
+        ],
       );
 
       // Simulate what handleCanvasEvent("stroke") does.
@@ -42,17 +46,18 @@ void main() {
       var state = const CanvasState(
         isLoaded: true,
         strokes: [
+          // 100k-space absolute coords — no legacy migration triggered.
           CanvasStroke(
             id: 'a',
             color: '#FF0000',
             width: 2.0,
-            points: [CanvasPoint(x: 0.0, y: 0.0)],
+            points: [CanvasPoint(x: 5000.0, y: 5000.0)],
           ),
           CanvasStroke(
             id: 'b',
             color: '#00FF00',
             width: 2.0,
-            points: [CanvasPoint(x: 0.5, y: 0.5)],
+            points: [CanvasPoint(x: 50000.0, y: 50000.0)],
           ),
         ],
       );
@@ -67,29 +72,31 @@ void main() {
       var state = const CanvasState(
         isLoaded: true,
         strokes: [
+          // 100k-space absolute coords — no legacy migration triggered.
           CanvasStroke(
             id: 'stroke-1',
             color: '#FF0000',
             width: 2.0,
-            points: [CanvasPoint(x: 0.0, y: 0.0)],
+            points: [CanvasPoint(x: 5000.0, y: 5000.0)],
           ),
         ],
         images: [
+          // 100k-space absolute coords — no legacy migration triggered.
           CanvasImage(
             id: 'img-1',
             url: 'https://example.com/photo.png',
-            x: 0.1,
-            y: 0.1,
-            width: 0.3,
-            height: 0.2,
+            x: 10000.0,
+            y: 10000.0,
+            width: 30000.0,
+            height: 20000.0,
           ),
           CanvasImage(
             id: 'img-2',
             url: 'https://example.com/avatar.png',
-            x: 0.5,
-            y: 0.5,
-            width: 0.2,
-            height: 0.2,
+            x: 50000.0,
+            y: 50000.0,
+            width: 20000.0,
+            height: 20000.0,
           ),
         ],
       );
@@ -105,13 +112,14 @@ void main() {
   group('handleCanvasEvent – image_add', () {
     test('appends image to state', () {
       var state = const CanvasState(isLoaded: true);
+      // 100k-space absolute coords — no legacy migration triggered.
       const image = CanvasImage(
         id: 'img-1',
         url: 'https://example.com/img.png',
-        x: 0.2,
-        y: 0.3,
-        width: 0.25,
-        height: 0.2,
+        x: 20000.0,
+        y: 30000.0,
+        width: 25000.0,
+        height: 20000.0,
       );
 
       final newImages = List<CanvasImage>.from(state.images)..add(image);
@@ -124,44 +132,46 @@ void main() {
 
   group('handleCanvasEvent – image_move', () {
     test('updates position of matching image', () {
+      // 100k-space absolute coords — no legacy migration triggered.
       const original = CanvasImage(
         id: 'img-1',
         url: 'https://example.com/img.png',
-        x: 0.0,
-        y: 0.0,
-        width: 0.25,
-        height: 0.2,
+        x: 5000.0,
+        y: 5000.0,
+        width: 25000.0,
+        height: 20000.0,
       );
       var state = const CanvasState(isLoaded: true, images: [original]);
 
       // Simulate image_move
-      final updated = original.copyWith(x: 0.5, y: 0.6);
+      final updated = original.copyWith(x: 50000.0, y: 60000.0);
       final idx = state.images.indexWhere((img) => img.id == updated.id);
       final newImages = List<CanvasImage>.from(state.images)..[idx] = updated;
       state = state.copyWith(images: newImages);
 
-      expect(state.images.first.x, closeTo(0.5, 1e-10));
-      expect(state.images.first.y, closeTo(0.6, 1e-10));
+      expect(state.images.first.x, closeTo(50000.0, 1e-10));
+      expect(state.images.first.y, closeTo(60000.0, 1e-10));
     });
   });
 
   group('handleCanvasEvent – image_remove', () {
     test('removes the specified image', () {
+      // 100k-space absolute coords — no legacy migration triggered.
       const img1 = CanvasImage(
         id: 'img-1',
         url: 'https://example.com/a.png',
-        x: 0.0,
-        y: 0.0,
-        width: 0.1,
-        height: 0.1,
+        x: 5000.0,
+        y: 5000.0,
+        width: 10000.0,
+        height: 10000.0,
       );
       const img2 = CanvasImage(
         id: 'img-2',
         url: 'https://example.com/b.png',
-        x: 0.5,
-        y: 0.5,
-        width: 0.1,
-        height: 0.1,
+        x: 50000.0,
+        y: 50000.0,
+        width: 10000.0,
+        height: 10000.0,
       );
       var state = const CanvasState(isLoaded: true, images: [img1, img2]);
 
@@ -177,16 +187,17 @@ void main() {
     test('stores avatar position from remote user', () {
       var state = const CanvasState(isLoaded: true);
 
+      // 100k-space canvas-world coords.
       final updated = Map<String, AvatarPosition>.from(state.avatarPositions);
       updated['user-42'] = const AvatarPosition(
         userId: 'user-42',
-        x: 0.7,
-        y: 0.3,
+        x: 70000.0,
+        y: 30000.0,
       );
       state = state.copyWith(avatarPositions: updated);
 
-      expect(state.avatarPositions['user-42']?.x, closeTo(0.7, 1e-10));
-      expect(state.avatarPositions['user-42']?.y, closeTo(0.3, 1e-10));
+      expect(state.avatarPositions['user-42']?.x, closeTo(70000.0, 1e-10));
+      expect(state.avatarPositions['user-42']?.y, closeTo(30000.0, 1e-10));
     });
 
     // Shared-whiteboard semantics: anyone can move anyone. The receiver
@@ -199,12 +210,12 @@ void main() {
       // Simulate the receiver branch in canvas_provider's
       // handleCanvasEvent('avatar_move'). Sender is `user-a`, target
       // (carried in payload) is `user-b`. The update must land on
-      // `user-b`.
+      // `user-b`. Values are 100k-space canvas-world pixels.
       const fromUserId = 'user-a';
       const payload = <String, dynamic>{
         'user_id': 'user-b',
-        'x': 0.4,
-        'y': 0.6,
+        'x': 40000.0,
+        'y': 60000.0,
         'scale': 1.5,
       };
 
@@ -218,14 +229,14 @@ void main() {
       final updated = Map<String, AvatarPosition>.from(state.avatarPositions);
       updated[targetUserId] = AvatarPosition(
         userId: targetUserId,
-        x: x.clamp(0.0, 1.0),
-        y: y.clamp(0.0, 1.0),
+        x: x.clamp(0.0, kCanvasWidth),
+        y: y.clamp(0.0, kCanvasHeight),
         scale: scale,
       );
       state = state.copyWith(avatarPositions: updated);
 
-      expect(state.avatarPositions['user-b']?.x, closeTo(0.4, 1e-10));
-      expect(state.avatarPositions['user-b']?.y, closeTo(0.6, 1e-10));
+      expect(state.avatarPositions['user-b']?.x, closeTo(40000.0, 1e-10));
+      expect(state.avatarPositions['user-b']?.y, closeTo(60000.0, 1e-10));
       expect(state.avatarPositions['user-b']?.scale, 1.5);
       expect(
         state.avatarPositions.containsKey('user-a'),
@@ -239,7 +250,8 @@ void main() {
     test('avatar_move without payload user_id falls back to sender', () {
       var state = const CanvasState(isLoaded: true);
       const fromUserId = 'legacy-user';
-      const payload = <String, dynamic>{'x': 0.1, 'y': 0.9};
+      // 100k-space canvas-world pixels.
+      const payload = <String, dynamic>{'x': 10000.0, 'y': 90000.0};
 
       final targetUserId = (payload['user_id'] as String?) ?? fromUserId;
       final x = (payload['x'] as num).toDouble();
@@ -248,8 +260,8 @@ void main() {
       updated[targetUserId] = AvatarPosition(userId: targetUserId, x: x, y: y);
       state = state.copyWith(avatarPositions: updated);
 
-      expect(state.avatarPositions['legacy-user']?.x, closeTo(0.1, 1e-10));
-      expect(state.avatarPositions['legacy-user']?.y, closeTo(0.9, 1e-10));
+      expect(state.avatarPositions['legacy-user']?.x, closeTo(10000.0, 1e-10));
+      expect(state.avatarPositions['legacy-user']?.y, closeTo(90000.0, 1e-10));
     });
 
     // The local-drag path constructs the outbound payload directly. The
@@ -258,8 +270,9 @@ void main() {
     // user B's avatar" possible.
     test('moveAvatar broadcast payload carries the target user_id', () {
       // Build the outbound payload exactly as commitAvatarMove does.
+      // Values are 100k-space canvas-world pixels.
       const targetUserId = 'user-b';
-      const pos = CanvasPoint(x: 0.25, y: 0.75);
+      const pos = CanvasPoint(x: 25000.0, y: 75000.0);
       const scale = 1.0;
       final outbound = {
         'user_id': targetUserId,
@@ -268,15 +281,15 @@ void main() {
         'scale': scale,
       };
       expect(outbound['user_id'], targetUserId);
-      expect(outbound['x'], closeTo(0.25, 1e-10));
-      expect(outbound['y'], closeTo(0.75, 1e-10));
+      expect(outbound['x'], closeTo(25000.0, 1e-10));
+      expect(outbound['y'], closeTo(75000.0, 1e-10));
     });
 
-    test('clamps out-of-range avatar coords to [0, 1]', () {
-      // The provider clamps x and y with .clamp(0.0, 1.0); test the clamp.
-      final x = 1.5.clamp(0.0, 1.0);
-      final y = (-0.1).clamp(0.0, 1.0);
-      expect(x, 1.0);
+    test('clamps out-of-range avatar coords to canvas bounds', () {
+      // The provider clamps x and y with .clamp(0.0, kCanvasWidth/Height).
+      final x = 150000.0.clamp(0.0, kCanvasWidth);
+      final y = (-1.0).clamp(0.0, kCanvasHeight);
+      expect(x, kCanvasWidth);
       expect(y, 0.0);
     });
 
@@ -431,9 +444,10 @@ void main() {
 
     test('active stroke points are replaced on copyWith', () {
       const state = CanvasState();
+      // 100k-space absolute coords — no legacy migration triggered.
       final pts = [
-        const CanvasPoint(x: 0.0, y: 0.0),
-        const CanvasPoint(x: 0.1, y: 0.1),
+        const CanvasPoint(x: 5000.0, y: 5000.0),
+        const CanvasPoint(x: 10000.0, y: 10000.0),
       ];
       final updated = state.copyWith(activePoints: pts);
       expect(updated.activePoints.length, 2);
@@ -459,6 +473,7 @@ void main() {
       const channelId = 'ch-001';
 
       // Event that arrived before _channelId was set.
+      // 100k-space absolute coords — no legacy migration triggered.
       final bufferedEvent = {
         'channel_id': channelId,
         'kind': 'stroke',
@@ -468,7 +483,7 @@ void main() {
           'color': '#00FF00',
           'width': 2.0,
           'points': [
-            {'x': 0.1, 'y': 0.1},
+            {'x': 10000.0, 'y': 10000.0},
           ],
           'kind': 'pen',
         },
@@ -500,7 +515,7 @@ void main() {
     test('buffered clear event clears strokes accumulated before flush', () {
       const channelId = 'ch-002';
 
-      // Start with a pre-existing stroke.
+      // Start with a pre-existing stroke. 100k-space absolute coords.
       var state = const CanvasState(
         isLoaded: true,
         strokes: [
@@ -508,7 +523,7 @@ void main() {
             id: 'old-stroke',
             color: '#FF0000',
             width: 1.0,
-            points: [CanvasPoint(x: 0.0, y: 0.0)],
+            points: [CanvasPoint(x: 5000.0, y: 5000.0)],
           ),
         ],
       );
@@ -554,6 +569,7 @@ void main() {
         state = const CanvasState();
 
         // 2) A mid-fetch WS stroke event arrives.
+        // 100k-space absolute coords — no legacy migration triggered.
         final event = {
           'channel_id': 'ch-fetch-race',
           'kind': 'stroke',
@@ -563,7 +579,7 @@ void main() {
             'color': '#123456',
             'width': 2.0,
             'points': [
-              {'x': 0.2, 'y': 0.2},
+              {'x': 20000.0, 'y': 20000.0},
             ],
             'kind': 'pen',
           },
@@ -606,6 +622,7 @@ void main() {
       const attachedChannelId = 'ch-correct';
       const foreignChannelId = 'ch-other';
 
+      // 100k-space absolute coords — no legacy migration triggered.
       final event = {
         'channel_id': foreignChannelId,
         'kind': 'stroke',
@@ -615,7 +632,7 @@ void main() {
           'color': '#0000FF',
           'width': 1.0,
           'points': [
-            {'x': 0.5, 'y': 0.5},
+            {'x': 50000.0, 'y': 50000.0},
           ],
           'kind': 'pen',
         },
@@ -668,10 +685,10 @@ void main() {
         final notifier = container.read(canvasProvider.notifier);
 
         notifier.setTool(CanvasTool.pen);
-        notifier.startStroke(const CanvasPoint(x: 0.1, y: 0.1));
+        notifier.startStroke(const CanvasPoint(x: 10000.0, y: 10000.0));
         // ignore: invalid_use_of_visible_for_testing_member
         expect(notifier.debugIsStrokeActive, isTrue);
-        notifier.continueStroke(const CanvasPoint(x: 0.2, y: 0.2));
+        notifier.continueStroke(const CanvasPoint(x: 20000.0, y: 20000.0));
         notifier.endStroke();
         // ignore: invalid_use_of_visible_for_testing_member
         expect(notifier.debugIsStrokeActive, isFalse);
@@ -684,8 +701,8 @@ void main() {
       final notifier = container.read(canvasProvider.notifier);
 
       notifier.setTool(CanvasTool.pen);
-      notifier.startStroke(const CanvasPoint(x: 0.0, y: 0.0));
-      notifier.continueStroke(const CanvasPoint(x: 0.5, y: 0.5));
+      notifier.startStroke(const CanvasPoint(x: 5000.0, y: 5000.0));
+      notifier.continueStroke(const CanvasPoint(x: 50000.0, y: 50000.0));
       notifier.endStroke();
 
       // Simulate the partial Timer firing AFTER endStroke — this is the
@@ -710,7 +727,7 @@ void main() {
       notifier.setTool(CanvasTool.pen);
       // ignore: invalid_use_of_visible_for_testing_member
       final id0 = notifier.debugDragId;
-      notifier.startStroke(const CanvasPoint(x: 0.0, y: 0.0));
+      notifier.startStroke(const CanvasPoint(x: 5000.0, y: 5000.0));
       // ignore: invalid_use_of_visible_for_testing_member
       final id1 = notifier.debugDragId;
       // ignore: invalid_use_of_visible_for_testing_member
@@ -718,7 +735,7 @@ void main() {
       expect(id1, greaterThan(id0));
 
       notifier.endStroke();
-      notifier.startStroke(const CanvasPoint(x: 0.1, y: 0.1));
+      notifier.startStroke(const CanvasPoint(x: 10000.0, y: 10000.0));
       // ignore: invalid_use_of_visible_for_testing_member
       expect(notifier.debugDragId, greaterThan(id1));
     });
@@ -732,15 +749,15 @@ void main() {
 
         notifier.setTool(CanvasTool.pen);
 
-        // Drag 1: start → continue → end.
-        notifier.startStroke(const CanvasPoint(x: 0.0, y: 0.0));
-        notifier.continueStroke(const CanvasPoint(x: 0.1, y: 0.1));
+        // Drag 1: start → continue → end. 100k-space canvas coords.
+        notifier.startStroke(const CanvasPoint(x: 5000.0, y: 5000.0));
+        notifier.continueStroke(const CanvasPoint(x: 10000.0, y: 10000.0));
         notifier.endStroke();
 
         // Drag 2: start → continue → simulate a STALE late tick from drag 1
         // arriving before this drag finishes → end.
-        notifier.startStroke(const CanvasPoint(x: 0.5, y: 0.5));
-        notifier.continueStroke(const CanvasPoint(x: 0.6, y: 0.6));
+        notifier.startStroke(const CanvasPoint(x: 50000.0, y: 50000.0));
+        notifier.continueStroke(const CanvasPoint(x: 60000.0, y: 60000.0));
 
         // A late tick scheduled by drag 1 cannot leak its points — when the
         // tick fires, startStroke has already cleared _pendingStrokePoints
@@ -748,12 +765,12 @@ void main() {
         // ignore: invalid_use_of_visible_for_testing_member
         notifier.debugFlushStrokePoints();
 
-        // Drag 2's active points must still be (0.5, 0.6) — untouched by
+        // Drag 2's active points must still be (50000, 60000) — untouched by
         // any phantom drag-1 state.
         final pts = container.read(canvasProvider).activePoints;
         expect(pts.length, 2);
-        expect(pts.first.x, closeTo(0.5, 1e-10));
-        expect(pts.last.x, closeTo(0.6, 1e-10));
+        expect(pts.first.x, closeTo(50000.0, 1e-10));
+        expect(pts.last.x, closeTo(60000.0, 1e-10));
 
         notifier.endStroke();
         // ignore: invalid_use_of_visible_for_testing_member

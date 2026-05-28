@@ -207,7 +207,15 @@ pub(in crate::ws) async fn handle_text_message(
                 send_error(state, sender_id, "canvas event kind too long");
                 return;
             }
-            handle_canvas_event(state, sender_id, channel_id, kind, payload).await;
+            handle_canvas_event(
+                state,
+                sender_id,
+                sender_device_id,
+                channel_id,
+                kind,
+                payload,
+            )
+            .await;
         }
     }
 }

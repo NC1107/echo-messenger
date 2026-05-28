@@ -203,4 +203,15 @@ pub enum ServerMessage {
         kind: String,
         payload: serde_json::Value,
     },
+    /// Broadcast to all lounge members when canvas authority changes for a
+    /// user. Carries the user whose authority switched and the device that
+    /// now holds it. Other devices for the same user use this to render the
+    /// "Drawing from <device>" read-only pill. See
+    /// `docs/voice-lounge/03-multi-device.md`.
+    #[serde(rename = "canvas_authority_changed")]
+    CanvasAuthorityChanged {
+        channel_id: Uuid,
+        user_id: Uuid,
+        device_id: i32,
+    },
 }
