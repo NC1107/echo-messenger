@@ -1,5 +1,18 @@
 part of '../../conversation_panel.dart';
 
+/// Shows the user-status bottom-sheet anchored to [anchorContext].
+///
+/// The sheet contains four presence radio rows + a custom-status row.
+/// It does **not** push a route — it is a modal sheet so the caller
+/// does not need to handle navigation.
+void _showStatusMenu(BuildContext anchorContext) {
+  showEchoBottomSheet<void>(
+    anchorContext,
+    dragHandle: true,
+    builder: (_) => const UserStatusMenuSheet(),
+  );
+}
+
 /// Header chrome: top logo bar with action icons, the "+" new-action menu,
 /// the All/DMs/Groups filter chips, and the bottom user-status bar with
 /// the presence picker. Pure UI builders — all state mutation lives in
@@ -413,37 +426,9 @@ mixin _ConversationPanelHeaderMixin
     return Semantics(
       label: 'Status: $presenceStatus. Tap to change.',
       button: true,
-      child: PopupMenuButton<String>(
+      child: GestureDetector(
         key: const Key('status-picker'),
-        tooltip: 'Change status',
-        offset: const Offset(0, -160),
-        onSelected: (status) {
-          ref.read(authProvider.notifier).setPresenceStatus(status);
-        },
-        itemBuilder: (_) => const [
-          PopupMenuItem(
-            value: 'online',
-            child: _StatusMenuItem(label: 'Online', color: EchoTheme.online),
-          ),
-          PopupMenuItem(
-            value: 'away',
-            child: _StatusMenuItem(label: 'Away', color: EchoTheme.warning),
-          ),
-          PopupMenuItem(
-            value: 'dnd',
-            child: _StatusMenuItem(
-              label: 'Do Not Disturb',
-              color: EchoTheme.danger,
-            ),
-          ),
-          PopupMenuItem(
-            value: 'invisible',
-            child: _StatusMenuItem(
-              label: 'Invisible',
-              color: Color(0xFF6B6B6F),
-            ),
-          ),
-        ],
+        onTap: () => _showStatusMenu(context),
         child: Stack(
           children: [
             buildAvatar(
@@ -506,32 +491,6 @@ mixin _ConversationPanelHeaderMixin
           ),
         ],
       ),
-    );
-  }
-}
-
-/// Row widget used inside the status picker popup menu.
-///
-/// Each entry shows a coloured presence dot and a label, matching the visual
-/// language used in conversation list items and user profile screens.
-class _StatusMenuItem extends StatelessWidget {
-  const _StatusMenuItem({required this.label, required this.color});
-
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 10),
-        Text(label),
-      ],
     );
   }
 }
