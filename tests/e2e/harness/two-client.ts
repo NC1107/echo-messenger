@@ -231,9 +231,14 @@ export async function withTwoClients(
   opts: TwoClientOpts = {},
 ): Promise<void> {
   // Unique-per-run suffix so parallel CI shards don't collide on usernames.
-  // 8 hex chars from Date.now() + random keeps the suffix short and stable
-  // across the lifetime of one test invocation.
-  const tag = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`.slice(0, 10);
+  // 8 hex chars from Date.now() + 4 random hex chars keeps the suffix short
+  // and stable across one test invocation. `crypto.randomBytes` (not
+  // `Math.random`) because CodeQL flags non-CSPRNG output reaching a
+  // security-context sink — even when, as here, the "sink" is just a test
+  // fixture username.
+  const { randomBytes } = await import('node:crypto');
+  const rand = randomBytes(2).toString('hex');
+  const tag = `${Date.now().toString(36)}${rand}`.slice(0, 10);
   const userASpec = opts.userA ?? {
     username: `hA_${tag}`,
     password: DEFAULT_PASSWORD,
