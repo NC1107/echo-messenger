@@ -24,7 +24,6 @@ import 'settings/devices_section.dart';
 import 'settings/language_section.dart';
 import 'settings/notification_section.dart';
 import 'settings/privacy_section.dart';
-import 'settings/status_section.dart';
 import 'settings/voice_section.dart';
 
 /// Section identifiers for the redesigned settings layout.
@@ -38,7 +37,6 @@ import 'settings/voice_section.dart';
 /// [UserHeaderCard] tap target at the top of [SettingsRootView].
 enum SettingsSection {
   profile,
-  status,
   appearance,
   language,
   notifications,
@@ -55,8 +53,6 @@ String settingsSectionLabel(SettingsSection section) {
   switch (section) {
     case SettingsSection.profile:
       return 'Profile';
-    case SettingsSection.status:
-      return 'Status';
     case SettingsSection.appearance:
       return 'Appearance';
     case SettingsSection.language:
@@ -96,8 +92,6 @@ class SettingsContent extends StatelessWidget {
     switch (section) {
       case SettingsSection.profile:
         return const AccountSection();
-      case SettingsSection.status:
-        return const StatusSection();
       case SettingsSection.appearance:
         return const AppearanceSection();
       case SettingsSection.language:
@@ -169,12 +163,6 @@ class SettingsRootView extends ConsumerWidget {
                   label: 'Saved Messages',
                   onTap: onSavedMessages!,
                 ),
-              _row(
-                context,
-                icon: Icons.mood_outlined,
-                iconColor: context.settingsIconPalette.info,
-                section: SettingsSection.status,
-              ),
               _row(
                 context,
                 icon: Icons.devices_outlined,
