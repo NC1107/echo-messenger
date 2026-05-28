@@ -32,3 +32,12 @@ final mdMaskedLinkRegex = RegExp(r'\[([^\]]+)\]\((https?://[^\s)]+)\)');
 
 /// @mention
 final mdMentionRegex = RegExp(r'@(\w+)');
+
+/// Unordered list prefix at the start of a string/line: `- ` or `* `.
+/// Used by [MarkdownTextEditingController] to render bullet glyphs inline.
+final mdUnorderedListPrefixRegex = RegExp(r'^[-*] ');
+
+/// Ordered list prefix at the start of a string/line: `1. `, `2. `, etc.
+/// Capture group 1 is the number.
+/// Used by [MarkdownTextEditingController] to render number glyphs inline.
+final mdOrderedListPrefixRegex = RegExp(r'^(\d+)\. ');

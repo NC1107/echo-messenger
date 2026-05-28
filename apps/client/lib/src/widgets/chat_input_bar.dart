@@ -144,10 +144,8 @@ class ChatInputBarState extends ConsumerState<ChatInputBar>
   /// toolbar is always visible and this flag is ignored.
   bool _showFormatToolbarOnMobile = false;
 
-  /// Whether the inline "Aa" formatting toolbar is expanded.
-  bool _showFormattingBar = false;
-
-  /// Drives the SizeTransition on the [FormattingToolbar].
+  /// Drives the [SelectionFormattingPopover] fade animation (kept for API
+  /// symmetry; the popover mounts/unmounts based on selection state).
   late final AnimationController _formattingBarAnim;
 
   /// Last known keyboard height -- used to size the inline picker so it

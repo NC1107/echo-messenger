@@ -131,6 +131,13 @@ extension _BuildHelpers on ChatInputBarState {
     }
 
     final pillBorderColor = _isEditing ? context.accent : context.border;
+    final inputPill = _buildInputPill(
+      showMediaPicker: showMediaPicker,
+      isMobileLayout: isMobileLayout,
+      voiceSettings: voiceSettings,
+      effectiveActiveVoiceChannelId: effectiveActiveVoiceChannelId,
+      pillBorderColor: pillBorderColor,
+    );
 
     return Row(
       crossAxisAlignment: _isMultiline
@@ -143,61 +150,8 @@ extension _BuildHelpers on ChatInputBarState {
             onShowMobileMenu: _showMobileAttachMenu,
           ),
         if (!_isEditing) const SizedBox(width: 4),
-        if (!_isEditing)
-          AaToggleButton(
-            active: _showFormattingBar,
-            onToggle: () {
-              setState(() => _showFormattingBar = !_showFormattingBar);
-              if (_showFormattingBar) {
-                _formattingBarAnim.forward();
-              } else {
-                _formattingBarAnim.reverse();
-              }
-            },
-          ),
         if (!_isEditing) const SizedBox(width: EchoSpacing.sm),
-        Expanded(
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 40),
-            padding: const EdgeInsets.only(
-              left: EchoSpacing.md,
-              right: EchoSpacing.xs,
-            ),
-            decoration: BoxDecoration(
-              color: context.surface,
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: pillBorderColor, width: 1),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                FormattingToolbar(
-                  controller: _messageController,
-                  animationController: _formattingBarAnim,
-                ),
-                Row(
-                  crossAxisAlignment: _isMultiline
-                      ? CrossAxisAlignment.end
-                      : CrossAxisAlignment.center,
-                  children: [
-                    _buildTextField(
-                      showMediaPicker: showMediaPicker,
-                      isMobileLayout: isMobileLayout,
-                      voiceSettings: voiceSettings,
-                      effectiveActiveVoiceChannelId:
-                          effectiveActiveVoiceChannelId,
-                    ),
-                    MediaPickerToggle(
-                      showMediaPicker: showMediaPicker,
-                      onToggle: () => _toggleMediaPicker(isMobileLayout),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
+        Expanded(child: inputPill),
         const SizedBox(width: 8),
         SendButton(
           isTextEmpty: _isTextEmpty,
@@ -208,6 +162,45 @@ extension _BuildHelpers on ChatInputBarState {
           resolveSendAction: _resolvedSendAction,
         ),
       ],
+    );
+  }
+
+  /// Builds the input pill (the rounded container holding the text field).
+  Widget _buildInputPill({
+    required bool showMediaPicker,
+    required bool isMobileLayout,
+    required VoiceSettingsState voiceSettings,
+    required String? effectiveActiveVoiceChannelId,
+    required Color pillBorderColor,
+  }) {
+    return Container(
+      constraints: const BoxConstraints(minHeight: 40),
+      padding: const EdgeInsets.only(
+        left: EchoSpacing.md,
+        right: EchoSpacing.xs,
+      ),
+      decoration: BoxDecoration(
+        color: context.surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: pillBorderColor, width: 1),
+      ),
+      child: Row(
+        crossAxisAlignment: _isMultiline
+            ? CrossAxisAlignment.end
+            : CrossAxisAlignment.center,
+        children: [
+          _buildTextField(
+            showMediaPicker: showMediaPicker,
+            isMobileLayout: isMobileLayout,
+            voiceSettings: voiceSettings,
+            effectiveActiveVoiceChannelId: effectiveActiveVoiceChannelId,
+          ),
+          MediaPickerToggle(
+            showMediaPicker: showMediaPicker,
+            onToggle: () => _toggleMediaPicker(isMobileLayout),
+          ),
+        ],
+      ),
     );
   }
 
