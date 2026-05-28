@@ -53,7 +53,7 @@ Short-term action (this Phase 1 PR's scope, or a fast follow-up):
 - Add a non-blocking notice in the lounge UI for encrypted groups: a small text under the lounge header like "Canvas drawings and shared positions are visible to the server." Dismissible-per-lounge but reappears on each new lounge.
 
 Medium-term action (scheduled after GRP2 message E2E lands):
-- File a tracked issue with the title "Encrypt canvas events with GRP2 sender key" linked to the GRP2 design and to this doc.
+- Tracked as #1268 (filed 2026-05-28), linked to the GRP2 design and this doc.
 - Acceptance: server logs no longer contain plaintext canvas payloads in `is_encrypted == true` groups.
 
 Option C is rejected because the feature is too useful to remove and the gap is small enough to disclose-and-defer.
