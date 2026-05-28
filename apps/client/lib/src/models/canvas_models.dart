@@ -4,23 +4,38 @@ import 'dart:ui' show Color;
 // Canvas geometry helpers
 // ---------------------------------------------------------------------------
 
-/// Fixed virtual canvas size shared by every participant regardless of their
-/// screen size or orientation. The InteractiveViewer in the voice lounge
-/// scrolls + zooms inside this 4096×4096 logical surface so a circle drawn
-/// on a phone reads as a circle on a desktop. See
-/// `apps/client/lib/src/screens/voice_lounge_screen.dart` for the
-/// viewport-fit math (minScale = min(viewportW, viewportH) / kCanvasWidth).
-const double kCanvasWidth = 4096;
-const double kCanvasHeight = 4096;
+/// Virtual canvas size. 100k×100k is large enough to feel infinite for any
+/// realistic call (at default 1× zoom you'd have to drag your finger across
+/// the screen ~250 times to cross it) while staying inside the range where
+/// Flutter's transformation math and floating-point precision behave well.
+/// Treat the lounge as a Figma-style pannable surface where the user lands
+/// in a default region (origin, or the bbox of existing content on
+/// rejoin) and can zoom out repeatedly to see more.
+///
+/// Old call-sites of `kCanvasWidth` from the 4096-era still work as a
+/// "clamp coords to the canvas" guard, but the value is now so large the
+/// clamp is effectively a no-op for any realistic input.
+const double kCanvasWidth = 100000;
+const double kCanvasHeight = 100000;
 
-/// Migrates legacy [0, 1] normalized coordinates persisted before the fixed
-/// 4096-px space landed. The heuristic is "value ≤ 1.0 means legacy
-/// normalized" — safe because the new pixel range starts at 0 and crosses 1
-/// instantly (4096 / 4096 ≈ 1.0 is at the bottom-right corner; any other
-/// real-world stroke point is far above 1.0). Without this old persisted
-/// canvases would collapse into the top-left pixel after upgrade.
+/// Legacy 4096-px canvas size, used by [_migrateLegacyCoord] so old
+/// persisted strokes land where they were drawn (in the top-left 4% of
+/// the new 100k space) instead of being rescaled to fill the new range.
+/// Auto-fit-to-content on join zooms the user to that region naturally,
+/// so users never notice the canvas got bigger underneath them.
+const double _kLegacyNormalisedScale = 4096;
+
+/// Migrates very old (pre-4096) coordinates persisted as normalized 0..1
+/// fractions of the viewport. Returns absolute canvas-space pixels.
+///
+/// Heuristic: a `value <= 1.0` is interpreted as normalised and multiplied
+/// by [_kLegacyNormalisedScale] (NOT by [kCanvasWidth] — multiplying by
+/// 100k would scatter old drawings across the entire new space, breaking
+/// their relative positions). 4096-era and 100k-era coords (anything > 1)
+/// pass through unchanged. The `axisExtent` parameter is now unused but
+/// kept for call-site compatibility; remove on the next sweep.
 double _migrateLegacyCoord(double value, double axisExtent) {
-  if (value <= 1.0) return value * axisExtent;
+  if (value <= 1.0) return value * _kLegacyNormalisedScale;
   return value;
 }
 
