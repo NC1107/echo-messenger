@@ -207,6 +207,13 @@ pub async fn upload_bundle(
         })
         .collect::<Result<Vec<_>, AppError>>()?;
 
+    // #1131: snapshot whether this user has any prior identity_keys row so
+    // we can fan out a one-shot `peer_keys_published` event AFTER the tx
+    // commits, letting peers that were waiting on this user's bundle drop
+    // their negative cache and retry stuck encrypted sends.
+    let prior_identity_count =
+        db::keys::count_identity_keys(&state.pool, auth_user.user_id).await?;
+
     // Wrap all key stores in a transaction to prevent partial uploads.
     let mut tx = state.pool.begin().await.db_ctx("upload_bundle/begin_tx")?;
 
@@ -250,7 +257,37 @@ pub async fn upload_bundle(
         one_time_prekeys.len()
     );
 
+    if prior_identity_count == 0 {
+        broadcast_peer_keys_published(&state, auth_user.user_id, device_id);
+    }
+
     Ok(StatusCode::CREATED)
+}
+
+/// #1131: fan out `peer_keys_published` to every currently-connected session.
+/// One-shot at the moment a brand-new user lands their first bundle so peers
+/// that were waiting on it can drop their negative cache without burning the
+/// 5-minute TTL.
+fn broadcast_peer_keys_published(state: &Arc<AppState>, user_id: Uuid, device_id: i32) {
+    use crate::ws::handler::ServerMessage;
+    use axum::extract::ws::Message as WsMessage;
+
+    let event = ServerMessage::PeerKeysPublished {
+        user_id,
+        device_ids: vec![device_id],
+    };
+    let json = match serde_json::to_string(&event) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("peer_keys_published serialize failed: {e}");
+            return;
+        }
+    };
+    let online = state.hub.get_online_user_ids();
+    let msg = WsMessage::Text(json.into());
+    for uid in online {
+        state.hub.send_to_user(&uid, msg.clone());
+    }
 }
 
 /// Verify that the signed_prekey_signature was produced by the given Ed25519 signing key

@@ -617,6 +617,19 @@ pub async fn get_revoked_devices_for_users(
     Ok(map)
 }
 
+/// Count identity_keys rows for a user across every device. A return of `0`
+/// means this user has never landed a prekey bundle (#1131) — used by the
+/// `upload_bundle` handler to detect first-time uploads and fan out the
+/// `peer_keys_published` event so waiting peers can drop their negative
+/// bundle cache.
+pub async fn count_identity_keys(pool: &PgPool, user_id: Uuid) -> Result<i64, sqlx::Error> {
+    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM identity_keys WHERE user_id = $1")
+        .bind(user_id)
+        .fetch_one(pool)
+        .await?;
+    Ok(row.0)
+}
+
 /// Count available (unused) one-time prekeys for a user's device.
 pub async fn count_one_time_prekeys(
     pool: &PgPool,

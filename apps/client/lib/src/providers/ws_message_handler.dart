@@ -31,6 +31,7 @@ import 'conversations_provider.dart';
 import 'crypto_provider.dart';
 import 'encrypted_preview_provider.dart';
 import 'server_url_provider.dart';
+import 'websocket_provider.dart';
 
 part 'ws_handlers/message_handlers.dart';
 part 'ws_handlers/typing_reaction_handlers.dart';
@@ -328,6 +329,8 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
         _handleKeyReset(json);
       case 'identity_reset':
         _handleIdentityReset(json);
+      case 'peer_keys_published':
+        _handlePeerKeysPublished(json);
       case 'call_started':
         _handleCallStarted(json);
       case 'canvas_event':
