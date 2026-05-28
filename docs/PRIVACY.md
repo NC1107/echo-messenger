@@ -29,6 +29,16 @@ your own Echo server, you are the operator and you control all data stored on it
 - **Third-party analytics or trackers.** No Mixpanel, no Segment, no Google Analytics, no Sentry.
 - **Your private keys.** They're generated on-device and stored in your platform keystore (Keychain on iOS/macOS, Credential Manager on Android, libsecret on Linux, etc.).
 
+## Voice-lounge canvas
+
+Voice lounges include a shared canvas — drawings, screen-share window positions, and avatar positions are synchronized to everyone in the lounge in real time.
+
+**Canvas content is server-readable. It is not end-to-end encrypted, even in groups where messages are.** When you draw a stroke, drag your avatar, or move a screen-share window in a voice lounge, the coordinates and stroke data pass through the server in plaintext, and persistent kinds (strokes, image references, board clears) are stored in the Echo database as plaintext JSON.
+
+The pickup plan for closing this gap is tracked at [#1268](https://github.com/NC1107/echo-messenger/issues/1268); it requires the group-message E2E protocol (GRP2) to ship first. Until then, treat anything you draw or any window you reposition in a lounge as visible to the server operator.
+
+The first time you enter a voice lounge in an encrypted group on a given device, the app shows a one-time popup acknowledging this gap so it's surfaced at the right moment, not just buried in this document. The popup is dismissible and does not return.
+
 ## Where the data lives
 
 PostgreSQL on the server at `echo-messenger.us`. Access is restricted to the operator (GitHub user `NC1107`).
