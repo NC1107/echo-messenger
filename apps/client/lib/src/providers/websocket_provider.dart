@@ -57,6 +57,20 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
   /// Throttle: track last typing event sent per conversation.
   final Map<String, DateTime> _lastTypingSent = {};
 
+  /// Test-visible log of every frame emitted via [_emit]. Empty in production
+  /// (write-only via [_emit]); tests can read it to assert wire shape without
+  /// having to inject a fake [WebSocketChannel].
+  @visibleForTesting
+  final List<Map<String, dynamic>> debugSentFrames = [];
+
+  /// Centralised emit hook: every WS frame the client sends goes through here
+  /// so wire-shape contract tests have one place to assert against. This must
+  /// remain behaviorally identical to a direct `_channel?.sink.add(jsonEncode(frame))`.
+  void _emit(Map<String, dynamic> frame) {
+    debugSentFrames.add(frame);
+    _channel?.sink.add(jsonEncode(frame));
+  }
+
   @override
   WebSocketState build() {
     // Periodically clean up stale typing indicators.
@@ -494,7 +508,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
       msg['thread_root_id'] = threadRootId;
     }
 
-    _channel?.sink.add(jsonEncode(msg));
+    _emit(msg);
   }
 
   /// Map raw encryption exceptions to user-readable messages.
@@ -603,16 +617,14 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
       payload = content;
     }
 
-    _channel?.sink.add(
-      jsonEncode(
-        _buildGroupSendFrame(
-          conversationId: conversationId,
-          payload: payload,
-          clientMessageId: clientMessageId,
-          channelId: channelId,
-          replyToId: replyToId,
-          threadRootId: threadRootId,
-        ),
+    _emit(
+      _buildGroupSendFrame(
+        conversationId: conversationId,
+        payload: payload,
+        clientMessageId: clientMessageId,
+        channelId: channelId,
+        replyToId: replyToId,
+        threadRootId: threadRootId,
       ),
     );
   }
@@ -795,21 +807,17 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     if (channelId != null && channelId.isNotEmpty) {
       msg['channel_id'] = channelId;
     }
-    _channel?.sink.add(jsonEncode(msg));
+    _emit(msg);
   }
 
   /// Notify the peer that encryption keys were reset for this conversation.
   void sendKeyReset(String conversationId) {
-    _channel?.sink.add(
-      jsonEncode({'type': 'key_reset', 'conversation_id': conversationId}),
-    );
+    _emit({'type': 'key_reset', 'conversation_id': conversationId});
   }
 
   /// Notify conversation members that a voice call was started.
   void sendCallStarted(String conversationId) {
-    _channel?.sink.add(
-      jsonEncode({'type': 'call_started', 'conversation_id': conversationId}),
-    );
+    _emit({'type': 'call_started', 'conversation_id': conversationId});
   }
 
   /// Send a reaction via REST (server broadcasts via WebSocket to other members).
@@ -864,9 +872,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     if (!privacy.readReceiptsEnabled) {
       return;
     }
-    _channel?.sink.add(
-      jsonEncode({'type': 'read_receipt', 'conversation_id': conversationId}),
-    );
+    _emit({'type': 'read_receipt', 'conversation_id': conversationId});
   }
 
   /// Relay a WebRTC signaling payload to another voice-channel member.
@@ -876,15 +882,13 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     required String toUserId,
     required Map<String, dynamic> signal,
   }) {
-    _channel?.sink.add(
-      jsonEncode({
-        'type': 'voice_signal',
-        'conversation_id': conversationId,
-        'channel_id': channelId,
-        'to_user_id': toUserId,
-        'signal': signal,
-      }),
-    );
+    _emit({
+      'type': 'voice_signal',
+      'conversation_id': conversationId,
+      'channel_id': channelId,
+      'to_user_id': toUserId,
+      'signal': signal,
+    });
   }
 
   /// Broadcast a voice-lounge canvas event to all conversation members.
@@ -893,14 +897,12 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     required String kind,
     required Map<String, dynamic> payload,
   }) {
-    _channel?.sink.add(
-      jsonEncode({
-        'type': 'canvas_event',
-        'channel_id': channelId,
-        'kind': kind,
-        'payload': payload,
-      }),
-    );
+    _emit({
+      'type': 'canvas_event',
+      'channel_id': channelId,
+      'kind': kind,
+      'payload': payload,
+    });
   }
 
   /// Start a periodic timer that checks whether the server has gone silent.
