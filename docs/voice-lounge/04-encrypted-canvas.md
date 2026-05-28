@@ -50,7 +50,7 @@ Flip canvas off in `is_encrypted == true` groups. Plaintext groups keep the feat
 
 Short-term action (this Phase 1 PR's scope, or a fast follow-up):
 - Add a `Canvas content is not encrypted` section to `docs/PRIVACY.md`.
-- Add a non-blocking notice in the lounge UI for encrypted groups: a small text under the lounge header like "Canvas drawings and shared positions are visible to the server." Dismissible-per-lounge but reappears on each new lounge.
+- Show a **one-time-ever** popup the first time the user enters a voice lounge in an encrypted group: "Canvas drawings and shared positions are currently visible to the server — end-to-end encryption for canvas is tracked at #1268." Dismiss button stores `seen_encrypted_canvas_notice_v1 = true` in SharedPreferences; the popup never appears again for that user (per-device, since SharedPreferences is per-install). Updated 2026-05-28 per review: previous draft called for a per-lounge dismissible notice; reduced to a single global acknowledgement to avoid notice fatigue.
 
 Medium-term action (scheduled after GRP2 message E2E lands):
 - Tracked as #1268 (filed 2026-05-28), linked to the GRP2 design and this doc.
@@ -61,7 +61,7 @@ Option C is rejected because the feature is too useful to remove and the gap is 
 ## Acceptance criteria
 
 - `docs/PRIVACY.md` contains a section titled "Voice-lounge canvas" that states canvas data is server-readable.
-- An encrypted-group lounge displays a one-line privacy notice on first entry.
+- A one-time popup appears the first time the user enters any encrypted-group lounge; after dismissal the popup never appears again on that device.
 - A tracked follow-up issue exists for the GRP2-canvas-encryption work with the documented pickup trigger: "GRP2 message E2E shipped to prod (not just merged)."
 - No PR that adds new canvas event kinds may merge without explicitly stating which side (plaintext or encrypted) it lives on. If plaintext, the PR must also add the kind to the privacy-doc list.
 

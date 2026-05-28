@@ -37,7 +37,7 @@ Voice lounges include a shared canvas — drawings, screen-share window position
 
 The pickup plan for closing this gap is tracked at [#1268](https://github.com/NC1107/echo-messenger/issues/1268); it requires the group-message E2E protocol (GRP2) to ship first. Until then, treat anything you draw or any window you reposition in a lounge as visible to the server operator.
 
-If a lounge belongs to an encrypted group, the app shows a one-line notice the first time you enter that lounge so this gap is surfaced at the right moment, not just in this document.
+The first time you enter a voice lounge in an encrypted group on a given device, the app shows a one-time popup acknowledging this gap so it's surfaced at the right moment, not just buried in this document. The popup is dismissible and does not return.
 
 ## Where the data lives
 
