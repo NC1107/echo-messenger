@@ -2,5 +2,6 @@
 
 pub(super) mod broadcast;
 pub(super) mod canvas;
+pub(super) mod canvas_validation;
 pub(super) mod dispatch;
 pub(super) mod voice;
