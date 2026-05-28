@@ -1,4 +1,4 @@
-package us.echomessenger.echo_app
+package com.echo_messenger
 
 import android.app.PictureInPictureParams
 import android.content.Intent

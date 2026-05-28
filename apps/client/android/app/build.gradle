@@ -11,7 +11,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "us.echomessenger.echo_app"
+    namespace = "com.echo_messenger"
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
@@ -26,7 +26,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "us.echomessenger.echo_app"
+        applicationId = "com.echo_messenger"
         minSdk = 24
         targetSdk = 35
         versionCode = flutter.versionCode
