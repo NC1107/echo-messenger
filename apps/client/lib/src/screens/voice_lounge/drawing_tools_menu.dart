@@ -4,6 +4,8 @@ library;
 import 'dart:convert';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -80,8 +82,14 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
 
   @override
   Widget build(BuildContext context) {
+    // 280 px target, clamped down to the device's safe width minus a
+    // 16 px margin per side so the popup never overflows on narrow
+    // phones (iPhone SE at 320 logical width has exactly 288 usable
+    // and the old fixed 280 risked off-screen popup chrome).
+    final maxAllowed = (MediaQuery.sizeOf(context).width - 32).clamp(220.0, 320.0);
+    final menuWidth = math.min(280.0, maxAllowed);
     return SizedBox(
-      width: 280,
+      width: menuWidth,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
