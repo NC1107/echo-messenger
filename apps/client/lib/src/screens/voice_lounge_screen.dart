@@ -14,7 +14,9 @@ import 'package:path_provider/path_provider.dart';
 import '../models/canvas_models.dart'
     show CanvasState, CanvasTool, kCanvasHeight, kCanvasWidth;
 import '../providers/auth_provider.dart';
+import '../providers/canvas_authority_provider.dart';
 import '../providers/canvas_provider.dart';
+import '../providers/crypto_provider.dart';
 import '../providers/channels_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/livekit_voice/livekit_voice_provider.dart';
@@ -1135,6 +1137,22 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     );
   }
 
+  /// Returns an `onTap` callback for the canvas GestureDetector that sends
+  /// a `canvas_authority_claim` when another device holds the write lock.
+  /// Returns null (no tap handler) when this device is already the authority
+  /// or when authority is unclaimed — avoids interfering with normal canvas
+  /// interaction.
+  VoidCallback? _buildCanvasClaimTapHandler(String channelId) {
+    if (channelId.isEmpty) return null;
+    final authority = ref.read(canvasAuthorityNotifierProvider(channelId));
+    if (authority == null) return null;
+    final myDeviceId = ref.read(cryptoServiceProvider).deviceId;
+    if (authority == myDeviceId) return null;
+    return () => ref
+        .read(canvasControllerProvider.notifier)
+        .sendCanvasAuthorityClaim(channelId);
+  }
+
   void _closeSubmenu() => setState(() => _activeSubmenu = null);
 
   /// Resolves a relative or absolute avatar URL to a full URL.
@@ -1158,6 +1176,60 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       avatars[m.username] = resolvedUrl;
     }
     return avatars;
+  }
+
+  /// Returns a small pill widget that names the device currently holding the
+  /// canvas write lock, or null when this device IS the authority (or no
+  /// authority has been set yet).
+  ///
+  /// The pill is only relevant in canvas mode — callers must gate on
+  /// `!_spotlightMode` before inserting this into the overlay stack.
+  ///
+  /// Device-name source: CryptoService.deviceId is an opaque int. A
+  /// human-readable device name would require surfacing the device list from
+  /// /api/devices through a dedicated provider. Until that is wired (tracked
+  /// as a follow-up — the open question is in
+  /// docs/voice-lounge/03-multi-device.md#open-questions), we fall back to
+  /// the literal string "another device".
+  ///
+  /// TODO: plumb device_name through the lounge presence payload or a
+  /// devicesProvider so the pill can show "Drawing from Nick's iPhone"
+  /// instead of the fallback. See docs/voice-lounge/03-multi-device.md.
+  Widget? _buildAuthorityPill(String channelId) {
+    if (channelId.isEmpty) return null;
+    final authority = ref.watch(canvasAuthorityNotifierProvider(channelId));
+    if (authority == null) return null;
+    final myDeviceId = ref.read(cryptoServiceProvider).deviceId;
+    if (authority == myDeviceId) return null;
+    return GestureDetector(
+      key: const Key('canvas-authority-pill'),
+      onTap: () => ref
+          .read(canvasControllerProvider.notifier)
+          .sendCanvasAuthorityClaim(channelId),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.black54,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.edit_off, size: 14, color: Colors.white70),
+            SizedBox(width: 6),
+            Text(
+              'Drawing from another device',
+              style: TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+            SizedBox(width: 6),
+            Text(
+              '· Tap to take over',
+              style: TextStyle(color: Colors.white54, fontSize: 11),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   /// Shared scaffold: [Listener] + [Container] + [ClipRect] + [Stack].
@@ -1186,6 +1258,10 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     int totalParticipants,
   ) {
     final isFull = ref.watch(voiceLoungeFullscreenProvider);
+    final channelId = ref.read(livekitVoiceProvider).channelId ?? '';
+    final authorityPill = !_spotlightMode
+        ? _buildAuthorityPill(channelId)
+        : null;
     return _buildLoungeScaffold(context, [
       Positioned.fill(child: _buildBackground(context)),
       Column(
@@ -1230,6 +1306,13 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
           ],
         ),
       ),
+      if (authorityPill != null)
+        Positioned(
+          top: 54,
+          left: 0,
+          right: 0,
+          child: Center(child: authorityPill),
+        ),
     ]);
   }
 
@@ -1243,6 +1326,10 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     int totalParticipants,
   ) {
     final isFull = ref.watch(voiceLoungeFullscreenProvider);
+    final channelId = ref.read(livekitVoiceProvider).channelId ?? '';
+    final authorityPill = !_spotlightMode
+        ? _buildAuthorityPill(channelId)
+        : null;
     return _buildLoungeScaffold(context, [
       Positioned.fill(child: _buildBackground(context)),
       Column(
@@ -1286,6 +1373,13 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
           ],
         ),
       ),
+      if (authorityPill != null)
+        Positioned(
+          top: isFull ? (MediaQuery.viewPaddingOf(context).top + 8) : 108,
+          left: 0,
+          right: 0,
+          child: Center(child: authorityPill),
+        ),
     ]);
   }
 
@@ -1511,10 +1605,12 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
               // unrecognised by this layer so it dies in the gesture
               // arena rather than firing a zoom.
               return GestureDetector(
+                key: const Key('canvas-tap-to-claim'),
                 behavior: HitTestBehavior.translucent,
                 onDoubleTapDown: _isDrawing
                     ? null
                     : (details) => _toggleDoubleTapZoom(details.localPosition),
+                onTap: _buildCanvasClaimTapHandler(channelId),
                 child: InteractiveViewer(
                   transformationController: _viewport,
                   minScale: minScaleFloor,

@@ -6,7 +6,7 @@ part of 'chat_provider.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$chatHash() => r'45133000fa99f0f0ed964e5a322fd7e4c46c056a';
+String _$chatHash() => r'84aa3b0eb11f10a0d209ed0d7bc8051f1a327874';
 
 /// Owns the per-conversation message list, the optimistic-send pipeline
 /// (with 15s retry timers + reply-count bookkeeping), and the public API

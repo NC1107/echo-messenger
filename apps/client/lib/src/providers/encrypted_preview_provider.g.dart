@@ -7,11 +7,13 @@ part of 'encrypted_preview_provider.dart';
 // **************************************************************************
 
 String _$showEncryptedPreviewsHash() =>
-    r'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0';
+    r'fab54173cb13e9e490f739a9ae0733b79fd3b578';
 
 /// Controls whether the sidebar conversation list and notification bodies
 /// show decrypted plaintext previews (true, default) or always render
 /// `[Encrypted]` for end-to-end encrypted messages (false).
+///
+/// Modelled on [GifPlayback] — a simple bool backed by SharedPreferences.
 ///
 /// Copied from [ShowEncryptedPreviews].
 @ProviderFor(ShowEncryptedPreviews)
