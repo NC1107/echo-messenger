@@ -89,6 +89,7 @@ async fn spawn_server_with_metrics(
         failed_logins: Arc::new(echo_server::metrics::SimpleCounter::new()),
         voice_tokens_issued: Arc::new(echo_server::metrics::SimpleCounter::new()),
         metrics_token,
+        canvas_authority: echo_server::ws::CanvasAuthority::new(),
     });
 
     let app = routes::create_router(state, trusted_proxies);

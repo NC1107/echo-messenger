@@ -393,6 +393,11 @@ pub async fn join_voice_channel(
         if old_channel_id == channel.id {
             continue;
         }
+        // Drop canvas authority in the lounge we're leaving — see
+        // docs/voice-lounge/03-multi-device.md.
+        state
+            .canvas_authority
+            .clear_on_leave(auth.user_id, old_channel_id);
         crate::ws::broadcast::broadcast_to_conversation(
             &state,
             group_id,
@@ -444,6 +449,11 @@ pub async fn leave_voice_channel(
     if !removed {
         return Ok(Json(serde_json::json!({ "status": "already_left" })));
     }
+
+    // Drop per-lounge canvas authority — next device to draw reclaims.
+    state
+        .canvas_authority
+        .clear_on_leave(auth.user_id, channel.id);
 
     crate::ws::broadcast::broadcast_to_conversation(
         &state,

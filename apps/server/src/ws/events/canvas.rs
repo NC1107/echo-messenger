@@ -226,9 +226,17 @@ async fn lookup_voice_channel(state: &AppState, sender_id: Uuid, channel_id: Uui
 ///   joiners load the current board state.
 /// - "avatar_move", "stroke_partial", and "screenshare_move" are
 ///   ephemeral (relayed but not persisted).
+/// - "canvas_authority_claim" is the explicit-handoff event from the
+///   non-authority device; payload is empty. See
+///   `docs/voice-lounge/03-multi-device.md`.
+/// - Canvas authority: when a sender has multiple devices for the same
+///   `(user_id, channel_id)`, only the device that holds authority may
+///   emit writes. Non-authority writes are **silently dropped** (no error
+///   response) so a rogue device doesn't retry-storm the server.
 pub(in crate::ws) async fn handle_canvas_event(
     state: &AppState,
     sender_id: Uuid,
+    sender_device_id: i32,
     channel_id: Uuid,
     kind: String,
     payload: serde_json::Value,
@@ -252,6 +260,10 @@ pub(in crate::ws) async fn handle_canvas_event(
         // screen-share window the other participants need to see it move
         // in real time. Never persisted; clients reconcile on join.
         "screenshare_move",
+        // Explicit handoff from a non-authority device — the client taps
+        // the canvas to claim authority. Authority logic only; never
+        // persisted and never broadcast as a `canvas_event`.
+        "canvas_authority_claim",
     ];
     if !VALID_KINDS.contains(&kind.as_str()) {
         send_error(state, sender_id, "Invalid canvas event kind");
@@ -272,6 +284,35 @@ pub(in crate::ws) async fn handle_canvas_event(
     };
 
     if !verify_membership(state, sender_id, conversation_id).await {
+        return;
+    }
+
+    // Explicit handoff is its own short path — claim, broadcast change if
+    // it took, never persist or relay as a `canvas_event`.
+    if kind == "canvas_authority_claim" {
+        handle_authority_claim(
+            state,
+            sender_id,
+            sender_device_id,
+            channel_id,
+            conversation_id,
+        )
+        .await;
+        return;
+    }
+
+    // Write-side authority gate: drop silently if a different device holds
+    // authority for this user. Implicit claim if no device has claimed yet
+    // — first writer wins.
+    if !gate_authority(
+        state,
+        sender_id,
+        sender_device_id,
+        channel_id,
+        conversation_id,
+    )
+    .await
+    {
         return;
     }
 
@@ -296,6 +337,94 @@ pub(in crate::ws) async fn handle_canvas_event(
         state
             .hub
             .broadcast_json(&member_ids, &json, Some(sender_id));
+    }
+}
+
+/// Returns true if the sender's device may write to this canvas. When no
+/// device has claimed yet, the first writer implicitly takes authority and
+/// the broadcast goes out so other members render the read-only pill.
+/// Non-authority writes return false and the caller drops the event
+/// silently (no `send_error`).
+async fn gate_authority(
+    state: &AppState,
+    sender_id: Uuid,
+    sender_device_id: i32,
+    channel_id: Uuid,
+    conversation_id: Uuid,
+) -> bool {
+    match state.canvas_authority.current(sender_id, channel_id) {
+        Some(holder) => holder == sender_device_id,
+        None => {
+            // Implicit claim. Other peers learn via canvas_authority_changed
+            // so the other devices for this user can render the pill.
+            if state
+                .canvas_authority
+                .claim_if_absent(sender_id, channel_id, sender_device_id)
+            {
+                broadcast_authority_changed(
+                    state,
+                    sender_id,
+                    sender_device_id,
+                    channel_id,
+                    conversation_id,
+                )
+                .await;
+                true
+            } else {
+                false
+            }
+        }
+    }
+}
+
+/// Process an explicit `canvas_authority_claim`. Honors the 1-second grace
+/// window encoded in `CanvasAuthority::claim` so a fast double-tap from two
+/// devices can't oscillate.
+async fn handle_authority_claim(
+    state: &AppState,
+    sender_id: Uuid,
+    sender_device_id: i32,
+    channel_id: Uuid,
+    conversation_id: Uuid,
+) {
+    if state
+        .canvas_authority
+        .claim(sender_id, channel_id, sender_device_id)
+    {
+        broadcast_authority_changed(
+            state,
+            sender_id,
+            sender_device_id,
+            channel_id,
+            conversation_id,
+        )
+        .await;
+    }
+}
+
+/// Fan out a `canvas_authority_changed` to every lounge member (including
+/// the new authority's other devices). Other clients use this to flip
+/// their own draw-locks and render the read-only pill.
+async fn broadcast_authority_changed(
+    state: &AppState,
+    user_id: Uuid,
+    device_id: i32,
+    channel_id: Uuid,
+    conversation_id: Uuid,
+) {
+    let Ok(member_ids) = typing_service::get_member_ids_cached(&state.pool, conversation_id).await
+    else {
+        return;
+    };
+    let event = ServerMessage::CanvasAuthorityChanged {
+        channel_id,
+        user_id,
+        device_id,
+    };
+    if let Ok(json) = serde_json::to_string(&event) {
+        // No `exclude` — the sender's other devices need to learn too, and
+        // the sending device itself benefits from idempotent state sync.
+        state.hub.broadcast_json(&member_ids, &json, None);
     }
 }
 
