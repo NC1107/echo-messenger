@@ -47,6 +47,11 @@ const darkPreview = ThemePreviewColors(
   textSecondary: EchoTheme.textSecondary,
 );
 
+/// Indigo is the default dark theme — same palette as [darkPreview].
+/// Named alias so callers can reference it by theme name without knowing
+/// that "Indigo" and "dark" are the same underlying palette.
+const indigoPreview = darkPreview;
+
 const lightPreview = ThemePreviewColors(
   sidebarBg: EchoTheme.lightSidebarBg,
   mainBg: EchoTheme.lightMainBg,

@@ -20,6 +20,17 @@ enum AppThemeSelection {
   highContrast,
 }
 
+/// The curated theme list shown in Settings → Appearance and the onboarding
+/// "Choose your look" step. All other [AppThemeSelection] values remain valid
+/// for users who persisted them from a previous install; they are just hidden
+/// from the default picker surfaces.
+const List<AppThemeSelection> kCuratedThemes = [
+  AppThemeSelection.system,
+  AppThemeSelection.indigo,
+  AppThemeSelection.paper,
+  AppThemeSelection.ember,
+];
+
 const _kThemeKey = 'echo_theme_mode';
 const _kMessageLayoutKey = 'echo_message_layout';
 const _kUiDensityKey = 'echo_ui_density';
