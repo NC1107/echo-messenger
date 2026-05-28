@@ -1485,6 +1485,9 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (!mounted) return;
                   _interactiveViewportSize = viewportSize;
+                  ref
+                      .read(canvasProvider.notifier)
+                      .setViewportSize(viewportSize);
                 });
               }
               // Initial pose: auto-fit to the bbox of existing strokes +
