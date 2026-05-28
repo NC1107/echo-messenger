@@ -1,12 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart' show Color;
 import 'package:http/http.dart' as http;
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../models/canvas_models.dart';
+import '../services/canvas_perf.dart';
 import '../services/debug_log_service.dart';
 import '../utils/canvas_utils.dart';
 import 'auth_provider.dart';
@@ -42,6 +43,10 @@ class CanvasController extends _$CanvasController {
   Timer? _strokeThrottle;
   List<CanvasPoint>? _pendingStrokePoints;
 
+  /// Periodic breadcrumb timer — logs a [CanvasPerf.snapshot] to the debug
+  /// log every 30 s while a lounge is active.  Mirrors the PR E pattern.
+  Timer? _perfLogTimer;
+
   /// Per-drag identifier bumped by [startStroke]. A late `stroke_partial`
   /// scheduled mid-drag could otherwise fire AFTER [endStroke] cleared the
   /// throttle, re-attaching a stale partial placeholder on remotes that
@@ -62,6 +67,7 @@ class CanvasController extends _$CanvasController {
       _imageThrottle?.cancel();
       _strokeThrottle?.cancel();
       _screenShareThrottle?.cancel();
+      _perfLogTimer?.cancel();
     });
     return const CanvasState();
   }
@@ -104,6 +110,22 @@ class CanvasController extends _$CanvasController {
     for (final event in buffered) {
       handleCanvasEvent(event);
     }
+
+    // Start the periodic perf breadcrumb (30 s interval, matches PR E pattern).
+    _perfLogTimer?.cancel();
+    _perfLogTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _logPerfSnapshot(),
+    );
+  }
+
+  void _logPerfSnapshot() {
+    final snap = CanvasPerf.snapshot();
+    DebugLogService.instance.log(
+      LogLevel.fine,
+      'CanvasPerf',
+      '[canvas-perf] ${snap.toString()}',
+    );
   }
 
   /// Detach from the current channel (called when the voice session ends).
@@ -121,6 +143,8 @@ class CanvasController extends _$CanvasController {
     _screenShareThrottle?.cancel();
     _screenShareThrottle = null;
     _pendingScreenShare = null;
+    _perfLogTimer?.cancel();
+    _perfLogTimer = null;
     _pendingEvents.clear();
     _channelId = null;
     _attachingChannelId = null;
@@ -194,6 +218,7 @@ class CanvasController extends _$CanvasController {
   }
 
   void continueStroke(CanvasPoint point) {
+    final sw = Stopwatch()..start();
     final tool = state.selectedTool;
     List<CanvasPoint> pts;
     if (isShapeKind(strokeKindForTool(tool))) {
@@ -218,6 +243,9 @@ class CanvasController extends _$CanvasController {
         (_) => _flushStrokePoints(),
       );
     }
+    sw.stop();
+    CanvasPerf.recordPaintMs(sw.elapsedMicroseconds / 1000.0);
+    _warnIfPerfDegraded();
   }
 
   void _flushStrokePoints() {
@@ -246,6 +274,7 @@ class CanvasController extends _$CanvasController {
       'width': _effectiveStrokeWidth(kind),
       'kind': _strokeKindWire(kind),
     });
+    CanvasPerf.recordSendEvent();
   }
 
   /// Reverse of [_strokeKindWire] — used when reconstructing strokes from
@@ -913,6 +942,38 @@ class CanvasController extends _$CanvasController {
 
   @visibleForTesting
   int get debugDragId => _dragId;
+
+  // ---------------------------------------------------------------------------
+  // Dev-mode budget guard
+  //
+  // Fires a warning log when paint_p99 crosses 2× budget (32 ms) for 5+
+  // consecutive calls.  Not an assert and not fatal — purely visibility.
+  // Only active in kDebugMode so release builds pay zero cost.
+  // ---------------------------------------------------------------------------
+
+  /// Number of consecutive [continueStroke] calls whose elapsed time was
+  /// recorded after the p99 exceeded 32 ms.  Resets whenever p99 drops
+  /// back under budget.
+  int _consecutiveOverBudget = 0;
+
+  void _warnIfPerfDegraded() {
+    if (!kDebugMode) return;
+    final snap = CanvasPerf.snapshot();
+    const double kBudgetWarnMs = 32.0; // 2× the 16 ms budget
+    const int kWarnAfterCount = 5;
+    if (snap.paintP99Ms > kBudgetWarnMs) {
+      _consecutiveOverBudget++;
+      if (_consecutiveOverBudget == kWarnAfterCount) {
+        DebugLogService.instance.log(
+          LogLevel.warning,
+          'CanvasPerf',
+          '[canvas-perf] paint p99 exceeded 2× budget: ${snap.toString()}',
+        );
+      }
+    } else {
+      _consecutiveOverBudget = 0;
+    }
+  }
 
   void _sendCanvasEvent(String kind, Map<String, dynamic> payload) {
     final cid = _channelId;

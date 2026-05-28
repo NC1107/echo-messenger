@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
 
+import '../services/canvas_perf.dart';
+
 import '../models/canvas_models.dart';
 import '../providers/auth_provider.dart';
 import '../providers/canvas_provider.dart';
@@ -566,6 +568,7 @@ class _CanvasPainter extends CustomPainter {
 
   @override
   void paint(Canvas c, Size size) {
+    final sw = Stopwatch()..start();
     // saveLayer needed only for eraser BlendMode.clear; skip otherwise — offscreen buffer is heavy on CanvasKit.
     final needsLayer = _hasEraserStrokes();
     if (needsLayer) c.saveLayer(Offset.zero & size, Paint());
@@ -589,6 +592,8 @@ class _CanvasPainter extends CustomPainter {
     }
 
     if (needsLayer) c.restore();
+    sw.stop();
+    CanvasPerf.recordPaintMs(sw.elapsedMicroseconds / 1000.0);
   }
 
   void _paintStroke(Canvas c, Size size, CanvasStroke stroke) {
