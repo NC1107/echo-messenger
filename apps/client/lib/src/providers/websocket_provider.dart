@@ -25,6 +25,7 @@ import 'ws_message_handler.dart';
 export 'ws_message_handler.dart' show WsMessageHandler, WebSocketState;
 
 part 'websocket_provider.g.dart';
+part 'websocket/websocket_typing.dart';
 
 @Riverpod(keepAlive: true)
 class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
@@ -791,24 +792,10 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
   }
 
   /// Send a typing indicator (throttled to max 1 per 3 seconds per conversation).
-  void sendTyping(String conversationId, {String? channelId}) {
-    final throttleKey = '$conversationId:${channelId ?? ''}';
-    final now = DateTime.now();
-    final lastSent = _lastTypingSent[throttleKey];
-    if (lastSent != null && now.difference(lastSent).inSeconds < 3) {
-      return;
-    }
-    _lastTypingSent[throttleKey] = now;
-
-    final msg = <String, dynamic>{
-      'type': 'typing',
-      'conversation_id': conversationId,
-    };
-    if (channelId != null && channelId.isNotEmpty) {
-      msg['channel_id'] = channelId;
-    }
-    _emit(msg);
-  }
+  /// Implementation lives in `websocket/websocket_typing.dart` so the
+  /// throttle map + cleanup timer have a single owner file.
+  void sendTyping(String conversationId, {String? channelId}) =>
+      _sendTypingImpl(conversationId, channelId: channelId);
 
   /// Notify the peer that encryption keys were reset for this conversation.
   void sendKeyReset(String conversationId) {
@@ -945,45 +932,16 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     }
   }
 
-  /// Remove stale typing indicators (older than 5 seconds).
-  /// Also prune throttle timestamps from this client's sendTyping() calls (audit
-  /// 2026-05-12, finding #9) to prevent unbounded growth across long sessions.
+  /// Periodic typing-state pruning. Pure prune logic + outbound throttle prune
+  /// live in `websocket/websocket_typing.dart`; only the state assignment
+  /// stays here because the Notifier `state` setter is not visible to
+  /// extensions in this library.
   void _cleanupTyping() {
-    final now = DateTime.now();
-    var changed = false;
-    final updatedTyping = Map<String, Map<String, DateTime>>.from(
-      state.typingUsers,
-    );
-
-    for (final conversationId in updatedTyping.keys.toList()) {
-      final users = Map<String, DateTime>.from(updatedTyping[conversationId]!);
-      final staleKeys = users.entries
-          .where((e) => now.difference(e.value).inSeconds >= 5)
-          .map((e) => e.key)
-          .toList();
-      for (final key in staleKeys) {
-        users.remove(key);
-        changed = true;
-      }
-      if (users.isEmpty) {
-        updatedTyping.remove(conversationId);
-      } else {
-        updatedTyping[conversationId] = users;
-      }
+    final pruned = _pruneStaleTyping(state.typingUsers);
+    if (pruned != null) {
+      state = state.copyWith(typingUsers: pruned);
     }
-
-    if (changed) {
-      state = state.copyWith(typingUsers: updatedTyping);
-    }
-
-    // Prune our own _lastTypingSent map (> 10s old entries are safe to evict).
-    final staleThrottleKeys = _lastTypingSent.entries
-        .where((e) => now.difference(e.value).inSeconds > 10)
-        .map((e) => e.key)
-        .toList();
-    for (final key in staleThrottleKeys) {
-      _lastTypingSent.remove(key);
-    }
+    _pruneTypingThrottle();
   }
 }
 
