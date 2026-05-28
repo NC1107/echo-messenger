@@ -35,21 +35,37 @@ Adding here is preferred to leaving a stale `open` issue: GitHub Issues stay act
 - **Why deferred:** Substantial UI work (table + status filter + state-change endpoint + free-text search + user-profile link-out). Hard to justify before `/api/admin/feedback` has enough volume to need triage — today the operator can read the JSON directly. Prereq #1160 (admin auto-login on native) has shipped, so this is no longer blocked — just not the highest-leverage UI investment.
 - **Pickup trigger:** Feedback submissions cross ~20 entries OR the operator complains that the JSON view is slowing them down.
 
-### #1154 — Outage: prod health check failing
-- **Why closed:** Self-resolved. API + LiveKit both returned 200 on manual recheck 2026-05-28. Uptime workflow auto-closes on next green run; closing manually now to clear the open list.
+### #1154, #1259, #1262 — Outage: prod health check failing (uptime false-positives)
+- **Why closed:** Each filed by the scheduled uptime workflow during transient network blips. API + LiveKit returned 200/200 on manual recheck within minutes. Pattern: open → auto-closes on next green run; we close them manually to keep the open-list signal clean.
+- **Pickup trigger:** Three failures in a row from the uptime workflow, OR a user-reported outage. Either is real; one-off scheduled-job 5xx is not.
+
+### #182 — Cross-platform push notifications (Android FCM, Web Push)
+- **Why deferred:** iOS APNs is wired and works. Android FCM + Web Push add two platform-integration efforts (Firebase project setup, FCM server key, web service worker, push-token routing per platform). Worth shipping eventually but not while iOS push has zero open complaints.
+- **Pickup trigger:** First Android user reports missed background message OR Web Push becomes a requested feature.
+
+### #425 — Rich text typing
+- **Why closed:** Shipped in #1263 (2026-05-28). `MarkdownTextEditingController` renders bold/italic/strikethrough/inline-code inline as the user types, with delimiters dimmed to 40% opacity. Compact `Aa` toolbar + Ctrl/Cmd+B/I/E/Shift+X shortcuts.
+- **Future work noted in #1263:** underline, spoiler, masked links, fenced code blocks, headers, @mention highlighting in the input. If anyone asks for one of those, open a fresh issue scoped to it.
+
+### #450 — Chat folders and archive
+- **Why deferred:** Three-feature umbrella (archive view, user-defined folders, swipe-actions on mobile list). Each is its own UX surface. The current three filter chips (All / DMs / Groups) cover the common cases. Soft-delete-via-archive is the most-asked piece and could ship alone first.
+- **Pickup trigger:** Second user reports "I can't hide a chat without deleting it." Then start with archive + mute, defer custom folders until pattern is proven.
+
+### #783 — Audit review-queue (68 medium + 22 low) from 2026-04-30 audit
+- **Why deferred:** Long-tail backlog from a multi-agent audit. The big-ticket items already shipped as their own focused PRs over the last 6 weeks. Remaining items are individually small but together too much to bundle without losing signal.
+- **Pickup trigger:** Pre-GA audit sweep — go back to `.claude/state/audit-project/review-queue-20260430-161802.md`, re-sample 10 items, ship the ones that still apply.
+
+### #784 — Frontend audit re-run before GA
+- **Why deferred:** Pre-GA gate, not a near-term cleanup. The 2026-04-30 multi-agent audit's frontend reviewer stalled, leaving Riverpod-lifecycle, GoRouter-redirect, Hive-schema-drift, WS-reconnect-backoff, and BuildContext-after-async-gap untested by a frontend specialist.
+- **Pickup trigger:** GA cut. Re-run the frontend reviewer against current code; ship anything CRITICAL or HIGH it surfaces.
 
 ## Deferred (kept open, labelled `deferred`)
 
-These are tracked in GitHub as `deferred` issues with the open label intact, because each has been triaged once and has a clear acceptance criterion. Listed here so the ledger is the single place to see "what we're consciously not doing."
+These are tracked in GitHub as `deferred` issues with the open label intact, because each has a clear acceptance criterion and a foreseeable pickup window. Listed here so the ledger is the single place to see "what we're consciously not doing."
 
-- **#182** — Cross-platform push (Android FCM, Web Push). Large platform feature. Trigger: APNs alone is no longer enough.
-- **#425** — Rich text input. `blocked` label. Trigger: design lands on whether we go markdown-preview or formatting toolbar.
-- **#450** — Chat folders + archive. Substantial UX surface. Trigger: telegram-style folder ask hits again from real testers.
-- **#681** — Server admin dashboard. Large feature. Trigger: self-hoster volume justifies the surface.
-- **#702** — Consolidate 33 migrations into v2 baseline. Risky pre-GA op. Trigger: GA cut.
-- **#769** — Mobile UI/UX gaps vs Echo Mobile.html design. Large design-parity sweep. Trigger: mobile becomes a primary distribution channel.
-- **#783** — Audit review-queue (68 medium + 22 low). Long-tail backlog. Trigger: pre-GA audit sweep.
-- **#784** — Frontend audit re-run before GA. Pre-GA gate. Trigger: GA cut.
+- **#681** — Server admin dashboard. Substantial feature with a clear surface. Trigger: self-hoster volume OR operator complaint about server visibility.
+- **#702** — Consolidate 33 migrations into v2 baseline. Risky pre-GA op with explicit step-by-step in the issue body. Trigger: GA cut window.
+- **#769** — Mobile UI/UX gaps vs Echo Mobile.html design. 12-screen design-parity sweep. Trigger: needs to be broken into per-screen sub-issues before any of it is actionable; pickup happens when mobile becomes the primary distribution channel.
 
 ## Conventions
 
