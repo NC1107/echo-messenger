@@ -52,6 +52,11 @@ class CanvasController extends _$CanvasController {
   int _dragId = 0;
   bool _strokeActive = false;
 
+  /// Guards the once-per-session legacy-coord telemetry log so it only
+  /// fires on the first [attach] call (i.e. when the user first joins a
+  /// lounge this session, not on every channel switch).
+  bool _legacyCoordLogged = false;
+
   /// Events buffered while [_channelId] is not yet set (attach race window).
   final List<Map<String, dynamic>> _pendingEvents = [];
 
@@ -97,6 +102,18 @@ class CanvasController extends _$CanvasController {
     if (_attachingChannelId != channelId) return;
     _channelId = channelId;
     _attachingChannelId = null;
+
+    // Once per session: log the legacy-coord migration counter so we can
+    // track when it is safe to delete _migrateLegacyCoord (see
+    // docs/voice-lounge/01-coordinate-policy.md "Legacy-coord migration sunset").
+    if (!_legacyCoordLogged) {
+      _legacyCoordLogged = true;
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'Canvas',
+        '[legacy-coord] migrations this session = $legacyMigrationCount',
+      );
+    }
 
     // Flush any canvas events that landed during the fetch.
     final buffered = List<Map<String, dynamic>>.from(_pendingEvents);
