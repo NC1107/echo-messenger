@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:echo_app/src/providers/encrypted_preview_provider.dart';
 import 'package:echo_app/src/providers/theme_provider.dart';
+import 'package:echo_app/src/providers/ui_style_provider.dart';
 import 'package:echo_app/src/screens/settings/appearance_section.dart';
 import 'package:echo_app/src/theme/echo_theme.dart';
 
@@ -58,6 +59,23 @@ void main() {
     test('has 7 theme options', () {
       expect(AppThemeSelection.values, hasLength(7));
     });
+
+    test('kCuratedThemes contains exactly System/Indigo/Paper/Ember', () {
+      expect(kCuratedThemes, hasLength(4));
+      expect(
+        kCuratedThemes,
+        containsAll([
+          AppThemeSelection.system,
+          AppThemeSelection.indigo,
+          AppThemeSelection.paper,
+          AppThemeSelection.ember,
+        ]),
+      );
+      // Deprecated themes must NOT be in the curated list.
+      expect(kCuratedThemes, isNot(contains(AppThemeSelection.graphite)));
+      expect(kCuratedThemes, isNot(contains(AppThemeSelection.sakura)));
+      expect(kCuratedThemes, isNot(contains(AppThemeSelection.highContrast)));
+    });
   });
 
   group('MessageLayout', () {
@@ -91,8 +109,10 @@ void main() {
     ) async {
       await _pumpWide(tester);
       expect(find.text('Default'), findsOneWidget);
-      expect(find.text('Discord'), findsOneWidget);
-      expect(find.text('Slack'), findsOneWidget);
+      // 'Discord' and 'Slack' also appear in the UI style row, so use
+      // findsAtLeastNWidgets to avoid fragility from two occurrences.
+      expect(find.text('Discord'), findsAtLeastNWidgets(1));
+      expect(find.text('Slack'), findsAtLeastNWidgets(1));
     });
 
     testWidgets('renders the three density option labels', (tester) async {
@@ -165,6 +185,66 @@ void main() {
       while (tester.takeException() != null) {}
 
       expect(find.text('Show encrypted previews'), findsOneWidget);
+    });
+
+    testWidgets('theme picker renders exactly 4 curated cards', (tester) async {
+      await _pumpWide(tester);
+
+      // The curated cards are System, Indigo, Paper, Ember.
+      expect(find.text('System'), findsOneWidget);
+      expect(find.text('Indigo'), findsOneWidget);
+      expect(find.text('Paper'), findsOneWidget);
+      expect(find.text('Ember'), findsOneWidget);
+
+      // Deprecated themes must not appear.
+      expect(find.text('Graphite'), findsNothing);
+      expect(find.text('Sakura'), findsNothing);
+      expect(find.text('High contrast'), findsNothing);
+    });
+
+    testWidgets('ui style row is present in appearance section', (
+      tester,
+    ) async {
+      await _pumpWide(tester);
+
+      expect(find.text('UI style'), findsOneWidget);
+      // "Discord" appears in both the message-layout section and the UI style
+      // row (default), so we check at-least-1 and look for the section header.
+      expect(find.text('Discord'), findsAtLeastNWidgets(1));
+    });
+
+    testWidgets('ui style row reflects stored imessage preference', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({'ui_style_v1': 'imessage'});
+      tester.view.physicalSize = const Size(1600, 4000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            theme: EchoTheme.darkTheme,
+            darkTheme: EchoTheme.darkTheme,
+            themeMode: ThemeMode.dark,
+            home: const Scaffold(body: AppearanceSection()),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      while (tester.takeException() != null) {}
+      await tester.pump(const Duration(milliseconds: 50));
+      while (tester.takeException() != null) {}
+
+      expect(find.text('iMessage'), findsOneWidget);
+    });
+  });
+
+  group('UiStyle (unit)', () {
+    test('uiStyleProvider alias resolves correctly', () {
+      expect(uiStyleProvider, isNotNull);
     });
   });
 }
