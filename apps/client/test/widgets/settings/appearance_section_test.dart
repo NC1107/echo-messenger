@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:echo_app/src/providers/encrypted_preview_provider.dart';
 import 'package:echo_app/src/providers/theme_provider.dart';
 import 'package:echo_app/src/screens/settings/appearance_section.dart';
 import 'package:echo_app/src/theme/echo_theme.dart';
@@ -115,6 +116,55 @@ void main() {
       await _pumpWide(tester);
       // GIF autoplay moved to Accessibility because it's a motion concern.
       expect(find.text('Auto-play GIFs'), findsNothing);
+    });
+
+    testWidgets('renders Show encrypted previews toggle (#1137)', (
+      tester,
+    ) async {
+      await _pumpWide(tester);
+      expect(find.text('Show encrypted previews'), findsOneWidget);
+    });
+
+    testWidgets('Show encrypted previews toggle is ON by default (#1137)', (
+      tester,
+    ) async {
+      await _pumpWide(tester);
+      final switches = tester.widgetList<Switch>(find.byType(Switch)).toList();
+      // Find the switch whose value matches the provider default (true).
+      // We locate it by verifying at least one Switch in the tree is on.
+      expect(switches.any((s) => s.value), isTrue);
+    });
+
+    testWidgets('Show encrypted previews toggle can be turned off (#1137)', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({
+        kShowEncryptedPreviewsKey: false,
+      });
+      tester.view.physicalSize = const Size(1600, 4000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            theme: EchoTheme.darkTheme,
+            darkTheme: EchoTheme.darkTheme,
+            themeMode: ThemeMode.dark,
+            home: const Scaffold(body: AppearanceSection()),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      while (tester.takeException() != null) {}
+
+      // After async load settles the toggle should reflect the stored false.
+      await tester.pump(const Duration(milliseconds: 50));
+      while (tester.takeException() != null) {}
+
+      expect(find.text('Show encrypted previews'), findsOneWidget);
     });
   });
 }

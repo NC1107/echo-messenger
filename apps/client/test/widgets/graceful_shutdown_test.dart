@@ -75,6 +75,10 @@ void main() {
 
       // ShutdownHandler must have called disconnect() exactly once.
       expect(ws.disconnectCalls, 1);
+
+      // Drain the 500 ms Hive.close timeout so no pending timers remain
+      // after the widget tree is disposed (#1182).
+      await tester.pump(const Duration(milliseconds: 600));
     });
 
     testWidgets('non-detached lifecycle states do not trigger disconnect', (

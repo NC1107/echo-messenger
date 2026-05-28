@@ -12,9 +12,9 @@ import 'package:echo_app/src/providers/chat_provider.dart';
 import 'package:echo_app/src/providers/conversations_provider.dart';
 import 'package:echo_app/src/providers/crypto_provider.dart';
 import 'package:echo_app/src/providers/server_url_provider.dart';
+import 'package:echo_app/src/providers/websocket_provider.dart';
 
 import '../helpers/mock_providers.dart';
-import 'package:echo_app/src/providers/ws_message_handler.dart';
 import 'package:echo_app/src/services/crypto_service.dart';
 import 'package:echo_app/src/services/group_crypto_service.dart';
 
@@ -24,6 +24,7 @@ import 'package:echo_app/src/services/group_crypto_service.dart';
 
 class _FakeCryptoService extends CryptoService {
   final Set<String> invalidatedSessions = {};
+  final List<String> invalidatedBundles = [];
 
   _FakeCryptoService() : super(serverUrl: 'http://localhost:8080');
 
@@ -33,6 +34,11 @@ class _FakeCryptoService extends CryptoService {
   @override
   Future<void> invalidateSessionKey(String peerUserId) async {
     invalidatedSessions.add(peerUserId);
+  }
+
+  @override
+  void invalidateBundleCache(String userId) {
+    invalidatedBundles.add(userId);
   }
 }
 
@@ -122,6 +128,49 @@ class _FakeConversationsNotifier extends ConversationsNotifier {
   }
 }
 
+/// Records sendMessage/sendGroupMessage calls so the #1131 bootstrap-retry
+/// test can assert the retry path fired without touching a real socket.
+class _RecordingWsNotifier extends WebSocketNotifier {
+  final List<({String toUserId, String content, String? conversationId})>
+  dmCalls = [];
+  final List<({String conversationId, String content})> groupCalls = [];
+
+  @override
+  WebSocketState build() => const WebSocketState(isConnected: true);
+
+  @override
+  void connect() {}
+
+  @override
+  void disconnect() {}
+
+  @override
+  Future<void> sendMessage(
+    String toUserId,
+    String content, {
+    String? conversationId,
+    String? replyToId,
+    String? threadRootId,
+  }) async {
+    dmCalls.add((
+      toUserId: toUserId,
+      content: content,
+      conversationId: conversationId,
+    ));
+  }
+
+  @override
+  Future<void> sendGroupMessage(
+    String conversationId,
+    String content, {
+    String? channelId,
+    String? replyToId,
+    String? threadRootId,
+  }) async {
+    groupCalls.add((conversationId: conversationId, content: content));
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Concrete handler for testing
 // ---------------------------------------------------------------------------
@@ -184,6 +233,7 @@ void _setup() {
         fakeChannels = _FakeChannelsNotifier();
         return fakeChannels;
       }),
+      websocketProvider.overrideWith(_RecordingWsNotifier.new),
     ],
   );
 
@@ -1231,6 +1281,98 @@ void main() {
   // -----------------------------------------------------------------------
   // Group encryption path: GRP1: prefix marks encrypted message
   // -----------------------------------------------------------------------
+
+  // -----------------------------------------------------------------------
+  // #1131 peer_keys_published bootstrap-retry
+  // -----------------------------------------------------------------------
+
+  group('handleServerMessage: peer_keys_published', () {
+    test('drops the bundle cache for the named peer', () async {
+      handler.handleServerMessage({
+        'type': 'peer_keys_published',
+        'user_id': 'peer-1',
+        'device_ids': [0],
+      }, _myUserId);
+
+      // Let the microtask scheduled by _retryStuckMessages drain.
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        fakeCrypto.invalidatedBundles,
+        contains('peer-1'),
+        reason: 'bundle cache must be invalidated for the publisher',
+      );
+    });
+
+    test('re-sends stuck 1:1 messages targeting the publisher', () async {
+      // Seed a failed DM in conv-1 (peer = peer-1).
+      final chatNotifier = container.read(chatProvider.notifier);
+      chatNotifier.addMessage(
+        const ChatMessage(
+          id: 'failed_msg_1',
+          fromUserId: 'my-user-id',
+          fromUsername: 'testuser',
+          conversationId: 'conv-1',
+          content: 'Waiting for this person to come online to secure the chat.',
+          timestamp: '2026-01-01T00:00:00Z',
+          isMine: true,
+          status: MessageStatus.failed,
+          failedContent: 'Hello, brand-new account!',
+        ),
+      );
+
+      // Force the recording WS notifier into the container by reading it
+      // — the override below makes that safe (no real connect()).
+      final ws = container.read(websocketProvider.notifier);
+      expect(ws, isA<_RecordingWsNotifier>());
+      final recording = ws as _RecordingWsNotifier;
+
+      handler.handleServerMessage({
+        'type': 'peer_keys_published',
+        'user_id': 'peer-1',
+        'device_ids': [0],
+      }, _myUserId);
+
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        recording.dmCalls,
+        hasLength(1),
+        reason: 'one stuck DM must be retried',
+      );
+      expect(recording.dmCalls.first.toUserId, 'peer-1');
+      expect(recording.dmCalls.first.content, 'Hello, brand-new account!');
+      expect(recording.dmCalls.first.conversationId, 'conv-1');
+    });
+
+    test('ignores self-publish (no peer to unstick)', () async {
+      handler.handleServerMessage({
+        'type': 'peer_keys_published',
+        'user_id': _myUserId,
+        'device_ids': [0],
+      }, _myUserId);
+
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        fakeCrypto.invalidatedBundles,
+        isEmpty,
+        reason: 'self-publish must not invalidate or trigger retries',
+      );
+    });
+
+    test('ignores frame with empty user_id', () async {
+      handler.handleServerMessage({
+        'type': 'peer_keys_published',
+        'user_id': '',
+        'device_ids': [0],
+      }, _myUserId);
+
+      await Future<void>.delayed(Duration.zero);
+
+      expect(fakeCrypto.invalidatedBundles, isEmpty);
+    });
+  });
 
   group('group-encrypted message (GRP1: prefix)', () {
     test('GRP1-prefixed message is marked as encrypted', () {

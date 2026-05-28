@@ -378,6 +378,24 @@ class Chat extends _$Chat
     state = newState;
   }
 
+  /// Snapshot every message currently in [MessageStatus.failed] across all
+  /// conversations.  Used by the #1131 peer-keys-published bootstrap-retry:
+  /// the WS handler walks this list, resolves each failed message's peer via
+  /// `conversationsProvider`, and re-sends the matches whose peer just landed
+  /// a bundle so the user doesn't have to wait out the 5-minute TTL.
+  List<({String conversationId, ChatMessage message})>
+  failedMessagesSnapshot() {
+    final out = <({String conversationId, ChatMessage message})>[];
+    for (final entry in state.messagesByConversation.entries) {
+      for (final m in entry.value) {
+        if (m.status == MessageStatus.failed) {
+          out.add((conversationId: entry.key, message: m));
+        }
+      }
+    }
+    return out;
+  }
+
   /// Remove all cached messages for a conversation (e.g. after leaving it).
   void clearConversation(String conversationId) {
     // Cancel any pending send timers for this conversation.

@@ -39,9 +39,7 @@ async fn persist_canvas_state(
             // clear_all to keep persisted state aligned with live state
             // (audit Finding 3, 2026-05-28).
             if let Err(e) = db::canvas::clear_all(&state.pool, channel_id).await {
-                tracing::error!(
-                    "canvas: failed to clear-all for channel {channel_id}: {e:?}"
-                );
+                tracing::error!("canvas: failed to clear-all for channel {channel_id}: {e:?}");
             }
             true
         }

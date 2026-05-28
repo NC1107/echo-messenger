@@ -236,7 +236,11 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
               // Notification button maps "muted=true" → mic off.
               setCaptureEnabled(!muted);
             case VoiceLeaveAction():
-              unawaited(leaveChannel());
+              unawaited(
+                leaveChannel().catchError((e, st) {
+                  debugPrint('[livekit] notification leave failed: $e');
+                }),
+              );
           }
         });
     _callKitActionSub ??= VoiceCallKitService.instance.actions.listen((action) {
@@ -244,7 +248,11 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
         case CallKitMuteAction(muted: final muted):
           setCaptureEnabled(!muted);
         case CallKitEndAction():
-          unawaited(leaveChannel());
+          unawaited(
+            leaveChannel().catchError((e, st) {
+              debugPrint('[livekit] callkit leave failed: $e');
+            }),
+          );
       }
     });
   }
@@ -261,12 +269,22 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
   void _syncVoiceNotification() {
     if (_disposed || !state.isActive) return;
     unawaited(
-      BackgroundService.instance.updateVoice(
-        isMuted: !state.isCaptureEnabled,
-        participantCount: state.peerCount + 1,
+      BackgroundService.instance
+          .updateVoice(
+            isMuted: !state.isCaptureEnabled,
+            participantCount: state.peerCount + 1,
+          )
+          .catchError((e, st) {
+            debugPrint('[livekit] update voice notification failed: $e');
+          }),
+    );
+    unawaited(
+      VoiceCallKitService.instance.setMuted(!state.isCaptureEnabled).catchError(
+        (e, st) {
+          debugPrint('[livekit] set callkit muted failed: $e');
+        },
       ),
     );
-    unawaited(VoiceCallKitService.instance.setMuted(!state.isCaptureEnabled));
   }
 
   // -------------------------------------------------------------------------
@@ -566,20 +584,28 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     // backgrounded; listener routes their Mute/Leave taps back into state.
     _attachNotificationActionListener();
     unawaited(
-      BackgroundService.instance.startVoice(
-        channelName: resolvedChannelName,
-        isMuted: !micEnabled,
-        participantCount: state.peerCount + 1,
-      ),
+      BackgroundService.instance
+          .startVoice(
+            channelName: resolvedChannelName,
+            isMuted: !micEnabled,
+            participantCount: state.peerCount + 1,
+          )
+          .catchError((e, st) {
+            debugPrint('[livekit] start background voice service failed: $e');
+          }),
     );
     unawaited(
-      VoiceCallKitService.instance.startCall(
-        // CallKit CXCall ID must be a valid UUID — Swift force-unwraps
-        // UUID(uuidString:); a composite "convId:chanId" crashed every iOS join.
-        callId: channelId,
-        channelName: resolvedChannelName,
-        isMuted: !micEnabled,
-      ),
+      VoiceCallKitService.instance
+          .startCall(
+            // CallKit CXCall ID must be a valid UUID — Swift force-unwraps
+            // UUID(uuidString:); a composite "convId:chanId" crashed every iOS join.
+            callId: channelId,
+            channelName: resolvedChannelName,
+            isMuted: !micEnabled,
+          )
+          .catchError((e, st) {
+            debugPrint('[livekit] start callkit call failed: $e');
+          }),
     );
   }
 
@@ -593,9 +619,21 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
   Future<void> _teardownCurrent() async {
     // Stop background/CallKit before room so OS audio session releases in order.
     _detachNotificationActionListener();
-    unawaited(BackgroundService.instance.stopVoice());
-    unawaited(VoiceCallKitService.instance.endCall());
-    unawaited(PipController.instance.disable());
+    unawaited(
+      BackgroundService.instance.stopVoice().catchError((e, st) {
+        debugPrint('[livekit] stop background voice service failed: $e');
+      }),
+    );
+    unawaited(
+      VoiceCallKitService.instance.endCall().catchError((e, st) {
+        debugPrint('[livekit] end callkit call failed: $e');
+      }),
+    );
+    unawaited(
+      PipController.instance.disable().catchError((e, st) {
+        debugPrint('[livekit] disable pip controller failed: $e');
+      }),
+    );
 
     try {
       await _cleanupRoom();
@@ -856,12 +894,23 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
             pub.subscribed &&
             pub.source == TrackSource.screenShareVideo) {
           // Native stores 16:9 default for 0/0; LiveKit dims aren't sync-available.
-          unawaited(PipController.instance.enable(width: 0, height: 0));
+          unawaited(
+            PipController.instance.enable(width: 0, height: 0).catchError((
+              e,
+              st,
+            ) {
+              debugPrint('[livekit] enable pip controller failed: $e');
+            }),
+          );
           return;
         }
       }
     }
-    unawaited(PipController.instance.disable());
+    unawaited(
+      PipController.instance.disable().catchError((e, st) {
+        debugPrint('[livekit] disable pip controller failed: $e');
+      }),
+    );
   }
 
   /// Synchronize the participant list from the LiveKit room into our state.
@@ -1042,8 +1091,18 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     _pttListener?.stop();
     _pttListener = null;
     _detachNotificationActionListener();
-    unawaited(BackgroundService.instance.stopVoice());
-    unawaited(VoiceCallKitService.instance.endCall());
+    unawaited(
+      BackgroundService.instance.stopVoice().catchError((e, st) {
+        debugPrint(
+          '[livekit] stop background voice service on dispose failed: $e',
+        );
+      }),
+    );
+    unawaited(
+      VoiceCallKitService.instance.endCall().catchError((e, st) {
+        debugPrint('[livekit] end callkit call on dispose failed: $e');
+      }),
+    );
 
     // Null refs sync so in-flight callbacks hit null checks, not freed memory.
     final listener = _roomListener;

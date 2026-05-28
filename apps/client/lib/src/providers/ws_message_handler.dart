@@ -29,7 +29,9 @@ import 'channels_provider.dart';
 import 'chat_provider.dart';
 import 'conversations_provider.dart';
 import 'crypto_provider.dart';
+import 'encrypted_preview_provider.dart';
 import 'server_url_provider.dart';
+import 'websocket_provider.dart';
 
 part 'ws_handlers/message_handlers.dart';
 part 'ws_handlers/typing_reaction_handlers.dart';
@@ -327,6 +329,8 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
         _handleKeyReset(json);
       case 'identity_reset':
         _handleIdentityReset(json);
+      case 'peer_keys_published':
+        _handlePeerKeysPublished(json);
       case 'call_started':
         _handleCallStarted(json);
       case 'canvas_event':
@@ -406,13 +410,21 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
 
     final isMention = _detectMention(fromUserId, myUserId, decryptedContent);
 
+    // When the user opts out of encrypted previews, replace plaintext with
+    // the bracketed sentinel before it reaches the sidebar or notifications.
+    // The actual chat bubble always shows the full decrypted text regardless.
+    final showPreviews = wasEncrypted
+        ? ref.read(showEncryptedPreviewsProvider)
+        : true;
+    final previewContent = showPreviews ? decryptedContent : '[Encrypted]';
+
     // Update conversations list with decrypted preview.
     // #26: don't bump unread for messages that were already cached (replayed).
     ref
         .read(conversationsProvider.notifier)
         .onNewMessage(
           conversationId: conversationId,
-          content: decryptedContent,
+          content: previewContent,
           timestamp: timestamp,
           senderUsername: senderUsername,
           isMention: isMention,
@@ -424,7 +436,7 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
       _notifyIfAllowed(
         conversationId,
         senderUsername,
-        decryptedContent,
+        previewContent,
         isMention: isMention,
       );
     }

@@ -238,9 +238,12 @@ void _performCleanup(ProviderContainer container) {
     MessageCache.flushAll().ignore();
   } catch (_) {}
   try {
-    // Hive.close() is async; starting it before exit(0) gives Hive a chance
-    // to begin flushing buffered writes, which prevents box-file corruption
-    // on graceful SIGTERM paths.
-    Hive.close().ignore();
+    // Race Hive.close() against a 500 ms deadline (#1182): gives any
+    // in-flight write a window to complete without stalling the OS shutdown
+    // sequence indefinitely.
+    Future.any([
+      Hive.close(),
+      Future<void>.delayed(const Duration(milliseconds: 500)),
+    ]).ignore();
   } catch (_) {}
 }

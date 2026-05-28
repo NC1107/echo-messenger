@@ -442,40 +442,16 @@ class CryptoNotifier extends _$CryptoNotifier {
 
     // TD-6: probe /keys/latest so we rotate to version+1 instead of 409ing on
     // hardcoded v=1 — leaves the group wedged forever otherwise.
-    var nextVersion = 1;
+    int? nextVersion;
     if (currentVersion != null) {
       nextVersion = currentVersion + 1;
     } else {
-      try {
-        final probe = await http.get(
-          Uri.parse('$serverUrl/api/groups/$conversationId/keys/latest'),
-          headers: {'Authorization': 'Bearer $token'},
-        );
-        if (probe.statusCode == 200) {
-          final body = jsonDecode(probe.body) as Map<String, dynamic>;
-          final existing = body['key_version'] as int?;
-          if (existing != null) nextVersion = existing + 1;
-        } else if (probe.statusCode == 401 || probe.statusCode == 403) {
-          // TD-18: rotation would also be rejected — let WS event retry on auth.
-          DebugLogService.instance.log(
-            LogLevel.warning,
-            'GroupRotation',
-            'seedInitialGroupKey: /keys/latest probe returned '
-                '${probe.statusCode} for $conversationId — aborting '
-                'rotation (auth path will retry).',
-          );
-          return null;
-        }
-        // 404 (no key yet) falls through with nextVersion == 1.
-      } catch (e) {
-        // TD-18: fall through to v=1 for brand-new-group; log for post-mortem.
-        DebugLogService.instance.log(
-          LogLevel.warning,
-          'GroupRotation',
-          'seedInitialGroupKey: /keys/latest probe failed for '
-              '$conversationId — falling through to v=1: $e',
-        );
-      }
+      nextVersion = await _probeLatestKeyVersion(
+        conversationId: conversationId,
+        serverUrl: serverUrl,
+        token: token,
+      );
+      if (nextVersion == null) return null;
     }
 
     return groupCrypto.performRotation(
@@ -483,29 +459,11 @@ class CryptoNotifier extends _$CryptoNotifier {
       nextVersion,
       selfUserId: myUserId,
       triggeredByEvent: nextVersion == 1 ? 'first_key' : 'recover_wedged',
-      fetchMembers: () async {
-        try {
-          final resp = await http.get(
-            Uri.parse('$serverUrl/api/groups/$conversationId'),
-            headers: {'Authorization': 'Bearer $token'},
-          );
-          if (resp.statusCode != 200) return [];
-          final body = jsonDecode(resp.body) as Map<String, dynamic>;
-          final members = body['members'] as List<dynamic>? ?? [];
-          return members
-              .whereType<Map<String, dynamic>>()
-              .map((m) => {'user_id': m['user_id'] as String? ?? ''})
-              .toList();
-        } catch (e) {
-          DebugLogService.instance.log(
-            LogLevel.warning,
-            'GroupRotation',
-            'seedInitialGroupKey: member fetch failed for '
-                '$conversationId: $e',
-          );
-          return [];
-        }
-      },
+      fetchMembers: () => _fetchGroupMembersForRotation(
+        conversationId: conversationId,
+        serverUrl: serverUrl,
+        token: token,
+      ),
       // Self: use local pubkey (only one guaranteed to unwrap via our private).
       // Peers: force-refresh so we wrap under their current server-uploaded key.
       fetchIdentityKey: (userId) {
@@ -520,6 +478,78 @@ class CryptoNotifier extends _$CryptoNotifier {
         return crypto.hasPeerIdentityKeyChanged(userId);
       },
     );
+  }
+
+  /// Probe the server for the latest group key version.
+  ///
+  /// Returns the next version to use (existing + 1, or 1 for a new group).
+  /// Returns null only when the probe returns 401/403, which means rotation
+  /// would also be rejected — the caller should abort and let the WS event
+  /// retry on next auth.
+  Future<int?> _probeLatestKeyVersion({
+    required String conversationId,
+    required String serverUrl,
+    required String token,
+  }) async {
+    try {
+      final probe = await http.get(
+        Uri.parse('$serverUrl/api/groups/$conversationId/keys/latest'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (probe.statusCode == 200) {
+        final body = jsonDecode(probe.body) as Map<String, dynamic>;
+        final existing = body['key_version'] as int?;
+        if (existing != null) return existing + 1;
+      } else if (probe.statusCode == 401 || probe.statusCode == 403) {
+        // TD-18: rotation would also be rejected — let WS event retry on auth.
+        DebugLogService.instance.log(
+          LogLevel.warning,
+          'GroupRotation',
+          'seedInitialGroupKey: /keys/latest probe returned '
+              '${probe.statusCode} for $conversationId — aborting '
+              'rotation (auth path will retry).',
+        );
+        return null;
+      }
+      // 404 (no key yet) falls through with version 1.
+    } catch (e) {
+      // TD-18: fall through to v=1 for brand-new-group; log for post-mortem.
+      DebugLogService.instance.log(
+        LogLevel.warning,
+        'GroupRotation',
+        'seedInitialGroupKey: /keys/latest probe failed for '
+            '$conversationId — falling through to v=1: $e',
+      );
+    }
+    return 1;
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchGroupMembersForRotation({
+    required String conversationId,
+    required String serverUrl,
+    required String token,
+  }) async {
+    try {
+      final resp = await http.get(
+        Uri.parse('$serverUrl/api/groups/$conversationId'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (resp.statusCode != 200) return [];
+      final body = jsonDecode(resp.body) as Map<String, dynamic>;
+      final members = body['members'] as List<dynamic>? ?? [];
+      return members
+          .whereType<Map<String, dynamic>>()
+          .map((m) => {'user_id': m['user_id'] as String? ?? ''})
+          .toList();
+    } catch (e) {
+      DebugLogService.instance.log(
+        LogLevel.warning,
+        'GroupRotation',
+        'seedInitialGroupKey: member fetch failed for '
+            '$conversationId: $e',
+      );
+      return [];
+    }
   }
 
   /// Invalidate cached group key so the next access re-fetches from server.

@@ -170,6 +170,7 @@ pub async fn generate_token(
         .ok()
         .filter(|u| !u.trim().is_empty());
 
+    state.voice_tokens_issued.inc();
     Ok(Json(TokenResponse { token, url }))
 }
 

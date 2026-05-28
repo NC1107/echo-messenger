@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/accessibility_provider.dart';
 import '../../providers/channel_layout_provider.dart';
+import '../../providers/encrypted_preview_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../theme/echo_theme.dart';
 import '../../widgets/settings_panel_scaffold.dart';
@@ -262,6 +263,9 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
         // picker. State still backs to accessibilityProvider so the
         // setting roams between sections without a migration.
         _FontSizeRow(),
+        const SizedBox(height: 16),
+        // Encrypted preview toggle (#1137).
+        _EncryptedPreviewTile(),
         const SizedBox(height: 32),
         // Advanced color overrides (issue #613)
         Text(
@@ -347,6 +351,37 @@ class _FontSizeRow extends ConsumerWidget {
           textAlign: TextAlign.center,
         ),
       ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Encrypted preview toggle (#1137)
+// ---------------------------------------------------------------------------
+
+class _EncryptedPreviewTile extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final enabled = ref.watch(showEncryptedPreviewsProvider);
+    return SwitchListTile.adaptive(
+      contentPadding: EdgeInsets.zero,
+      secondary: const Icon(Icons.lock_outline),
+      title: Text(
+        'Show encrypted previews',
+        style: TextStyle(
+          color: context.textPrimary,
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      subtitle: Text(
+        'When off, the sidebar and notifications always show [Encrypted] '
+        'instead of the cached plaintext.',
+        style: TextStyle(color: context.textMuted, fontSize: 12),
+      ),
+      value: enabled,
+      onChanged: (v) =>
+          ref.read(showEncryptedPreviewsProvider.notifier).setValue(v),
     );
   }
 }

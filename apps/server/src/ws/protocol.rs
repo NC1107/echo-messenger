@@ -188,6 +188,13 @@ pub enum ServerMessage {
     /// The receiving client should log out if `device_id` matches its own.
     #[serde(rename = "device_revoked")]
     DeviceRevoked { device_id: i32 },
+    /// Fanned out to every currently-connected session when a user lands
+    /// their FIRST prekey bundle (no prior identity_keys row). Lets peers
+    /// that were waiting on this user's bundle drop their negative
+    /// cache and retry stuck encrypted sends without waiting for the
+    /// 5-minute TTL. See #1131.
+    #[serde(rename = "peer_keys_published")]
+    PeerKeysPublished { user_id: Uuid, device_ids: Vec<i32> },
     /// Voice-lounge canvas event relayed to all conversation members.
     #[serde(rename = "canvas_event")]
     CanvasEvent {

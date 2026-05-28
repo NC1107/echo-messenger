@@ -333,12 +333,34 @@ class MessageCache {
   }
 
   /// Open a Hive box (encrypted if a key is available, plain otherwise).
-  static Future<Box<Map>> _openBox(String name) {
+  ///
+  /// If the box file is corrupted (e.g. from a hard-kill mid-write, #1182),
+  /// Hive throws a [HiveError]. We delete the corrupt file and reopen an
+  /// empty box so the app recovers gracefully — the cache is a performance
+  /// optimisation, not a source of truth.
+  static Future<Box<Map>> _openBox(String name) async {
     final keyBytes = _encKeyBytes;
     if (keyBytes != null) {
       return _openEncryptedBox(name, keyBytes);
     }
-    return Hive.openBox<Map>(name, compactionStrategy: _compactionStrategy);
+    try {
+      return await Hive.openBox<Map>(
+        name,
+        compactionStrategy: _compactionStrategy,
+      );
+    } catch (e) {
+      debugLog(
+        'MessageCache: corrupt box detected for $name, deleting and recovering: $e',
+        'MessageCache',
+      );
+      try {
+        await Hive.deleteBoxFromDisk(name);
+      } catch (_) {}
+      return await Hive.openBox<Map>(
+        name,
+        compactionStrategy: _compactionStrategy,
+      );
+    }
   }
 
   /// Open a Hive box with AES encryption. If the box was previously stored

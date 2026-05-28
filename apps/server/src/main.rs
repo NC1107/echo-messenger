@@ -31,6 +31,15 @@ async fn main() {
 
     // Build app state and router
     let hub = ws::hub::Hub::new();
+    let metrics_token = std::env::var("METRICS_TOKEN")
+        .ok()
+        .filter(|t| !t.is_empty());
+    if metrics_token.is_some() {
+        tracing::info!("Prometheus metrics endpoint enabled at /api/metrics");
+    } else {
+        tracing::info!("Prometheus metrics endpoint disabled (set METRICS_TOKEN to enable)");
+    }
+
     let state = Arc::new(routes::AppState {
         pool: pool.clone(),
         jwt_secret: config.jwt_secret,
@@ -39,6 +48,9 @@ async fn main() {
         media_tickets: Arc::new(dashmap::DashMap::new()),
         message_rate: Arc::new(echo_server::metrics::MessageRateCounter::new()),
         token_invalidator: echo_server::auth::TokenInvalidator::new(),
+        failed_logins: Arc::new(echo_server::metrics::SimpleCounter::new()),
+        voice_tokens_issued: Arc::new(echo_server::metrics::SimpleCounter::new()),
+        metrics_token,
     });
 
     // TD-37: cooperative shutdown so DELETE/UPDATE batches finish cleanly.

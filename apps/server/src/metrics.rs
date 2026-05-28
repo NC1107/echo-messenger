@@ -23,6 +23,33 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
+/// Monotonically-increasing counter for a single event type (e.g. failed logins,
+/// voice-token issuances). Increment with [`SimpleCounter::inc`]; read the
+/// running total with [`SimpleCounter::get`].
+///
+/// Backed by a single relaxed `AtomicU64` — no allocation, no lock, safe to
+/// call on hot paths.
+#[derive(Debug, Default)]
+pub struct SimpleCounter(AtomicU64);
+
+impl SimpleCounter {
+    pub const fn new() -> Self {
+        Self(AtomicU64::new(0))
+    }
+
+    /// Increment by one.
+    #[inline]
+    pub fn inc(&self) {
+        self.0.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Read the current value.
+    #[inline]
+    pub fn get(&self) -> u64 {
+        self.0.load(Ordering::Relaxed)
+    }
+}
+
 /// Sliding window length for [`MessageRateCounter::per_second`].
 /// Sixty seconds matches the dashboard's "messages per second" tile —
 /// long enough to smooth quiet periods, short enough that an operator

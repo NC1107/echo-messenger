@@ -30,7 +30,10 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
   final Set<String> _selectedUserIds = {};
   bool _isCreating = false;
   bool _isPublic = false;
-  bool _isEncrypted = false;
+  // #1131: default new groups to encrypted now that bootstrap-retry is
+  // event-driven — peers no longer wait out a 5-minute TTL on the first
+  // send to a brand-new invitee.
+  bool _isEncrypted = true;
   Uint8List? _pickedAvatarBytes;
 
   @override
@@ -322,10 +325,10 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
     );
   }
 
-  /// End-to-end encryption toggle. Default stays off so a brand-new
-  /// invitee — who hasn't published prekeys yet — doesn't see a
-  /// "waiting for keys" failure on the sender's first send. Flipping
-  /// the default is gated on the event-driven bootstrap retry (#1131).
+  /// End-to-end encryption toggle. Default is ON now that the
+  /// event-driven bootstrap retry (#1131) clears the brand-new-invitee
+  /// "waiting for keys" failure within seconds of their first login —
+  /// no more 5-minute TTL wait on the sender's side.
   Widget _buildEncryptionToggle() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -338,11 +341,8 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
           title: const Text('End-to-end encryption'),
           subtitle: Text(
             _isEncrypted
-                ? 'On: end-to-end encrypted with a per-member group key. '
-                      'No server-side search; new joiners get a key '
-                      'refresh when they connect.'
-                : 'Off: server can read messages, supports search and '
-                      'moderation. Your account auth still protects access.',
+                ? 'On: end-to-end encrypted; no server-side search.'
+                : 'Off: server can read messages and run search/moderation.',
             style: TextStyle(color: context.textMuted, fontSize: 12),
           ),
           activeThumbColor: context.accent,
