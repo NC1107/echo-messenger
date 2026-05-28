@@ -43,6 +43,24 @@ import 'voice_lounge/lounge_header.dart';
 import 'voice_lounge/participant_grid.dart';
 import 'voice_lounge/screen_share.dart';
 
+/// Half the default avatar-tile diameter in canvas-space pixels — used
+/// when growing the auto-fit bbox so an avatar's edge (not just its
+/// centre) lands inside the framed region. Mirrors the `_kAvatarSize`
+/// constant inside `voice_canvas.dart`; duplicated here to avoid a
+/// cross-widget export of a render constant.
+const double _kAvatarTileRadius = 24.0;
+
+/// Canvas-space radius of the default avatar ring used by
+/// `voice_canvas.dart`'s `_defaultAvatarPos` when no one has dragged
+/// their puck yet. Default positions sit on a circle of this radius
+/// around the canvas centre; the initial-pose fallback zooms out far
+/// enough to frame that entire ring so a fresh joiner sees every
+/// participant (including their own avatar) without panning across
+/// 50 000 canvas-pixels first. Mirrors the `0.3 * kCanvasWidth`
+/// magic number in `_defaultAvatarPos`; kept in sync with that
+/// helper by the `voice_canvas` widget tests.
+const double _kDefaultAvatarRingRadius = 0.3 * kCanvasWidth;
+
 /// Returns a new transform that scales the lounge canvas to
 /// [targetScale] while keeping the canvas-space point currently under
 /// [tapPoint] (in InteractiveViewer-region-local pixels) anchored to
@@ -250,13 +268,42 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
 
   /// Compute the matrix that frames the existing canvas content inside
   /// [viewport]. Auto-fit semantics:
-  ///   - Bounding box of every stroke point + image rect (NOT avatars —
-  ///     they jitter every audio tick).
+  ///   - Bounding box of every stroke point + image rect + avatar tile.
   ///   - +10% padding so content doesn't touch the edges.
-  ///   - Empty canvas → identity at origin (user can pan to find their
-  ///     own drawing space).
+  ///   - Empty canvas (no strokes / images / avatars) → centre on the
+  ///     middle of the canvas at a zoom that frames the default avatar
+  ///     ring so a fresh joiner sees every participant without first
+  ///     panning across the 100k×100k surface (#1265).
+  ///
+  /// Avatars ARE included so a fresh joiner with no drawings still
+  /// frames participants in view; the per-audio-tick avatar jitter
+  /// can't pull the fit pose around because the listener-driven
+  /// helpers only recompute on viewport-transform changes, not on
+  /// canvas-state updates.
   Matrix4 _computeInitialPose(CanvasState canvas, Size viewport) {
-    // Walk strokes + images for the bbox.
+    final bbox = _contentBbox(canvas);
+    if (bbox == null) {
+      return _centeredPose(viewport);
+    }
+    final contentW = bbox.width;
+    final contentH = bbox.height;
+    // 10% padding around the bbox so strokes don't kiss the edges.
+    final pad = math.max(contentW, contentH) * 0.1;
+    final paddedW = contentW + pad * 2;
+    final paddedH = contentH + pad * 2;
+    final fit = math.min(viewport.width / paddedW, viewport.height / paddedH);
+    // Anchor: bbox top-left lands at (-pad, -pad) of the visible region
+    // so the padding shows on every side.
+    return Matrix4.identity()
+      ..scaleByDouble(fit, fit, fit, 1)
+      ..setTranslationRaw(-(bbox.left - pad) * fit, -(bbox.top - pad) * fit, 0);
+  }
+
+  /// Returns the bounding rectangle of every stroke point, image rect,
+  /// and stored avatar position, or null when the canvas has no content
+  /// to fit around. Avatars are inflated by [_kAvatarTileRadius] so the
+  /// tile (not just its centre) fits inside the frame.
+  Rect? _contentBbox(CanvasState canvas) {
     double minX = double.infinity, minY = double.infinity;
     double maxX = double.negativeInfinity, maxY = double.negativeInfinity;
     for (final s in canvas.strokes) {
@@ -273,25 +320,42 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       if (img.x + img.width > maxX) maxX = img.x + img.width;
       if (img.y + img.height > maxY) maxY = img.y + img.height;
     }
-    final hasContent =
-        minX != double.infinity && (maxX > minX) && (maxY > minY);
-    if (!hasContent) {
-      // Empty canvas — identity at origin. User starts at (0,0) at 1×,
-      // pans to wherever they want to draw.
-      return Matrix4.identity();
+    for (final pos in canvas.avatarPositions.values) {
+      final half = _kAvatarTileRadius * pos.scale;
+      if (pos.x - half < minX) minX = pos.x - half;
+      if (pos.y - half < minY) minY = pos.y - half;
+      if (pos.x + half > maxX) maxX = pos.x + half;
+      if (pos.y + half > maxY) maxY = pos.y + half;
     }
-    final contentW = maxX - minX;
-    final contentH = maxY - minY;
-    // 10% padding around the bbox so strokes don't kiss the edges.
-    final pad = math.max(contentW, contentH) * 0.1;
-    final paddedW = contentW + pad * 2;
-    final paddedH = contentH + pad * 2;
-    final fit = math.min(viewport.width / paddedW, viewport.height / paddedH);
-    // Anchor: bbox top-left lands at (-pad, -pad) of the visible region
-    // so the padding shows on every side.
+    if (minX == double.infinity || maxX <= minX || maxY <= minY) {
+      return null;
+    }
+    return Rect.fromLTRB(minX, minY, maxX, maxY);
+  }
+
+  /// Pose used when the canvas is completely empty (no strokes, no
+  /// images, no persisted avatar drags). Centres on the canvas middle
+  /// and zooms OUT just far enough to frame the default avatar ring
+  /// `voice_canvas.dart` lays out for un-dragged participants — so a
+  /// fresh joiner sees every avatar (their own included) without
+  /// hunting across the 100k×100k surface (#1265). A 10% margin keeps
+  /// pucks off the very edge of the viewport.
+  Matrix4 _centeredPose(Size viewport) {
+    const cx = kCanvasWidth / 2;
+    const cy = kCanvasHeight / 2;
+    // Frame the full default avatar ring + half an avatar tile so the
+    // outermost puck lands inside the visible region, then a 10%
+    // padding band on top.
+    const ringExtent = _kDefaultAvatarRingRadius + _kAvatarTileRadius;
+    const framed = ringExtent * 2 * 1.1;
+    final fit = math.min(viewport.width, viewport.height) / framed;
     return Matrix4.identity()
       ..scaleByDouble(fit, fit, fit, 1)
-      ..setTranslationRaw(-(minX - pad) * fit, -(minY - pad) * fit, 0);
+      ..setTranslationRaw(
+        viewport.width / 2 - cx * fit,
+        viewport.height / 2 - cy * fit,
+        0,
+      );
   }
 
   /// Toggle between auto-fit and a 2× zoom centred on the tap point.
