@@ -492,6 +492,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         parentMessage: message,
         serverUrl: serverUrl,
         authToken: authToken,
+        selectedTextChannelId: _selectedTextChannelId,
         onReply: (msg) {
           // From the thread panel: this reply belongs in the thread, not
           // the main timeline. asThread=true flips the WS send to carry
@@ -1044,6 +1045,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
             parentMessage: _threadParent!,
             serverUrl: serverUrl,
             authToken: authToken,
+            selectedTextChannelId: _selectedTextChannelId,
             onReply: (msg) {
               ref.read(chatProvider.notifier).setReplyTo(msg, asThread: true);
               _chatInputBarKey.currentState?.requestInputFocus();

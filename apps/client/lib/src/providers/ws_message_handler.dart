@@ -22,6 +22,7 @@ import '../utils/crypto_utils.dart';
 import '../utils/debug_log.dart';
 import '../utils/mention_detection.dart';
 import '../utils/presence.dart';
+import '../utils/semantics_preview.dart';
 import '../utils/uuid_bytes.dart';
 import 'auth_provider.dart';
 import 'canvas_provider.dart';
@@ -650,9 +651,12 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
       } else {
         SoundService().playMessageReceived().ignore();
       }
-      final body = displayContent.length > 100
-          ? '${displayContent.substring(0, 100)}...'
-          : displayContent;
+      // Convert raw media tokens like `[audio:URL]` to friendly labels before
+      // showing in toasts / OS notifications (#11).
+      final friendly = previewForSemantics(displayContent);
+      final body = friendly.length > 100
+          ? '${friendly.substring(0, 100)}...'
+          : friendly;
       final myUserId = ref.read(authProvider).userId ?? '';
       NotificationService().showMessageNotification(
         senderUsername: senderUsername,

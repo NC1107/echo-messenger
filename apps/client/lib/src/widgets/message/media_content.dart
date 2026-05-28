@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
@@ -426,6 +427,9 @@ class MediaContentState extends State<MediaContent> {
         }
         return _PausedGifPlaceholder(
           width: 300,
+          imageUrl: fullUrl,
+          rawUrl: rawUrl,
+          headers: _headers(),
           onTap: () => widget.onImageTap != null
               ? widget.onImageTap!(fullUrl)
               : showImageViewer(imageUrl: fullUrl),
@@ -549,78 +553,153 @@ Widget _gifErrorPlaceholder(BuildContext context, String label) {
   );
 }
 
-/// Static placeholder shown in place of an animated GIF when autoplay is
-/// off (or the app has lost focus). Tapping opens the fullscreen viewer
-/// where the GIF is always allowed to animate.
-class _PausedGifPlaceholder extends StatelessWidget {
+/// Paused-GIF tile shown when autoplay is off or the app has lost focus.
+///
+/// Renders the GIF's first frame as the tile background (#10) so the user
+/// sees the actual content instead of a generic "Tap to play" card. The
+/// frame is decoded via [ui.instantiateImageCodec] + [Codec.getNextFrame]
+/// — a single frame, no animation loop, no new packages. Tapping opens
+/// the fullscreen viewer where animation is always allowed.
+class _PausedGifPlaceholder extends StatefulWidget {
   final double width;
+  final String imageUrl;
+  final String rawUrl;
+  final Map<String, String> headers;
   final VoidCallback onTap;
 
-  const _PausedGifPlaceholder({required this.width, required this.onTap});
+  const _PausedGifPlaceholder({
+    required this.width,
+    required this.imageUrl,
+    required this.rawUrl,
+    required this.headers,
+    required this.onTap,
+  });
+
+  @override
+  State<_PausedGifPlaceholder> createState() => _PausedGifPlaceholderState();
+}
+
+class _PausedGifPlaceholderState extends State<_PausedGifPlaceholder> {
+  ui.Image? _firstFrame;
+  bool _loadFailed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _decodeFirstFrame();
+  }
+
+  @override
+  void dispose() {
+    _firstFrame?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _decodeFirstFrame() async {
+    try {
+      final response = await http.get(
+        Uri.parse(widget.imageUrl),
+        headers: widget.headers,
+      );
+      if (!mounted) return;
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        setState(() => _loadFailed = true);
+        return;
+      }
+      final codec = await ui.instantiateImageCodec(response.bodyBytes);
+      final frame = await codec.getNextFrame();
+      codec.dispose();
+      if (!mounted) {
+        frame.image.dispose();
+        return;
+      }
+      setState(() => _firstFrame = frame.image);
+    } catch (e) {
+      debugPrint('[_PausedGifPlaceholder] first-frame decode failed: $e');
+      if (mounted) setState(() => _loadFailed = true);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: width,
-        height: 160,
-        decoration: BoxDecoration(
-          color: context.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: context.border, width: 1),
+      onTap: widget.onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: widget.width,
+          height: 160,
+          decoration: BoxDecoration(
+            color: context.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: context.border, width: 1),
+          ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              _buildFrameLayer(context),
+              _buildPlayBadge(context),
+              _buildGifLabel(),
+            ],
+          ),
         ),
-        child: Stack(
-          children: [
-            Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: context.accentLight,
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: context.accent, width: 1),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.play_arrow, size: 16, color: context.accent),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Tap to play',
-                      style: TextStyle(
-                        color: context.accent,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            Positioned(
-              top: 8,
-              left: 10,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Text(
-                  'GIF',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
-            ),
-          ],
+      ),
+    );
+  }
+
+  Widget _buildFrameLayer(BuildContext context) {
+    final image = _firstFrame;
+    if (image != null) {
+      return RawImage(image: image, fit: BoxFit.cover);
+    }
+    if (_loadFailed) {
+      return Container(color: context.mainBg);
+    }
+    // Decoding still in flight — keep neutral background, no spinner so
+    // the play badge stays the focal point.
+    return Container(color: context.mainBg);
+  }
+
+  Widget _buildPlayBadge(BuildContext context) {
+    return Center(
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.55),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.2),
+            width: 1,
+          ),
+        ),
+        alignment: Alignment.center,
+        child: const Padding(
+          padding: EdgeInsets.only(left: 2),
+          child: Icon(Icons.play_arrow_rounded, color: Colors.white, size: 28),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGifLabel() {
+    return Positioned(
+      top: 8,
+      left: 10,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: Colors.black54,
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: const Text(
+          'GIF',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.5,
+          ),
         ),
       ),
     );

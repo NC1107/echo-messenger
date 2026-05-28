@@ -24,7 +24,7 @@ const double kConversationItemHeight = 68.0;
 /// leading `[kind:URL]` marker optionally followed by a newline and caption,
 /// which is what the seed scripts emit for captioned attachments.
 final RegExp _mediaMarkerRegExp = RegExp(
-  r'^\[(img|video|file|voice):[^\]]+\]\s*\n?\s*',
+  r'^\[(img|video|audio|file|voice):[^\]]+\]\s*\n?\s*',
 );
 
 /// Tighter height for the compact (Discord-style) density tier.
@@ -231,12 +231,14 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
       'video': '\u{1F3AC}',
       'file': '\u{1F4CE}',
       'voice': '\u{1F3A4}',
+      'audio': '\u{1F3A4}',
     };
     const fallbacks = {
       'img': 'Photo',
       'video': 'Video',
       'file': 'File',
       'voice': 'Voice message',
+      'audio': 'Voice message',
     };
     final icon = icons[kind] ?? '';
     return caption.isEmpty ? '$icon ${fallbacks[kind]!}' : '$icon $caption';
