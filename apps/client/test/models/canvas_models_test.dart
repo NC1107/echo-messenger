@@ -3,6 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:echo_app/src/models/canvas_models.dart';
 
 void main() {
+  // Reset the module-level legacy migration counter before every test so
+  // counter-assertion tests don't accumulate across the suite.
+  setUp(resetLegacyMigrationCount);
+
   group('CanvasPoint', () {
     test('canvas dimensions are the 100k-px figma-style surface', () {
       // The 100k value is the "feels infinite" virtual canvas; in 2026-05
@@ -43,11 +47,15 @@ void main() {
 
   group('CanvasStroke', () {
     test('pen stroke round-trips through JSON', () {
+      // 100k-space absolute coords — no legacy migration triggered.
       final stroke = const CanvasStroke(
         id: 'stroke-1',
         color: '#FF0000',
         width: 4.0,
-        points: [CanvasPoint(x: 0.1, y: 0.2), CanvasPoint(x: 0.3, y: 0.4)],
+        points: [
+          CanvasPoint(x: 10000.0, y: 20000.0),
+          CanvasPoint(x: 30000.0, y: 40000.0),
+        ],
         kind: StrokeKind.pen,
       );
 
@@ -62,11 +70,12 @@ void main() {
     });
 
     test('eraser stroke preserves kind', () {
+      // 100k-space absolute coord — no legacy migration triggered.
       final stroke = const CanvasStroke(
         id: 'e-1',
         color: '#00000000',
         width: 10.0,
-        points: [CanvasPoint(x: 0.5, y: 0.5)],
+        points: [CanvasPoint(x: 50000.0, y: 50000.0)],
         kind: StrokeKind.eraser,
       );
       final json = stroke.toJson();
@@ -157,6 +166,40 @@ void main() {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // Legacy-coord migration telemetry
+  // ---------------------------------------------------------------------------
+
+  group('legacy migration counter', () {
+    test('legacy_coord_below_one_migrates_to_4096_scale_not_100k_scale', () {
+      // Intentional legacy value: 0.5 should become 2048 (4096-scale),
+      // NOT 50000 (100k-scale). Multiplying by 100k would scatter old
+      // drawings across the entire new space and break their spatial
+      // relationships.
+      // legacy migration: 0.5 -> 2048 (4096-scale)
+      expect(legacyMigrationCount, 0, reason: 'counter resets between tests');
+      final p = CanvasPoint.fromJson({'x': 0.5, 'y': 0.5});
+      expect(p.x, closeTo(2048.0, 1e-9));
+      expect(p.y, closeTo(2048.0, 1e-9));
+      // Each ≤1.0 value increments the counter independently: x and y
+      // each fired once → total 2.
+      expect(legacyMigrationCount, 2);
+    });
+
+    test('100k-space coord does not increment the counter', () {
+      expect(legacyMigrationCount, 0);
+      CanvasPoint.fromJson({'x': 50000.0, 'y': 75000.0});
+      expect(legacyMigrationCount, 0, reason: 'values > 1.0 pass through');
+    });
+
+    test('resetLegacyMigrationCount zeros the counter', () {
+      CanvasPoint.fromJson({'x': 0.1, 'y': 0.2});
+      expect(legacyMigrationCount, greaterThan(0));
+      resetLegacyMigrationCount();
+      expect(legacyMigrationCount, 0);
+    });
+  });
+
   group('CanvasState', () {
     test('default state is empty and not loaded', () {
       const state = CanvasState();
@@ -190,11 +233,12 @@ void main() {
 
     test('copyWith strokes appends correctly', () {
       const state = CanvasState();
+      // 100k-space absolute coords — no legacy migration triggered.
       final stroke = const CanvasStroke(
         id: 's1',
         color: '#00FF00',
         width: 3.0,
-        points: [CanvasPoint(x: 0.0, y: 0.0)],
+        points: [CanvasPoint(x: 5000.0, y: 5000.0)],
       );
       final updated = state.copyWith(strokes: [stroke]);
       expect(updated.strokes.length, 1);
