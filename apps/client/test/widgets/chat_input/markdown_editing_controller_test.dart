@@ -18,28 +18,21 @@ List<TextSpan> flattenSpans(InlineSpan root) {
   return [];
 }
 
-/// Build a span tree from [text] using a minimal [BuildContext] via
-/// [WidgetsBinding]. Because [buildTextSpan] doesn't touch context in
-/// [MarkdownTextEditingController], passing a throwaway context is fine.
-List<TextSpan> buildLeaves(String text) {
+/// Build a span tree from [text] with an optional [selection].
+/// When [selection] is null the controller uses a collapsed cursor at 0.
+List<TextSpan> buildLeaves(String text, {TextSelection? selection}) {
   final ctrl = MarkdownTextEditingController(text: text);
+  if (selection != null) {
+    ctrl.selection = selection;
+  }
   addTearDown(ctrl.dispose);
 
-  // Build inside a trivial widget so we have a real context.
-  late List<TextSpan> result;
-  final binding = TestWidgetsFlutterBinding.ensureInitialized();
-  binding.runAsync(() async {});
-
-  // We use runApp + pump to get a BuildContext in unit tests.
-  // Instead, call buildTextSpan directly with a dummy context.
-  // Since the implementation does not use BuildContext at all, this is safe.
   final root = ctrl.buildTextSpan(
     context: _FakeBuildContext(),
     style: const TextStyle(color: Colors.white),
     withComposing: false,
   );
-  result = flattenSpans(root);
-  return result;
+  return flattenSpans(root);
 }
 
 // ignore: invalid_use_of_protected_member
@@ -72,11 +65,12 @@ void main() {
     });
 
     group('bold **…**', () {
-      late List<TextSpan> leaves;
-
-      setUp(() => leaves = buildLeaves('**hello**'));
-
       test('has three spans: delim, body, delim', () {
+        // Cursor inside range (offset 2) so delimiters are visible.
+        final leaves = buildLeaves(
+          '**hello**',
+          selection: const TextSelection.collapsed(offset: 2),
+        );
         expect(leaves.length, 3);
         expect(leaves[0].text, '**');
         expect(leaves[1].text, 'hello');
@@ -84,23 +78,156 @@ void main() {
       });
 
       test('body span has bold weight', () {
+        final leaves = buildLeaves(
+          '**hello**',
+          selection: const TextSelection.collapsed(offset: 2),
+        );
         expect(leaves[1].style?.fontWeight, FontWeight.bold);
       });
 
-      test('delimiter spans have dimmed opacity', () {
-        final color0 = leaves[0].style?.color;
-        final color1 = leaves[1].style?.color;
-        expect(color0, isNotNull);
-        expect(color1, isNotNull);
-        // Delimiter opacity is 0.4 of body colour
-        expect(color0!.a, lessThan(color1!.a));
+      test('delimiter spans dimmed (40%) when cursor is inside range', () {
+        // Cursor at offset 2 is inside the bold range (0–9), so delimiters
+        // should be visible at reduced (40%) opacity.
+        final leaves = buildLeaves(
+          '**hello**',
+          selection: const TextSelection.collapsed(offset: 2),
+        );
+        final delimColor = leaves[0].style?.color;
+        final bodyColor = leaves[1].style?.color;
+        expect(delimColor, isNotNull);
+        expect(bodyColor, isNotNull);
+        // Delimiter alpha (0.4) is less than body alpha (1.0).
+        expect(delimColor!.a, lessThan(bodyColor!.a));
+      });
+
+      test('delimiters hidden (alpha = 0) when cursor is outside range', () {
+        // Cursor at offset 0 is NOT strictly inside the bold range (0–9),
+        // so delimiters should be fully transparent.
+        final leaves = buildLeaves(
+          '**hello**',
+          selection: const TextSelection.collapsed(offset: 0),
+        );
+        final delimColor = leaves[0].style?.color;
+        expect(delimColor, isNotNull);
+        expect(delimColor!.a, equals(0.0));
+      });
+    });
+
+    group('cursor-aware delimiter visibility', () {
+      test('cursor at offset 0 hides delimiters in **bold**', () {
+        final leaves = buildLeaves(
+          '**bold**',
+          selection: const TextSelection.collapsed(offset: 0),
+        );
+        // Delimiter spans: leaves[0] and leaves[2]
+        expect(
+          leaves[0].style?.color?.a,
+          equals(0.0),
+          reason: 'Opening ** should be hidden when cursor is outside',
+        );
+        expect(
+          leaves[2].style?.color?.a,
+          equals(0.0),
+          reason: 'Closing ** should be hidden when cursor is outside',
+        );
+      });
+
+      test('cursor at offset 2 (inside **bold**) shows delimiters at 40%', () {
+        // offset 2 is inside the range [0, 8), so delimiters should show.
+        final leaves = buildLeaves(
+          '**bold**',
+          selection: const TextSelection.collapsed(offset: 2),
+        );
+        final delimAlpha = leaves[0].style?.color?.a ?? 0.0;
+        final bodyAlpha = leaves[1].style?.color?.a ?? 1.0;
+        // Delimiter must be visible but dimmer than body.
+        expect(
+          delimAlpha,
+          greaterThan(0.0),
+          reason: 'Delimiter should be visible when cursor is inside range',
+        );
+        expect(
+          delimAlpha,
+          lessThan(bodyAlpha),
+          reason: 'Delimiter should be dimmer than body text',
+        );
+      });
+
+      test('non-collapsed selection overlapping range shows delimiters', () {
+        // Selection from 1–5 overlaps with the bold range (0–8), so
+        // delimiters should be visible.
+        final leaves = buildLeaves(
+          '**bold**',
+          selection: const TextSelection(baseOffset: 1, extentOffset: 5),
+        );
+        final delimAlpha = leaves[0].style?.color?.a ?? 0.0;
+        expect(delimAlpha, greaterThan(0.0));
+      });
+    });
+
+    group('inline list bullet rendering', () {
+      test('unordered "- item" renders bullet glyph as second span', () {
+        // Spans: [hidden raw "- "] [bullet glyph "• "] [rest "item"]
+        final leaves = buildLeaves('- item');
+        expect(leaves.length, 3);
+        expect(leaves[0].text, '- '); // hidden raw marker
+        expect(leaves[1].text, '• '); // visible bullet glyph
+        expect(leaves[2].text, 'item'); // rest of line
+      });
+
+      test('raw controller.text stays "- item" (not mutated)', () {
+        final ctrl = MarkdownTextEditingController(text: '- item');
+        addTearDown(ctrl.dispose);
+        ctrl.buildTextSpan(
+          context: _FakeBuildContext(),
+          style: const TextStyle(color: Colors.white),
+          withComposing: false,
+        );
+        expect(ctrl.text, '- item');
+      });
+
+      test(
+        'unordered "* item" (asterisk marker) also renders bullet glyph',
+        () {
+          final leaves = buildLeaves('* item');
+          expect(leaves.length, 3);
+          expect(leaves[1].text, '• ');
+        },
+      );
+
+      test('ordered "1. item" renders number glyph as second span', () {
+        final leaves = buildLeaves('1. item');
+        expect(leaves.length, 3);
+        expect(leaves[0].text, '1. '); // hidden raw marker
+        expect(leaves[1].text, '1. '); // visible number glyph
+        expect(leaves[2].text, 'item');
+      });
+
+      test('hidden marker span has zero alpha', () {
+        final leaves = buildLeaves('- item');
+        final markerColor = leaves[0].style?.color;
+        expect(markerColor, isNotNull);
+        expect(markerColor!.a, equals(0.0));
+      });
+
+      test('multiline: second line bullet is rendered correctly', () {
+        final leaves = buildLeaves('text\n- bullet');
+        // Spans: "text" + "\n" + "- " (hidden) + "• " (glyph) + "bullet"
+        final texts = leaves.map((s) => s.text).toList();
+        expect(texts, contains('• '));
+        expect(texts, contains('bullet'));
       });
     });
 
     group('italic *…*', () {
       late List<TextSpan> leaves;
 
-      setUp(() => leaves = buildLeaves('*world*'));
+      setUp(
+        () => leaves = buildLeaves(
+          '*world*',
+          selection: const TextSelection.collapsed(offset: 1),
+        ),
+      );
 
       test('has three spans: delim, body, delim', () {
         expect(leaves.length, 3);
@@ -115,7 +242,12 @@ void main() {
     group('strikethrough ~~…~~', () {
       late List<TextSpan> leaves;
 
-      setUp(() => leaves = buildLeaves('~~gone~~'));
+      setUp(
+        () => leaves = buildLeaves(
+          '~~gone~~',
+          selection: const TextSelection.collapsed(offset: 2),
+        ),
+      );
 
       test('has three spans', () {
         expect(leaves.length, 3);
@@ -130,7 +262,12 @@ void main() {
     group('inline code `…`', () {
       late List<TextSpan> leaves;
 
-      setUp(() => leaves = buildLeaves('`code`'));
+      setUp(
+        () => leaves = buildLeaves(
+          '`code`',
+          selection: const TextSelection.collapsed(offset: 1),
+        ),
+      );
 
       test('has three spans', () {
         expect(leaves.length, 3);
@@ -149,8 +286,11 @@ void main() {
     });
 
     test('mixed bold and italic non-overlapping', () {
-      // "**a** and *b*"
-      final leaves = buildLeaves('**a** and *b*');
+      // "**a** and *b*" — cursor inside bold region so delimiters visible.
+      final leaves = buildLeaves(
+        '**a** and *b*',
+        selection: const TextSelection.collapsed(offset: 2),
+      );
       // bold: 3 spans + plain " and " + italic: 3 spans = 7 total
       expect(leaves.length, 7);
       final boldBody = leaves[1];
