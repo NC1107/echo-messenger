@@ -658,29 +658,48 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     }
   }
 
+  /// True while a leave sequence is in progress.  Guards against concurrent
+  /// callers (double-tap UI, notification action, CallKit — all fire
+  /// leaveChannel independently).
+  bool _isLeaving = false;
+
   /// Disconnect from the LiveKit room and reset state. Also clears the
   /// server-side voice session row so the user doesn't appear stuck in the
   /// lounge to other members.
   Future<void> leaveChannel() async {
-    final convId = state.conversationId;
-    final chanId = state.channelId;
-    if (state.isActive) {
-      SoundService().playVoiceLeave();
+    if (_disposed) return;
+    if (_isLeaving) {
+      DebugLogService.instance.log(
+        LogLevel.warning,
+        'LiveKitVoice',
+        'leaveChannel: ignored — leave already in progress',
+      );
+      return;
     }
-    await _teardownCurrent();
-    state = LiveKitVoiceState.empty;
-    if (convId != null && chanId != null) {
-      try {
-        await ref
-            .read(channelsProvider.notifier)
-            .leaveVoiceChannel(convId, chanId);
-      } catch (e) {
-        DebugLogService.instance.log(
-          LogLevel.warning,
-          'LiveKitVoice',
-          'leaveVoiceChannel($convId/$chanId) on leave threw (ignored): $e',
-        );
+    _isLeaving = true;
+    try {
+      final convId = state.conversationId;
+      final chanId = state.channelId;
+      if (state.isActive) {
+        SoundService().playVoiceLeave();
       }
+      await _teardownCurrent();
+      state = LiveKitVoiceState.empty;
+      if (convId != null && chanId != null) {
+        try {
+          await ref
+              .read(channelsProvider.notifier)
+              .leaveVoiceChannel(convId, chanId);
+        } catch (e) {
+          DebugLogService.instance.log(
+            LogLevel.warning,
+            'LiveKitVoice',
+            'leaveVoiceChannel($convId/$chanId) on leave threw (ignored): $e',
+          );
+        }
+      }
+    } finally {
+      _isLeaving = false;
     }
   }
 

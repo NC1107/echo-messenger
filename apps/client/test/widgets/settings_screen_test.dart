@@ -45,7 +45,6 @@ void main() {
   group('settingsSectionLabel', () {
     test('returns correct label for each section', () {
       expect(settingsSectionLabel(SettingsSection.profile), 'Profile');
-      expect(settingsSectionLabel(SettingsSection.status), 'Status');
       expect(settingsSectionLabel(SettingsSection.appearance), 'Appearance');
       expect(settingsSectionLabel(SettingsSection.language), 'Language');
       expect(
@@ -66,12 +65,11 @@ void main() {
 
   group('SettingsSection enum', () {
     test('contains expected sections', () {
-      expect(SettingsSection.values, hasLength(11));
+      expect(SettingsSection.values, hasLength(10));
       expect(
         SettingsSection.values,
         containsAll([
           SettingsSection.profile,
-          SettingsSection.status,
           SettingsSection.appearance,
           SettingsSection.language,
           SettingsSection.notifications,
@@ -82,6 +80,13 @@ void main() {
           SettingsSection.accessibility,
           SettingsSection.about,
         ]),
+      );
+    });
+
+    test('does not contain status section', () {
+      expect(
+        SettingsSection.values.map((s) => s.name),
+        isNot(contains('status')),
       );
     });
   });
@@ -101,9 +106,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Profile is reached via the UserHeaderCard at the top, not a row.
-      // Status was promoted out of "buried in Settings" into the
-      // Account bucket as its own row (#1223).
-      expect(find.text('Status'), findsOneWidget);
+      // Status was moved to the sidebar footer user menu.
       expect(find.text('Appearance'), findsOneWidget);
       expect(find.text('Language'), findsOneWidget);
       expect(find.text('Notifications'), findsOneWidget);

@@ -10,25 +10,29 @@ echo "==> Seeding demo data on $BASE"
 
 # Register admin_tester account (ignore if already exists)
 echo "  Creating admin_tester..."
-curl -sf -X POST "$BASE/api/auth/register" \
+curl -sS -X POST "$BASE/api/auth/register" \
   -H "Content-Type: application/json" \
-  -d '{"username":"admin_tester","password":"admin123"}' || true
+  -H "User-Agent: Mozilla/5.0 echo-seed" \
+  -d '{"username":"admin_tester","password":"admin123"}' > /dev/null || true
 
 # Login and get token
 echo "  Logging in..."
-LOGIN=$(curl -sf -X POST "$BASE/api/auth/login" \
+LOGIN=$(curl -sS -X POST "$BASE/api/auth/login" \
   -H "Content-Type: application/json" \
+  -H "User-Agent: Mozilla/5.0 echo-seed" \
   -d '{"username":"admin_tester","password":"admin123"}')
-TOKEN=$(echo "$LOGIN" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null || echo "$LOGIN" | jq -r '.token' 2>/dev/null)
+TOKEN=$(echo "$LOGIN" | jq -r '.access_token // empty')
 
 if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
-  echo "ERROR: Failed to get auth token"
+  echo "ERROR: Failed to get auth token. Response: $LOGIN"
   exit 1
 fi
 
 AUTH="Authorization: Bearer $TOKEN"
 
-# Create public groups with descriptions
+# Create public groups with descriptions.
+# Field is `name` (not `title`) per the CreateGroupRequest schema.
+unset GROUPS
 declare -A GROUPS
 GROUPS=(
   ["Tech Talk"]="Discuss the latest in technology, programming, and gadgets"
@@ -43,13 +47,21 @@ GROUPS=(
   ["Meme Central"]="The finest memes, curated by the community"
 )
 
-for name in "${!GROUPS[@]}"; do
-  desc="${GROUPS[$name]}"
-  echo "  Creating group: $name"
-  curl -sf -X POST "$BASE/api/groups" \
+for gname in "${!GROUPS[@]}"; do
+  desc="${GROUPS[$gname]}"
+  echo "  Creating group: $gname"
+  BODY=$(jq -nc --arg n "$gname" --arg d "$desc" \
+    '{name:$n, description:$d, is_public:true, is_encrypted:false}')
+  RESP=$(curl -sS -X POST "$BASE/api/groups" \
     -H "$AUTH" \
     -H "Content-Type: application/json" \
-    -d "{\"title\":\"$name\",\"description\":\"$desc\",\"is_public\":true}" || echo "    (may already exist)"
+    -H "User-Agent: Mozilla/5.0 echo-seed" \
+    -d "$BODY")
+  GROUP_ID=$(echo "$RESP" | jq -r '.id // empty')
+  if [ -z "$GROUP_ID" ]; then
+    ERR=$(echo "$RESP" | jq -r '.error // .code // "unknown"' 2>/dev/null || echo "unknown")
+    echo "    (group may already exist or errored: $ERR)"
+  fi
 done
 
 echo ""

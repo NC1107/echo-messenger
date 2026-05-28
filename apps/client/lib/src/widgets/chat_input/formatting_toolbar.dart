@@ -4,17 +4,12 @@ import '../input/markdown_toolbar.dart' show applyMarkdownWrap;
 import '../../theme/echo_theme.dart';
 import '../../theme/motion_tokens.dart';
 
-/// An "Aa" toggle button paired with a collapsible row of formatting buttons.
-///
-/// Layout contract:
-///   - [AaToggleButton] is placed left of the input pill (next to attach).
-///   - When toggled on, [FormattingToolbar] slides in above the text field.
-///   - Each button wraps any active selection with the relevant delimiters.
-///     With no selection, empty delimiters are inserted and the cursor is
-///     placed between them so the user can type immediately.
-///
-/// Works with any [TextEditingController]; [MarkdownTextEditingController]
-/// renders the delimiters at reduced opacity automatically.
+/// @deprecated No longer used in the UI. The always-visible Aa toggle button
+/// has been removed in favour of a context-aware floating popover on desktop
+/// (see [SelectionFormattingPopover]) and keyboard-shortcut-only formatting on
+/// mobile. This class is kept so existing tests continue to compile; it will be
+/// deleted in a follow-up cleanup.
+@Deprecated('Use SelectionFormattingPopover on desktop; no toolbar on mobile.')
 class AaToggleButton extends StatelessWidget {
   final bool active;
   final VoidCallback onToggle;
@@ -53,10 +48,87 @@ class AaToggleButton extends StatelessWidget {
   }
 }
 
-/// Animated collapsible row of four formatting buttons (Bold, Italic,
-/// Strikethrough, Inline code).
+/// A floating popover row of formatting buttons (Bold, Italic, Strikethrough,
+/// Inline code) that appears above the text field when the user has an active
+/// text selection on desktop/web. Dismissed automatically when the selection
+/// collapses.
 ///
-/// Use [SizeTransition] so the toolbar slides in without layout jumps.
+/// Unlike the old always-visible [FormattingToolbar], this widget is mounted
+/// only when a selection exists; no [AnimationController] needed for the
+/// open/close transition.
+class SelectionFormattingPopover extends StatelessWidget {
+  final TextEditingController controller;
+
+  /// Provided for API symmetry but not used internally; the popover is
+  /// mounted/unmounted by the parent [Stack] based on selection state.
+  final AnimationController animationController;
+
+  const SelectionFormattingPopover({
+    super.key,
+    required this.controller,
+    required this.animationController,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = theme.extension<EchoColorExtension>();
+    final bgColor = color?.surfaceHover ?? theme.colorScheme.surface;
+    final borderColor = theme.dividerColor;
+
+    return Material(
+      elevation: 4,
+      borderRadius: BorderRadius.circular(8),
+      color: bgColor,
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: borderColor, width: 1),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _FormatButton(
+                icon: Icons.format_bold,
+                tooltip: 'Bold (Ctrl+B)',
+                semanticsLabel: 'Bold',
+                onPressed: () =>
+                    applyMarkdownWrap(controller, prefix: '**', suffix: '**'),
+              ),
+              _FormatButton(
+                icon: Icons.format_italic,
+                tooltip: 'Italic (Ctrl+I)',
+                semanticsLabel: 'Italic',
+                onPressed: () =>
+                    applyMarkdownWrap(controller, prefix: '*', suffix: '*'),
+              ),
+              _FormatButton(
+                icon: Icons.format_strikethrough,
+                tooltip: 'Strikethrough (Ctrl+Shift+X)',
+                semanticsLabel: 'Strikethrough',
+                onPressed: () =>
+                    applyMarkdownWrap(controller, prefix: '~~', suffix: '~~'),
+              ),
+              _FormatButton(
+                icon: Icons.code,
+                tooltip: 'Inline code (Ctrl+E)',
+                semanticsLabel: 'Inline code',
+                onPressed: () =>
+                    applyMarkdownWrap(controller, prefix: '`', suffix: '`'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Animated collapsible row of four formatting buttons (Bold, Italic,
+/// Strikethrough, Inline code). Kept for internal use by
+/// [SelectionFormattingPopover]; public consumers should use that instead.
 class FormattingToolbar extends StatelessWidget {
   final TextEditingController controller;
   final AnimationController animationController;

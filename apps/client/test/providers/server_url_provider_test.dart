@@ -261,7 +261,7 @@ class _RecordingAuthNotifier extends AuthNotifier {
   AuthState build() => _initial ?? const AuthState();
 
   @override
-  Future<void> logout({String? serverUrl}) async {
+  Future<void> logout({String? serverUrl, bool forgetAccount = true}) async {
     // Snapshot the active URL at call time so the test can assert that the
     // URL hadn't been flipped yet when logout fired.
     final urlAtCall = ref.read(serverUrlProvider);

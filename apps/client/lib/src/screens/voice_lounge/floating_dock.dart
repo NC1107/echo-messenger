@@ -16,7 +16,7 @@ import '../../theme/motion_tokens.dart';
 import 'lounge_constants.dart';
 import 'screen_share_actions.dart';
 
-class FloatingDock extends ConsumerWidget {
+class FloatingDock extends ConsumerStatefulWidget {
   final LiveKitVoiceState voiceState;
   final VoiceSettingsState voiceSettings;
   final ScreenShareState screenShare;
@@ -53,7 +53,51 @@ class FloatingDock extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<FloatingDock> createState() => _FloatingDockState();
+}
+
+class _FloatingDockState extends ConsumerState<FloatingDock> {
+  /// True once the first leave tap is accepted. Latches to prevent a rapid
+  /// double-tap from calling leaveChannel() twice while the first disconnect
+  /// is in flight (null-deref / double-pop crash).
+  bool _isLeaving = false;
+
+  // Convenience getters so the build helpers read cleanly.
+  LiveKitVoiceState get voiceState => widget.voiceState;
+  VoiceSettingsState get voiceSettings => widget.voiceSettings;
+  ScreenShareState get screenShare => widget.screenShare;
+  String get conversationId => widget.conversationId;
+  String get channelId => widget.channelId;
+  bool get isDrawing => widget.isDrawing;
+  VoidCallback get onToggleDrawing => widget.onToggleDrawing;
+  DockSubmenu? get activeSubmenu => widget.activeSubmenu;
+  ValueChanged<DockSubmenu> get onToggleSubmenu => widget.onToggleSubmenu;
+  LayerLink get micLayerLink => widget.micLayerLink;
+  LayerLink get cameraLayerLink => widget.cameraLayerLink;
+  LayerLink get screenShareLayerLink => widget.screenShareLayerLink;
+  LayerLink get drawingToolsLayerLink => widget.drawingToolsLayerLink;
+  bool get spotlightMode => widget.spotlightMode;
+  VoidCallback get onToggleSpotlight => widget.onToggleSpotlight;
+
+  Future<void> _handleLeave() async {
+    if (_isLeaving) return;
+    setState(() => _isLeaving = true);
+
+    if (screenShare.isScreenSharing) {
+      await ref
+          .read(livekitVoiceProvider.notifier)
+          .setScreenShareEnabled(false);
+      ref.read(screenShareProvider.notifier).setLiveKitScreenShareActive(false);
+    }
+    await ref
+        .read(channelsProvider.notifier)
+        .leaveVoiceChannel(conversationId, channelId);
+    await ref.read(livekitVoiceProvider.notifier).leaveChannel();
+    // Screen is leaving — no setState after this point.
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Center(
       child: ClipRRect(
         borderRadius: BorderRadius.circular(32),
@@ -78,7 +122,7 @@ class FloatingDock extends ConsumerWidget {
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
-              children: _buildDockChildren(context, ref),
+              children: _buildDockChildren(context),
             ),
           ),
         ),
@@ -86,21 +130,21 @@ class FloatingDock extends ConsumerWidget {
     );
   }
 
-  List<Widget> _buildDockChildren(BuildContext context, WidgetRef ref) {
+  List<Widget> _buildDockChildren(BuildContext context) {
     return [
-      _buildMicButton(context, ref),
-      _buildDeafenButton(context, ref),
-      _buildCameraButton(context, ref),
-      if (kSupportsScreenShare) _buildScreenShareButton(context, ref),
-      if (!spotlightMode) _buildDrawButton(context, ref),
+      _buildMicButton(context),
+      _buildDeafenButton(context),
+      _buildCameraButton(context),
+      if (kSupportsScreenShare) _buildScreenShareButton(context),
+      if (!spotlightMode) _buildDrawButton(context),
       _dockDivider(context),
       _buildSpotlightToggle(context),
       _dockDivider(context),
-      _buildLeaveButton(context, ref),
+      _buildLeaveButton(context),
     ];
   }
 
-  Widget _buildMicButton(BuildContext context, WidgetRef ref) {
+  Widget _buildMicButton(BuildContext context) {
     return DockButtonWithSubmenu(
       icon: voiceSettings.selfMuted ? Icons.mic_off : Icons.mic,
       tooltip: voiceSettings.selfMuted ? 'Unmute' : 'Mute',
@@ -120,7 +164,7 @@ class FloatingDock extends ConsumerWidget {
     );
   }
 
-  Widget _buildDeafenButton(BuildContext context, WidgetRef ref) {
+  Widget _buildDeafenButton(BuildContext context) {
     return _buildDockItem(
       context,
       icon: voiceSettings.selfDeafened ? Icons.headset_off : Icons.headset,
@@ -136,7 +180,7 @@ class FloatingDock extends ConsumerWidget {
     );
   }
 
-  Widget _buildCameraButton(BuildContext context, WidgetRef ref) {
+  Widget _buildCameraButton(BuildContext context) {
     return DockButtonWithSubmenu(
       icon: voiceState.isVideoEnabled ? Icons.videocam : Icons.videocam_off,
       tooltip: voiceState.isVideoEnabled ? 'Turn off camera' : 'Turn on camera',
@@ -151,7 +195,7 @@ class FloatingDock extends ConsumerWidget {
     );
   }
 
-  Widget _buildScreenShareButton(BuildContext context, WidgetRef ref) {
+  Widget _buildScreenShareButton(BuildContext context) {
     return DockButtonWithSubmenu(
       icon: screenShare.isScreenSharing
           ? Icons.stop_screen_share
@@ -166,7 +210,7 @@ class FloatingDock extends ConsumerWidget {
     );
   }
 
-  Widget _buildDrawButton(BuildContext context, WidgetRef ref) {
+  Widget _buildDrawButton(BuildContext context) {
     return DockButtonWithSubmenu(
       icon: Icons.edit,
       tooltip: isDrawing ? 'Stop drawing' : 'Draw',
@@ -190,28 +234,17 @@ class FloatingDock extends ConsumerWidget {
     );
   }
 
-  Widget _buildLeaveButton(BuildContext context, WidgetRef ref) {
+  Widget _buildLeaveButton(BuildContext context) {
     return _buildDockItem(
       context,
       icon: Icons.call_end,
-      tooltip: 'Leave',
+      tooltip: _isLeaving ? 'Leaving…' : 'Leave',
       isActive: true,
       activeColor: EchoTheme.danger,
       isDestructive: true,
-      onPressed: () async {
-        if (screenShare.isScreenSharing) {
-          await ref
-              .read(livekitVoiceProvider.notifier)
-              .setScreenShareEnabled(false);
-          ref
-              .read(screenShareProvider.notifier)
-              .setLiveKitScreenShareActive(false);
-        }
-        await ref
-            .read(channelsProvider.notifier)
-            .leaveVoiceChannel(conversationId, channelId);
-        await ref.read(livekitVoiceProvider.notifier).leaveChannel();
-      },
+      // Null onPressed disables the button at the framework level once
+      // leaving is in progress — prevents double-tap crash.
+      onPressed: _isLeaving ? null : _handleLeave,
     );
   }
 
@@ -231,13 +264,18 @@ class FloatingDock extends ConsumerWidget {
     bool isActive = false,
     Color? activeColor,
     bool isDestructive = false,
-    required VoidCallback onPressed,
+    // Nullable: passing null disables the button at the framework level
+    // (InkWell.onTap = null) so in-progress actions like leave cannot be
+    // triggered a second time.
+    VoidCallback? onPressed,
   }) {
     final Color bgColor;
     final Color iconColor;
     if (isDestructive) {
-      bgColor = activeColor ?? EchoTheme.danger;
-      iconColor = Colors.white;
+      bgColor = (activeColor ?? EchoTheme.danger).withValues(
+        alpha: onPressed == null ? 0.5 : 1.0,
+      );
+      iconColor = Colors.white.withValues(alpha: onPressed == null ? 0.5 : 1.0);
     } else if (isActive) {
       bgColor = activeColor ?? context.accent;
       iconColor = Colors.white;
@@ -251,10 +289,12 @@ class FloatingDock extends ConsumerWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () {
-            HapticFeedback.lightImpact();
-            onPressed();
-          },
+          onTap: onPressed == null
+              ? null
+              : () {
+                  HapticFeedback.lightImpact();
+                  onPressed();
+                },
           borderRadius: BorderRadius.circular(20),
           child: AnimatedContainer(
             duration: MotionDurations.quick,

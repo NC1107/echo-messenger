@@ -6,7 +6,6 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:echo_app/src/models/contact.dart';
 import 'package:echo_app/src/models/conversation.dart';
-import 'package:echo_app/src/providers/auth_provider.dart';
 import 'package:echo_app/src/providers/contacts_provider.dart';
 import 'package:echo_app/src/providers/conversation_filter_provider.dart';
 import 'package:echo_app/src/providers/conversations_provider.dart';
@@ -383,73 +382,6 @@ void main() {
 
       // The selected conversation should still render alice
       expect(find.text('alice'), findsOneWidget);
-    });
-
-    testWidgets('status picker: avatar tap opens menu with 4 options', (
-      tester,
-    ) async {
-      await tester.pumpApp(
-        ConversationPanel(onConversationTap: (_) {}),
-        overrides: standardOverrides(),
-      );
-      await tester.pump();
-
-      // The status bar renders a PopupMenuButton with key 'status-picker'.
-      expect(find.byKey(const Key('status-picker')), findsOneWidget);
-      await tester.tap(find.byKey(const Key('status-picker')));
-      await tester.pumpAndSettle();
-
-      // The sidebar status bar also shows the current presence label
-      // ("Online") so we scope the menu-item check to the popup-menu
-      // descendants.
-      expect(
-        find.descendant(
-          of: find.byType(PopupMenuItem<String>),
-          matching: find.text('Online'),
-        ),
-        findsOneWidget,
-      );
-      expect(find.text('Away'), findsOneWidget);
-      expect(find.text('Do Not Disturb'), findsOneWidget);
-      expect(find.text('Invisible'), findsOneWidget);
-    });
-
-    testWidgets('status picker: selecting Away calls setPresenceStatus', (
-      tester,
-    ) async {
-      const authState = AuthState(
-        isLoggedIn: true,
-        userId: 'test-user-id',
-        username: 'testuser',
-        token: 'fake-jwt-token',
-        refreshToken: 'fake-refresh-token',
-        presenceStatus: 'online',
-      );
-
-      await tester.pumpApp(
-        ConversationPanel(onConversationTap: (_) {}),
-        overrides: standardOverrides(authState: authState),
-      );
-      await tester.pump();
-
-      // Open the status picker.
-      await tester.tap(find.byKey(const Key('status-picker')));
-      await tester.pumpAndSettle();
-
-      // Tap the Away option.
-      await tester.tap(find.text('Away'));
-      await tester.pumpAndSettle();
-
-      // After selecting Away, the menu dismisses; no menu item with the
-      // text 'Online' remains. The status bar still shows the current
-      // presence label, so we scope to popup-menu descendants.
-      expect(
-        find.descendant(
-          of: find.byType(PopupMenuItem<String>),
-          matching: find.text('Online'),
-        ),
-        findsNothing,
-      );
     });
   });
 

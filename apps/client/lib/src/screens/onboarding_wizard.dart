@@ -11,6 +11,7 @@ import '../providers/accessibility_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/theme_provider.dart';
+import '../providers/ui_style_provider.dart';
 import '../services/notification_service.dart';
 import '../services/sound_service.dart';
 import '../services/toast_service.dart';
@@ -111,7 +112,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
 
   /// Total number of wizard pages. Kept in sync with the `PageView` children
   /// built below. Update both when adding/removing a step.
-  static const int _pageCount = 5;
+  static const int _pageCount = 6;
 
   void _next() {
     // Display name is the only required wizard field; block forward nav until set.
@@ -325,6 +326,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
     final stepTitles = [
       'Welcome',
       'Choose your look',
+      'Your style',
       'Comfort settings',
       'Notifications',
       'Encryption',
@@ -453,6 +455,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
       children: [
         _buildWelcomePage(context),
         _buildThemePage(context),
+        _buildUiStylePage(context),
         _buildAccessibilityPage(context),
         _buildNotificationsPage(context),
         _buildEncryptionPage(context),
@@ -725,19 +728,20 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   // Theme picker page
   // ---------------------------------------------------------------------------
 
-  /// Themes surfaced in the onboarding picker. Reduced from the full set
-  /// (Indigo, Graphite, Sakura, High contrast still exist under Settings →
-  /// Appearance for users who want them) so first-run users see three
-  /// curated choices instead of six near-similar palettes.
-  ///
-  /// Each entry carries a rich `ThemeThumbnail`-compatible preview, so the
-  /// wizard renders the same mini chat-mockup the Settings picker uses
-  /// instead of a flat colour swatch.
+  /// Themes surfaced in the onboarding picker. Matches [kCuratedThemes] from
+  /// theme_provider.dart: System, Indigo, Paper, Ember. Each entry carries a
+  /// rich `ThemeThumbnail`-compatible preview so the wizard renders the same
+  /// mini chat-mockup the Settings picker uses instead of a flat colour swatch.
   static const List<_WizardThemeOption> _wizardThemes = [
     _WizardThemeOption(
       selection: AppThemeSelection.system,
       label: 'System',
       preview: null, // split dark/light preview
+    ),
+    _WizardThemeOption(
+      selection: AppThemeSelection.indigo,
+      label: 'Indigo',
+      preview: indigoPreview,
     ),
     _WizardThemeOption(
       selection: AppThemeSelection.paper,
@@ -775,9 +779,9 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           const SizedBox(height: 24),
           LayoutBuilder(
             builder: (context, constraints) {
-              // Three curated themes (system, paper, ember). Single row on
-              // anything wider than ~360 px, stacked column on small phones.
-              final cols = constraints.maxWidth >= 360 ? 3 : 1;
+              // Four curated themes: 2-column grid on wide, single column on
+              // small phones (< 360 px).
+              final cols = constraints.maxWidth >= 360 ? 2 : 1;
               return GridView.count(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
@@ -799,6 +803,69 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
               );
             },
           ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // UI style step (which app are you used to?)
+  // ---------------------------------------------------------------------------
+
+  static const List<_UiStyleCardData> _uiStyleOptions = [
+    _UiStyleCardData(
+      style: UiStyle.discord,
+      label: 'Discord',
+      subtitle: 'Avatar + name on first message of each group — casual',
+      icon: Icons.format_align_left_outlined,
+    ),
+    _UiStyleCardData(
+      style: UiStyle.slack,
+      label: 'Slack',
+      subtitle: 'Avatar + name on every message group, denser',
+      icon: Icons.notes_outlined,
+    ),
+    _UiStyleCardData(
+      style: UiStyle.imessage,
+      label: 'iMessage',
+      subtitle: 'Clean bubbles, no avatars on consecutive messages',
+      icon: Icons.chat_bubble_outline,
+    ),
+  ];
+
+  Widget _buildUiStylePage(BuildContext context) {
+    final current = ref.watch(uiStyleProvider);
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          const SizedBox(height: 8),
+          Text(
+            'Which app are you used to?',
+            style: TextStyle(
+              color: context.textPrimary,
+              fontSize: 24,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.5,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Echo will match the style you know. Change it later in '
+            'Settings → Appearance.',
+            style: TextStyle(color: context.textSecondary, fontSize: 14),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          for (final opt in _uiStyleOptions) ...[
+            _StyleCard(
+              data: opt,
+              isSelected: current == opt.style,
+              onTap: () =>
+                  ref.read(uiStyleProvider.notifier).setStyle(opt.style),
+            ),
+            const SizedBox(height: 12),
+          ],
         ],
       ),
     );
@@ -1123,12 +1190,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         if (!isLast)
           TextButton(
             onPressed: _saving ? null : _skip,
-            // Skip is a first-class option — drop the muted color so it
-            // doesn't read as a dead link. Same textSecondary as Back.
-            child: Text(
-              'Skip step',
-              style: TextStyle(color: context.textSecondary),
-            ),
+            child: Text('Skip', style: TextStyle(color: context.textSecondary)),
           ),
         const Spacer(),
         FilledButton(
@@ -1188,6 +1250,106 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 12,
           vertical: 10,
+        ),
+      ),
+    );
+  }
+}
+
+/// Data holder for one UI-style card in the onboarding picker.
+class _UiStyleCardData {
+  final UiStyle style;
+  final String label;
+  final String subtitle;
+  final IconData icon;
+
+  const _UiStyleCardData({
+    required this.style,
+    required this.label,
+    required this.subtitle,
+    required this.icon,
+  });
+}
+
+/// Card for the UI-style step. Extracted to keep [_buildUiStylePage]
+/// under the cognitive-complexity budget (S3776).
+class _StyleCard extends StatelessWidget {
+  final _UiStyleCardData data;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _StyleCard({
+    required this.data,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: '${data.label} style',
+      button: true,
+      selected: isSelected,
+      child: Material(
+        color: isSelected ? context.accentLight : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isSelected ? context.accent : context.border,
+                width: isSelected ? 2 : 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  data.icon,
+                  size: 28,
+                  color: isSelected ? context.accent : context.textSecondary,
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        data.label,
+                        style: TextStyle(
+                          color: isSelected
+                              ? context.accent
+                              : context.textPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        data.subtitle,
+                        style: TextStyle(
+                          color: context.textMuted,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (isSelected)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: Icon(
+                      Icons.check_circle,
+                      size: 20,
+                      color: context.accent,
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );
