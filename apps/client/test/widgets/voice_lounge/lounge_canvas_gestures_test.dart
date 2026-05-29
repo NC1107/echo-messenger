@@ -736,4 +736,177 @@ void main() {
       expect(t.y, closeTo(0, 0.01));
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // CanvasDragScope — BUG #22 regression tests
+  //
+  // The core logic lives in [LoungeCanvasGesturesState._applyPanDelta]:
+  // when _childDragCount > 0 the method updates _panLastPosition but skips
+  // the transform update, so canvas pan and avatar / image drag don't both
+  // fire at the same time. These tests drive the state directly via the
+  // @visibleForTesting accessors, then confirm behaviour through the
+  // existing pan/transform assertions.
+  // ---------------------------------------------------------------------------
+  group('CanvasDragScope — child drag suppresses parent pan (BUG #22)', () {
+    testWidgets('balanced suppress+release leaves pan enabled', (tester) async {
+      final rec = _Recorder();
+      const key = ValueKey('suppressed-initial');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: _harness(rec: rec, isToolSelected: false, key: key),
+        ),
+      );
+      final state = _stateOf(tester, key);
+
+      // Suppress then immediately release (count stays 0).
+      state.suppressPanForTest();
+      state.releasePanForTest();
+
+      // Pan must work (same coordinate range as existing passing tests).
+      await _pointerDown(
+        tester,
+        () => null,
+        at: const Offset(400, 300),
+        pointer: 1,
+      );
+      await _pointerMove(tester, to: const Offset(460, 300), pointer: 1);
+      await _pointerUp(tester, at: const Offset(460, 300), pointer: 1);
+      final tx = state.debugTransform.getTranslation().x;
+      expect(
+        tx,
+        closeTo(60, 1.0),
+        reason: 'Pan works when suppression count is 0',
+      );
+    });
+
+    testWidgets('suppress blocks pan; release restores it', (tester) async {
+      final rec = _Recorder();
+      const key = ValueKey('suppress-release');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: _harness(rec: rec, isToolSelected: false, key: key),
+        ),
+      );
+      final state = _stateOf(tester, key);
+
+      // Record the transform before any pointer events.
+      final txInit = state.debugTransform.getTranslation().x;
+
+      // Suppress.
+      state.suppressPanForTest();
+
+      // Try to pan — canvas must NOT move. Use pointer 1 at one position.
+      await _pointerDown(
+        tester,
+        () => null,
+        at: const Offset(400, 300),
+        pointer: 1,
+      );
+      await _pointerMove(tester, to: const Offset(460, 300), pointer: 1);
+      final txSuppressed = state.debugTransform.getTranslation().x;
+      await _pointerUp(tester, at: const Offset(460, 300), pointer: 1);
+      expect(
+        txSuppressed,
+        closeTo(txInit, 1.0),
+        reason: 'Canvas must not pan while suppressed (BUG #22 core assertion)',
+      );
+
+      // Release.
+      state.releasePanForTest();
+
+      // Pan must work again. Use a DIFFERENT start position to avoid the
+      // double-tap detector firing (the first DOWN set _lastTapAt; using
+      // a position far from (400,300) guarantees |distance| >= 24 px).
+      await _pointerDown(
+        tester,
+        () => null,
+        at: const Offset(200, 100),
+        pointer: 2,
+      );
+      await _pointerMove(tester, to: const Offset(260, 100), pointer: 2);
+      final txRestored = state.debugTransform.getTranslation().x;
+      await _pointerUp(tester, at: const Offset(260, 100), pointer: 2);
+      expect(
+        txRestored,
+        greaterThan(txInit + 1.0),
+        reason: 'Canvas must pan again after suppression is released',
+      );
+    });
+
+    testWidgets(
+      'reference count: suppress twice, release once still suppresses',
+      (tester) async {
+        final rec = _Recorder();
+        const key = ValueKey('scope-refcount');
+        await tester.pumpWidget(
+          MaterialApp(
+            home: _harness(rec: rec, isToolSelected: false, key: key),
+          ),
+        );
+        final state = _stateOf(tester, key);
+
+        final txInit = state.debugTransform.getTranslation().x;
+
+        // Two suppress calls — refcount = 2.
+        state.suppressPanForTest();
+        state.suppressPanForTest();
+        // One release — refcount = 1, still suppressed.
+        state.releasePanForTest();
+
+        // Suppressed pan at position A.
+        await _pointerDown(
+          tester,
+          () => null,
+          at: const Offset(400, 300),
+          pointer: 1,
+        );
+        await _pointerMove(tester, to: const Offset(500, 300), pointer: 1);
+        await _pointerUp(tester, at: const Offset(500, 300), pointer: 1);
+        expect(
+          state.debugTransform.getTranslation().x,
+          closeTo(txInit, 1.0),
+          reason: 'Still suppressed after one release (refcount=1)',
+        );
+
+        // Second release — refcount = 0, pan restored.
+        state.releasePanForTest();
+
+        final txBeforeRelease = state.debugTransform.getTranslation().x;
+        // Use a DIFFERENT start position to avoid the double-tap detector.
+        await _pointerDown(
+          tester,
+          () => null,
+          at: const Offset(200, 100),
+          pointer: 2,
+        );
+        await _pointerMove(tester, to: const Offset(260, 100), pointer: 2);
+        await _pointerUp(tester, at: const Offset(260, 100), pointer: 2);
+        expect(
+          state.debugTransform.getTranslation().x,
+          greaterThan(txBeforeRelease + 1.0),
+          reason: 'Pan works after all suppresses are released',
+        );
+      },
+    );
+
+    testWidgets(
+      'CanvasDragScope.of returns null outside a LoungeCanvasGestures tree',
+      (tester) async {
+        CanvasDragScope? capturedScope;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Builder(
+              builder: (ctx) {
+                capturedScope = CanvasDragScope.of(ctx);
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        );
+
+        expect(capturedScope, isNull);
+      },
+    );
+  });
 }
