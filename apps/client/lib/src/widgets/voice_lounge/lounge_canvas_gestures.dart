@@ -181,12 +181,25 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
   /// pose without rebuilding the entire subtree. Cancels any in-flight
   /// stroke first so the reset can't strand committed-but-uncommitted
   /// points under the new transform.
+  ///
+  /// Also invalidates any cached pinch baseline + pan anchor so the
+  /// NEXT pinch / pan after a reset re-seeds against the freshly-pushed
+  /// transform — otherwise a pinch-zoom-out following the centre button
+  /// snaps to a stale anchor.
+  ///
+  /// User feedback 2026-05-29 on canvas rewrite live test, bug 4.
   void resetToTransform(Matrix4 next) {
     if (_strokeActive) {
       _strokeActive = false;
       widget.onStrokeCancel();
     }
     _transform = Matrix4.copy(next);
+    _pinchStartSpread = null;
+    _pinchStartMidpoint = null;
+    _pinchStartTransform = null;
+    _panLastPosition = null;
+    _lastTapPosition = null;
+    _lastTapAt = null;
     _emitTransform();
     if (mounted) setState(() {});
   }
