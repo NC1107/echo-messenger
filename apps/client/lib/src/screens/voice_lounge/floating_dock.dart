@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/livekit_voice/livekit_voice_provider.dart';
+import '../../providers/livekit_voice/stream_quality_preset.dart';
 import '../../providers/screen_share_provider.dart';
 import '../../providers/voice_settings_provider.dart';
 import '../../theme/echo_theme.dart';
@@ -209,17 +210,46 @@ class _FloatingDockState extends ConsumerState<FloatingDock> {
   }
 
   Widget _buildScreenShareButton(BuildContext context) {
-    return DockButtonWithSubmenu(
-      icon: screenShare.isScreenSharing
-          ? Icons.stop_screen_share
-          : Icons.screen_share,
-      tooltip: screenShare.isScreenSharing ? 'Stop sharing' : 'Share screen',
-      isActive: screenShare.isScreenSharing,
-      activeColor: EchoTheme.online,
-      onPressed: () => toggleScreenShare(context, ref),
-      onSubmenuTap: () => onToggleSubmenu(DockSubmenu.screenShare),
-      submenuActive: activeSubmenu == DockSubmenu.screenShare,
-      submenuLayerLink: screenShareLayerLink,
+    final chosenPreset = ref.watch(
+      voiceSettingsProvider.select((s) => s.streamQualityPreset),
+    );
+    final showBadge =
+        screenShare.isScreenSharing &&
+        !voiceState.autoQuality &&
+        chosenPreset != StreamQuality.auto;
+    final badgeLabel = kStreamQualityShortLabel[chosenPreset] ?? '';
+
+    return Semantics(
+      label: 'Screen share${showBadge ? ", quality: $badgeLabel" : ""}',
+      button: true,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.topRight,
+        children: [
+          DockButtonWithSubmenu(
+            icon: screenShare.isScreenSharing
+                ? Icons.stop_screen_share
+                : Icons.screen_share,
+            tooltip: screenShare.isScreenSharing
+                ? 'Stop sharing'
+                : 'Share screen',
+            isActive: screenShare.isScreenSharing,
+            activeColor: EchoTheme.online,
+            onPressed: () => toggleScreenShare(context, ref),
+            onSubmenuTap: () => onToggleSubmenu(DockSubmenu.screenShare),
+            submenuActive: activeSubmenu == DockSubmenu.screenShare,
+            submenuLayerLink: screenShareLayerLink,
+          ),
+          if (showBadge)
+            Positioned(
+              top: -4,
+              right: 14,
+              child: IgnorePointer(
+                child: _StreamQualityBadge(label: badgeLabel),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -459,6 +489,38 @@ class DrawingToolsPanel extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: child,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Stream quality badge
+// ---------------------------------------------------------------------------
+
+/// Small pill badge overlaid on the screen-share dock button to show the
+/// active quality tier (e.g. "HD", "4K") when adaptive mode is off.
+class _StreamQualityBadge extends StatelessWidget {
+  final String label;
+
+  const _StreamQualityBadge({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+      decoration: BoxDecoration(
+        color: EchoTheme.online,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 8,
+          fontWeight: FontWeight.w700,
+          height: 1.2,
+        ),
+      ),
     );
   }
 }
