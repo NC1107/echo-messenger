@@ -11,6 +11,7 @@ import '../providers/accessibility_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/theme_provider.dart';
+import '../services/media_cache_service.dart';
 import '../services/notification_service.dart';
 import '../services/sound_service.dart';
 import '../services/toast_service.dart';
@@ -271,6 +272,14 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
 
       if (result.ok) {
         if (result.url != null) {
+          // The server reuses the same URL path on re-upload, so the disk cache
+          // would keep serving the old photo without an explicit eviction.
+          final serverUrl = ref.read(serverUrlProvider);
+          final fullUrl = result.url!.startsWith('http')
+              ? result.url!
+              : '$serverUrl${result.url!}';
+          await evictAvatarFromCache(fullUrl);
+          if (!mounted) return;
           ref.read(authProvider.notifier).updateAvatarUrl(result.url!);
         }
         ToastService.show(context, 'Avatar uploaded', type: ToastType.success);

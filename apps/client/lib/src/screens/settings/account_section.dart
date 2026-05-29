@@ -10,6 +10,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/server_url_provider.dart';
 import '../../services/clipboard_service.dart';
+import '../../services/media_cache_service.dart';
 import '../../services/toast_service.dart';
 import '../../services/upload_client.dart';
 import '../../theme/echo_theme.dart';
@@ -288,6 +289,14 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     if (!mounted) return false;
     if (result.ok) {
       if (result.url != null) {
+        // The server reuses the same URL path on re-upload, so the disk cache
+        // would keep serving the old photo without an explicit eviction.
+        final serverUrl = ref.read(serverUrlProvider);
+        final fullUrl = result.url!.startsWith('http')
+            ? result.url!
+            : '$serverUrl${result.url!}';
+        await evictAvatarFromCache(fullUrl);
+        if (!mounted) return false;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
             ref.read(authProvider.notifier).updateAvatarUrl(result.url!);
