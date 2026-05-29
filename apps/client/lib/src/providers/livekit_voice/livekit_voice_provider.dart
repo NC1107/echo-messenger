@@ -293,12 +293,20 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
 
   /// Join a voice channel by requesting a LiveKit token from the server and
   /// connecting to the LiveKit SFU room.
-  Future<void> joinChannel({
+  ///
+  /// Returns `true` only when the LiveKit room is actually connected and the
+  /// session is active. Returns `false` on any failure (timeout, track-publish
+  /// error, denied permission) — callers MUST gate their success side-effects
+  /// (highlighting the chip, showing the lounge, announcing "call started") on
+  /// this result. The method swallows its own exceptions, so a `false` return
+  /// is the only failure signal; treating a completed Future as "joined" leaves
+  /// the chip highlighted after a failed join (the stuck-lounge bug).
+  Future<bool> joinChannel({
     required String conversationId,
     required String channelId,
     bool startMuted = false,
   }) async {
-    if (_disposed) return;
+    if (_disposed) return false;
 
     // Prevent concurrent join sequences from racing (tap new lounge mid-join).
     if (_isJoining) {
@@ -307,14 +315,14 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
         'LiveKitVoice',
         'joinChannel: ignored — join already in progress for $channelId',
       );
-      return;
+      return false;
     }
 
     // Already in this exact channel -- nothing to do.
     if (state.isActive &&
         state.conversationId == conversationId &&
         state.channelId == channelId) {
-      return;
+      return true;
     }
 
     _isJoining = true;
@@ -385,6 +393,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
         'LiveKitVoice',
         'joinChannel: successfully joined channel $channelId',
       );
+      return true;
     } catch (e) {
       // Surface URL on failure so a 404/DNS error points ops at the right subdomain.
       final tried = attemptedUrl ?? '<token-fetch>';
@@ -400,6 +409,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
         isActive: false,
         error: 'Failed to join voice channel',
       );
+      return false;
     } finally {
       _isJoining = false;
     }

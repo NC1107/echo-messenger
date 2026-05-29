@@ -325,7 +325,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
         );
         DebugLogService.instance.forceFlushSync();
 
-        await ref
+        final joined = await ref
             .read(livekitVoiceProvider.notifier)
             .joinChannel(
               conversationId: widget.conversationId,
@@ -333,7 +333,10 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
               startMuted: voiceSettings.selfMuted || voiceSettings.selfDeafened,
             );
         if (!mounted) return;
-        widget.onVoiceChannelChanged(channel.id);
+        // Only mark the chip active when the LiveKit room actually connected.
+        // On failure clear it so a timed-out join can't leave the lounge chip
+        // stuck highlighted while the error toast says it failed.
+        widget.onVoiceChannelChanged(joined ? channel.id : null);
         // The voice dock + auto-show-lounge already give the user clear visual
         // feedback that the join succeeded; the snackbar was redundant noise.
       }
