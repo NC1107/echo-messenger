@@ -41,7 +41,15 @@ class _GifFocusObserver with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState lifecycle) {
-    _onFocusChanged(lifecycle == AppLifecycleState.resumed);
+    // On desktop, switching windows emits `inactive` — that is not a true
+    // background event. Only treat `paused` and `detached` as "not running"
+    // so GIF animation (and decode size) stays stable across window
+    // focus changes (#GIF).
+    final isRunning =
+        lifecycle == AppLifecycleState.resumed ||
+        lifecycle == AppLifecycleState.inactive ||
+        lifecycle == AppLifecycleState.hidden;
+    _onFocusChanged(isRunning);
   }
 }
 
