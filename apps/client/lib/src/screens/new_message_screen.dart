@@ -1,25 +1,35 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 
 import '../models/contact.dart';
 import '../models/conversation.dart';
+import '../providers/auth_provider.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
+import '../providers/server_url_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/fuzzy_score.dart';
+import '../widgets/confirm_dialog.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/settings/section_header.dart';
 import '../widgets/user_avatar.dart';
 
-/// Modal-style "New message" composer with chip-based recipient selection.
+/// "New chat" composer: one search box over a tappable list.
 ///
-/// Pass [onStartConversation] to receive the resolved [Conversation] and
-/// handle navigation yourself (desktop dialog path). When omitted the screen
-/// pops with the [Conversation] as its route result (mobile full-screen path).
+/// - Default (DM) mode: tapping a contact row opens the DM immediately — no
+///   chips, no second confirm. A pinned "New group" row switches to group mode.
+/// - When the query matches no local contact, an inline "Search on Echo" finds
+///   users by @username and lets you send a contact request right here.
+/// - Group mode: rows become checkboxes; a bottom bar creates the group.
+///
+/// Pass [onStartConversation] to receive the resolved [Conversation] (desktop
+/// dialog path); when omitted the screen pops with the conversation (mobile).
 class NewMessageScreen extends ConsumerStatefulWidget {
-  /// Called once a conversation has been resolved or created. Typically pops
-  /// this screen and selects the conversation in the parent.
   final void Function(Conversation conversation)? onStartConversation;
 
   const NewMessageScreen({super.key, this.onStartConversation});
@@ -28,177 +38,118 @@ class NewMessageScreen extends ConsumerStatefulWidget {
   ConsumerState<NewMessageScreen> createState() => _NewMessageScreenState();
 }
 
+enum _Mode { dm, group }
+
 class _NewMessageScreenState extends ConsumerState<NewMessageScreen> {
-  // ── recipient chips ────────────────────────────────────────────────────────
-
-  /// Ordered list of selected contacts (preserves insertion order).
-  final List<Contact> _chips = [];
-
-  // ── recipient search field ─────────────────────────────────────────────────
+  _Mode _mode = _Mode.dm;
 
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
-  // Stable identity for the search field. Each keystroke calls setState, which
-  // rebuilds the surrounding Wrap/Column; without a stable key the field's
-  // EditableText element can't be matched across the rebuild, gets recreated,
-  // and Android tears down the input connection (the soft keyboard closes on
-  // the first letter). A GlobalKey forces element reuse so focus survives.
   final _searchFieldKey = GlobalKey();
-  final _searchLayerLink = LayerLink();
-  OverlayEntry? _overlayEntry;
   String _query = '';
 
-  // ── group name step (shown when 2+ chips) ─────────────────────────────────
-
+  // Group multi-select (userId -> Contact, preserves insertion order).
+  final Map<String, Contact> _selected = {};
   final _groupNameController = TextEditingController();
-  final _groupNameFocusNode = FocusNode();
 
-  // ── async guards ───────────────────────────────────────────────────────────
+  // Server "search on Echo" (add brand-new contacts inline).
+  Timer? _debounce;
+  List<_SearchUser> _serverResults = [];
+  bool _isSearching = false;
+  bool _hasSearched = false;
+  final Set<String> _requested = {}; // usernames we've sent a request to
 
   bool _isBusy = false;
 
   @override
   void initState() {
     super.initState();
+    _searchController.addListener(_onQueryChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       _searchFocusNode.requestFocus();
       ref.read(contactsProvider.notifier).loadContacts();
     });
-    _searchFocusNode.addListener(_onSearchFocusChange);
   }
 
   @override
   void dispose() {
-    _removeOverlay();
-    _searchController.dispose();
-    _searchFocusNode
-      ..removeListener(_onSearchFocusChange)
+    _debounce?.cancel();
+    _searchController
+      ..removeListener(_onQueryChanged)
       ..dispose();
+    _searchFocusNode.dispose();
     _groupNameController.dispose();
-    _groupNameFocusNode.dispose();
     super.dispose();
   }
 
-  // ── overlay / dropdown management ─────────────────────────────────────────
-
-  void _onSearchFocusChange() {
-    if (!_searchFocusNode.hasFocus) {
-      _removeOverlay();
-    }
-  }
-
-  void _removeOverlay() {
-    _overlayEntry?.remove();
-    _overlayEntry = null;
-  }
-
-  void _showOverlay(List<Contact> suggestions) {
-    _removeOverlay();
-    if (suggestions.isEmpty) return;
-
-    final entry = OverlayEntry(
-      builder: (ctx) => Positioned(
-        width: _overlayWidth(ctx),
-        child: CompositedTransformFollower(
-          link: _searchLayerLink,
-          showWhenUnlinked: false,
-          offset: const Offset(0, 48),
-          child: Material(
-            elevation: 6,
-            color: Theme.of(context).colorScheme.surface,
-            borderRadius: BorderRadius.circular(10),
-            child: _DropdownList(
-              suggestions: suggestions,
-              selectedIds: _chips.map((c) => c.userId).toSet(),
-              onSelect: _selectSuggestion,
-            ),
-          ),
-        ),
-      ),
-    );
-
-    Overlay.of(context).insert(entry);
-    _overlayEntry = entry;
-  }
-
-  double _overlayWidth(BuildContext ctx) {
-    final box = _searchLayerLink.leader?.offset != null
-        ? ctx.findRenderObject()
-        : null;
-    if (box == null) return 300;
-    return (MediaQuery.of(context).size.width - 32).clamp(260, 480);
-  }
-
-  // ── chip logic ─────────────────────────────────────────────────────────────
-
-  /// Materialise the currently typed query as a chip (if it matches a contact
-  /// or if there are filtered suggestions, pick the first one).
-  void _commitCurrentQuery() {
+  void _onQueryChanged() {
     final q = _searchController.text.trim();
-    if (q.isEmpty) return;
-
-    final contacts = ref.read(contactsProvider).contacts;
-    final filtered = _filterContacts(contacts, q);
-
-    // Prefer an exact username / displayName match, otherwise the top fuzzy hit.
-    final match = filtered.isNotEmpty ? filtered.first : null;
-    if (match != null) {
-      _addChip(match);
-    }
-    // If nothing matched, silently clear — we only materialise known contacts.
-    _clearSearch();
-  }
-
-  void _selectSuggestion(Contact contact) {
-    _addChip(contact);
-    _clearSearch();
-    _searchFocusNode.requestFocus();
-  }
-
-  void _addChip(Contact contact) {
-    if (_chips.any((c) => c.userId == contact.userId)) return;
-    setState(() => _chips.add(contact));
-    _removeOverlay();
-  }
-
-  void _removeChip(Contact contact) {
-    setState(() => _chips.removeWhere((c) => c.userId == contact.userId));
-  }
-
-  void _clearSearch() {
-    _searchController.clear();
-    setState(() => _query = '');
-    _removeOverlay();
+    if (q == _query) return;
+    setState(() {
+      _query = q;
+      // Reset any prior Echo search; it re-runs only when the user asks.
+      _serverResults = [];
+      _hasSearched = false;
+    });
   }
 
   // ── filtering ──────────────────────────────────────────────────────────────
 
-  List<Contact> _filterContacts(List<Contact> source, String q) {
-    if (q.isEmpty) return source;
-    // Exclude already-selected contacts from the dropdown.
-    final selectedIds = _chips.map((c) => c.userId).toSet();
+  List<Contact> _filteredContacts(List<Contact> source) {
+    if (_query.isEmpty) return source;
     final scored = <({Contact contact, double score})>[];
     for (final c in source) {
-      if (selectedIds.contains(c.userId)) continue;
-      final nameScore = fuzzyScore(q, c.displayName ?? c.username);
-      final handleScore = fuzzyScore(q, c.username);
-      final best = nameScore > handleScore ? nameScore : handleScore;
+      final byName = fuzzyScore(_query, c.displayName ?? c.username);
+      final byHandle = fuzzyScore(_query, c.username);
+      final best = byName > byHandle ? byName : byHandle;
       if (best > 0.2) scored.add((contact: c, score: best));
     }
     scored.sort((a, b) => b.score.compareTo(a.score));
     return scored.map((e) => e.contact).toList();
   }
 
-  // ── action handlers ────────────────────────────────────────────────────────
+  // ── mode + selection ─────────────────────────────────────────────────────
 
-  Future<void> _startDm() async {
-    if (_isBusy || _chips.length != 1) return;
-    final contact = _chips.first;
+  void _enterGroupMode() => setState(() => _mode = _Mode.group);
+
+  Future<void> _exitGroupMode() async {
+    if (_selected.isNotEmpty) {
+      final discard = await showEchoConfirmDialog(
+        context,
+        title: 'Discard group?',
+        content: const Text('You\'ve selected people for a new group.'),
+        confirmLabel: 'Discard',
+        destructive: true,
+      );
+      if (!discard || !mounted) return;
+    }
+    setState(() {
+      _mode = _Mode.dm;
+      _selected.clear();
+      _groupNameController.clear();
+    });
+  }
+
+  void _toggleSelect(Contact c) {
+    setState(() {
+      if (_selected.containsKey(c.userId)) {
+        _selected.remove(c.userId);
+      } else {
+        _selected[c.userId] = c;
+      }
+    });
+  }
+
+  // ── actions ──────────────────────────────────────────────────────────────
+
+  Future<void> _startDm(String userId, String username) async {
+    if (_isBusy) return;
     setState(() => _isBusy = true);
     try {
       final conv = await ref
           .read(conversationsProvider.notifier)
-          .getOrCreateDm(contact.userId, contact.username);
+          .getOrCreateDm(userId, username);
       if (!mounted) return;
       _deliver(conv);
     } on DmException catch (e) {
@@ -210,44 +161,35 @@ class _NewMessageScreenState extends ConsumerState<NewMessageScreen> {
   }
 
   Future<void> _createGroup() async {
-    if (_isBusy || _chips.length < 2) return;
-    final name = _groupNameController.text.trim();
-    if (name.isEmpty) {
-      ToastService.show(
-        context,
-        'Enter a group name first',
-        type: ToastType.warning,
-      );
-      _groupNameFocusNode.requestFocus();
-      return;
-    }
+    if (_isBusy || _selected.isEmpty) return;
     setState(() => _isBusy = true);
     try {
-      final memberIds = _chips.map((c) => c.userId).toList();
+      final members = _selected.values.toList();
+      final typed = _groupNameController.text.trim();
+      final name = typed.isNotEmpty ? typed : _defaultGroupName(members);
       final String convId;
       try {
         convId = await ref
             .read(conversationsProvider.notifier)
-            .createGroup(name, memberIds);
+            .createGroup(name, members.map((c) => c.userId).toList());
       } on GroupException catch (e) {
         if (!mounted) return;
         ToastService.show(context, e.message, type: ToastType.error);
         return;
       }
       if (!mounted) return;
-      // Find the newly created conversation in state.
-      final conv = ref
+      final existing = ref
           .read(conversationsProvider)
           .conversations
           .where((c) => c.id == convId)
           .firstOrNull;
       _deliver(
-        conv ??
+        existing ??
             Conversation(
               id: convId,
               name: name,
               isGroup: true,
-              members: _chips
+              members: members
                   .map(
                     (c) => ConversationMember(
                       userId: c.userId,
@@ -259,6 +201,71 @@ class _NewMessageScreenState extends ConsumerState<NewMessageScreen> {
       );
     } finally {
       if (mounted) setState(() => _isBusy = false);
+    }
+  }
+
+  String _defaultGroupName(List<Contact> members) {
+    final names = members
+        .map((c) => c.displayName ?? c.username)
+        .take(3)
+        .join(', ');
+    return members.length > 3 ? '$names +${members.length - 3}' : names;
+  }
+
+  Future<void> _searchEcho() async {
+    final q = _query;
+    if (q.length < 2 || _isSearching) return;
+    setState(() => _isSearching = true);
+    try {
+      final serverUrl = ref.read(serverUrlProvider);
+      final res = await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
+            (token) => http.get(
+              Uri.parse(
+                '$serverUrl/api/users/search?q=${Uri.encodeComponent(q)}',
+              ),
+              headers: {'Authorization': 'Bearer $token'},
+            ),
+          );
+      if (!mounted) return;
+      var users = <_SearchUser>[];
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        users = (data['users'] as List? ?? [])
+            .map((e) => _SearchUser.fromJson(e as Map<String, dynamic>))
+            .toList();
+      }
+      setState(() {
+        _serverResults = users;
+        _hasSearched = true;
+        _isSearching = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isSearching = false;
+        _hasSearched = true;
+      });
+      ToastService.show(context, 'Search failed', type: ToastType.error);
+    }
+  }
+
+  Future<void> _sendRequest(String username) async {
+    setState(() => _requested.add(username));
+    try {
+      await ref.read(contactsProvider.notifier).sendRequest(username);
+      if (mounted) {
+        ToastService.show(context, 'Request sent to @$username');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _requested.remove(username));
+      ToastService.show(
+        context,
+        'Could not send request',
+        type: ToastType.error,
+      );
     }
   }
 
@@ -275,185 +282,53 @@ class _NewMessageScreenState extends ConsumerState<NewMessageScreen> {
   @override
   Widget build(BuildContext context) {
     final contactsState = ref.watch(contactsProvider);
-
-    final suggestions = _filterContacts(contactsState.contacts, _query);
-
-    // Keep the dropdown in sync whenever filtered suggestions change.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (_query.isNotEmpty && _searchFocusNode.hasFocus) {
-        _showOverlay(suggestions);
-      } else {
-        _removeOverlay();
-      }
-    });
-
-    final showGroupStep = _chips.length >= 2;
-
+    final isGroup = _mode == _Mode.group;
     return Scaffold(
       backgroundColor: context.mainBg,
+      resizeToAvoidBottomInset: true,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _buildHeader(context),
-            const SizedBox(height: 8),
-            _buildChipField(context),
-            if (showGroupStep) ...[
-              const SizedBox(height: 12),
-              _buildGroupNameField(context),
-            ],
-            if (!showGroupStep && suggestions.isNotEmpty) ...[
-              const SectionHeader('Suggested'),
-              Expanded(
-                child: _ContactList(
-                  contacts: suggestions,
-                  selectedIds: _chips.map((c) => c.userId).toSet(),
-                  onSelect: _selectSuggestion,
-                ),
-              ),
-            ] else if (!showGroupStep)
-              Expanded(child: _buildEmptyState(context, contactsState)),
-            if (showGroupStep) const Spacer(),
-            _buildActionBar(context),
+            _buildHeader(context, isGroup),
+            _buildSearchField(context),
+            Expanded(
+              child: isGroup
+                  ? _buildGroupBody(context, contactsState)
+                  : _buildDmBody(context, contactsState),
+            ),
+            if (isGroup) _buildGroupActionBar(context),
           ],
         ),
       ),
     );
   }
 
-  // ── sub-widgets ────────────────────────────────────────────────────────────
-
-  Widget _buildHeader(BuildContext context) {
-    return Semantics(
-      header: true,
-      label: 'New message dialog',
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-        child: SizedBox(
-          height: 44,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Tooltip(
-                  message: 'Cancel',
-                  child: TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    style: TextButton.styleFrom(
-                      foregroundColor: context.accent,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                    ),
-                    child: const Text(
-                      'Cancel',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              Text(
-                'New message',
-                style: TextStyle(
-                  color: context.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// The chip wrap + search text field row.
-  Widget _buildChipField(BuildContext context) {
+  Widget _buildHeader(BuildContext context, bool isGroup) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+      padding: const EdgeInsets.fromLTRB(4, 8, 8, 4),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 13, right: 8),
-            child: Text(
-              'To:',
-              style: TextStyle(color: context.textMuted, fontSize: 14),
+          Semantics(
+            label: isGroup ? 'Back to new chat' : 'Close',
+            button: true,
+            child: IconButton(
+              icon: Icon(isGroup ? Icons.arrow_back : Icons.close),
+              onPressed: () {
+                if (isGroup) {
+                  _exitGroupMode();
+                } else {
+                  Navigator.of(context).maybePop();
+                }
+              },
             ),
           ),
-          Expanded(
-            child: CompositedTransformTarget(
-              link: _searchLayerLink,
-              child: Container(
-                constraints: const BoxConstraints(minHeight: 50),
-                decoration: BoxDecoration(
-                  color: context.cardRowBg,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: _searchFocusNode.hasFocus
-                        ? context.accent
-                        : Colors.transparent,
-                    width: 1,
-                  ),
-                ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 10,
-                ),
-                child: Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    ..._chips.map(
-                      (c) => _RecipientChip(
-                        key: ValueKey(c.userId),
-                        name: c.displayName ?? c.username,
-                        onRemove: () => _removeChip(c),
-                      ),
-                    ),
-                    // Inline text field at the end of the chip row.
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(minWidth: 120),
-                      child: IntrinsicWidth(
-                        child: TextField(
-                          key: _searchFieldKey,
-                          controller: _searchController,
-                          focusNode: _searchFocusNode,
-                          style: TextStyle(
-                            color: context.textPrimary,
-                            fontSize: 14,
-                          ),
-                          decoration: InputDecoration(
-                            hintText: _chips.isEmpty
-                                ? 'Type a name or @handle'
-                                : '',
-                            hintStyle: TextStyle(
-                              color: context.textMuted,
-                              fontSize: 14,
-                            ),
-                            isDense: true,
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(
-                              vertical: 8,
-                            ),
-                          ),
-                          onChanged: (v) {
-                            setState(() => _query = v.trim());
-                          },
-                          onTap: () => setState(() {}),
-                          // Enter key materialises a chip.
-                          onSubmitted: (_) => _commitCurrentQuery(),
-                          textInputAction: TextInputAction.done,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+          Text(
+            isGroup ? 'New group' : 'New chat',
+            style: TextStyle(
+              color: context.textPrimary,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
@@ -461,277 +336,400 @@ class _NewMessageScreenState extends ConsumerState<NewMessageScreen> {
     );
   }
 
-  Widget _buildGroupNameField(BuildContext context) {
+  Widget _buildSearchField(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
       child: TextField(
-        controller: _groupNameController,
-        focusNode: _groupNameFocusNode,
-        autofocus: true,
-        style: TextStyle(color: context.textPrimary, fontSize: 14),
+        key: _searchFieldKey,
+        controller: _searchController,
+        focusNode: _searchFocusNode,
+        style: TextStyle(color: context.textPrimary, fontSize: 15),
         decoration: InputDecoration(
-          labelText: 'Group name',
-          labelStyle: TextStyle(color: context.textMuted, fontSize: 14),
-          hintText: 'e.g. Team Rocket',
-          hintStyle: TextStyle(color: context.textMuted, fontSize: 13),
+          prefixIcon: Icon(Icons.search, color: context.textMuted, size: 20),
+          hintText: 'Search name or @username',
+          hintStyle: TextStyle(color: context.textMuted, fontSize: 15),
           filled: true,
           fillColor: context.cardRowBg,
+          isDense: true,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide.none,
           ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(color: context.accent),
-          ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: 12,
-          ),
+          contentPadding: const EdgeInsets.symmetric(vertical: 12),
         ),
-        onSubmitted: (_) => _createGroup(),
-        textInputAction: TextInputAction.done,
+        textInputAction: TextInputAction.search,
+        onSubmitted: (_) {
+          if (_mode == _Mode.dm && _query.length >= 2) _searchEcho();
+        },
       ),
     );
   }
 
-  Widget _buildActionBar(BuildContext context) {
-    final count = _chips.length;
+  // ── DM body ────────────────────────────────────────────────────────────────
 
-    final bool enabled = count >= 1 && !_isBusy;
-    final String label;
-    final VoidCallback? onPressed;
-
-    if (count == 0) {
-      label = 'Start chat';
-      onPressed = null;
-    } else if (count == 1) {
-      final name = _chips.first.displayName ?? _chips.first.username;
-      label = 'Start chat with @$name';
-      onPressed = enabled ? _startDm : null;
-    } else {
-      label = 'Create group';
-      onPressed = enabled ? _createGroup : null;
-    }
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      child: FilledButton(
-        onPressed: onPressed,
-        style: FilledButton.styleFrom(
-          minimumSize: const Size.fromHeight(48),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
-        child: _isBusy
-            ? SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: context.onAccent,
-                ),
-              )
-            : Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyState(BuildContext context, ContactsState state) {
-    if (state.isLoading) {
+  Widget _buildDmBody(BuildContext context, ContactsState state) {
+    if (state.isLoading && state.contacts.isEmpty) {
       return Center(
         child: CircularProgressIndicator(color: context.accent, strokeWidth: 2),
       );
     }
-    return EmptyState(
-      icon: Icons.person_search_outlined,
-      title: _query.isEmpty ? 'No contacts yet' : 'No contacts match "$_query"',
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// _ContactList  — scrollable list of autocomplete suggestions / all contacts
-// ---------------------------------------------------------------------------
-
-class _ContactList extends StatelessWidget {
-  final List<Contact> contacts;
-  final Set<String> selectedIds;
-  final ValueChanged<Contact> onSelect;
-
-  const _ContactList({
-    required this.contacts,
-    required this.selectedIds,
-    required this.onSelect,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      itemCount: contacts.length,
-      itemBuilder: (_, i) => _ContactRow(
-        contact: contacts[i],
-        isSelected: selectedIds.contains(contacts[i].userId),
-        onTap: () => onSelect(contacts[i]),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// _DropdownList  — overlay dropdown shown while typing
-// ---------------------------------------------------------------------------
-
-class _DropdownList extends StatelessWidget {
-  final List<Contact> suggestions;
-  final Set<String> selectedIds;
-  final ValueChanged<Contact> onSelect;
-
-  const _DropdownList({
-    required this.suggestions,
-    required this.selectedIds,
-    required this.onSelect,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxHeight: 240),
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        shrinkWrap: true,
-        itemCount: suggestions.length,
-        itemBuilder: (_, i) => _ContactRow(
-          contact: suggestions[i],
-          isSelected: selectedIds.contains(suggestions[i].userId),
-          onTap: () => onSelect(suggestions[i]),
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// _ContactRow
-// ---------------------------------------------------------------------------
-
-class _ContactRow extends StatelessWidget {
-  final Contact contact;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _ContactRow({
-    required this.contact,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final displayName = contact.displayName?.isNotEmpty == true
-        ? contact.displayName!
-        : contact.username;
-
-    return Material(
-      color: isSelected ? context.accentLight : Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          child: Row(
-            children: [
-              UserAvatar(
-                userId: contact.userId,
-                username: displayName,
-                avatarUrl: contact.avatarUrl,
-                radius: 22,
-                showPresence: true,
-                openProfileOnTap: false,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      displayName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: context.textPrimary,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '@${contact.username}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: context.textMuted, fontSize: 13),
-                    ),
-                  ],
-                ),
-              ),
-              if (isSelected)
-                Icon(Icons.check_circle, color: context.accent, size: 22),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// _RecipientChip
-// ---------------------------------------------------------------------------
-
-class _RecipientChip extends StatelessWidget {
-  final String name;
-  final VoidCallback onRemove;
-
-  const _RecipientChip({super.key, required this.name, required this.onRemove});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(10, 4, 6, 4),
-      decoration: BoxDecoration(
-        color: context.accentLight,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            '@$name',
-            style: TextStyle(
-              color: context.accent,
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(width: 4),
-          GestureDetector(
-            onTap: onRemove,
-            behavior: HitTestBehavior.opaque,
-            child: Semantics(
-              label: 'remove $name',
-              button: true,
-              child: Icon(Icons.close, size: 14, color: context.accent),
+    final filtered = _filteredContacts(state.contacts);
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 16),
+      children: [
+        if (_query.isEmpty)
+          _buildNewGroupRow(context)
+        else if (filtered.isEmpty && !_hasSearched)
+          _buildNoLocalMatch(context),
+        if (filtered.isNotEmpty) ...[
+          const SectionHeader('Contacts'),
+          ...filtered.map(
+            (c) => _PickRow(
+              userId: c.userId,
+              username: c.username,
+              displayName: c.displayName,
+              avatarUrl: c.avatarUrl,
+              onTap: _isBusy ? null : () => _startDm(c.userId, c.username),
             ),
           ),
         ],
+        if (_query.isEmpty && state.contacts.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(top: 32),
+            child: EmptyState(
+              icon: Icons.person_add_alt_1_outlined,
+              title: 'No contacts yet — search a @username to add someone',
+            ),
+          ),
+        if (_query.length >= 2) _buildEchoSearchSection(context, state),
+      ],
+    );
+  }
+
+  Widget _buildNewGroupRow(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'New group',
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: context.accentLight,
+          child: Icon(Icons.group_add_outlined, color: context.accent),
+        ),
+        title: Text(
+          'New group',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        trailing: Icon(Icons.chevron_right, color: context.textMuted),
+        onTap: _enterGroupMode,
+      ),
+    );
+  }
+
+  Widget _buildNoLocalMatch(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+      child: Text(
+        'No contacts match "$_query".',
+        style: TextStyle(color: context.textMuted, fontSize: 14),
+      ),
+    );
+  }
+
+  Widget _buildEchoSearchSection(BuildContext context, ContactsState state) {
+    if (!_hasSearched) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: _isSearching ? null : _searchEcho,
+            icon: _isSearching
+                ? SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: context.accent,
+                    ),
+                  )
+                : const Icon(Icons.public, size: 18),
+            label: Text('Search "$_query" on Echo'),
+          ),
+        ),
+      );
+    }
+    final contactIds = state.contacts.map((c) => c.userId).toSet();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SectionHeader('On Echo'),
+        if (_serverResults.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              'No one found for "$_query".',
+              style: TextStyle(color: context.textMuted, fontSize: 14),
+            ),
+          )
+        else
+          ..._serverResults.map(
+            (u) => _PickRow(
+              userId: u.userId,
+              username: u.username,
+              displayName: u.displayName,
+              avatarUrl: u.avatarUrl,
+              trailing: _echoTrailing(context, u, contactIds),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _echoTrailing(
+    BuildContext context,
+    _SearchUser u,
+    Set<String> contactIds,
+  ) {
+    if (contactIds.contains(u.userId)) {
+      return TextButton(
+        onPressed: _isBusy ? null : () => _startDm(u.userId, u.username),
+        child: const Text('Message'),
+      );
+    }
+    if (_requested.contains(u.username)) {
+      return Text(
+        'Requested',
+        style: TextStyle(color: context.textMuted, fontSize: 13),
+      );
+    }
+    return TextButton.icon(
+      onPressed: () => _sendRequest(u.username),
+      icon: const Icon(Icons.person_add_alt_1, size: 16),
+      label: const Text('Add'),
+    );
+  }
+
+  // ── group body + action bar ───────────────────────────────────────────────
+
+  Widget _buildGroupBody(BuildContext context, ContactsState state) {
+    final filtered = _filteredContacts(state.contacts);
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 16),
+      children: [
+        if (_selected.isNotEmpty) _buildSelectionSummary(context),
+        const SectionHeader('Contacts'),
+        if (filtered.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              _query.isEmpty
+                  ? 'No contacts yet.'
+                  : 'No contacts match "$_query".',
+              style: TextStyle(color: context.textMuted, fontSize: 14),
+            ),
+          )
+        else
+          ...filtered.map(
+            (c) => _PickRow(
+              userId: c.userId,
+              username: c.username,
+              displayName: c.displayName,
+              avatarUrl: c.avatarUrl,
+              selected: _selected.containsKey(c.userId),
+              trailing: Checkbox(
+                value: _selected.containsKey(c.userId),
+                onChanged: (_) => _toggleSelect(c),
+              ),
+              onTap: () => _toggleSelect(c),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildSelectionSummary(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Text(
+        '${_selected.length} selected',
+        style: TextStyle(
+          color: context.textSecondary,
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGroupActionBar(BuildContext context) {
+    final count = _selected.length;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        8,
+        16,
+        16 + MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _groupNameController,
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
+            decoration: InputDecoration(
+              hintText: 'Group name (optional)',
+              hintStyle: TextStyle(color: context.textMuted, fontSize: 14),
+              filled: true,
+              fillColor: context.cardRowBg,
+              isDense: true,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 12,
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          FilledButton(
+            onPressed: (count >= 1 && !_isBusy) ? _createGroup : null,
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(48),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: _isBusy
+                ? SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: context.onAccent,
+                    ),
+                  )
+                : Text(
+                    count == 0 ? 'Create group' : 'Create group · $count',
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A user returned from /api/users/search.
+class _SearchUser {
+  final String userId;
+  final String username;
+  final String? displayName;
+  final String? avatarUrl;
+
+  const _SearchUser({
+    required this.userId,
+    required this.username,
+    this.displayName,
+    this.avatarUrl,
+  });
+
+  factory _SearchUser.fromJson(Map<String, dynamic> json) => _SearchUser(
+    userId: json['user_id'] as String,
+    username: json['username'] as String,
+    displayName: json['display_name'] as String?,
+    avatarUrl: json['avatar_url'] as String?,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// _PickRow — one tappable contact/search row with an optional trailing slot.
+// Used for DM (no trailing → whole row opens the DM), group (checkbox), and
+// Echo search (Add / Requested / Message), so all three list contexts stay
+// visually identical instead of hand-rolling three near-duplicate rows.
+// ---------------------------------------------------------------------------
+
+class _PickRow extends StatelessWidget {
+  final String userId;
+  final String username;
+  final String? displayName;
+  final String? avatarUrl;
+  final Widget? trailing;
+  final VoidCallback? onTap;
+  final bool selected;
+
+  const _PickRow({
+    required this.userId,
+    required this.username,
+    this.displayName,
+    this.avatarUrl,
+    this.trailing,
+    this.onTap,
+    this.selected = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final name = (displayName?.isNotEmpty ?? false) ? displayName! : username;
+    return Semantics(
+      button: onTap != null,
+      label: name,
+      child: Material(
+        color: selected ? context.accentLight : Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                UserAvatar(
+                  userId: userId,
+                  username: name,
+                  avatarUrl: avatarUrl,
+                  radius: 22,
+                  showPresence: true,
+                  openProfileOnTap: false,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: context.textPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '@$username',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: context.textMuted,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                ?trailing,
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
