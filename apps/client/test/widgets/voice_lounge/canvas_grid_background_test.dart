@@ -205,4 +205,31 @@ void main() {
       expect(buildCount, equals(countAfterFirstPump));
     });
   });
+
+  group('niceGridStep (adaptive spacing, #6)', () {
+    test('snaps to the 1-2-5 x 10ⁿ sequence', () {
+      expect(niceGridStep(1.0), 1.0);
+      expect(niceGridStep(1.2), 1.0);
+      expect(niceGridStep(2.0), 2.0);
+      expect(niceGridStep(3.0), 2.0);
+      expect(niceGridStep(4.0), 5.0);
+      expect(niceGridStep(8.0), 10.0);
+      expect(niceGridStep(80.0), 100.0);
+      expect(niceGridStep(0.04), 0.05);
+    });
+
+    test('subdivides when zoomed in, coarsens when zoomed out', () {
+      final zoomedIn = niceGridStep(80.0 / 8.0); // ideal 10 → 10
+      final zoomedOut = niceGridStep(80.0 / 0.05); // ideal 1600 → 2000
+      expect(zoomedIn, lessThan(zoomedOut));
+      expect(zoomedIn, 10.0);
+      expect(zoomedOut, 2000.0);
+    });
+
+    test('falls back for non-positive / non-finite input', () {
+      expect(niceGridStep(0, fallback: 100), 100);
+      expect(niceGridStep(-5, fallback: 100), 100);
+      expect(niceGridStep(double.infinity, fallback: 100), 100);
+    });
+  });
 }

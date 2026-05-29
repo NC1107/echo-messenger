@@ -1,8 +1,13 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
-/// Maximum number of minor grid lines drawn per axis before the effective
-/// spacing is multiplied by 10x to keep painting cheap.
-const int _kMaxLinesPerAxis = 200;
+/// Target on-screen gap (logical px) between minor grid lines. The effective
+/// canvas-space spacing is chosen per-frame from the current zoom so the grid
+/// stays around this density at any scale — giving the user a constant sense
+/// of scale as they zoom (lines subdivide when zooming in, coarsen when
+/// zooming out) instead of spreading apart or vanishing.
+const double _kTargetMinorScreenPx = 80.0;
 
 /// Minor-line stroke width (logical pixels).
 const double _kMinorStrokeWidth = 0.5;
@@ -95,12 +100,7 @@ class _GridPainter extends CustomPainter {
     final visibleTop = topLeft.dy;
     final visibleBottom = bottomRight.dy;
 
-    final effectiveSpacing = _resolveSpacing(
-      visibleLeft,
-      visibleRight,
-      visibleTop,
-      visibleBottom,
-    );
+    final effectiveSpacing = _resolveSpacing(matrix);
 
     final majorSpacing = effectiveSpacing * majorEvery;
 
@@ -144,18 +144,16 @@ class _GridPainter extends CustomPainter {
     return MatrixUtils.transformPoint(m, Offset(cx, cy));
   }
 
-  /// Returns the effective minor spacing so that at most [_kMaxLinesPerAxis]
-  /// lines are drawn per axis. Multiplies by 10x per step until the count fits.
-  double _resolveSpacing(double left, double right, double top, double bottom) {
-    final spanX = right - left;
-    final spanY = bottom - top;
-    final maxSpan = spanX > spanY ? spanX : spanY;
-
-    var spacing = minorSpacing;
-    while (maxSpan / spacing > _kMaxLinesPerAxis) {
-      spacing *= 10;
-    }
-    return spacing;
+  /// Chooses the minor-grid spacing (in canvas-world px) for the current zoom
+  /// so the on-screen gap stays near [_kTargetMinorScreenPx]. Snaps to a
+  /// 1-2-5 x 10ⁿ sequence (like a ruler / Figma / Miro) so the lines land on
+  /// round numbers, and adapts both ways — subdividing when zoomed in and
+  /// coarsening when zoomed out. This also naturally bounds the visible line
+  /// count (~viewport / target), so no separate count cap is needed.
+  double _resolveSpacing(Matrix4 matrix) {
+    final scale = matrix.getMaxScaleOnAxis();
+    if (scale <= 0 || !scale.isFinite) return minorSpacing;
+    return niceGridStep(_kTargetMinorScreenPx / scale, fallback: minorSpacing);
   }
 
   Paint _buildMinorPaint() {
@@ -233,4 +231,27 @@ class _GridPainter extends CustomPainter {
       old.minorSpacing != minorSpacing ||
       old.majorEvery != majorEvery ||
       old.isDark != isDark;
+}
+
+/// Rounds [value] to the nearest 1-2-5 x 10ⁿ "nice" step (like a ruler).
+/// Used to pick an adaptive grid spacing from the desired on-screen gap so
+/// the grid subdivides as you zoom in and coarsens as you zoom out. Returns
+/// [fallback] for non-positive / non-finite input. Pure + public for tests.
+@visibleForTesting
+double niceGridStep(double value, {double fallback = 100.0}) {
+  if (value <= 0 || !value.isFinite) return fallback;
+  final exponent = (math.log(value) / math.ln10).floor();
+  final pow10 = math.pow(10, exponent).toDouble();
+  final fraction = value / pow10; // in [1, 10)
+  final double nice;
+  if (fraction < 1.5) {
+    nice = 1.0;
+  } else if (fraction < 3.5) {
+    nice = 2.0;
+  } else if (fraction < 7.5) {
+    nice = 5.0;
+  } else {
+    nice = 10.0;
+  }
+  return nice * pow10;
 }

@@ -66,6 +66,11 @@ import 'voice_lounge/screen_share.dart';
 /// cross-widget export of a render constant.
 const double _kAvatarTileRadius = 24.0;
 
+/// Minimum canvas zoom. ~0.02 lets the whole 100k×100k surface fit a typical
+/// viewport (viewport / kCanvasWidth) so the user can zoom all the way out to
+/// see everything and find content that drifted far away (#4).
+const double _kCanvasMinScale = 0.02;
+
 /// Canvas-space radius of the default avatar ring used by
 /// `voice_canvas.dart`'s `_defaultAvatarPos` when no one has dragged
 /// their puck yet. Default positions sit on a circle of this radius
@@ -343,6 +348,14 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       if (pos.y - half < minY) minY = pos.y - half;
       if (pos.x + half > maxX) maxX = pos.x + half;
       if (pos.y + half > maxY) maxY = pos.y + half;
+    }
+    // Screen-share windows count as content too — otherwise "fit view" could
+    // never frame a shared screen and the user couldn't find it (#5).
+    for (final win in canvas.screenSharePositions.values) {
+      if (win.x < minX) minX = win.x;
+      if (win.y < minY) minY = win.y;
+      if (win.x + win.width > maxX) maxX = win.x + win.width;
+      if (win.y + win.height > maxY) maxY = win.y + win.height;
     }
     if (minX == double.infinity || maxX <= minX || maxY <= minY) {
       return null;
@@ -1539,6 +1552,11 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
         key: _canvasGesturesKey,
         isToolSelected: isToolSelected,
         initialTransform: initialTransform,
+        // Allow zooming out far enough to frame the whole 100k surface
+        // (viewport / 100k ≈ 0.02) so users can see the entire canvas /
+        // find content that drifted far away (#4). The minimap gives
+        // orientation at that zoom.
+        minScale: _kCanvasMinScale,
         onStrokeStart: _onStrokeStart,
         onStrokeMove: _onStrokeMove,
         onStrokeEnd: _onStrokeEnd,
