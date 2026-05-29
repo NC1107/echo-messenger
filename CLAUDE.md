@@ -53,7 +53,10 @@ cd apps/client && flutter test test/path_test.dart # Run a single Flutter test f
 ./scripts/test_e2e.sh                             # E2E integration tests
 npx playwright test                               # Visual tests (Playwright, tests/e2e/)
 npx playwright test tests/e2e/some.spec.ts        # Run a single Playwright spec
+./scripts/audit_lounge_deep.sh                    # Mobile-canvas regression smoke (voice-lounge canonical)
 ```
+
+**Web test probe** (`window.__echoTestProbe__`): available in debug + profile Flutter web builds only. Exposes canvas state and WS event counts for Playwright assertions without requiring UI interaction. Implementation: `apps/client/lib/src/services/web_test_probe.dart` (web) / `web_test_probe_stub.dart` (native no-op).
 
 ## Lint & Format
 
@@ -135,6 +138,12 @@ Pre-commit hooks (lefthook, run in parallel): cargo fmt check + clippy `-D warni
 - Server: `routes/voice.rs` handles call signaling and LiveKit token generation
 - Client: `livekit_voice_provider.dart`, `voice_rtc_provider.dart`, `voice_settings_provider.dart`
 - Requires `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` env vars in production
+
+**Voice-lounge canvas** (post-rewrite architecture; authority spec: `docs/voice-lounge/05-canvas-rewrite-spec.md`):
+- Gesture layer: explicit state machine (`canvas_gesture_state.dart` — states: Idle / Drawing / Panning / Pinching / DoubleTapPending) driven by a root `Listener` in `lounge_canvas_gestures.dart`. Replaces `InteractiveViewer`-based arena racing; pointer-count transitions are deterministic, not slop-driven.
+- Stroke rendering: `perfect_freehand` package produces velocity-thinned filled-path outlines for pen/highlighter. Wire format remains raw points; smoothing is client-side only.
+- Paint layers: 3-layer `RepaintBoundary` stack — L0 background, L1 committed strokes + avatars (repaints on `strokesRevision`), L2 in-flight stroke only (repaints on `ActiveStrokeNotifier`). Mid-stroke frames bypass Riverpod state entirely so only the active-stroke layer repaints.
+- Canvas tool icons carry `Semantics` labels for a11y; the Playwright audit spec `tests/e2e/voice_lounge_mobile_audit.spec.ts` asserts these labels and is the canonical consumer of the a11y contract.
 
 ## Code-quality budgets
 
