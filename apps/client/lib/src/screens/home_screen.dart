@@ -88,6 +88,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   // Slice 7: members panel defaults to on so group context (roles, online
   // status) is visible without an explicit toggle. Users can still hide it.
   bool _showMembers = true;
+
+  // ---------------------------------------------------------------------------
+  // Conversation navigation history (browser back/forward model).
+  // Stores conversation IDs rather than Conversation objects to avoid holding
+  // stale references when a conversation is deleted or mutated server-side.
+  // ---------------------------------------------------------------------------
+
+  /// Maximum number of entries kept in the history stack.
+  static const int _navHistoryLimit = 50;
+
+  /// Ordered list of conversation IDs the user has explicitly navigated to.
+  /// The current position is [_navHistoryIndex].
+  final List<String> _navHistory = [];
+
+  /// Index into [_navHistory] pointing at the currently-viewed entry.
+  /// -1 when no conversation has been selected yet.
+  int _navHistoryIndex = -1;
+
+  /// Guards against [_selectConversation] re-pushing to history while a
+  /// back/forward navigation is in flight.
+  bool _navJumping = false;
+
+  bool get _canGoBack => _navHistoryIndex > 0;
+  bool get _canGoForward => _navHistoryIndex < _navHistory.length - 1;
   Timer? _pendingRefreshTimer;
   late final LiveKitVoiceNotifier _voiceRtcNotifier;
   StreamSubscription<String>? _notificationTapSub;
