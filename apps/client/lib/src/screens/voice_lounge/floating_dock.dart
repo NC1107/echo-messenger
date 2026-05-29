@@ -218,15 +218,19 @@ class _FloatingDockState extends ConsumerState<FloatingDock> {
   }
 
   Widget _buildDrawButton(BuildContext context) {
-    return DockButtonWithSubmenu(
-      icon: Icons.edit,
-      tooltip: isDrawing ? 'Stop drawing' : 'Draw',
-      isActive: isDrawing,
-      activeColor: context.accent,
-      onPressed: onToggleDrawing,
-      onSubmenuTap: () => onToggleSubmenu(DockSubmenu.draw),
-      submenuActive: activeSubmenu == DockSubmenu.draw,
-      submenuLayerLink: drawingToolsLayerLink,
+    return Semantics(
+      label: 'Drawing tools',
+      button: true,
+      child: DockButtonWithSubmenu(
+        icon: Icons.edit,
+        tooltip: isDrawing ? 'Stop drawing' : 'Draw',
+        isActive: isDrawing,
+        activeColor: context.accent,
+        onPressed: onToggleDrawing,
+        onSubmenuTap: () => onToggleSubmenu(DockSubmenu.draw),
+        submenuActive: activeSubmenu == DockSubmenu.draw,
+        submenuLayerLink: drawingToolsLayerLink,
+      ),
     );
   }
 

@@ -126,18 +126,33 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          _toolIcon(context, Icons.edit, 'Pen', CanvasTool.pen),
-          _toolIcon(context, Icons.brush, 'Highlight', CanvasTool.highlighter),
-          _toolIcon(context, Icons.show_chart, 'Line', CanvasTool.line),
-          _toolIcon(context, Icons.crop_square, 'Rectangle', CanvasTool.rect),
+          _toolIcon(context, Icons.edit, 'Pen tool', CanvasTool.pen),
+          _toolIcon(
+            context,
+            Icons.brush,
+            'Highlighter tool',
+            CanvasTool.highlighter,
+          ),
+          _toolIcon(context, Icons.show_chart, 'Line tool', CanvasTool.line),
+          _toolIcon(
+            context,
+            Icons.crop_square,
+            'Rectangle tool',
+            CanvasTool.rect,
+          ),
           _toolIcon(
             context,
             Icons.circle_outlined,
-            'Ellipse',
+            'Ellipse tool',
             CanvasTool.ellipse,
           ),
-          _toolIcon(context, Icons.text_fields, 'Text', CanvasTool.text),
-          _toolIcon(context, Icons.auto_fix_high, 'Erase', CanvasTool.eraser),
+          _toolIcon(context, Icons.text_fields, 'Text tool', CanvasTool.text),
+          _toolIcon(
+            context,
+            Icons.auto_fix_high,
+            'Eraser tool',
+            CanvasTool.eraser,
+          ),
         ],
       ),
     );
@@ -150,32 +165,37 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
     CanvasTool tool,
   ) {
     final isSelected = _selectedTool == tool;
-    return Tooltip(
-      message: label,
-      child: GestureDetector(
-        onTap: () {
-          HapticFeedback.selectionClick();
-          setState(() => _selectedTool = tool);
-          ref.read(canvasProvider.notifier).setTool(tool);
-        },
-        child: AnimatedContainer(
-          duration: MotionDurations.quick,
-          width: 34,
-          height: 34,
-          decoration: BoxDecoration(
-            color: isSelected
-                ? context.accent.withValues(alpha: 0.18)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: isSelected ? context.accent : Colors.transparent,
-              width: 1.5,
+    return Semantics(
+      label: label,
+      button: true,
+      selected: isSelected,
+      child: Tooltip(
+        message: label,
+        child: GestureDetector(
+          onTap: () {
+            HapticFeedback.selectionClick();
+            setState(() => _selectedTool = tool);
+            ref.read(canvasProvider.notifier).setTool(tool);
+          },
+          child: AnimatedContainer(
+            duration: MotionDurations.quick,
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? context.accent.withValues(alpha: 0.18)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: isSelected ? context.accent : Colors.transparent,
+                width: 1.5,
+              ),
             ),
-          ),
-          child: Icon(
-            icon,
-            size: 18,
-            color: isSelected ? context.accent : context.textSecondary,
+            child: Icon(
+              icon,
+              size: 18,
+              color: isSelected ? context.accent : context.textSecondary,
+            ),
           ),
         ),
       ),
@@ -183,32 +203,35 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
   }
 
   Widget _buildColorPicker(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Colour',
-            style: TextStyle(
-              color: context.textMuted,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
+    return Semantics(
+      label: 'Color picker',
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Colour',
+              style: TextStyle(
+                color: context.textMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          ),
-          const SizedBox(height: 6),
-          // Single compact row: 9 quick presets + a custom-colour disk that
-          // opens an HSV picker. Wraps if it doesn't fit (palette grows when
-          // recent custom colours are added).
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final c in _penColors) _colorSwatch(context, c),
-              _customColorTile(context),
-            ],
-          ),
-        ],
+            const SizedBox(height: 6),
+            // Single compact row: 9 quick presets + a custom-colour disk that
+            // opens an HSV picker. Wraps if it doesn't fit (palette grows when
+            // recent custom colours are added).
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final c in _penColors) _colorSwatch(context, c),
+                _customColorTile(context),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -328,88 +351,91 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
   }
 
   Widget _buildSizePicker(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                'Size',
-                style: TextStyle(
-                  color: context.textMuted,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                '${_selectedSize.toStringAsFixed(0)} px',
-                style: TextStyle(
-                  color: context.textPrimary,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
-              ),
-            ],
-          ),
-          // Slider sits in its own subtly-tinted track so it reads as
-          // interactive instead of blending into the colour swatches
-          // above it (user feedback 2026-05-27).
-          Container(
-            margin: const EdgeInsets.only(top: 4),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: context.surfaceHover.withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
+    return Semantics(
+      label: 'Stroke width',
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                // Live preview dot.
-                SizedBox(
-                  width: 28,
-                  height: 28,
-                  child: Center(
-                    child: Container(
-                      width: _selectedSize.clamp(2.0, 24.0),
-                      height: _selectedSize.clamp(2.0, 24.0),
-                      decoration: BoxDecoration(
-                        color: _selectedColor,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
+                Text(
+                  'Size',
+                  style: TextStyle(
+                    color: context.textMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                Expanded(
-                  child: SliderTheme(
-                    data: SliderThemeData(
-                      trackHeight: 3,
-                      activeTrackColor: context.accent,
-                      inactiveTrackColor: context.border,
-                      thumbColor: context.accent,
-                      overlayColor: context.accent.withValues(alpha: 0.15),
-                      thumbShape: const RoundSliderThumbShape(
-                        enabledThumbRadius: 7,
-                      ),
-                    ),
-                    child: Slider(
-                      value: _selectedSize.clamp(1.0, 48.0),
-                      min: 1,
-                      max: 48,
-                      divisions: 47,
-                      onChanged: (v) {
-                        setState(() => _selectedSize = v);
-                        ref.read(canvasProvider.notifier).setStrokeWidth(v);
-                      },
-                    ),
+                const Spacer(),
+                Text(
+                  '${_selectedSize.toStringAsFixed(0)} px',
+                  style: TextStyle(
+                    color: context.textPrimary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
               ],
             ),
-          ),
-        ],
+            // Slider sits in its own subtly-tinted track so it reads as
+            // interactive instead of blending into the colour swatches
+            // above it (user feedback 2026-05-27).
+            Container(
+              margin: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: context.surfaceHover.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  // Live preview dot.
+                  SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: Center(
+                      child: Container(
+                        width: _selectedSize.clamp(2.0, 24.0),
+                        height: _selectedSize.clamp(2.0, 24.0),
+                        decoration: BoxDecoration(
+                          color: _selectedColor,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: SliderTheme(
+                      data: SliderThemeData(
+                        trackHeight: 3,
+                        activeTrackColor: context.accent,
+                        inactiveTrackColor: context.border,
+                        thumbColor: context.accent,
+                        overlayColor: context.accent.withValues(alpha: 0.15),
+                        thumbShape: const RoundSliderThumbShape(
+                          enabledThumbRadius: 7,
+                        ),
+                      ),
+                      child: Slider(
+                        value: _selectedSize.clamp(1.0, 48.0),
+                        min: 1,
+                        max: 48,
+                        divisions: 47,
+                        onChanged: (v) {
+                          setState(() => _selectedSize = v);
+                          ref.read(canvasProvider.notifier).setStrokeWidth(v);
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
