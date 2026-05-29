@@ -101,6 +101,32 @@ Future<void> _pointerCancel(
   await tester.pump();
 }
 
+Future<void> _scroll(
+  WidgetTester tester, {
+  required Offset at,
+  required double dy,
+}) async {
+  final hitTest = HitTestResult();
+  WidgetsBinding.instance.hitTestInView(hitTest, at, tester.view.viewId);
+  WidgetsBinding.instance.dispatchEvent(
+    PointerScrollEvent(position: at, scrollDelta: Offset(0, dy)),
+    hitTest,
+  );
+  await tester.pump();
+}
+
+/// The matrix actually applied to the canvas child — i.e. the `Transform`
+/// widget rendered by the gesture surface. Distinct from `state.transform`
+/// (the field): a regression where pan/pinch mutate the field but never
+/// rebuild only shows up here.
+Matrix4 _renderedTransform(WidgetTester tester, Key key) => tester
+    .widget<Transform>(
+      find
+          .descendant(of: find.byKey(key), matching: find.byType(Transform))
+          .first,
+    )
+    .transform;
+
 void main() {
   group('resolveTransition (pure state machine)', () {
     test('idle + down with tool → drawing + startStroke', () {
@@ -603,6 +629,68 @@ void main() {
         state.debugTransform.getMaxScaleOnAxis(),
         closeTo(1.0, 0.01),
         reason: 'a double-tap zoom must not fire from the 2nd pan finger',
+      );
+    });
+
+    // Regression (canvas-rewrite #1278): pan mutated `_transform` and emitted
+    // it to the grid, but never setState, so the Transform wrapping the canvas
+    // child kept the old matrix — the grid moved while strokes/avatars stayed
+    // put. Assert the RENDERED transform follows the pan, not just the field.
+    testWidgets('pan moves the rendered canvas transform, not just the field', (
+      tester,
+    ) async {
+      final rec = _Recorder();
+      const key = ValueKey('pan-render');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: _harness(rec: rec, isToolSelected: false, key: key),
+        ),
+      );
+
+      await _pointerDown(
+        tester,
+        () => null,
+        at: const Offset(400, 300),
+        pointer: 1,
+      );
+      await _pointerMove(tester, to: const Offset(460, 340), pointer: 1);
+
+      final rendered = _renderedTransform(tester, key);
+      final field = _stateOf(tester, key).debugTransform;
+      expect(
+        rendered.getTranslation().x,
+        closeTo(field.getTranslation().x, 0.01),
+      );
+      expect(
+        rendered.getTranslation().y,
+        closeTo(field.getTranslation().y, 0.01),
+      );
+      // A 60x40 drag must actually have moved the rendered transform.
+      expect(rendered.getTranslation().x, closeTo(60, 0.01));
+      expect(rendered.getTranslation().y, closeTo(40, 0.01));
+    });
+
+    // Regression (canvas-rewrite #1278): desktop scroll-wheel zoom was lost
+    // when InteractiveViewer was replaced by the raw Listener. Scroll up must
+    // zoom in around the cursor and update the rendered transform.
+    testWidgets('mouse-wheel scroll zooms the canvas', (tester) async {
+      final rec = _Recorder();
+      const key = ValueKey('scroll-zoom');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: _harness(rec: rec, isToolSelected: false, key: key),
+        ),
+      );
+
+      final before = _stateOf(tester, key).debugTransform.getMaxScaleOnAxis();
+      await _scroll(tester, at: const Offset(400, 300), dy: -120); // scroll up
+      final after = _stateOf(tester, key).debugTransform.getMaxScaleOnAxis();
+
+      expect(after, greaterThan(before), reason: 'scroll up should zoom in');
+      expect(
+        _renderedTransform(tester, key).getMaxScaleOnAxis(),
+        closeTo(after, 0.01),
+        reason: 'the rendered transform must reflect the scroll zoom',
       );
     });
   });

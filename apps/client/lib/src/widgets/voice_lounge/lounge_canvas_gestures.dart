@@ -18,6 +18,7 @@
 // lands. The widget compiles standalone.
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'canvas_gesture_state.dart';
@@ -297,6 +298,25 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
     _handleLift(event.pointer, cancelled: true);
   }
 
+  /// Desktop zoom: mouse wheel / trackpad scroll zooms around the cursor.
+  /// The pre-rewrite `InteractiveViewer` did this for free; the raw-Listener
+  /// rewrite dropped it, so desktop users had no zoom affordance besides
+  /// double-tap. Scroll up zooms in, scroll down zooms out (~10% per notch),
+  /// clamped to [widget.minScale]/[widget.maxScale].
+  void _onPointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent) return;
+    final currentScale = _transform.getMaxScaleOnAxis();
+    final factor = event.scrollDelta.dy < 0 ? 1.1 : 1 / 1.1;
+    final target = (currentScale * factor).clamp(
+      widget.minScale,
+      widget.maxScale,
+    );
+    if ((target - currentScale).abs() < 1e-9) return;
+    _transform = _zoomAround(_transform, event.localPosition, target);
+    _emitTransform();
+    if (mounted) setState(() {});
+  }
+
   void _handleLift(int pointerId, {required bool cancelled}) {
     if (!_pointers.containsKey(pointerId)) return;
     _pointers.remove(pointerId);
@@ -377,6 +397,12 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
     _transform = Matrix4.copy(_transform)
       ..setTranslationRaw(t.x + delta.dx, t.y + delta.dy, t.z);
     _emitTransform();
+    // Rebuild so the Transform in build() re-applies the new matrix to the
+    // canvas child. Without this, pan only moved the grid (which re-projects
+    // from onTransformChanged) while the strokes/avatars stayed put — they
+    // decoupled. _handleDoubleTap / resetToTransform already setState; pan +
+    // pinch were the two transform mutators that didn't.
+    if (mounted) setState(() {});
   }
 
   void _seedPinch() {
@@ -431,6 +457,10 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
     // analyzer doesn't drop the clamp branch — and it documents intent.
     assert(clampedRatio > 0);
     _emitTransform();
+    // Rebuild so the Transform re-applies the new scale/translate to the
+    // canvas child (see _applyPanDelta). Without it pinch zoomed only the
+    // grid, never the strokes/avatars.
+    if (mounted) setState(() {});
   }
 
   void _emitTransform() {
@@ -484,6 +514,7 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
           onPointerMove: _onPointerMove,
           onPointerUp: _onPointerUp,
           onPointerCancel: _onPointerCancel,
+          onPointerSignal: _onPointerSignal,
           child: Transform(transform: _transform, child: widget.child),
         ),
       ),
