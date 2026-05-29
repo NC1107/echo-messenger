@@ -113,15 +113,17 @@ mixin _HomeScreenActionsMixin on ConsumerState<HomeScreen> {
             ),
             child: SizedBox(
               width: (size.width * 0.4).clamp(360, 520).toDouble(),
+              // The screen manages its own scrolling (ListView) and uses an
+              // Expanded body, so it needs a bounded height — no outer
+              // SingleChildScrollView (that would leave height unbounded).
+              height: (size.height * 0.7).clamp(420, 640).toDouble(),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(EchoRadii.lg),
-                child: SingleChildScrollView(
-                  child: NewMessageScreen(
-                    onStartConversation: (conv) {
-                      Navigator.pop(dialogContext);
-                      _selectConversation(conv);
-                    },
-                  ),
+                child: NewMessageScreen(
+                  onStartConversation: (conv) {
+                    Navigator.pop(dialogContext);
+                    _selectConversation(conv);
+                  },
                 ),
               ),
             ),
