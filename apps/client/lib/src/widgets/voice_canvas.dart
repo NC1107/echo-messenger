@@ -8,8 +8,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
 
-import '../services/canvas_perf.dart';
-
 import '../models/canvas_models.dart';
 import '../providers/auth_provider.dart';
 import '../providers/canvas_provider.dart';
@@ -27,10 +25,13 @@ const double _kAvatarSize = 48.0;
 ///
 /// Features:
 ///   • Draggable circular avatars with speaking ring
-///   • Freehand drawing (pen + eraser) via CustomPainter
 ///   • Paste/drop images pinned to the canvas
 ///   • All state synced in real-time via WebSocket
 ///   • Persistent board state loaded from the server on join
+///
+/// Stroke rendering lives in `LoungeCanvasStrokes` (see canvas-rewrite
+/// PR-B chunk 2). The lounge screen mounts the two as siblings under a
+/// single `Stack`; this widget no longer paints strokes.
 class VoiceCanvas extends ConsumerStatefulWidget {
   final String channelId;
   final String conversationId;
@@ -511,14 +512,23 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
   }
 }
 
-/// Painter overlay + text-tool tap target.
+/// Text-tool tap target only.
 ///
-/// Used to also handle drawing-tool pointer input, but that role was
-/// transferred to [LoungeDrawingCanvas] in 2026-05-28 (audit Finding 1)
-/// because a bare [Listener] can't cancel mid-gesture when a second
-/// pointer arrives — which broke pinch-to-zoom on mobile and risked
-/// double-dispatching strokes alongside the overlay. Now the only input
-/// path here is a single tap when the text tool is selected.
+/// Originally also handled drawing-tool pointer input + stroke painting,
+/// but those responsibilities were peeled out:
+///   * drawing-tool pointer input moved to [LoungeDrawingCanvas] in
+///     2026-05-28 (audit Finding 1) because a bare [Listener] can't
+///     cancel mid-gesture when a second pointer arrives.
+///   * stroke painting moved to `LoungeCanvasStrokes` in canvas-rewrite
+///     PR-B chunk 2 — that widget owns the three-layer RepaintBoundary
+///     split and pipes points through perfect_freehand. See
+///     docs/voice-lounge/05-canvas-rewrite-spec.md §B.2.
+///
+/// What's left here: a single-tap pointer hook that opens the text-entry
+/// dialog when the text tool is selected. The text-tool flow is anchored
+/// to this widget's parent State (it owns the prompt closure), which is
+/// why it stays in `voice_canvas.dart` rather than moving to the strokes
+/// widget.
 class _DrawingLayer extends StatelessWidget {
   final CanvasState canvas;
   final void Function(Offset) onTextTap;
@@ -540,190 +550,8 @@ class _DrawingLayer extends StatelessWidget {
               onTextTap(e.localPosition);
             }
           : null,
-      child: RepaintBoundary(
-        child: CustomPaint(
-          painter: _CanvasPainter(canvas: canvas),
-          child: const SizedBox.expand(),
-        ),
-      ),
+      child: const SizedBox.expand(),
     );
-  }
-}
-
-class _CanvasPainter extends CustomPainter {
-  final CanvasState canvas;
-
-  const _CanvasPainter({required this.canvas});
-
-  bool _hasEraserStrokes() {
-    for (final s in canvas.strokes) {
-      if (s.kind == StrokeKind.eraser) return true;
-    }
-    if (canvas.activePoints.isNotEmpty &&
-        canvas.selectedTool == CanvasTool.eraser) {
-      return true;
-    }
-    return false;
-  }
-
-  @override
-  void paint(Canvas c, Size size) {
-    final sw = Stopwatch()..start();
-    // saveLayer needed only for eraser BlendMode.clear; skip otherwise — offscreen buffer is heavy on CanvasKit.
-    final needsLayer = _hasEraserStrokes();
-    if (needsLayer) c.saveLayer(Offset.zero & size, Paint());
-
-    for (final stroke in canvas.strokes) {
-      _paintStroke(c, size, stroke);
-    }
-
-    if (canvas.activePoints.isNotEmpty) {
-      final tool = canvas.selectedTool;
-      final kind = strokeKindForTool(tool);
-      final isEraser = kind == StrokeKind.eraser;
-      final activeStroke = CanvasStroke(
-        id: '__active__',
-        color: isEraser ? '#000000' : colorToHex(canvas.currentColor),
-        width: isEraser ? canvas.strokeWidth * 3 : canvas.strokeWidth,
-        points: canvas.activePoints,
-        kind: kind,
-      );
-      _paintStroke(c, size, activeStroke);
-    }
-
-    if (needsLayer) c.restore();
-    sw.stop();
-    CanvasPerf.recordPaintMs(sw.elapsedMicroseconds / 1000.0);
-  }
-
-  void _paintStroke(Canvas c, Size size, CanvasStroke stroke) {
-    if (stroke.points.isEmpty) return;
-
-    // Text label: render its content at the anchor and bail out before
-    // freehand-stroke logic gets a chance to draw a stray dot.
-    if (stroke.kind == StrokeKind.text) {
-      final label = stroke.text;
-      if (label == null || label.isEmpty) return;
-      final anchor = stroke.points.first;
-      final tp = TextPainter(
-        text: TextSpan(
-          text: label,
-          style: TextStyle(
-            color: _parseColor(stroke.color),
-            fontSize: stroke.width,
-            fontWeight: FontWeight.w500,
-            shadows: const [Shadow(color: Color(0xAA000000), blurRadius: 2)],
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-        textAlign: TextAlign.left,
-      )..layout(maxWidth: size.width);
-      // Stroke points are absolute canvas-space pixels — no scaling needed
-      // because the parent SizedBox sizes us to the full canvas extent.
-      tp.paint(c, Offset(anchor.x, anchor.y));
-      return;
-    }
-
-    final paint = Paint()
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = stroke.width;
-
-    if (stroke.kind == StrokeKind.eraser) {
-      paint
-        ..blendMode = BlendMode.clear
-        ..color = const Color(0x00000000);
-    } else if (stroke.kind == StrokeKind.highlighter) {
-      // Translucent + multiply blend: stacks underneath dark UI without
-      // washing out the canvas, and double-passes deepen the colour the
-      // way a real highlighter does.
-      paint
-        ..blendMode = BlendMode.srcOver
-        ..color = _parseColor(stroke.color).withValues(alpha: 0.35);
-    } else {
-      paint
-        ..blendMode = BlendMode.srcOver
-        ..color = _parseColor(stroke.color);
-    }
-
-    final first = stroke.points.first;
-
-    // All stroke point coords are absolute canvas-space pixels — the
-    // painter's parent is sized to the canvas extent, so no scaling needed.
-    // Single-point freehand stroke: a dot.
-    if (stroke.points.length == 1 && !isShapeKind(stroke.kind)) {
-      c.drawCircle(
-        Offset(first.x, first.y),
-        stroke.width / 2,
-        paint..style = PaintingStyle.fill,
-      );
-      return;
-    }
-
-    // Two-point shape kinds — straight geometry from first to last.
-    if (isShapeKind(stroke.kind) && stroke.points.length >= 2) {
-      final last = stroke.points.last;
-      final p1 = Offset(first.x, first.y);
-      final p2 = Offset(last.x, last.y);
-      switch (stroke.kind) {
-        case StrokeKind.line:
-          c.drawLine(p1, p2, paint);
-          return;
-        case StrokeKind.rect:
-          c.drawRect(Rect.fromPoints(p1, p2), paint);
-          return;
-        case StrokeKind.ellipse:
-          c.drawOval(Rect.fromPoints(p1, p2), paint);
-          return;
-        default:
-          break;
-      }
-    }
-
-    final path = Path();
-    path.moveTo(first.x, first.y);
-    for (int i = 1; i < stroke.points.length; i++) {
-      final p = stroke.points[i];
-      path.lineTo(p.x, p.y);
-    }
-
-    c.drawPath(path, paint..style = PaintingStyle.stroke);
-  }
-
-  static Color _parseColor(String hex) {
-    final s = hex.replaceFirst('#', '');
-    if (s.length == 8) {
-      return Color(int.parse(s, radix: 16));
-    }
-    if (s.length == 6) {
-      return Color(0xFF000000 | int.parse(s, radix: 16));
-    }
-    return EchoTheme.textPrimary;
-  }
-
-  @override
-  bool shouldRepaint(_CanvasPainter old) {
-    // Provider may hand back fresh List each tick; compare lengths + last stroke id.
-    if (old.canvas.strokes.length != canvas.strokes.length) return true;
-    if (old.canvas.activePoints.length != canvas.activePoints.length) {
-      return true;
-    }
-    // Shape tools (line/rect/ellipse) replace the trailing point on every
-    // pointer-move so the points list stays at length 2 — comparing only
-    // length leaves the shape frozen at its start position until pointer-up.
-    // Also compare the last point's coordinates so the rubberband preview
-    // tracks the cursor live.
-    if (canvas.activePoints.isNotEmpty && old.canvas.activePoints.isNotEmpty) {
-      final a = canvas.activePoints.last;
-      final b = old.canvas.activePoints.last;
-      if (a.x != b.x || a.y != b.y) return true;
-    }
-    if (canvas.strokes.isNotEmpty &&
-        canvas.strokes.last.id != old.canvas.strokes.last.id) {
-      return true;
-    }
-    return false;
   }
 }
 
