@@ -83,16 +83,23 @@ class _FloatingDockState extends ConsumerState<FloatingDock> {
     if (_isLeaving) return;
     setState(() => _isLeaving = true);
 
+    // Capture provider notifier references BEFORE the first await so that
+    // if the dock unmounts mid-teardown (parent HomeScreen swaps content,
+    // foreground-service `ACTION_LEAVE` races the UI leave, CallKit
+    // hang-up, etc.) we don't touch `ref` after dispose — `ref.read`
+    // throws `StateError: Cannot use "ref"` once the ConsumerState is
+    // gone. The notifiers themselves are keepAlive providers so the
+    // captured handles stay valid across this widget's lifetime.
+    final livekit = ref.read(livekitVoiceProvider.notifier);
+    final channels = ref.read(channelsProvider.notifier);
+    final screenShareNotifier = ref.read(screenShareProvider.notifier);
+
     if (screenShare.isScreenSharing) {
-      await ref
-          .read(livekitVoiceProvider.notifier)
-          .setScreenShareEnabled(false);
-      ref.read(screenShareProvider.notifier).setLiveKitScreenShareActive(false);
+      await livekit.setScreenShareEnabled(false);
+      screenShareNotifier.setLiveKitScreenShareActive(false);
     }
-    await ref
-        .read(channelsProvider.notifier)
-        .leaveVoiceChannel(conversationId, channelId);
-    await ref.read(livekitVoiceProvider.notifier).leaveChannel();
+    await channels.leaveVoiceChannel(conversationId, channelId);
+    await livekit.leaveChannel();
     // Screen is leaving — no setState after this point.
   }
 

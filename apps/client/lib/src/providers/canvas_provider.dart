@@ -184,11 +184,20 @@ class CanvasController extends _$CanvasController {
       '$serverUrl/api/groups/$conversationId/channels/$channelId/canvas',
     );
 
+    // Guards every state write below: if `detach()` cleared
+    // `_attachingChannelId` while the HTTP fetch was in flight (user
+    // left the lounge mid-load), or a fresh `attach()` superseded us
+    // for a different channel, we must NOT write the stale snapshot
+    // back into state — doing so re-pollutes the cleared canvas and
+    // leaves the lounge in a half-attached state (audit 2026-05-28).
+    bool stillAttaching() => _attachingChannelId == channelId;
+
     try {
       final response = await http.get(
         url,
         headers: {'Authorization': 'Bearer $token'},
       );
+      if (!stillAttaching()) return;
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body) as Map<String, dynamic>;
         final strokes = (json['drawing_data'] as List? ?? [])
@@ -212,6 +221,7 @@ class CanvasController extends _$CanvasController {
         'Canvas',
         'Failed to load canvas for channel $channelId: $e',
       );
+      if (!stillAttaching()) return;
       state = state.copyWith(isLoaded: true);
     }
   }
