@@ -148,6 +148,8 @@ mixin _ConversationPanelHeaderMixin
               switch (value) {
                 case 'chat':
                   widget.onNewChat?.call();
+                case 'contacts':
+                  widget.onShowContacts?.call();
                 case 'group':
                   widget.onNewGroup?.call();
                 case 'discover':
@@ -171,6 +173,25 @@ mixin _ConversationPanelHeaderMixin
                       Flexible(
                         child: Text(
                           'New Chat',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'contacts',
+                child: SizedBox(
+                  width: 200,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.contacts_outlined, size: 18),
+                      SizedBox(width: 10),
+                      Flexible(
+                        child: Text(
+                          'Add Contact',
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),

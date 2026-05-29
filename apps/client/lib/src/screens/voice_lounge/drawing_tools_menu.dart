@@ -745,15 +745,18 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
   void _addImageByUrl(String url) {
     if (!mounted) return;
     // Broadcast via canvasProvider only — local _canvas?.addImageFromUrl caused a "stuck twin" (#752).
-    // Spawn dead-centre: the user just confirmed an image; they shouldn't
-    // have to hunt for it in a random off-centre quadrant.
-    const w = 0.25;
-    const h = 0.25;
+    // CanvasImage coords are ABSOLUTE canvas pixels, not 0..1 fractions. The
+    // old normalized 0.375/0.25 values placed a sub-pixel image in the
+    // top-left corner (invisible to the uploader; rescaled by the legacy
+    // migration on remotes) — i.e. "add image did nothing". Spawn a
+    // quarter-board-sized image dead-centre, matching the paste path.
+    const w = kCanvasWidth * 0.25;
+    const h = kCanvasHeight * 0.25;
     final img = CanvasImage(
       id: newCanvasId(),
       url: url,
-      x: 0.5 - w / 2,
-      y: 0.5 - h / 2,
+      x: kCanvasWidth / 2 - w / 2,
+      y: kCanvasHeight / 2 - h / 2,
       width: w,
       height: h,
     );
