@@ -1123,6 +1123,10 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       destructive: true,
     );
     if (!confirmed) return;
+    // `mounted` guard prevents `ref.read` from throwing if the user
+    // tapped the confirm dialog AFTER the lounge widget has been
+    // disposed (parent HomeScreen swap, leave-from-notification race).
+    if (!mounted) return;
     ref.read(canvasProvider.notifier).clearDrawing();
   }
 
