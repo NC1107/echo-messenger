@@ -222,16 +222,15 @@ class _CommittedStrokesPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_CommittedStrokesPainter old) {
-    if (old.strokes.length != strokes.length) return true;
-    if (strokes.isEmpty) return false;
-    // Mid-stroke remote partials mutate the trailing partial-id stroke in
-    // place (canvas_provider replaces the points list) so compare the last
-    // stroke's identity AND point count.
-    final a = strokes.last;
-    final b = old.strokes.last;
-    if (a.id != b.id) return true;
-    if (a.points.length != b.points.length) return true;
-    return false;
+    // VL-18: repaint whenever the strokes list instance changes. The list is
+    // passed straight from watched `canvas.strokes`, and canvas_provider
+    // replaces it (a fresh List) on every mutation — add, remove, undo, or an
+    // in-place stroke/partial edit. The previous last-element-only heuristic
+    // missed mid-list mutations (undo to the same length, a non-last remote
+    // edit, or a colour/width change to the trailing stroke) and rendered
+    // stale. Identity compare is correct AND cheap: the list isn't rebuilt
+    // per-frame, so this can't trigger a repaint storm.
+    return !identical(old.strokes, strokes);
   }
 }
 
@@ -443,8 +442,17 @@ Path _outlineToPath(List<Offset> outline) {
 }
 
 ui.Color _parseColor(String hex) {
+  // VL-1: this runs inside CustomPainter.paint() on every stroke, including
+  // strokes authored by remote peers. A non-hex colour string (a future
+  // client, a CSS name, corruption) would make int.parse throw *inside*
+  // paint(), corrupting the frame for everyone. tryParse + fallback instead.
   final s = hex.replaceFirst('#', '');
-  if (s.length == 8) return ui.Color(int.parse(s, radix: 16));
-  if (s.length == 6) return ui.Color(0xFF000000 | int.parse(s, radix: 16));
+  if (s.length == 8) {
+    final v = int.tryParse(s, radix: 16);
+    if (v != null) return ui.Color(v);
+  } else if (s.length == 6) {
+    final v = int.tryParse(s, radix: 16);
+    if (v != null) return ui.Color(0xFF000000 | v);
+  }
   return const ui.Color(0xFFFFFFFF);
 }

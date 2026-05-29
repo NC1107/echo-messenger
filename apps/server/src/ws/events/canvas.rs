@@ -270,20 +270,24 @@ pub(in crate::ws) async fn handle_canvas_event(
         return;
     }
 
-    // Per-kind schema/geometry validation. In the default `log_only` mode
-    // mismatches emit a `warn!` and the event continues unchanged; once
-    // `CANVAS_VALIDATION_MODE=enforce` is set, mismatches return a
-    // `canvas.validation.*` error code and drop the event.
-    if !apply_validation(state, sender_id, channel_id, &kind, &payload) {
-        return;
-    }
-
+    // VL-27: resolve the channel + verify membership BEFORE running the
+    // per-kind validator. Otherwise a connected non-member could submit
+    // payloads for any channel_id and probe the `canvas.validation.*` error
+    // codes (a schema oracle) and burn validation CPU on unauthorized input.
     let conversation_id = match lookup_voice_channel(state, sender_id, channel_id).await {
         Some(cid) => cid,
         None => return,
     };
 
     if !verify_membership(state, sender_id, conversation_id).await {
+        return;
+    }
+
+    // Per-kind schema/geometry validation. In the default `log_only` mode
+    // mismatches emit a `warn!` and the event continues unchanged; once
+    // `CANVAS_VALIDATION_MODE=enforce` is set, mismatches return a
+    // `canvas.validation.*` error code and drop the event.
+    if !apply_validation(state, sender_id, channel_id, &kind, &payload) {
         return;
     }
 

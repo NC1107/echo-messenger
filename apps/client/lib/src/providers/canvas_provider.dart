@@ -193,6 +193,17 @@ class CanvasController extends _$CanvasController {
     _perfLogTimer?.cancel();
     _perfLogTimer = null;
     _pendingEvents.clear();
+    // VL-12: reset the per-channel authority. The authority notifier is
+    // keepAlive + family-keyed by channelId, so without this the stale
+    // write-lock device survives into the next join of the SAME channel —
+    // and if that device is gone, _canIWrite() returns false for everyone
+    // and nobody can draw until a manual re-claim.
+    final detachingChannelId = _channelId ?? _attachingChannelId;
+    if (detachingChannelId != null) {
+      ref
+          .read(canvasAuthorityNotifierProvider(detachingChannelId).notifier)
+          .clear();
+    }
     _channelId = null;
     _attachingChannelId = null;
     state = const CanvasState(); // attachState defaults back to idle
@@ -413,6 +424,7 @@ class CanvasController extends _$CanvasController {
     required Color color,
   }) {
     if (_channelId == null) return;
+    if (!_canIWrite()) return; // VL-20: read-only device, don't ghost locally
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
     final stroke = CanvasStroke(
@@ -424,7 +436,7 @@ class CanvasController extends _$CanvasController {
       text: trimmed,
     );
     final newStrokes = List<CanvasStroke>.from(state.strokes)..add(stroke);
-    state = state.copyWith(strokes: newStrokes);
+    state = state.copyWith(strokes: _capStrokes(newStrokes));
     _myStrokeIds.add(stroke.id);
     _sendCanvasEvent('stroke', stroke.toJson());
   }
@@ -471,9 +483,18 @@ class CanvasController extends _$CanvasController {
     if (!wasActive) return;
     if (committedPoints == null || committedPoints.isEmpty) return;
     if (_channelId == null) return;
+    // VL-20: gate the LOCAL mutation, not just the broadcast. _sendCanvasEvent
+    // already drops the WS send when this device isn't the canvas authority;
+    // without the same gate here the stroke would append to our own state but
+    // never reach peers — a permanent local-only ghost that diverges forever.
+    if (!_canIWrite()) return;
 
     final tool = state.selectedTool;
     final kind = strokeKindForTool(tool);
+    // VL-31: a shape tool (line/rect/ellipse) tapped without dragging leaves a
+    // single point. _paintShape needs >= 2 points to render, so a 1-point shape
+    // is invisible yet still persists and broadcasts. Drop it.
+    if (isShapeKind(kind) && committedPoints.length < 2) return;
     final isEraser = kind == StrokeKind.eraser;
     final stroke = CanvasStroke(
       id: newCanvasId(),
@@ -490,7 +511,10 @@ class CanvasController extends _$CanvasController {
     // is still part of the CanvasState shape for backwards-compat with
     // any external consumer reading it. Pin it to const [] so a stale
     // reader sees the canonical empty value.
-    state = state.copyWith(strokes: newStrokes, activePoints: const []);
+    state = state.copyWith(
+      strokes: _capStrokes(newStrokes),
+      activePoints: const [],
+    );
     _myStrokeIds.add(stroke.id);
 
     // Broadcast complete stroke and persist via WebSocket.
@@ -562,8 +586,9 @@ class CanvasController extends _$CanvasController {
 
   void addImage(CanvasImage image) {
     if (_channelId == null) return;
+    if (!_canIWrite()) return; // VL-20: read-only device, don't ghost locally
     final newImages = List<CanvasImage>.from(state.images)..add(image);
-    state = state.copyWith(images: newImages);
+    state = state.copyWith(images: _capImages(newImages));
     _myImageIds.add(image.id);
     _sendCanvasEvent('image_add', image.toJson());
   }
@@ -949,127 +974,193 @@ class CanvasController extends _$CanvasController {
     final payload = json['payload'] as Map<String, dynamic>? ?? {};
     final fromUserId = json['from_user_id'] as String? ?? '';
 
-    switch (kind) {
-      case 'stroke_partial':
-        // Partial stroke delta: points arriving incrementally.
-        // Build a temporary stroke and add it for live display. Apply the
-        // legacy 0..1 → pixel migration heuristic inline — without this,
-        // a pre-4096 client's partial strokes paint into the top-left
-        // 1×1 pixel and only "jump" to the right place when the final
-        // stroke arrives (audit Finding 6, 2026-05-28).
-        final pointsList = (payload['points'] as List? ?? []).map((p) {
-          final rawX = (p['x'] as num?)?.toDouble() ?? 0.0;
-          final rawY = (p['y'] as num?)?.toDouble() ?? 0.0;
-          return CanvasPoint(
-            x: rawX <= 1.0 ? rawX * kCanvasWidth : rawX,
-            y: rawY <= 1.0 ? rawY * kCanvasHeight : rawY,
-          );
-        }).toList();
-        final color = payload['color'] as String? ?? '#000000';
-        final width = (payload['width'] as num?)?.toDouble() ?? 2.0;
-        final kind = payload['kind'] as String? ?? 'pen';
+    // VL-1: this is the untrusted-peer ingress point. A malformed frame
+    // (missing field, wrong type, non-hex colour) used to throw out of
+    // CanvasStroke/CanvasImage.fromJson, unwind handleServerMessage (which
+    // has no try/catch), and crash the whole client. Drop the bad frame and
+    // keep the lounge alive instead.
+    try {
+      switch (kind) {
+        case 'stroke_partial':
+          // Partial stroke delta: points arriving incrementally.
+          // Build a temporary stroke and add it for live display. Apply the
+          // legacy 0..1 → pixel migration heuristic inline — without this,
+          // a pre-4096 client's partial strokes paint into the top-left
+          // 1×1 pixel and only "jump" to the right place when the final
+          // stroke arrives (audit Finding 6, 2026-05-28).
+          final pointsList = (payload['points'] as List? ?? []).map((p) {
+            final rawX = (p['x'] as num?)?.toDouble() ?? 0.0;
+            final rawY = (p['y'] as num?)?.toDouble() ?? 0.0;
+            return CanvasPoint(
+              x: rawX <= 1.0 ? rawX * kCanvasWidth : rawX,
+              y: rawY <= 1.0 ? rawY * kCanvasHeight : rawY,
+            );
+          }).toList();
+          final color = payload['color'] as String? ?? '#000000';
+          final width = (payload['width'] as num?)?.toDouble() ?? 2.0;
+          final kind = payload['kind'] as String? ?? 'pen';
 
-        if (pointsList.isEmpty) return;
+          if (pointsList.isEmpty) return;
 
-        // Look for an existing partial stroke from this user.
-        final partialId = 'partial_${fromUserId}_in_progress';
-        final existingIdx = state.strokes.indexWhere((s) => s.id == partialId);
+          // Look for an existing partial stroke from this user.
+          final partialId = 'partial_${fromUserId}_in_progress';
+          final existingIdx = state.strokes.indexWhere(
+            (s) => s.id == partialId,
+          );
 
-        if (existingIdx != -1) {
-          // Append points to existing partial stroke.
-          final existing = state.strokes[existingIdx];
-          final updated = existing.copyWith(
-            points: List.from(existing.points)..addAll(pointsList),
+          if (existingIdx != -1) {
+            // Append points to existing partial stroke.
+            final existing = state.strokes[existingIdx];
+            final updated = existing.copyWith(
+              points: List.from(existing.points)..addAll(pointsList),
+            );
+            final newStrokes = List<CanvasStroke>.from(state.strokes)
+              ..[existingIdx] = updated;
+            state = state.copyWith(strokes: newStrokes);
+          } else {
+            // Honour the wire `kind` so highlighter partials render as a
+            // translucent thick pen on remotes instead of being coerced to
+            // plain pen. Falls through `_strokeKindFromString` for any
+            // value the receiver doesn't recognise.
+            final partialStroke = CanvasStroke(
+              id: partialId,
+              color: color,
+              width: width,
+              points: pointsList,
+              kind: _wireKindToStrokeKind(kind),
+            );
+            final newStrokes = List<CanvasStroke>.from(state.strokes)
+              ..add(partialStroke);
+            state = state.copyWith(strokes: newStrokes);
+          }
+        case 'stroke':
+          final stroke = CanvasStroke.fromJson(payload);
+          // Remove the partial stroke placeholder if it exists, AND any prior
+          // copy of this stroke id (VL-4 dedup: a reconnect snapshot replay or
+          // an importSnapshot rebroadcast can re-deliver a stroke we already
+          // hold; a blind append would accumulate duplicates and diverge).
+          final partialId = 'partial_${fromUserId}_in_progress';
+          final strokes =
+              state.strokes
+                  .where((s) => s.id != partialId && s.id != stroke.id)
+                  .toList()
+                ..add(stroke);
+          state = state.copyWith(strokes: _capStrokes(strokes));
+        case 'clear':
+          // VL-6: a remote clear must also abort our in-flight local stroke,
+          // otherwise the pending endStroke re-appends + re-broadcasts a stroke
+          // onto the just-cleared board (resurrection race).
+          _abortActiveStroke();
+          state = state.copyWith(strokes: [], images: []);
+          // Remote clear wipes the board for us too — drop the mine-sets so
+          // "Clear my drawings" reflects the now-empty canvas.
+          _myStrokeIds.clear();
+          _myImageIds.clear();
+        case 'image_add':
+          final image = CanvasImage.fromJson(payload);
+          // VL-4 dedup: replace any existing image with the same id rather than
+          // blindly appending a duplicate.
+          final newImages =
+              state.images.where((img) => img.id != image.id).toList()
+                ..add(image);
+          state = state.copyWith(images: _capImages(newImages));
+        case 'image_move':
+          final updatedImage = CanvasImage.fromJson(payload);
+          final idx = state.images.indexWhere(
+            (img) => img.id == updatedImage.id,
           );
-          final newStrokes = List<CanvasStroke>.from(state.strokes)
-            ..[existingIdx] = updated;
-          state = state.copyWith(strokes: newStrokes);
-        } else {
-          // Honour the wire `kind` so highlighter partials render as a
-          // translucent thick pen on remotes instead of being coerced to
-          // plain pen. Falls through `_strokeKindFromString` for any
-          // value the receiver doesn't recognise.
-          final partialStroke = CanvasStroke(
-            id: partialId,
-            color: color,
-            width: width,
-            points: pointsList,
-            kind: _wireKindToStrokeKind(kind),
+          if (idx != -1) {
+            final newImages = List<CanvasImage>.from(state.images)
+              ..[idx] = updatedImage;
+            state = state.copyWith(images: newImages);
+          }
+        case 'image_remove':
+          final id = payload['id'] as String?;
+          if (id != null) {
+            final newImages = state.images
+                .where((img) => img.id != id)
+                .toList();
+            state = state.copyWith(images: newImages);
+          }
+        case 'avatar_move':
+          // Shared-whiteboard semantics: the *target* user id is carried in
+          // the payload, not derived from the sender. Older clients only
+          // ever moved their own avatar and sent `user_id == from_user_id`,
+          // so falling back to `fromUserId` keeps them compatible.
+          final targetUserId = (payload['user_id'] as String?) ?? fromUserId;
+          if (targetUserId.isEmpty) return;
+          // Coords arrive in canvas-space pixels on the new wire format.
+          // Legacy clients (pre-4096) sent 0..1 normalized — rescale inline
+          // using the same heuristic the model layer applies in fromJson.
+          final rawX = (payload['x'] as num?)?.toDouble() ?? kCanvasWidth / 2;
+          final rawY = (payload['y'] as num?)?.toDouble() ?? kCanvasHeight / 2;
+          final x = rawX <= 1.0 ? rawX * kCanvasWidth : rawX;
+          final y = rawY <= 1.0 ? rawY * kCanvasHeight : rawY;
+          // Older clients won't send `scale`; preserve the prior value (or
+          // default to 1.0) so a move from an old build doesn't reset the
+          // size that a newer participant just resized.
+          final existing = state.avatarPositions[targetUserId];
+          final rawScale = (payload['scale'] as num?)?.toDouble();
+          final scale = (rawScale ?? existing?.scale ?? 1.0).clamp(
+            AvatarPosition.minScale,
+            AvatarPosition.maxScale,
           );
-          final newStrokes = List<CanvasStroke>.from(state.strokes)
-            ..add(partialStroke);
-          state = state.copyWith(strokes: newStrokes);
-        }
-      case 'stroke':
-        final stroke = CanvasStroke.fromJson(payload);
-        // Remove the partial stroke placeholder if it exists.
-        final partialId = 'partial_${fromUserId}_in_progress';
-        final strokes = state.strokes.where((s) => s.id != partialId).toList()
-          ..add(stroke);
-        state = state.copyWith(strokes: strokes);
-      case 'clear':
-        state = state.copyWith(strokes: [], images: []);
-        // Remote clear wipes the board for us too — drop the mine-sets so
-        // "Clear my drawings" reflects the now-empty canvas.
-        _myStrokeIds.clear();
-        _myImageIds.clear();
-      case 'image_add':
-        final image = CanvasImage.fromJson(payload);
-        final newImages = List<CanvasImage>.from(state.images)..add(image);
-        state = state.copyWith(images: newImages);
-      case 'image_move':
-        final updatedImage = CanvasImage.fromJson(payload);
-        final idx = state.images.indexWhere((img) => img.id == updatedImage.id);
-        if (idx != -1) {
-          final newImages = List<CanvasImage>.from(state.images)
-            ..[idx] = updatedImage;
-          state = state.copyWith(images: newImages);
-        }
-      case 'image_remove':
-        final id = payload['id'] as String?;
-        if (id != null) {
-          final newImages = state.images.where((img) => img.id != id).toList();
-          state = state.copyWith(images: newImages);
-        }
-      case 'avatar_move':
-        // Shared-whiteboard semantics: the *target* user id is carried in
-        // the payload, not derived from the sender. Older clients only
-        // ever moved their own avatar and sent `user_id == from_user_id`,
-        // so falling back to `fromUserId` keeps them compatible.
-        final targetUserId = (payload['user_id'] as String?) ?? fromUserId;
-        if (targetUserId.isEmpty) return;
-        // Coords arrive in canvas-space pixels on the new wire format.
-        // Legacy clients (pre-4096) sent 0..1 normalized — rescale inline
-        // using the same heuristic the model layer applies in fromJson.
-        final rawX = (payload['x'] as num?)?.toDouble() ?? kCanvasWidth / 2;
-        final rawY = (payload['y'] as num?)?.toDouble() ?? kCanvasHeight / 2;
-        final x = rawX <= 1.0 ? rawX * kCanvasWidth : rawX;
-        final y = rawY <= 1.0 ? rawY * kCanvasHeight : rawY;
-        // Older clients won't send `scale`; preserve the prior value (or
-        // default to 1.0) so a move from an old build doesn't reset the
-        // size that a newer participant just resized.
-        final existing = state.avatarPositions[targetUserId];
-        final rawScale = (payload['scale'] as num?)?.toDouble();
-        final scale = (rawScale ?? existing?.scale ?? 1.0).clamp(
-          AvatarPosition.minScale,
-          AvatarPosition.maxScale,
-        );
-        final updated = Map<String, AvatarPosition>.from(state.avatarPositions);
-        updated[targetUserId] = AvatarPosition(
-          userId: targetUserId,
-          x: x.clamp(0.0, kCanvasWidth),
-          y: y.clamp(0.0, kCanvasHeight),
-          scale: scale,
-        );
-        state = state.copyWith(avatarPositions: updated);
-      case 'screenshare_move':
-        final resolved = _resolveScreenShareMove(payload);
-        if (resolved == null) return;
-        final updated = Map<String, ScreenShareWindow>.from(
-          state.screenSharePositions,
-        );
-        updated[resolved.windowId] = resolved;
-        state = state.copyWith(screenSharePositions: updated);
+          final updated = Map<String, AvatarPosition>.from(
+            state.avatarPositions,
+          );
+          updated[targetUserId] = AvatarPosition(
+            userId: targetUserId,
+            x: x.clamp(0.0, kCanvasWidth),
+            y: y.clamp(0.0, kCanvasHeight),
+            scale: scale,
+          );
+          state = state.copyWith(avatarPositions: updated);
+        case 'screenshare_move':
+          final resolved = _resolveScreenShareMove(payload);
+          if (resolved == null) return;
+          final updated = Map<String, ScreenShareWindow>.from(
+            state.screenSharePositions,
+          );
+          updated[resolved.windowId] = resolved;
+          state = state.copyWith(screenSharePositions: updated);
+      }
+    } catch (e) {
+      DebugLogService.instance.log(
+        LogLevel.warning,
+        'Canvas',
+        'Dropped malformed canvas event (kind=$kind): $e',
+      );
+    }
+  }
+
+  // VL-5: mirror the server's MAX_STROKES / MAX_IMAGES (apps/server/src/db/
+  // canvas.rs) so a long collaborative session can't grow the client lists
+  // unbounded past what the server will ever persist. Trim oldest-first.
+  static const int _kMaxStrokes = 2000;
+  static const int _kMaxImages = 2000;
+
+  List<CanvasStroke> _capStrokes(List<CanvasStroke> strokes) =>
+      strokes.length <= _kMaxStrokes
+      ? strokes
+      : strokes.sublist(strokes.length - _kMaxStrokes);
+
+  List<CanvasImage> _capImages(List<CanvasImage> images) =>
+      images.length <= _kMaxImages
+      ? images
+      : images.sublist(images.length - _kMaxImages);
+
+  /// Abort any in-flight local stroke without committing or broadcasting it.
+  /// Used when a remote `clear` arrives mid-draw (VL-6) so our pending
+  /// endStroke can't resurrect content on the just-cleared board.
+  void _abortActiveStroke() {
+    if (!_strokeActive && state.activePoints.isEmpty) return;
+    _strokeActive = false;
+    _strokeThrottle?.cancel();
+    _strokeThrottle = null;
+    _pendingStrokePoints = null;
+    _dragId++; // invalidate any flush tick already queued for this drag
+    if (state.activePoints.isNotEmpty) {
+      state = state.copyWith(activePoints: []);
     }
   }
 
@@ -1207,6 +1298,15 @@ class CanvasController extends _$CanvasController {
 
   @visibleForTesting
   bool get debugIsStrokeActive => _strokeActive;
+
+  /// Attach to a channel directly, bypassing the REST snapshot fetch, so
+  /// tests can drive [handleCanvasEvent] (the real method) without standing
+  /// up an HTTP server. Production attach goes through [attach].
+  @visibleForTesting
+  void debugAttachChannel(String channelId) {
+    _channelId = channelId;
+    _attachingChannelId = null;
+  }
 
   @visibleForTesting
   int get debugDragId => _dragId;

@@ -66,10 +66,12 @@ async fn main() {
         {
             let pool = pool.clone();
             let hub = hub.clone();
+            let authority = state.canvas_authority.clone();
             move || {
                 let pool = pool.clone();
                 let hub = hub.clone();
-                async move { cleanup_stale_voice_sessions(&pool, &hub).await }
+                let authority = authority.clone();
+                async move { cleanup_stale_voice_sessions(&pool, &hub, &authority).await }
             }
         },
     ));
@@ -282,7 +284,11 @@ where
 }
 
 /// Remove voice sessions not updated within 2 minutes and broadcast leave events.
-async fn cleanup_stale_voice_sessions(pool: &PgPool, hub: &ws::hub::Hub) {
+async fn cleanup_stale_voice_sessions(
+    pool: &PgPool,
+    hub: &ws::hub::Hub,
+    authority: &ws::CanvasAuthority,
+) {
     let removed = match db::channels::cleanup_stale_voice_sessions(pool, 120).await {
         Ok(r) => r,
         Err(e) => {
@@ -293,6 +299,11 @@ async fn cleanup_stale_voice_sessions(pool: &PgPool, hub: &ws::hub::Hub) {
 
     for (channel_id, conversation_id, user_id) in removed {
         tracing::info!("Cleaned stale voice session: user={user_id} channel={channel_id}");
+        // VL-13: mirror the WS-disconnect path (cleanup_user_voice_sessions) —
+        // clear per-lounge canvas authority for an evicted session, otherwise a
+        // crashed/backgrounded device that held the write-lock leaves the canvas
+        // stuck with no effective leader until that user fully rejoins.
+        authority.clear_on_leave(user_id, channel_id);
         broadcast_voice_session_left(pool, hub, channel_id, conversation_id, user_id).await;
     }
 }

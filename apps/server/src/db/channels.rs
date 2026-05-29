@@ -269,6 +269,22 @@ pub async fn leave_all_user_voice_sessions(
     Ok(rows)
 }
 
+/// Refresh `updated_at` for every voice session belonging to `user_id`.
+///
+/// Called from the per-connection WebSocket heartbeat (VL-3) so a participant
+/// who is connected but idle (not toggling mute/PTT) keeps their session
+/// fresh and is NOT evicted by [`cleanup_stale_voice_sessions`]. Affects zero
+/// rows — and is therefore cheap — when the user is not in any voice channel.
+/// When the socket drops the heartbeat stops, so the row goes stale and the
+/// sweep correctly reclaims it after `max_age_seconds`.
+pub async fn touch_user_voice_sessions(pool: &PgPool, user_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE voice_sessions SET updated_at = now() WHERE user_id = $1")
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 /// Delete voice sessions that have not been updated within `max_age_seconds`.
 /// Returns (channel_id, conversation_id, user_id) tuples for each removed
 /// session so the caller can broadcast leave events.

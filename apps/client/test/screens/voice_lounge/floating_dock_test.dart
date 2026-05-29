@@ -496,10 +496,12 @@ void main() {
       await tester.tap(find.byIcon(Icons.call_end));
       await tester.pumpAndSettle();
 
-      expect(channels.leaveVoiceCalls, 1);
-      expect(channels.lastLeaveConversationId, 'conv-1');
-      expect(channels.lastLeaveChannelId, 'voice-1');
+      // VL-10: the dock delegates teardown to leaveChannel() exactly once.
+      // leaveChannel owns the server-side voice-session leave internally, so
+      // the dock no longer calls channels.leaveVoiceChannel directly (which
+      // previously double-left the session).
       expect(livekit.leaveChannelCalls, 1);
+      expect(channels.leaveVoiceCalls, 0);
     });
 
     testWidgets(
@@ -532,7 +534,10 @@ void main() {
 
         // leaveChannel must have been called exactly once, not twice.
         expect(livekit.leaveChannelCalls, 1);
-        expect(channels.leaveVoiceCalls, 1);
+        expect(
+          channels.leaveVoiceCalls,
+          0,
+        ); // delegated to leaveChannel (VL-10)
         expect(tester.takeException(), isNull);
       },
     );
@@ -568,9 +573,9 @@ void main() {
         expect(livekit.lastScreenShareEnabled, isFalse);
         expect(screenShare.setLiveKitScreenShareCalls, 1);
         expect(screenShare.lastSetLiveKitActive, isFalse);
-        // And the actual leave still fires.
-        expect(channels.leaveVoiceCalls, 1);
+        // And the actual leave still fires (once, via leaveChannel — VL-10).
         expect(livekit.leaveChannelCalls, 1);
+        expect(channels.leaveVoiceCalls, 0);
       },
     );
 

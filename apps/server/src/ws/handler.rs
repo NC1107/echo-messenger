@@ -74,6 +74,7 @@ pub async fn handle_socket(
     // timeouts. Send BOTH a Ping (proxy keepalive) and a JSON heartbeat —
     // browsers hide protocol Ping/Pong from JS so the client only sees JSON.
     let ping_hub = state.hub.clone();
+    let ping_pool = state.pool.clone();
     let ping_user_id = user_id;
     let ping_device_id = device_id;
     let ping_task = tokio::spawn(async move {
@@ -88,6 +89,13 @@ pub async fn handle_socket(
                 ping_device_id,
                 WsMessage::Ping(vec![].into()),
             );
+            // VL-3: keep this connection's voice session(s) fresh so the
+            // 120s stale-session sweep doesn't evict a connected-but-idle
+            // participant. No-op (0 rows) when the user isn't in a call.
+            if let Err(e) = db::channels::touch_user_voice_sessions(&ping_pool, ping_user_id).await
+            {
+                tracing::warn!("voice-session heartbeat touch failed for {ping_user_id}: {e}");
+            }
             // #829: `&'static str` payload avoids per-tick allocation.
             if !ping_hub.send_to_device(
                 &ping_user_id,
