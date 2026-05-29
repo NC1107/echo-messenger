@@ -803,8 +803,12 @@ class _ThreadReplyInputState extends State<_ThreadReplyInput> {
           child: InkWell(
             customBorder: const CircleBorder(),
             onTap: enabled ? _handleSend : null,
-            child: const Center(
-              child: Icon(Icons.arrow_upward, color: Colors.white, size: 18),
+            child: Center(
+              child: Icon(
+                Icons.arrow_upward,
+                color: context.onAccent,
+                size: 18,
+              ),
             ),
           ),
         ),
@@ -913,7 +917,7 @@ class _SmallInitialCircle extends StatelessWidget {
       child: Text(
         initial,
         style: TextStyle(
-          color: Colors.white,
+          color: context.onAccent,
           fontSize: size * 0.55,
           fontWeight: FontWeight.w700,
         ),

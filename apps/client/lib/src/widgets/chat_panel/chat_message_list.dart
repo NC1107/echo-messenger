@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, TargetPlatform;
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -302,9 +302,20 @@ class ChatMessageList extends ConsumerWidget {
         ),
       );
     } else {
+      // SelectionArea enables Ctrl+C / mouse-drag text selection on desktop
+      // and web. Mobile touch platforms use swipe-to-reply instead and don't
+      // benefit from SelectionArea (and its extra gesture arena entrant would
+      // race the swipe detector). TapGestureRecognizers on links/mentions
+      // inside RichTextContent still fire normally inside SelectionArea.
+      final listView = _buildMessageListView(context, ref);
+      final bool needsSelection =
+          kIsWeb ||
+          defaultTargetPlatform == TargetPlatform.linux ||
+          defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.macOS;
       child = KeyedSubtree(
         key: const ValueKey('list'),
-        child: _buildMessageListView(context, ref),
+        child: needsSelection ? SelectionArea(child: listView) : listView,
       );
     }
     return AnimatedSwitcher(
