@@ -24,6 +24,7 @@ import '../providers/canvas_provider.dart';
 import '../providers/crypto_provider.dart';
 import '../providers/channels_provider.dart';
 import '../providers/conversations_provider.dart';
+import '../providers/device_name_provider.dart';
 import '../providers/livekit_voice/livekit_voice_provider.dart';
 import '../providers/screen_share_provider.dart';
 import '../providers/server_url_provider.dart';
@@ -1191,22 +1192,20 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   /// The pill is only relevant in canvas mode — callers must gate on
   /// `!_spotlightMode` before inserting this into the overlay stack.
   ///
-  /// Device-name source: CryptoService.deviceId is an opaque int. A
-  /// human-readable device name would require surfacing the device list from
-  /// /api/devices through a dedicated provider. Until that is wired (tracked
-  /// as a follow-up — the open question is in
-  /// docs/voice-lounge/03-multi-device.md#open-questions), we fall back to
-  /// the literal string "another device".
+  /// Device-name source: watch [deviceNameProvider] keyed by the authority
+  /// device_id. The provider returns the user-set name (or the platform-
+  /// derived default) once /api/keys/devices has been fetched at least once;
+  /// until then we fall back to the literal string "another device".
   ///
-  /// TODO: plumb device_name through the lounge presence payload or a
-  /// devicesProvider so the pill can show "Drawing from Nick's iPhone"
-  /// instead of the fallback. See docs/voice-lounge/03-multi-device.md.
+  /// See `docs/voice-lounge/03-multi-device.md` — Option C.
   Widget? _buildAuthorityPill(String channelId) {
     if (channelId.isEmpty) return null;
     final authority = ref.watch(canvasAuthorityNotifierProvider(channelId));
     if (authority == null) return null;
     final myDeviceId = ref.read(cryptoServiceProvider).deviceId;
     if (authority == myDeviceId) return null;
+    final resolvedName = ref.watch(deviceNameProvider(authority));
+    final pillLabel = 'Drawing from ${resolvedName ?? 'another device'}';
     return GestureDetector(
       key: const Key('canvas-authority-pill'),
       onTap: () => ref
@@ -1218,17 +1217,17 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
           color: Colors.black54,
           borderRadius: BorderRadius.circular(20),
         ),
-        child: const Row(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.edit_off, size: 14, color: Colors.white70),
-            SizedBox(width: 6),
+            const Icon(Icons.edit_off, size: 14, color: Colors.white70),
+            const SizedBox(width: 6),
             Text(
-              'Drawing from another device',
-              style: TextStyle(color: Colors.white70, fontSize: 12),
+              pillLabel,
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
             ),
-            SizedBox(width: 6),
-            Text(
+            const SizedBox(width: 6),
+            const Text(
               '· Tap to take over',
               style: TextStyle(color: Colors.white54, fontSize: 11),
             ),

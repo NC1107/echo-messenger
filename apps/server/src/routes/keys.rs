@@ -69,16 +69,107 @@ pub struct DeviceInfo {
     pub platform: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_seen: Option<chrono::DateTime<chrono::Utc>>,
+    /// Editable human-readable name. Always present after the device's first
+    /// key upload (server seeds a default from platform / user-agent); the
+    /// owner may rewrite it via `PATCH /api/keys/device/{id}`.
+    pub device_name: String,
 }
 
 impl From<db::keys::DeviceRow> for DeviceInfo {
     fn from(row: db::keys::DeviceRow) -> Self {
+        let device_id = row.device_id;
         DeviceInfo {
-            device_id: row.device_id,
-            platform: row.platform,
+            device_id,
+            platform: row.platform.clone(),
             last_seen: row.last_seen,
+            device_name: row
+                .device_name
+                .unwrap_or_else(|| fallback_device_name(row.platform.as_deref(), device_id)),
         }
     }
+}
+
+/// Resolve a device's display name when the stored value is missing
+/// (e.g. pre-migration rows). Mirrors [`default_device_name`] for the
+/// no-platform case so older devices still get a stable label.
+fn fallback_device_name(platform: Option<&str>, device_id: i32) -> String {
+    match platform.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(p) => p.to_string(),
+        None => format!("Device {device_id}"),
+    }
+}
+
+/// Bounds for the editable device name. Tight enough that the device-list
+/// UI stays readable; loose enough to allow "Nick's MacBook Pro 16" style.
+pub(crate) const DEVICE_NAME_MAX_LEN: usize = 40;
+
+/// Resolve the default device name written on first key upload from the
+/// `platform` hint (already validated to ≤ 32 chars in [`upload_bundle`]).
+///
+/// Pure function so it can be unit-tested in isolation. Returns a 1..=40
+/// character label suitable for direct insertion into `device_name`.
+///
+/// Examples:
+///   - `"ios"` → `"iPhone"`
+///   - `"android"` → `"Android"`
+///   - `"macos"` → `"MacBook"`
+///   - unknown → `"Device {device_id}"`
+pub(crate) fn default_device_name(platform: Option<&str>, device_id: i32) -> String {
+    let trimmed = platform.map(str::trim).filter(|s| !s.is_empty());
+    match trimmed {
+        Some(p) => resolve_named_platform(p, device_id),
+        None => format!("Device {device_id}"),
+    }
+}
+
+fn resolve_named_platform(platform: &str, device_id: i32) -> String {
+    let lower = platform.to_ascii_lowercase();
+    if lower.contains("ios") || lower.contains("iphone") {
+        return "iPhone".to_string();
+    }
+    if lower.contains("ipad") {
+        return "iPad".to_string();
+    }
+    if lower.contains("android") {
+        return "Android".to_string();
+    }
+    if lower.contains("mac") || lower.contains("darwin") {
+        return "MacBook".to_string();
+    }
+    if lower.contains("windows") || lower.contains("win") {
+        return "Windows".to_string();
+    }
+    if lower.contains("linux") {
+        return "Linux".to_string();
+    }
+    if lower.contains("web") || lower.contains("chrome") || lower.contains("firefox") {
+        return "Web Browser".to_string();
+    }
+    // Fall back to the platform string itself, truncated to the column budget.
+    if platform.chars().count() <= DEVICE_NAME_MAX_LEN {
+        platform.to_string()
+    } else {
+        format!("Device {device_id}")
+    }
+}
+
+/// Validate + normalize an inbound device name. Trims surrounding whitespace,
+/// rejects control characters, and enforces the 1..=40 char range.
+pub(crate) fn validate_device_name(raw: &str) -> Result<String, AppError> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::bad_request("device_name must not be empty"));
+    }
+    let char_count = trimmed.chars().count();
+    if char_count > DEVICE_NAME_MAX_LEN {
+        return Err(AppError::bad_request("device_name too long (max 40 chars)"));
+    }
+    if trimmed.chars().any(|c| c.is_control()) {
+        return Err(AppError::bad_request(
+            "device_name must not contain control characters",
+        ));
+    }
+    Ok(trimmed.to_string())
 }
 
 /// Response body for device list query.
@@ -217,6 +308,10 @@ pub async fn upload_bundle(
     // Wrap all key stores in a transaction to prevent partial uploads.
     let mut tx = state.pool.begin().await.db_ctx("upload_bundle/begin_tx")?;
 
+    // Seed a default device_name from the platform hint on first upload.
+    // COALESCE in `store_identity_key` keeps any owner-supplied rename intact
+    // on re-uploads (OTP replenishment doesn't reset the user's chosen label).
+    let default_name = default_device_name(body.platform.as_deref(), device_id);
     db::keys::store_identity_key(
         &mut *tx,
         auth_user.user_id,
@@ -224,6 +319,7 @@ pub async fn upload_bundle(
         &identity_key,
         Some(&signing_key_bytes),
         body.platform.as_deref(),
+        Some(&default_name),
     )
     .await?;
 
@@ -486,6 +582,41 @@ pub async fn revoke_device(
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
+/// Request body for `PATCH /api/keys/device/:device_id`.
+#[derive(Debug, Deserialize)]
+pub struct RenameDeviceRequest {
+    pub device_name: String,
+}
+
+/// PATCH /api/keys/device/:device_id -- rename one of the authenticated user's
+/// own devices. The new name is surfaced in Settings → Devices and in the
+/// multi-device authority pill ("Drawing from MacBook Pro").
+///
+/// Auth: the WHERE clause is scoped to `auth_user.user_id`, so a token bound
+/// to user A cannot rename a device owned by user B (returns 404 instead of
+/// leaking whether the id exists for the other user).
+///
+/// Validation lives in [`validate_device_name`]: trims whitespace, requires
+/// 1..=40 chars, rejects control characters.
+pub async fn rename_device(
+    State(state): State<Arc<AppState>>,
+    auth_user: AuthUser,
+    Path(device_id): Path<i32>,
+    Json(body): Json<RenameDeviceRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let new_name = validate_device_name(&body.device_name)?;
+    let updated = db::keys::rename_device(&state.pool, auth_user.user_id, device_id, &new_name)
+        .await
+        .db_ctx("rename_device")?;
+    if !updated {
+        return Err(AppError::not_found("Device not found"));
+    }
+    Ok(Json(serde_json::json!({
+        "device_id": device_id,
+        "device_name": new_name,
+    })))
+}
+
 /// Request body for `POST /api/keys/devices/revoke-others`.
 #[derive(Debug, Deserialize)]
 pub struct RevokeOthersRequest {
@@ -705,4 +836,60 @@ pub async fn get_otp_count(
     let count =
         db::keys::count_one_time_prekeys(&state.pool, auth_user.user_id, query.device_id).await?;
     Ok(Json(serde_json::json!({ "count": count })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_device_name_maps_known_platforms() {
+        assert_eq!(default_device_name(Some("ios"), 0), "iPhone");
+        assert_eq!(default_device_name(Some("iOS"), 1), "iPhone");
+        assert_eq!(default_device_name(Some("ipad"), 0), "iPad");
+        assert_eq!(default_device_name(Some("android"), 2), "Android");
+        assert_eq!(default_device_name(Some("macos"), 0), "MacBook");
+        assert_eq!(default_device_name(Some("Darwin"), 0), "MacBook");
+        assert_eq!(default_device_name(Some("windows"), 0), "Windows");
+        assert_eq!(default_device_name(Some("linux"), 0), "Linux");
+        assert_eq!(default_device_name(Some("web"), 0), "Web Browser");
+        assert_eq!(default_device_name(Some("Chrome"), 0), "Web Browser");
+    }
+
+    #[test]
+    fn default_device_name_falls_back_when_unknown() {
+        assert_eq!(default_device_name(None, 0), "Device 0");
+        assert_eq!(default_device_name(Some(""), 7), "Device 7");
+        assert_eq!(default_device_name(Some("   "), 3), "Device 3");
+        // Unknown but short — pass through as-is so a user-agent string like
+        // "BeOS" still shows something instead of being lost.
+        assert_eq!(default_device_name(Some("BeOS"), 0), "BeOS");
+    }
+
+    #[test]
+    fn fallback_device_name_uses_platform_when_present() {
+        assert_eq!(fallback_device_name(Some("Linux"), 0), "Linux");
+        assert_eq!(fallback_device_name(None, 4), "Device 4");
+        assert_eq!(fallback_device_name(Some("  "), 9), "Device 9");
+    }
+
+    #[test]
+    fn validate_device_name_accepts_normal_input() {
+        assert_eq!(validate_device_name("My Laptop").unwrap(), "My Laptop");
+        assert_eq!(validate_device_name("  Phone  ").unwrap(), "Phone");
+    }
+
+    #[test]
+    fn validate_device_name_rejects_empty_or_oversized() {
+        assert!(validate_device_name("").is_err());
+        assert!(validate_device_name("   ").is_err());
+        let huge = "x".repeat(DEVICE_NAME_MAX_LEN + 1);
+        assert!(validate_device_name(&huge).is_err());
+    }
+
+    #[test]
+    fn validate_device_name_rejects_control_characters() {
+        assert!(validate_device_name("bad\nname").is_err());
+        assert!(validate_device_name("zero\0byte").is_err());
+    }
 }

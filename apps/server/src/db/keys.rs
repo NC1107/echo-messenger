@@ -128,6 +128,12 @@ pub async fn clear_device_fingerprint(
 /// intact (useful for OTP replenishment that re-uploads the identity without
 /// new metadata).
 ///
+/// `device_name` is the editable human-readable label shown in the device
+/// management UI and the multi-device authority pill. On first upload we
+/// seed it from the resolver in `routes::keys::default_device_name`; existing
+/// rows keep whatever the user set via PATCH (COALESCE preserves the stored
+/// value).
+///
 /// On conflict (re-upload of the same device), `revoked_at` is cleared so that
 /// a fresh key bundle re-activates a previously revoked device slot (#657).
 pub async fn store_identity_key(
@@ -137,14 +143,17 @@ pub async fn store_identity_key(
     identity_key: &[u8],
     signing_key: Option<&[u8]>,
     platform: Option<&str>,
+    device_name: Option<&str>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO identity_keys (user_id, device_id, identity_key, signing_key, platform) \
-         VALUES ($1, $2, $3, $4, $5) \
+        "INSERT INTO identity_keys \
+             (user_id, device_id, identity_key, signing_key, platform, device_name) \
+         VALUES ($1, $2, $3, $4, $5, $6) \
          ON CONFLICT (user_id, device_id) DO UPDATE \
          SET identity_key = $3, \
              signing_key = $4, \
              platform = COALESCE($5, identity_keys.platform), \
+             device_name = COALESCE(identity_keys.device_name, $6), \
              revoked_at = NULL",
     )
     .bind(user_id)
@@ -152,9 +161,33 @@ pub async fn store_identity_key(
     .bind(identity_key)
     .bind(signing_key)
     .bind(platform)
+    .bind(device_name)
     .execute(db)
     .await?;
     Ok(())
+}
+
+/// Update the human-readable name for a (user, device) pair. Returns true
+/// when the row was found and updated, false when the device does not exist
+/// (or belongs to a different user — the caller is responsible for the
+/// user_id scoping, which we enforce here as a defense-in-depth filter).
+pub async fn rename_device(
+    db: impl sqlx::PgExecutor<'_>,
+    user_id: Uuid,
+    device_id: i32,
+    device_name: &str,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE identity_keys \
+         SET device_name = $3 \
+         WHERE user_id = $1 AND device_id = $2 AND revoked_at IS NULL",
+    )
+    .bind(user_id)
+    .bind(device_id)
+    .bind(device_name)
+    .execute(db)
+    .await?;
+    Ok(result.rows_affected() > 0)
 }
 
 /// Store a new signed prekey for a device, keeping the previously active key
@@ -428,6 +461,7 @@ pub struct DeviceRow {
     pub device_id: i32,
     pub platform: Option<String>,
     pub last_seen: Option<DateTime<Utc>>,
+    pub device_name: Option<String>,
 }
 
 /// TD-53: return the lowest active device_id for a user, or None when the
@@ -453,7 +487,7 @@ pub async fn get_first_active_device_id(
 /// their platform and last-seen timestamp. Excludes revoked devices (#657).
 pub async fn get_user_devices(pool: &PgPool, user_id: Uuid) -> Result<Vec<DeviceRow>, sqlx::Error> {
     sqlx::query_as::<_, DeviceRow>(
-        "SELECT device_id, platform, last_seen \
+        "SELECT device_id, platform, last_seen, device_name \
          FROM identity_keys \
          WHERE user_id = $1 AND revoked_at IS NULL \
          ORDER BY device_id DESC \

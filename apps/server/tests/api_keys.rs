@@ -1016,3 +1016,180 @@ async fn revoke_other_devices_keeps_current_drops_rest() {
         .collect();
     assert_eq!(device_ids, vec![0], "only device 0 should remain");
 }
+
+// ---------------------------------------------------------------------------
+// Device name (list + rename)
+// ---------------------------------------------------------------------------
+
+/// Upload a bundle including a `platform` hint so the server seeds the
+/// editable device_name from it (the public helper omits platform for
+/// backward-compatible tests).
+async fn upload_bundle_with_platform(
+    client: &Client,
+    base: &str,
+    token: &str,
+    device_id: i32,
+    platform: &str,
+) {
+    let secret = rand::random::<[u8; 32]>();
+    let signing_key = SigningKey::from_bytes(&secret);
+    let signing_key_pub = signing_key.verifying_key().to_bytes();
+    let identity_key = rand::random::<[u8; 32]>().to_vec();
+    let signed_prekey = rand::random::<[u8; 32]>().to_vec();
+    let signature = signing_key.sign(&signed_prekey);
+
+    let body = serde_json::json!({
+        "identity_key": BASE64.encode(&identity_key),
+        "signed_prekey": BASE64.encode(&signed_prekey),
+        "signed_prekey_signature": BASE64.encode(signature.to_bytes()),
+        "signed_prekey_id": 1,
+        "one_time_prekeys": [],
+        "device_id": device_id,
+        "signing_key": BASE64.encode(signing_key_pub),
+        "platform": platform,
+    });
+    let resp = client
+        .post(format!("{base}/api/keys/upload"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 201);
+}
+
+#[tokio::test]
+async fn device_name_appears_in_list_response() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, uid, _) = common::register_and_login(&client, &base, "devname_list").await;
+
+    upload_bundle_with_platform(&client, &base, &token, 0, "macos").await;
+
+    let resp = client
+        .get(format!("{base}/api/keys/devices/{uid}"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let devices = body["devices"].as_array().unwrap();
+    assert_eq!(devices.len(), 1);
+    let name = devices[0]["device_name"].as_str().unwrap();
+    assert!(!name.is_empty(), "device_name should be non-empty");
+    // Resolver maps `macos` → `MacBook` (see default_device_name).
+    assert_eq!(name, "MacBook");
+}
+
+#[tokio::test]
+async fn device_rename_changes_persisted_name() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, uid, _) = common::register_and_login(&client, &base, "devname_rename").await;
+
+    upload_bundle_with_platform(&client, &base, &token, 0, "linux").await;
+
+    // Rename device 0 → "Office Laptop".
+    let resp = client
+        .patch(format!("{base}/api/keys/device/0"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({ "device_name": "Office Laptop" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200, "rename should return 200");
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["device_name"], "Office Laptop");
+
+    // The list call must reflect the updated name.
+    let resp = client
+        .get(format!("{base}/api/keys/devices/{uid}"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+    let body: Value = resp.json().await.unwrap();
+    let devices = body["devices"].as_array().unwrap();
+    let row = devices.iter().find(|d| d["device_id"] == 0).unwrap();
+    assert_eq!(row["device_name"], "Office Laptop");
+}
+
+#[tokio::test]
+async fn device_rename_trims_whitespace() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _uid, _) = common::register_and_login(&client, &base, "devname_trim").await;
+
+    upload_bundle_with_platform(&client, &base, &token, 0, "linux").await;
+
+    let resp = client
+        .patch(format!("{base}/api/keys/device/0"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({ "device_name": "   Tidy Name   " }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["device_name"], "Tidy Name");
+}
+
+#[tokio::test]
+async fn device_rename_rejects_oversized_name() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _uid, _) = common::register_and_login(&client, &base, "devname_big").await;
+
+    upload_bundle_with_platform(&client, &base, &token, 0, "linux").await;
+
+    let huge = "x".repeat(100);
+    let resp = client
+        .patch(format!("{base}/api/keys/device/0"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({ "device_name": huge }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 400);
+}
+
+#[tokio::test]
+async fn device_rename_rejects_empty_name() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _uid, _) = common::register_and_login(&client, &base, "devname_empty").await;
+
+    upload_bundle_with_platform(&client, &base, &token, 0, "linux").await;
+
+    let resp = client
+        .patch(format!("{base}/api/keys/device/0"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({ "device_name": "   " }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 400);
+}
+
+#[tokio::test]
+async fn device_rename_rejects_other_users_device() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token_a, _uid_a, _) = common::register_and_login(&client, &base, "devname_a").await;
+    let (token_b, _uid_b, _) = common::register_and_login(&client, &base, "devname_b").await;
+
+    upload_bundle_with_platform(&client, &base, &token_a, 0, "linux").await;
+
+    // B tries to rename A's device 0. The WHERE clause is scoped to the
+    // caller's user_id, so this returns 404 (not 200, not 403 — we don't
+    // want to leak whether device 0 exists for user A).
+    let resp = client
+        .patch(format!("{base}/api/keys/device/0"))
+        .header("Authorization", format!("Bearer {token_b}"))
+        .json(&serde_json::json!({ "device_name": "evil" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 404);
+}
