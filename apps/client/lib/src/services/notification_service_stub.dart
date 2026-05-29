@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:flutter/foundation.dart'
+    show debugPrint, defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -33,6 +34,23 @@ class _NativeNotificationService implements NotificationService {
   /// that were queued while offline still trigger local notifications.
   static DateTime _lastForeground = DateTime.now();
   static int _fallbackId = 100000;
+
+  /// Serializes notification shows so a burst (e.g. an undelivered-message
+  /// backlog draining on reconnect) can't fire dozens of `_plugin.show()`
+  /// calls in the same tick. Each show awaits the previous; errors are
+  /// swallowed so one failed toast never escapes as an unhandled async
+  /// exception.
+  static Future<void> _showChain = Future<void>.value();
+
+  /// Timestamp of the last actual `_plugin.show()` — drives the Linux
+  /// min-spacing below.
+  static DateTime? _lastShowAt;
+
+  /// freedesktop notification daemons reject rapid bursts with
+  /// `org.freedesktop.Notifications.Error.ExcessNotificationGeneration`
+  /// (~3/sec). Space successive Linux shows out so a backlog trickles
+  /// instead of crashing. Other platforms have no such limit → no delay.
+  static const Duration _kLinuxMinShowInterval = Duration(milliseconds: 400);
 
   // Cached notification preferences (loaded from SharedPreferences).
   static bool _notificationsEnabled = true;
@@ -235,8 +253,31 @@ class _NativeNotificationService implements NotificationService {
     bool isGroup,
     String? conversationName,
   ) {
-    _ensureInitialized().then((_) {
+    // Enqueue on the serialized chain so concurrent calls don't burst the
+    // platform's notification daemon. `.catchError` keeps the chain alive if
+    // a single dispatch throws.
+    _showChain = _showChain.then(
+      (_) => _dispatchNotification(
+        conversationId,
+        senderUsername,
+        body,
+        isGroup,
+        conversationName,
+      ),
+    );
+  }
+
+  Future<void> _dispatchNotification(
+    String? conversationId,
+    String senderUsername,
+    String body,
+    bool isGroup,
+    String? conversationName,
+  ) async {
+    try {
+      await _ensureInitialized();
       if (!_initialized) return;
+      await _throttleLinuxShow();
 
       final notificationId = _idForConversation(conversationId);
       final androidDetails = isGroup ? _groupChannel : _dmChannel;
@@ -250,7 +291,7 @@ class _NativeNotificationService implements NotificationService {
         presentSound: true,
       );
 
-      _plugin.show(
+      await _plugin.show(
         id: notificationId,
         title: senderUsername,
         body: body,
@@ -261,7 +302,30 @@ class _NativeNotificationService implements NotificationService {
         ),
         payload: conversationId,
       );
-    });
+    } catch (e) {
+      // Swallow + log. The Linux DBus daemon can still reject a show with
+      // ExcessNotificationGeneration under a heavy burst even with spacing;
+      // a dropped toast must never crash the app.
+      DebugLogService.instance.log(
+        LogLevel.warning,
+        'Notifications',
+        'show dropped: $e',
+      );
+    }
+  }
+
+  /// On Linux, sleep until at least [_kLinuxMinShowInterval] has elapsed since
+  /// the previous show. No-op on web and non-Linux platforms.
+  Future<void> _throttleLinuxShow() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.linux) return;
+    final last = _lastShowAt;
+    if (last != null) {
+      final elapsed = DateTime.now().difference(last);
+      if (elapsed < _kLinuxMinShowInterval) {
+        await Future<void>.delayed(_kLinuxMinShowInterval - elapsed);
+      }
+    }
+    _lastShowAt = DateTime.now();
   }
 
   @override

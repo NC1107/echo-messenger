@@ -79,7 +79,14 @@ mixin _HomeScreenWideLayoutMixin
                         SizedBox(width: 300, child: _buildConversationPanel()),
                       Container(width: 1, color: context.border),
                     ],
-                    Expanded(child: rightPanel),
+                    // Stable key so toggling fullscreen (removes the leading
+                    // sidebar siblings) reorders this slot instead of
+                    // re-inflating it — preserves the VoiceLoungeScreen State
+                    // (see desktop_layout for the full rationale).
+                    Expanded(
+                      key: const ValueKey('home-right-panel'),
+                      child: rightPanel,
+                    ),
                   ],
                 ),
                 if (_self._whatsNewNotes != null)

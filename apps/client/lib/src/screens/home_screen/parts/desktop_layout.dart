@@ -330,7 +330,16 @@ mixin _HomeScreenDesktopLayoutMixin
                       _buildDesktopSidebar(sidebarWidth, animatedSidebarWidth),
                       _buildResizeHandle(),
                     ],
-                    Expanded(child: rightPanel),
+                    // Stable key so toggling fullscreen (which adds/removes
+                    // the leading sidebar + trailing members siblings) REORDERS
+                    // this slot instead of re-inflating it. Without it the
+                    // VoiceLoungeScreen State was torn down + rebuilt on every
+                    // fullscreen toggle — which broke fullscreen (dispose
+                    // clears the flag) and thrashed canvas/LiveKit state.
+                    Expanded(
+                      key: const ValueKey('home-right-panel'),
+                      child: rightPanel,
+                    ),
                     if (!loungeFullscreen) ..._buildMembersPanel(),
                   ],
                 ),
