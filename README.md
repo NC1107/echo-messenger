@@ -4,6 +4,7 @@
 [![Release](https://github.com/NC1107/echo-messenger/actions/workflows/release.yml/badge.svg)](https://github.com/NC1107/echo-messenger/actions/workflows/release.yml)
 [![Rust CI](https://github.com/NC1107/echo-messenger/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/NC1107/echo-messenger/actions/workflows/rust-ci.yml)
 [![Flutter CI](https://github.com/NC1107/echo-messenger/actions/workflows/flutter-ci.yml/badge.svg)](https://github.com/NC1107/echo-messenger/actions/workflows/flutter-ci.yml)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=NC1107_echo-messenger&metric=coverage)](https://sonarcloud.io/summary/new_code?id=NC1107_echo-messenger)
 [![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue)](LICENSE)
 
 A lightweight, cross-platform messaging app with end-to-end encryption. I'm not a fan of the direction Discord is moving, and I don't think most people can set up Matrix, so this is my attempt at a replacement. It runs centralized by default, but you can always host the server yourself.
