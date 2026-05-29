@@ -437,6 +437,31 @@ pub async fn remove_member(
     Ok(removed)
 }
 
+/// Change a member's role inside an externally managed transaction.
+///
+/// Returns `true` when the role was actually updated (the row existed and
+/// was active), `false` when the member was not found or already had that
+/// role.  Callers must supply a role string already validated against the
+/// `Role` enum (`"admin"` or `"member"`).
+pub async fn set_member_role_in_tx(
+    conn: &mut PgConnection,
+    group_id: Uuid,
+    user_id: Uuid,
+    new_role: &str,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE conversation_members \
+         SET role = $3 \
+         WHERE conversation_id = $1 AND user_id = $2 AND is_removed = false",
+    )
+    .bind(group_id)
+    .bind(user_id)
+    .bind(new_role)
+    .execute(&mut *conn)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
 /// Get all member user IDs for a conversation (works for both DMs and groups).
 ///
 /// Generic over `Executor` so callers can reuse the existing tx during

@@ -143,6 +143,22 @@ extension PresenceHandlersOn on WsMessageHandler {
     ref.read(cryptoProvider.notifier).seedInitialGroupKey(conversationId);
   }
 
+  /// Handle a `member_role_changed` WS event.
+  ///
+  /// The server broadcasts this after a successful
+  /// `PATCH /api/groups/:id/members/:user_id/role` so every connected client
+  /// reflects the promotion/demotion without polling.
+  void _handleMemberRoleChanged(Map<String, dynamic> json) {
+    final conversationId = json['conversation_id'] as String? ?? '';
+    final userId = json['user_id'] as String? ?? '';
+    final role = json['role'] as String? ?? 'member';
+    if (conversationId.isEmpty || userId.isEmpty) return;
+
+    ref
+        .read(conversationsProvider.notifier)
+        .updateGroupMemberRole(conversationId, userId, role);
+  }
+
   void _handleMention(Map<String, dynamic> json, String myUserId) {
     final fromUsername = json['from_username'] as String? ?? 'Someone';
     final conversationId = json['conversation_id'] as String? ?? '';

@@ -24,7 +24,7 @@ mod types;
 
 pub use create::{create_group, get_group};
 
-pub use members::{add_member, ban_member, remove_member, unban_member};
+pub use members::{add_member, ban_member, change_member_role, remove_member, unban_member};
 
 pub use lifecycle::{delete_group, leave_group};
 

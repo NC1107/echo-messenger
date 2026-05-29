@@ -10,6 +10,8 @@ MemberTarget _t({
   bool isSelf = false,
   bool targetIsOwner = false,
   bool viewerIsAdminOrOwner = false,
+  bool viewerIsOwner = false,
+  bool targetIsAdmin = false,
   bool wireProfile = true,
   bool wireSendMessage = true,
   bool wireAddContact = false,
@@ -18,6 +20,7 @@ MemberTarget _t({
   bool wireUnblock = false,
   bool wireKick = true,
   bool wireBan = true,
+  bool wireChangeRole = false,
   bool wireCopyUsername = true,
   bool wireCopyUserId = true,
 }) {
@@ -27,6 +30,8 @@ MemberTarget _t({
     isSelf: isSelf,
     targetIsOwner: targetIsOwner,
     viewerIsAdminOrOwner: viewerIsAdminOrOwner,
+    viewerIsOwner: viewerIsOwner,
+    targetIsAdmin: targetIsAdmin,
     onViewProfile: wireProfile ? () {} : null,
     onSendMessage: wireSendMessage ? () {} : null,
     onAddContact: wireAddContact ? () {} : null,
@@ -37,6 +42,7 @@ MemberTarget _t({
     onCopyUsername: wireCopyUsername ? () {} : null,
     onKick: wireKick ? () {} : null,
     onBan: wireBan ? () {} : null,
+    onChangeRole: wireChangeRole ? () {} : null,
   );
 }
 
@@ -120,6 +126,65 @@ void main() {
         'Copy Username',
         'Copy User ID',
       ]);
+    });
+
+    test('owner viewer sees Make admin for a regular member', () {
+      final labels = _labels(
+        buildMemberMenu(
+          _t(
+            viewerIsOwner: true,
+            viewerIsAdminOrOwner: true,
+            targetIsAdmin: false,
+            wireChangeRole: true,
+          ),
+        ),
+      ).toList();
+      expect(labels, contains('Make admin'));
+      expect(labels, isNot(contains('Remove admin')));
+    });
+
+    test('owner viewer sees Remove admin for an admin member', () {
+      final labels = _labels(
+        buildMemberMenu(
+          _t(
+            viewerIsOwner: true,
+            viewerIsAdminOrOwner: true,
+            targetIsAdmin: true,
+            wireChangeRole: true,
+          ),
+        ),
+      ).toList();
+      expect(labels, contains('Remove admin'));
+      expect(labels, isNot(contains('Make admin')));
+    });
+
+    test('non-owner admin never sees Make admin / Remove admin', () {
+      final labels = _labels(
+        buildMemberMenu(
+          _t(
+            viewerIsOwner: false,
+            viewerIsAdminOrOwner: true,
+            wireChangeRole: false,
+          ),
+        ),
+      ).toList();
+      expect(labels, isNot(contains('Make admin')));
+      expect(labels, isNot(contains('Remove admin')));
+    });
+
+    test('Make admin is not danger-styled', () {
+      final m = buildMemberMenu(
+        _t(
+          viewerIsOwner: true,
+          viewerIsAdminOrOwner: true,
+          targetIsAdmin: false,
+          wireChangeRole: true,
+        ),
+      );
+      final row = m.sections
+          .expand((s) => s.actions)
+          .firstWhere((a) => a.label == 'Make admin');
+      expect(row.isDanger, isFalse);
     });
   });
 }
