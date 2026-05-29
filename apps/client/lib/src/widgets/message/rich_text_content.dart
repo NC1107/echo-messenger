@@ -4,9 +4,11 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../providers/theme_provider.dart' show UIDensity;
+import '../../theme/echo_theme.dart' show kEmojiFontFallback;
 import 'markdown_patterns.dart';
 
 // Re-export urlRegex for callers that imported it from this file.
@@ -124,15 +126,19 @@ class _RichTextContentState extends State<RichTextContent> {
   }
 
   /// Base text style used throughout message rendering.
-  /// Ligatures are disabled ("calt" 0) so user text reads without code ligatures.
-  /// NotoEmoji font fallback ensures emoji render in color on all platforms.
-  TextStyle _baseStyle() => TextStyle(
+  ///
+  /// Inter is the explicit primary family (matching the app text theme) with
+  /// [kEmojiFontFallback] only as a fallback. The primary family is essential:
+  /// without it, Skia resolves spaces and ASCII punctuation to the bundled
+  /// NotoColorEmoji font, whose enormous advance widths blow up word spacing
+  /// (the "s p a c e d   o u t" compact/markdown bug). Ligatures are disabled
+  /// ("calt" 0) so user text reads without code ligatures.
+  TextStyle _baseStyle() => GoogleFonts.inter(
     fontSize: _bodyFontSize,
     color: widget.textColor,
     height: _bodyLineHeight,
     fontFeatures: const [FontFeature.disable('calt')],
-    fontFamilyFallback: const ['NotoEmoji'],
-  );
+  ).copyWith(fontFamilyFallback: kEmojiFontFallback);
 
   TapGestureRecognizer _createLinkRecognizer(String url) {
     final recognizer = TapGestureRecognizer()
@@ -167,11 +173,9 @@ class _RichTextContentState extends State<RichTextContent> {
       spans.add(
         TextSpan(
           text: match.group(0),
-          style: TextStyle(
-            fontSize: _bodyFontSize,
+          style: _baseStyle().copyWith(
             color: widget.accentHoverColor,
             fontWeight: FontWeight.w600,
-            height: _bodyLineHeight,
           ),
         ),
       );
@@ -567,10 +571,10 @@ class _RichTextContentState extends State<RichTextContent> {
           !hasSpoiler &&
           !hasMaskedLink) {
         if (widget.leadingSpans == null) {
-          return Text(
-            text,
-            style: TextStyle(fontSize: 15, color: textColor, height: 1.47),
-          );
+          // Use the same Inter + emoji-fallback base style as every other
+          // path so plain messages render identically (and pick up bundled
+          // emoji + the correct density font size).
+          return Text(text, style: _baseStyle());
         }
         return RichText(
           text: TextSpan(

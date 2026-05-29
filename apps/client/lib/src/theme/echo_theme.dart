@@ -1,6 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+/// Emoji font fallback chain for any text style that may contain emoji.
+///
+/// Platform-native emoji fonts come FIRST: 'Apple Color Emoji' (macOS/iOS)
+/// and 'Segoe UI Emoji' (Windows) both ship the GSUB ligature table that
+/// combines regional-indicator pairs into flag glyphs (#917). 'Twemoji
+/// Mozilla' covers Linux distros that ship Twemoji. The bundled CBDT
+/// 'NotoEmoji' (NotoColorEmoji.ttf) is LAST so AppImage builds without a
+/// system emoji font still render tofu-free.
+///
+/// IMPORTANT: only ever use this as a *fallback* on a style whose primary
+/// `fontFamily` is a real text font (Inter). NotoColorEmoji has huge advance
+/// widths for space + ASCII punctuation, so putting it on a family-less style
+/// makes Skia resolve spaces to the emoji font and blows up word spacing.
+const List<String> kEmojiFontFallback = [
+  'Apple Color Emoji',
+  'Segoe UI Emoji',
+  'Twemoji Mozilla',
+  'NotoEmoji',
+];
+
 class EchoTheme {
   // shadcn-inspired dark palette
   static const mainBg = Color(0xFF0A0A0B);
@@ -69,23 +89,11 @@ class EchoTheme {
         ? ThemeData.dark().textTheme
         : ThemeData.light().textTheme;
     final baseTextTheme = GoogleFonts.interTextTheme(base);
-    // Route any glyph not present in Inter (notably emoji codepoints) to a
-    // fallback chain. Platform-native emoji fonts come FIRST: 'Apple Color
-    // Emoji' (macOS/iOS) and 'Segoe UI Emoji' (Windows) both ship with the
-    // GSUB ligature table that combines regional-indicator pairs into the
-    // expected flag glyph (#917). 'Twemoji Mozilla' covers Linux distros
-    // that ship Twemoji. NotoEmoji is kept at the end as the last-resort
-    // fallback so AppImage builds without system emoji fonts still render
-    // tofu-free for most codepoints -- the bundled CBDT NotoColorEmoji
-    // does not include flag ligatures, so Linux desktops without a system
-    // emoji font will still show regional-indicator letter pairs for
-    // flags. Tracked as a follow-up to ship a COLRv1 build.
-    const emojiFallback = [
-      'Apple Color Emoji',
-      'Segoe UI Emoji',
-      'Twemoji Mozilla',
-      'NotoEmoji',
-    ];
+    // Route any glyph not present in Inter (notably emoji codepoints) to the
+    // shared [kEmojiFontFallback] chain. (Bundled NotoColorEmoji has no flag
+    // ligatures, so Linux desktops without a system emoji font still show
+    // regional-indicator letter pairs for flags — tracked as a COLRv1 follow-up.)
+    const emojiFallback = kEmojiFontFallback;
     return baseTextTheme.copyWith(
       headlineLarge: baseTextTheme.headlineLarge?.copyWith(
         fontSize: 24,
