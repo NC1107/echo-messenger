@@ -870,6 +870,113 @@ pub struct UpdateStatusTextRequest {
     pub status_text: Option<String>,
 }
 
+// ---------------------------------------------------------------------------
+// Notification snooze
+// ---------------------------------------------------------------------------
+
+/// Maximum snooze window. Anything longer reads as "I've left for good"
+/// rather than "silence this for a while" — force the user to re-affirm.
+const MAX_SNOOZE: chrono::Duration = chrono::Duration::days(7);
+
+#[derive(Deserialize)]
+pub struct SnoozeRequest {
+    /// Explicit ISO-8601 UTC instant. Wins over `duration_hours` when both
+    /// are present; `null` (or omitted with a present `duration_hours`)
+    /// falls back to the duration branch; both absent = clear the snooze.
+    #[serde(default)]
+    pub until: Option<DateTime<Utc>>,
+    /// Convenience: server computes `now() + duration_hours`. Ignored when
+    /// `until` is present.
+    #[serde(default)]
+    pub duration_hours: Option<u32>,
+}
+
+#[derive(Serialize)]
+pub struct SnoozeResponse {
+    pub notifications_snoozed_until: Option<DateTime<Utc>>,
+}
+
+/// PATCH /api/users/me/notifications/snooze
+///
+/// Body forms (pick one):
+/// - `{ "until": "2026-05-29T20:00:00Z" }`   — explicit UTC instant
+/// - `{ "duration_hours": 8 }`               — server adds to `now()`
+/// - `{ "until": null }` / `{}`              — clear the snooze
+///
+/// Rejects past or > 7-day windows with 400.
+pub async fn update_snooze(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<SnoozeRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let target = resolve_snooze_target(&body)?;
+    let stored = db::users::set_notifications_snoozed_until(&state.pool, auth.user_id, target)
+        .await
+        .db_ctx("update_snooze")?;
+    Ok(Json(SnoozeResponse {
+        notifications_snoozed_until: stored,
+    }))
+}
+
+/// Decide the final UTC timestamp (or `None` to clear) for a snooze request.
+/// Extracted so [`update_snooze`] stays well under the cognitive-complexity
+/// budget and the validation rules are unit-testable.
+fn resolve_snooze_target(body: &SnoozeRequest) -> Result<Option<DateTime<Utc>>, AppError> {
+    // `until` always wins.
+    if let Some(until) = body.until {
+        validate_snooze_until(until)?;
+        return Ok(Some(until));
+    }
+    if let Some(hours) = body.duration_hours {
+        if hours == 0 {
+            return Ok(None);
+        }
+        let until = Utc::now() + chrono::Duration::hours(hours as i64);
+        validate_snooze_until(until)?;
+        return Ok(Some(until));
+    }
+    // Neither field set ⇒ clear.
+    Ok(None)
+}
+
+fn validate_snooze_until(until: DateTime<Utc>) -> Result<(), AppError> {
+    let now = Utc::now();
+    if until <= now {
+        return Err(AppError::bad_request(
+            "snooze 'until' must be in the future",
+        ));
+    }
+    if until - now > MAX_SNOOZE {
+        return Err(AppError::bad_request("snooze window may not exceed 7 days"));
+    }
+    Ok(())
+}
+
+/// GET /api/users/me
+///
+/// Returns the authenticated user's identity plus settings the client needs
+/// at startup (currently: notification snooze). Kept deliberately narrow —
+/// extend as more "always needed by the client shell" fields appear.
+pub async fn get_me(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    let user = db::users::find_by_id(&state.pool, auth.user_id)
+        .await
+        .db_ctx("get_me/find_user")?
+        .ok_or_else(|| AppError::not_found("User not found"))?;
+    let snoozed_until = db::users::get_notifications_snoozed_until(&state.pool, auth.user_id)
+        .await
+        .db_ctx("get_me/snooze")?;
+    Ok(Json(serde_json::json!({
+        "user_id": user.id,
+        "username": user.username,
+        "avatar_url": user.avatar_url,
+        "is_admin": user.is_admin,
+        "notifications_snoozed_until": snoozed_until,
+    })))
+}
+
 /// PUT /api/users/me/status-text
 pub async fn update_status_text(
     auth: AuthUser,
