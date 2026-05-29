@@ -48,7 +48,7 @@ import '../widgets/voice_lounge/canvas_loading_banner.dart';
 import '../widgets/voice_lounge/encrypted_canvas_notice.dart';
 import '../widgets/voice_lounge/lounge_canvas_gestures.dart';
 import '../widgets/voice_lounge/lounge_canvas_strokes.dart';
-import '../widgets/vertex_mesh_background.dart';
+import '../widgets/voice_lounge/canvas_grid_background.dart';
 import '../widgets/voice_canvas.dart';
 import 'voice_lounge/call_metrics_chip.dart';
 import 'voice_lounge/dock_submenus.dart';
@@ -158,6 +158,13 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   /// tolerance.
   bool _viewportTransformed = false;
 
+  /// Live mirror of the gesture widget's canvas transform. Fed from
+  /// `_onTransformChanged` so `CanvasGridBackground` can re-project on
+  /// every pan/zoom frame without going through Riverpod.
+  final ValueNotifier<Matrix4> _canvasTransform = ValueNotifier<Matrix4>(
+    Matrix4.identity(),
+  );
+
   /// Tracks the actual gesture-surface region (from LayoutBuilder
   /// constraints) so the lounge screen and the gesture widget agree on
   /// the dimensions used to compute `_computeInitialPose`. MediaQuery
@@ -212,6 +219,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   @override
   void dispose() {
     _activeStroke.dispose();
+    _canvasTransform.dispose();
     EchoTestProbe.instance.unregister();
     // Clear fullscreen so the user doesn't return to an immersive
     // HomeScreen the next time they open the lounge. Uses the notifier
@@ -229,6 +237,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   /// lounge's reset-view affordance state. Shows the reset button as
   /// soon as the user has zoomed / panned away from the auto-fit pose.
   void _onTransformChanged(Matrix4 next) {
+    _canvasTransform.value = Matrix4.copy(next);
     final size = _interactiveViewportSize;
     if (size == null || size.width <= 0 || size.height <= 0) return;
     final fitPose = _computeInitialPose(ref.read(canvasProvider), size);
@@ -973,13 +982,11 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   /// Resolves the active background widget for the lounge.  When the user
   /// has picked a custom image AND the file still exists on disk, renders
   /// it as a [BoxFit.cover] backdrop with a 50% black overlay for legibility.
-  /// Otherwise falls back to the original [VertexMeshBackground].
+  /// Otherwise renders a Figma/Miro-style scaling grid that reprojects on
+  /// every canvas pan/zoom so the user can see scale.
   Widget _buildBackground(BuildContext context) {
     final bg = ref.watch(voiceLoungeBackgroundProvider);
     final path = bg.customBackgroundPath;
-    final vertexColor = bg.vertexColor ?? context.accent;
-    final vertexCount = bg.vertexCount;
-    final connectionDistance = bg.connectionDistance;
     if (customBackgroundFileExists(path)) {
       return Stack(
         fit: StackFit.expand,
@@ -987,24 +994,19 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
           Image.file(
             File(path!),
             fit: BoxFit.cover,
-            errorBuilder: (_, _, _) => VertexMeshBackground(
-              accentColor: vertexColor,
-              backgroundColor: context.mainBg,
-              vertexCount: vertexCount,
-              connectionDistance: connectionDistance,
-            ),
+            errorBuilder: (_, _, _) => _buildGridBackground(),
           ),
           const ColoredBox(color: Color(0x80000000)),
         ],
       );
     }
-    return VertexMeshBackground(
-      accentColor: vertexColor,
-      backgroundColor: context.mainBg,
-      vertexCount: vertexCount,
-      connectionDistance: connectionDistance,
-    );
+    return ColoredBox(color: context.mainBg, child: _buildGridBackground());
   }
+
+  Widget _buildGridBackground() => CanvasGridBackground(
+    transformListenable: _canvasTransform,
+    currentTransform: () => _canvasTransform.value,
+  );
 
   /// True on iOS / Android — the touch-friendly platforms where the
   /// corner controls need a 44pt minimum hit target instead of the
