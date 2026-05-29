@@ -41,19 +41,44 @@ class InlineVideoPlayer extends StatefulWidget {
   State<InlineVideoPlayer> createState() => _InlineVideoPlayerState();
 }
 
+/// Maximum height (logical pixels) for the inline video bubble. Prevents a
+/// portrait clip from consuming the entire chat timeline vertically.
+const double _kInlineMaxHeight = 400;
+
+/// Clamp factor shared with the fullscreen player so both behave consistently.
+const double _kAspectMin = 0.3;
+const double _kAspectMax = 5.0;
+
+/// Resolves the aspect ratio to use for the inline video surface.
+///
+/// Falls back to 16:9 while the codec hasn't reported real dimensions yet.
+/// Exposed as a top-level function so it can be exercised in unit tests.
+double resolveInlineAspectRatio(int videoWidth, int videoHeight) {
+  if (videoWidth > 0 && videoHeight > 0) {
+    return (videoWidth / videoHeight).clamp(_kAspectMin, _kAspectMax);
+  }
+  return 16 / 9;
+}
+
 class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
   Player? _player;
   VideoController? _videoController;
   bool _started = false;
   bool _initFailed = false;
   bool _isPlaying = false;
+  int _videoWidth = 0;
+  int _videoHeight = 0;
   StreamSubscription<bool>? _playingSub;
   StreamSubscription<String>? _errorSub;
+  StreamSubscription<int?>? _widthSub;
+  StreamSubscription<int?>? _heightSub;
 
   @override
   void dispose() {
     _playingSub?.cancel();
     _errorSub?.cancel();
+    _widthSub?.cancel();
+    _heightSub?.cancel();
     _player?.dispose();
     super.dispose();
   }
@@ -70,6 +95,12 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       final controller = VideoController(player);
       _playingSub = player.stream.playing.listen((v) {
         if (mounted) setState(() => _isPlaying = v);
+      });
+      _widthSub = player.stream.width.listen((v) {
+        if (mounted && v != null) setState(() => _videoWidth = v);
+      });
+      _heightSub = player.stream.height.listen((v) {
+        if (mounted && v != null) setState(() => _videoHeight = v);
       });
       _errorSub = player.stream.error.listen((e) {
         if (!mounted || e.isEmpty) return;
@@ -121,6 +152,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
 
   @override
   Widget build(BuildContext context) {
+    final aspectRatio = resolveInlineAspectRatio(_videoWidth, _videoHeight);
     return Container(
       width: 300,
       padding: const EdgeInsets.all(4),
@@ -131,7 +163,13 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(10),
-        child: AspectRatio(aspectRatio: 16 / 9, child: _buildVideoArea()),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: _kInlineMaxHeight),
+          child: AspectRatio(
+            aspectRatio: aspectRatio,
+            child: _buildVideoArea(),
+          ),
+        ),
       ),
     );
   }
@@ -531,9 +569,7 @@ class _FullscreenVideoPlayerState extends State<FullscreenVideoPlayer> {
         : 0.0;
     // Fall back to 16:9 until the codec reports real dimensions. Clamp wide
     // so a portrait phone clip doesn't take over the screen vertically.
-    final aspectRatio = (_videoWidth > 0 && _videoHeight > 0)
-        ? (_videoWidth / _videoHeight).clamp(0.3, 5.0)
-        : 16 / 9;
+    final aspectRatio = resolveInlineAspectRatio(_videoWidth, _videoHeight);
 
     return Stack(
       children: [
