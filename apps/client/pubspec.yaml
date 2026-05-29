@@ -57,6 +57,12 @@ dependencies:
   flutter_colorpicker: ^1.1.0
   flutter_callkit_incoming: ^3.0.0
   flutter_markdown_plus: ^1.0.4
+  # Algorithm-only package (~30 KB) — emits a stroke outline polygon from a
+  # raw point list with velocity-thinned smoothing. Used locally on the canvas
+  # active-stroke + committed-stroke painters; wire format stays raw points so
+  # encryption + WS sync + multi-device authority are unchanged. See
+  # docs/voice-lounge/05-canvas-rewrite-spec.md §B.3.
+  perfect_freehand: ^2.0.4
 
 dev_dependencies:
   flutter_test:
