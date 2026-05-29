@@ -64,6 +64,11 @@ class ActiveStrokeNotifier extends ChangeNotifier {
   /// Whether a stroke is currently being drawn.
   bool get isActive => _active;
 
+  /// Number of points in the in-flight stroke. Exposed for the lounge's
+  /// optional on-canvas debug overlay (user feedback 2026-05-29 on
+  /// canvas rewrite live test, bug 5).
+  int get pointCount => _points.length;
+
   /// Read-only snapshot of the current in-flight stroke, or `null` if no
   /// stroke is in progress. Painter consumes this each tick.
   ActiveStroke? get current => _active

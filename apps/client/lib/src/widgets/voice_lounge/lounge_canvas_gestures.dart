@@ -17,6 +17,7 @@
 // PR — the parent agent wires it in after the Round-2 strokes layer
 // lands. The widget compiles standalone.
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'canvas_gesture_state.dart';
@@ -125,6 +126,22 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
   /// Cached state-machine phase.
   CanvasGesturePhase _phase = CanvasGesturePhase.idle;
 
+  /// Public listenable view of the gesture phase, used by the lounge's
+  /// optional on-canvas debug overlay. Re-fires whenever the phase
+  /// transitions.
+  final ValueNotifier<CanvasGesturePhase> _phaseListenable =
+      ValueNotifier<CanvasGesturePhase>(CanvasGesturePhase.idle);
+
+  /// Public read-only access to the live gesture phase. Safe to read
+  /// from a ValueListenableBuilder subscription.
+  ValueListenable<CanvasGesturePhase> get phaseListenable => _phaseListenable;
+
+  /// Live pointer count + current transform, surfaced for the debug
+  /// overlay (user feedback 2026-05-29 on canvas rewrite live test,
+  /// bug 5).
+  int get debugPointerCount => _pointers.length;
+  Matrix4 get debugTransform => Matrix4.copy(_transform);
+
   /// Origin spread + midpoint when entering pinching, for relative
   /// scale + pan math.
   double? _pinchStartSpread;
@@ -148,6 +165,12 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
   void initState() {
     super.initState();
     _transform = Matrix4.copy(widget.initialTransform);
+  }
+
+  @override
+  void dispose() {
+    _phaseListenable.dispose();
+    super.dispose();
   }
 
   @override
@@ -295,6 +318,7 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
 
     final wasPhase = _phase;
     _phase = t.phase;
+    if (wasPhase != _phase) _phaseListenable.value = _phase;
 
     // Phase-entry bookkeeping.
     if (_phase == CanvasGesturePhase.drawing &&

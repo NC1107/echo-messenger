@@ -43,6 +43,7 @@ import '../theme/echo_theme.dart';
 import '../utils/canvas_utils.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/echo_bottom_sheet.dart';
+import '../widgets/voice_lounge/canvas_debug_overlay.dart';
 import '../widgets/voice_lounge/canvas_loading_banner.dart';
 import '../widgets/voice_lounge/encrypted_canvas_notice.dart';
 import '../widgets/voice_lounge/lounge_canvas_gestures.dart';
@@ -75,6 +76,15 @@ const double _kAvatarTileRadius = 24.0;
 /// magic number in `_defaultAvatarPos`; kept in sync with that
 /// helper by the `voice_canvas` widget tests.
 const double _kDefaultAvatarRingRadius = 0.3 * kCanvasWidth;
+
+/// On-canvas debug overlay flag. Flip to `true` only when locally
+/// debugging the lounge canvas — it paints a dashed border around the
+/// gesture surface and HUD pills with gesture phase, transform, and
+/// canvas-content counts. DO NOT ship `true` to release.
+///
+/// Added in response to user feedback 2026-05-29 on canvas rewrite
+/// live test, bug 5.
+const bool _kDebugCanvas = false;
 
 /// Discord-style voice lounge that replaces the chat content area when the
 /// user is in a voice call and chooses to view the lounge.
@@ -1509,7 +1519,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
         canvas.selectedTool != CanvasTool.none &&
         canvas.selectedTool != CanvasTool.text;
 
-    return GestureDetector(
+    final gestures = GestureDetector(
       key: const Key('canvas-tap-to-claim'),
       behavior: HitTestBehavior.translucent,
       onTap: _buildCanvasClaimTapHandler(channelId),
@@ -1547,6 +1557,23 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
           ),
         ),
       ),
+    );
+    if (!_kDebugCanvas) return gestures;
+    // Dev-only on-canvas debug HUD. The painter + counts sit in
+    // viewport coordinate space (outside the Transform) so values stay
+    // readable regardless of pan / zoom. Wrapped in IgnorePointer
+    // inside the overlay so gesture input passes through.
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        gestures,
+        CanvasDebugOverlay(
+          gesturesKey: _canvasGesturesKey,
+          canvas: canvas,
+          activeStrokePointCount: _activeStroke.pointCount,
+          borderColor: Theme.of(context).colorScheme.primary,
+        ),
+      ],
     );
   }
 
