@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/context_menu/context_menu_testbed.dart';
 import '../screens/admin/admin_dashboard_screen.dart';
+import '../screens/auth/account_picker_screen.dart';
 import '../screens/contacts_screen.dart';
 import '../screens/create_group_screen.dart';
 import '../screens/discover_groups_screen.dart';
@@ -29,6 +30,7 @@ import '../screens/user_profile_screen.dart';
 const _routeHome = '/home';
 const _routeLogin = '/login';
 const _routeSplash = '/splash';
+const _routeAccountPicker = '/auth/pick-account';
 
 // ---------------------------------------------------------------------------
 // Pending Deep Link State Management
@@ -96,7 +98,8 @@ String? _authRedirect(Ref ref, GoRouterState state) {
       state.matchedLocation == _routeLogin ||
       state.matchedLocation == '/register' ||
       state.matchedLocation == '/forgot-password' ||
-      state.matchedLocation == '/reset-password';
+      state.matchedLocation == '/reset-password' ||
+      state.matchedLocation == _routeAccountPicker;
   final isOnboarding = state.matchedLocation == '/onboarding';
   final isJoinRoute =
       state.matchedLocation.startsWith('/join') ||
@@ -198,6 +201,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: _routeLogin,
         pageBuilder: (context, state) =>
             _fadePage(key: state.pageKey, child: const LoginScreen()),
+      ),
+      GoRoute(
+        path: _routeAccountPicker,
+        pageBuilder: (context, state) =>
+            _fadePage(key: state.pageKey, child: const AccountPickerScreen()),
       ),
       GoRoute(
         path: '/register',

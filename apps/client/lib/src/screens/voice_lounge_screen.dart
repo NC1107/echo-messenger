@@ -13,6 +13,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/canvas_models.dart'
     show
+        CanvasAttachState,
         CanvasPoint,
         CanvasState,
         CanvasTool,
@@ -26,6 +27,7 @@ import '../providers/canvas_provider.dart';
 import '../providers/crypto_provider.dart';
 import '../providers/channels_provider.dart';
 import '../providers/conversations_provider.dart';
+import '../providers/device_name_provider.dart';
 import '../providers/livekit_voice/livekit_voice_provider.dart';
 import '../providers/screen_share_provider.dart';
 import '../providers/server_url_provider.dart';
@@ -41,6 +43,7 @@ import '../theme/echo_theme.dart';
 import '../utils/canvas_utils.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/echo_bottom_sheet.dart';
+import '../widgets/voice_lounge/canvas_loading_banner.dart';
 import '../widgets/voice_lounge/encrypted_canvas_notice.dart';
 import '../widgets/voice_lounge/lounge_canvas_gestures.dart';
 import '../widgets/voice_lounge/lounge_canvas_strokes.dart';
@@ -1149,22 +1152,20 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   /// The pill is only relevant in canvas mode — callers must gate on
   /// `!_spotlightMode` before inserting this into the overlay stack.
   ///
-  /// Device-name source: CryptoService.deviceId is an opaque int. A
-  /// human-readable device name would require surfacing the device list from
-  /// /api/devices through a dedicated provider. Until that is wired (tracked
-  /// as a follow-up — the open question is in
-  /// docs/voice-lounge/03-multi-device.md#open-questions), we fall back to
-  /// the literal string "another device".
+  /// Device-name source: watch [deviceNameProvider] keyed by the authority
+  /// device_id. The provider returns the user-set name (or the platform-
+  /// derived default) once /api/keys/devices has been fetched at least once;
+  /// until then we fall back to the literal string "another device".
   ///
-  /// TODO: plumb device_name through the lounge presence payload or a
-  /// devicesProvider so the pill can show "Drawing from Nick's iPhone"
-  /// instead of the fallback. See docs/voice-lounge/03-multi-device.md.
+  /// See `docs/voice-lounge/03-multi-device.md` — Option C.
   Widget? _buildAuthorityPill(String channelId) {
     if (channelId.isEmpty) return null;
     final authority = ref.watch(canvasAuthorityNotifierProvider(channelId));
     if (authority == null) return null;
     final myDeviceId = ref.read(cryptoServiceProvider).deviceId;
     if (authority == myDeviceId) return null;
+    final resolvedName = ref.watch(deviceNameProvider(authority));
+    final pillLabel = 'Drawing from ${resolvedName ?? 'another device'}';
     return GestureDetector(
       key: const Key('canvas-authority-pill'),
       onTap: () => ref
@@ -1176,17 +1177,17 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
           color: Colors.black54,
           borderRadius: BorderRadius.circular(20),
         ),
-        child: const Row(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.edit_off, size: 14, color: Colors.white70),
-            SizedBox(width: 6),
+            const Icon(Icons.edit_off, size: 14, color: Colors.white70),
+            const SizedBox(width: 6),
             Text(
-              'Drawing from another device',
-              style: TextStyle(color: Colors.white70, fontSize: 12),
+              pillLabel,
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
             ),
-            SizedBox(width: 6),
-            Text(
+            const SizedBox(width: 6),
+            const Text(
               '· Tap to take over',
               style: TextStyle(color: Colors.white54, fontSize: 11),
             ),
@@ -1283,6 +1284,22 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
           right: 0,
           child: Center(child: authorityPill),
         ),
+      if (!_spotlightMode)
+        Positioned(
+          top: authorityPill != null ? 96 : 54,
+          left: 0,
+          right: 0,
+          child: Center(
+            child: IgnorePointer(
+              ignoring: ref.watch(
+                canvasProvider.select(
+                  (s) => s.attachState != CanvasAttachState.failed,
+                ),
+              ),
+              child: const CanvasLoadingBanner(),
+            ),
+          ),
+        ),
     ]);
   }
 
@@ -1349,6 +1366,24 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
           left: 0,
           right: 0,
           child: Center(child: authorityPill),
+        ),
+      if (!_spotlightMode)
+        Positioned(
+          top: authorityPill != null
+              ? (isFull ? (MediaQuery.viewPaddingOf(context).top + 54) : 150)
+              : (isFull ? (MediaQuery.viewPaddingOf(context).top + 8) : 108),
+          left: 0,
+          right: 0,
+          child: Center(
+            child: IgnorePointer(
+              ignoring: ref.watch(
+                canvasProvider.select(
+                  (s) => s.attachState != CanvasAttachState.failed,
+                ),
+              ),
+              child: const CanvasLoadingBanner(),
+            ),
+          ),
         ),
     ]);
   }

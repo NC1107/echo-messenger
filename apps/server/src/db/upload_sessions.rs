@@ -129,17 +129,29 @@ pub async fn mark_aborted(pool: &PgPool, id: Uuid) -> Result<(), sqlx::Error> {
 /// Return every pending session that has been idle longer than
 /// `idle_seconds`.  The cleanup task feeds these into [`mark_aborted`] and
 /// unlinks each `temp_path`.
+///
+/// `user_id` optionally scopes the sweep to a single user; production
+/// background sweeps pass `None` to sweep globally, while the integration
+/// test that exercises the sweep passes its own `user_id` so that parallel
+/// tests' in-flight uploads aren't reaped underneath them (the global
+/// sweep with `idle_seconds = 0` matches every pending session in the DB,
+/// which races the happy-path test's finalize and yields a flaky 500
+/// when the temp file is unlinked between mime-sniff and `fs::rename`).
 pub async fn list_stale_pending(
     pool: &PgPool,
     idle_seconds: i64,
+    user_id: Option<Uuid>,
 ) -> Result<Vec<UploadSessionRow>, sqlx::Error> {
     sqlx::query_as::<_, UploadSessionRow>(
         "SELECT id, user_id, filename, mime_type, total_size, bytes_received, \
                 conversation_id, temp_path, status, created_at, updated_at \
          FROM upload_sessions \
-         WHERE status = 'pending' AND updated_at < now() - make_interval(secs => $1)",
+         WHERE status = 'pending' \
+           AND updated_at < now() - make_interval(secs => $1) \
+           AND ($2::uuid IS NULL OR user_id = $2)",
     )
     .bind(idle_seconds)
+    .bind(user_id)
     .fetch_all(pool)
     .await
 }

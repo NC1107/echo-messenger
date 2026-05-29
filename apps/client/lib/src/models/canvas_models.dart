@@ -424,6 +424,18 @@ StrokeKind strokeKindForTool(CanvasTool tool) {
 }
 
 // ---------------------------------------------------------------------------
+// Canvas attach state
+// ---------------------------------------------------------------------------
+
+/// Lifecycle state for the canvas snapshot fetch.
+///
+/// - [idle] — no attach in progress (initial or after detach).
+/// - [loading] — REST snapshot fetch is in flight.
+/// - [loaded] — snapshot fetched and applied; canvas is live.
+/// - [failed] — fetch threw or returned a non-2xx response.
+enum CanvasAttachState { idle, loading, loaded, failed }
+
+// ---------------------------------------------------------------------------
 // Full canvas state
 // ---------------------------------------------------------------------------
 
@@ -468,6 +480,14 @@ class CanvasState {
   /// True once the initial canvas state has been fetched from the server.
   final bool isLoaded;
 
+  /// Lifecycle state of the snapshot fetch. Drives [CanvasLoadingBanner].
+  final CanvasAttachState attachState;
+
+  /// When the most recent [attach] call started. Used by [CanvasLoadingBanner]
+  /// to detect slow connections (> 8 s without transitioning away from
+  /// [CanvasAttachState.loading]).
+  final DateTime? attachStartedAt;
+
   const CanvasState({
     this.strokes = const [],
     this.images = const [],
@@ -478,6 +498,8 @@ class CanvasState {
     this.currentColor = const Color(0xFFFFFFFF),
     this.strokeWidth = 3.0,
     this.isLoaded = false,
+    this.attachState = CanvasAttachState.idle,
+    this.attachStartedAt,
   });
 
   // @S107: API-stable, params are externally fixed by serialization format.
@@ -493,6 +515,8 @@ class CanvasState {
     Color? currentColor,
     double? strokeWidth,
     bool? isLoaded,
+    CanvasAttachState? attachState,
+    DateTime? attachStartedAt,
   }) => CanvasState(
     strokes: strokes ?? this.strokes,
     images: images ?? this.images,
@@ -503,5 +527,7 @@ class CanvasState {
     currentColor: currentColor ?? this.currentColor,
     strokeWidth: strokeWidth ?? this.strokeWidth,
     isLoaded: isLoaded ?? this.isLoaded,
+    attachState: attachState ?? this.attachState,
+    attachStartedAt: attachStartedAt ?? this.attachStartedAt,
   );
 }

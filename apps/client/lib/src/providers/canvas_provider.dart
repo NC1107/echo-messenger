@@ -77,6 +77,12 @@ class CanvasController extends _$CanvasController {
   /// lounge this session, not on every channel switch).
   bool _legacyCoordLogged = false;
 
+  /// Last (conversationId, channelId) pair passed to [attach]. Stored so
+  /// [retryAttach] can re-issue the same request without threading the ids
+  /// back through the call-site.
+  String? _lastConversationId;
+  String? _lastChannelId;
+
   /// Events buffered while [_channelId] is not yet set (attach race window).
   final List<Map<String, dynamic>> _pendingEvents = [];
 
@@ -114,7 +120,14 @@ class CanvasController extends _$CanvasController {
     _attachingChannelId = channelId;
     _channelId = null;
     _pendingEvents.clear();
-    state = const CanvasState(); // reset while loading
+    _lastConversationId = conversationId;
+    _lastChannelId = channelId;
+    // Reset to loading state; record when the fetch started for slow-connection
+    // detection in CanvasLoadingBanner.
+    state = CanvasState(
+      attachState: CanvasAttachState.loading,
+      attachStartedAt: DateTime.now(),
+    );
 
     await _fetchCanvas(conversationId, channelId);
 
@@ -123,6 +136,8 @@ class CanvasController extends _$CanvasController {
     if (_attachingChannelId != channelId) return;
     _channelId = channelId;
     _attachingChannelId = null;
+    // Promote to loaded only after the stale-channel guard passes.
+    state = state.copyWith(attachState: CanvasAttachState.loaded);
 
     // Once per session: log the legacy-coord migration counter so we can
     // track when it is safe to delete _migrateLegacyCoord (see
@@ -180,7 +195,7 @@ class CanvasController extends _$CanvasController {
     _pendingEvents.clear();
     _channelId = null;
     _attachingChannelId = null;
-    state = const CanvasState();
+    state = const CanvasState(); // attachState defaults back to idle
   }
 
   // -------------------------------------------------------------------------
@@ -225,7 +240,7 @@ class CanvasController extends _$CanvasController {
           isLoaded: true,
         );
       } else {
-        // Canvas may not exist yet — treat as empty board.
+        // Canvas may not exist yet — treat as empty board (still valid).
         state = state.copyWith(isLoaded: true);
       }
     } catch (e) {
@@ -235,8 +250,23 @@ class CanvasController extends _$CanvasController {
         'Failed to load canvas for channel $channelId: $e',
       );
       if (!stillAttaching()) return;
-      state = state.copyWith(isLoaded: true);
+      // Network error: mark as failed so the UI can offer a retry.
+      state = state.copyWith(
+        isLoaded: false,
+        attachState: CanvasAttachState.failed,
+      );
     }
+  }
+
+  /// Re-attempt [attach] with the last channel IDs. No-op when no prior attach
+  /// has been recorded (e.g. the notifier was just built).
+  Future<void> retryAttach() async {
+    final convId = _lastConversationId;
+    final chanId = _lastChannelId;
+    if (convId == null || chanId == null) return;
+    // Force-reset _channelId so the guard in attach() doesn't bail early.
+    _channelId = null;
+    await attach(convId, chanId);
   }
 
   // -------------------------------------------------------------------------

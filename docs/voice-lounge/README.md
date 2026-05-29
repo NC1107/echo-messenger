@@ -13,7 +13,8 @@ Every canvas-behavior PR from this point forward must:
 - **[02 — Input matrix](02-input-matrix.md)** — per-device-class mapping for pan, zoom, draw, select, and double-tap; gesture-arena precedence; conflict rules.
 - **[03 — Multi-device per user](03-multi-device.md)** — how a user with 2+ devices in the same lounge is represented on the canvas, and what's read-only vs write.
 - **[04 — Encrypted-group canvas](04-encrypted-canvas.md)** — current trust posture for canvas events in encrypted groups, the documented gap, and the path to closing it.
-- **[05 — Canvas rewrite spec](05-canvas-rewrite-spec.md)** — research-backed (Figma / Miro / Freeform / Excalidraw / tldraw) targeted-rewrite spec for the gesture model, stroke renderer, and mobile UI. Picks Option B (targeted rewrite, ~5–8 days) over incremental patches or third-party adoption.
+- **[05 — Canvas rewrite spec](05-canvas-rewrite-spec.md)** — research-backed targeted-rewrite spec (Option B): gesture state machine, 3-layer RepaintBoundary painter, perfect_freehand stroke smoothing, mobile toolbar collapse. Decision dated 2026-05-28. This is the authority for any PR touching the gesture model or stroke renderer.
+- **[06 — Lifecycle audit 2026-05-28](06-lifecycle-audit-2026-05-28.md)** — systematic audit of every `await`, `Timer`, and subscription in the lounge join/use/leave flow; documents fixes shipped in PR `fix/voice-lounge-lifecycle-audit`.
 
 ## Plan that this contract serves
 

@@ -274,7 +274,7 @@ async fn other_user_cannot_see_or_chunk_my_session() {
 async fn cleanup_sweep_aborts_stale_pending_session() {
     let base = common::spawn_server().await;
     let client = Client::new();
-    let (token, _, _) = common::register_and_login(&client, &base, "chunked_sweep").await;
+    let (token, user_id_str, _) = common::register_and_login(&client, &base, "chunked_sweep").await;
 
     let (upload_id, _) = init_upload(&client, &base, &token, 1024).await;
 
@@ -286,7 +286,14 @@ async fn cleanup_sweep_aborts_stale_pending_session() {
         .expect("TEST_DATABASE_URL or DATABASE_URL must be set");
     let pool: PgPool = sqlx::PgPool::connect(&database_url).await.unwrap();
 
-    echo_server::routes::media_chunked::cleanup_stale_uploads(&pool, 0).await;
+    // Scope the sweep to this test's user so parallel tests sharing the
+    // same DB don't get their in-flight uploads reaped underneath them.
+    // The unscoped variant with `idle_seconds = 0` was the root cause of
+    // the chronic flake in `chunks_append_in_order_and_finalize_returns_media_url`:
+    // it deleted the happy-path test's temp file between its mime-sniff
+    // and its `fs::rename` step, surfacing as an opaque 500.
+    let user_id = Uuid::parse_str(&user_id_str).unwrap();
+    echo_server::routes::media_chunked::cleanup_stale_uploads_scoped(&pool, 0, Some(user_id)).await;
 
     let resp = client
         .get(format!("{base}/api/media/upload/{upload_id}"))

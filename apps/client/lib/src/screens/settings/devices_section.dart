@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 
 import '../../providers/auth_provider.dart';
 import '../../providers/crypto_provider.dart';
+import '../../providers/device_name_provider.dart';
 import '../../providers/server_url_provider.dart';
 import '../../providers/websocket_provider.dart';
 import '../../services/toast_service.dart';
@@ -23,11 +24,37 @@ class DevicesSection extends ConsumerStatefulWidget {
   ConsumerState<DevicesSection> createState() => _DevicesSectionState();
 }
 
+/// Editable device names accept 1..=40 chars (matches server validation).
+const int _kDeviceNameMaxLength = 40;
+
+/// Visible-for-testing: client-side mirror of the server's `validate_device_name`.
+/// Returns null on success or a human-readable error message; the UI surfaces
+/// the message inline below the rename field.
+@visibleForTesting
+String? validateDeviceNameInput(String raw) {
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty) return 'Name cannot be empty';
+  if (trimmed.length > _kDeviceNameMaxLength) {
+    return 'Name too long (max $_kDeviceNameMaxLength characters)';
+  }
+  if (trimmed.runes.any((r) {
+    final c = String.fromCharCode(r);
+    return c.codeUnitAt(0) < 0x20;
+  })) {
+    return 'Name cannot contain control characters';
+  }
+  return null;
+}
+
 class _DevicesSectionState extends ConsumerState<DevicesSection> {
   List<_Device> _devices = [];
   bool _loading = true;
   String? _error;
   StreamSubscription<Map<String, dynamic>>? _deviceRevokedSub;
+
+  /// device_id currently being edited inline, or null when no row is active.
+  int? _renamingDeviceId;
+  String? _renameLocalError;
 
   @override
   void initState() {
@@ -105,6 +132,7 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
                 deviceId: (d['device_id'] as num).toInt(),
                 platform: d['platform'] as String?,
                 lastSeen: d['last_seen'] as String?,
+                deviceName: d['device_name'] as String?,
               );
             }
             // Legacy: bare device_id integer
@@ -226,6 +254,90 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
     }
   }
 
+  /// Optimistically apply the new name to the local list + the shared
+  /// device-names provider, then PATCH the server. On failure restore the
+  /// previous name in both places and surface a toast.
+  Future<void> _submitRename(_Device device, String rawName) async {
+    final validationError = validateDeviceNameInput(rawName);
+    if (validationError != null) {
+      setState(() {
+        _renameLocalError = validationError;
+      });
+      return;
+    }
+    final normalized = rawName.trim();
+    final previousName = device.deviceName;
+
+    setState(() {
+      _devices = _devices
+          .map(
+            (d) => d.deviceId == device.deviceId
+                ? d.copyWith(deviceName: normalized)
+                : d,
+          )
+          .toList();
+      _renamingDeviceId = null;
+      _renameLocalError = null;
+    });
+
+    final namesNotifier = ref.read(deviceNamesProvider.notifier);
+    namesNotifier.setLocal(device.deviceId, normalized);
+
+    final serverUrl = ref.read(serverUrlProvider);
+    try {
+      final response = await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
+            (token) => http.patch(
+              Uri.parse('$serverUrl/api/keys/device/${device.deviceId}'),
+              headers: {
+                'Authorization': 'Bearer $token',
+                'Content-Type': 'application/json',
+              },
+              body: jsonEncode({'device_name': normalized}),
+            ),
+          );
+
+      if (response.statusCode == 200) {
+        // Re-pull so the provider reflects the canonical server state.
+        await namesNotifier.refresh();
+        if (mounted) {
+          ToastService.show(context, 'Device renamed');
+        }
+        return;
+      }
+      _revertRename(device.deviceId, previousName);
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Failed to rename device (${response.statusCode})',
+          type: ToastType.error,
+        );
+      }
+    } catch (_) {
+      _revertRename(device.deviceId, previousName);
+      if (mounted) {
+        ToastService.show(context, 'Network error', type: ToastType.error);
+      }
+    }
+  }
+
+  void _revertRename(int deviceId, String? previousName) {
+    if (!mounted) return;
+    setState(() {
+      _devices = _devices
+          .map(
+            (d) => d.deviceId == deviceId
+                ? d.copyWith(deviceName: previousName)
+                : d,
+          )
+          .toList();
+    });
+    if (previousName != null) {
+      ref.read(deviceNamesProvider.notifier).setLocal(deviceId, previousName);
+    }
+  }
+
   Widget _buildDeviceListBody(BuildContext context, int? myDeviceId) {
     if (_loading) {
       return const Padding(
@@ -281,76 +393,147 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
     _Device device,
     bool isThisDevice,
   ) {
+    final isRenaming = _renamingDeviceId == device.deviceId;
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
-      leading: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Icon(
-            _deviceIcon(isThisDevice),
-            color: isThisDevice ? context.accent : context.textSecondary,
-          ),
-          if (isThisDevice)
-            Positioned(
-              right: -2,
-              bottom: -2,
-              child: Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(
-                  color: EchoTheme.online,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: context.surface, width: 1.5),
-                ),
+      leading: _buildDeviceLeading(context, isThisDevice),
+      title: isRenaming
+          ? _buildRenameField(context, device)
+          : _buildDeviceTitleRow(context, device, isThisDevice),
+      subtitle: Text(
+        'Last seen: ${_formatLastSeen(device.lastSeen)}',
+        style: TextStyle(color: context.textSecondary, fontSize: 13),
+      ),
+      trailing: isRenaming ? null : _buildTrailing(device, isThisDevice),
+    );
+  }
+
+  Widget _buildDeviceLeading(BuildContext context, bool isThisDevice) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Icon(
+          _deviceIcon(isThisDevice),
+          color: isThisDevice ? context.accent : context.textSecondary,
+        ),
+        if (isThisDevice)
+          Positioned(
+            right: -2,
+            bottom: -2,
+            child: Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                color: EchoTheme.online,
+                shape: BoxShape.circle,
+                border: Border.all(color: context.surface, width: 1.5),
               ),
             ),
-        ],
-      ),
-      title: Row(
-        children: [
-          Text(
-            isThisDevice ? _currentPlatformName() : device.displayLabel,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildDeviceTitleRow(
+    BuildContext context,
+    _Device device,
+    bool isThisDevice,
+  ) {
+    final label = device.deviceName?.trim().isNotEmpty == true
+        ? device.deviceName!.trim()
+        : (isThisDevice ? _currentPlatformName() : device.displayLabel);
+    return Row(
+      children: [
+        Flexible(
+          child: Text(
+            label,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: context.textPrimary,
               fontWeight: FontWeight.w500,
               fontSize: 14,
             ),
           ),
-          if (isThisDevice) ...[
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: context.accentLight,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                'This device',
-                style: TextStyle(
-                  color: context.accent,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+        ),
+        const SizedBox(width: 4),
+        IconButton(
+          key: Key('rename-device-${device.deviceId}'),
+          tooltip: 'Rename device',
+          iconSize: 16,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+          icon: Icon(Icons.edit, color: context.textSecondary),
+          onPressed: () => setState(() {
+            _renamingDeviceId = device.deviceId;
+            _renameLocalError = null;
+          }),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRenameField(BuildContext context, _Device device) {
+    final controller = TextEditingController(
+      text: device.deviceName ?? device.displayLabel,
+    );
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            key: Key('rename-device-field-${device.deviceId}'),
+            controller: controller,
+            autofocus: true,
+            maxLength: _kDeviceNameMaxLength,
+            textInputAction: TextInputAction.done,
+            decoration: InputDecoration(
+              isDense: true,
+              counterText: '',
+              errorText: _renameLocalError,
+              border: const OutlineInputBorder(),
             ),
-          ],
-        ],
+            onSubmitted: (value) => _submitRename(device, value),
+          ),
+        ),
+        IconButton(
+          key: Key('rename-device-save-${device.deviceId}'),
+          icon: Icon(Icons.check, color: context.accent),
+          tooltip: 'Save',
+          onPressed: () => _submitRename(device, controller.text),
+        ),
+        IconButton(
+          icon: Icon(Icons.close, color: context.textSecondary),
+          tooltip: 'Cancel',
+          onPressed: () => setState(() {
+            _renamingDeviceId = null;
+            _renameLocalError = null;
+          }),
+        ),
+      ],
+    );
+  }
+
+  Widget? _buildTrailing(_Device device, bool isThisDevice) {
+    if (isThisDevice) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(
+          color: context.accentLight.withValues(alpha: 0.4),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          '(this device)',
+          style: TextStyle(color: context.textSecondary, fontSize: 11),
+        ),
+      );
+    }
+    return OutlinedButton.icon(
+      onPressed: () => _revokeDevice(device),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: EchoTheme.danger,
+        side: const BorderSide(color: EchoTheme.danger),
       ),
-      subtitle: Text(
-        'Last seen: ${_formatLastSeen(device.lastSeen)}',
-        style: TextStyle(color: context.textSecondary, fontSize: 13),
-      ),
-      trailing: isThisDevice
-          ? null
-          : OutlinedButton.icon(
-              onPressed: () => _revokeDevice(device),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: EchoTheme.danger,
-                side: const BorderSide(color: EchoTheme.danger),
-              ),
-              icon: const Icon(Icons.remove_circle_outline, size: 16),
-              label: const Text('Revoke'),
-            ),
+      icon: const Icon(Icons.remove_circle_outline, size: 16),
+      label: const Text('Revoke'),
     );
   }
 
@@ -422,13 +605,30 @@ class _Device {
   final int deviceId;
   final String? platform;
   final String? lastSeen;
+  final String? deviceName;
 
-  const _Device({required this.deviceId, this.platform, this.lastSeen});
+  const _Device({
+    required this.deviceId,
+    this.platform,
+    this.lastSeen,
+    this.deviceName,
+  });
 
-  /// Best-effort display label. Falls back to a device-id-specific label when
-  /// the server has no platform string stored (e.g. older clients) so that
-  /// multiple unknown devices remain distinguishable in the list.
-  String get displayLabel => platform ?? 'Device $deviceId';
+  _Device copyWith({String? deviceName}) => _Device(
+    deviceId: deviceId,
+    platform: platform,
+    lastSeen: lastSeen,
+    deviceName: deviceName ?? this.deviceName,
+  );
+
+  /// Best-effort display label. Prefers the editable device_name (set by the
+  /// owner via PATCH /api/keys/device/:id, or seeded server-side from the
+  /// platform hint), then falls back to the raw platform string, then to a
+  /// device-id-specific label so multiple unknown devices remain
+  /// distinguishable in the list.
+  String get displayLabel => deviceName?.trim().isNotEmpty == true
+      ? deviceName!.trim()
+      : (platform ?? 'Device $deviceId');
 }
 
 String _formatLastSeen(String? isoString) {
