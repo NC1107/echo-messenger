@@ -869,10 +869,16 @@ class _MessageItemState extends State<MessageItem>
 
     if (embeddedImages.isEmpty && linkPreview == null) return textWidget;
     if (embeddedImages.isEmpty) {
+      // When the message body is exactly the preview URL (and nothing else),
+      // show only the preview card — rendering both would double the URL.
+      final previewUrlMatch = urlRegex.firstMatch(displayContent);
+      final bodyIsOnlyUrl =
+          previewUrlMatch != null &&
+          displayContent.trim() == previewUrlMatch.group(0)!.trim();
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
-        children: [textWidget, linkPreview!],
+        children: [if (!bodyIsOnlyUrl) textWidget, linkPreview!],
       );
     }
 
