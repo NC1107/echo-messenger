@@ -13,6 +13,7 @@ Every canvas-behavior PR from this point forward must:
 - **[02 — Input matrix](02-input-matrix.md)** — per-device-class mapping for pan, zoom, draw, select, and double-tap; gesture-arena precedence; conflict rules.
 - **[03 — Multi-device per user](03-multi-device.md)** — how a user with 2+ devices in the same lounge is represented on the canvas, and what's read-only vs write.
 - **[04 — Encrypted-group canvas](04-encrypted-canvas.md)** — current trust posture for canvas events in encrypted groups, the documented gap, and the path to closing it.
+- **[05 — Canvas rewrite spec](05-canvas-rewrite-spec.md)** — research-backed (Figma / Miro / Freeform / Excalidraw / tldraw) targeted-rewrite spec for the gesture model, stroke renderer, and mobile UI. Picks Option B (targeted rewrite, ~5–8 days) over incremental patches or third-party adoption.
 
 ## Plan that this contract serves
 
