@@ -1,8 +1,62 @@
 import 'package:echo_app/src/models/canvas_models.dart';
 import 'package:echo_app/src/services/canvas_export_service.dart';
+import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  group('CanvasExportService.clampPixelRatio', () {
+    test('returns requested ratio when image fits within maxDim', () {
+      // 200x100 boundary at 2.0 → max dimension 400, well under 4096.
+      final ratio = CanvasExportService.clampPixelRatio(
+        const Size(200, 100),
+        pixelRatio: 2.0,
+        maxDim: 4096,
+      );
+      expect(ratio, closeTo(2.0, 0.0001));
+    });
+
+    test('clamps ratio so the longest side stays at maxDim', () {
+      // 3000x2000 boundary at 2.0 → longest side would be 6000 > 4096.
+      // Expected: 4096 / 3000 ≈ 1.3653.
+      final ratio = CanvasExportService.clampPixelRatio(
+        const Size(3000, 2000),
+        pixelRatio: 2.0,
+        maxDim: 4096,
+      );
+      expect(ratio, closeTo(4096 / 3000, 0.0001));
+    });
+
+    test('never returns below minRatio', () {
+      // Boundary larger than maxDim itself (e.g. 10000px logical).
+      final ratio = CanvasExportService.clampPixelRatio(
+        const Size(10000, 10000),
+        pixelRatio: 2.0,
+        maxDim: 4096,
+        minRatio: 0.5,
+      );
+      expect(ratio, greaterThanOrEqualTo(0.5));
+    });
+
+    test('handles zero-size boundary without throwing', () {
+      final ratio = CanvasExportService.clampPixelRatio(
+        Size.zero,
+        pixelRatio: 2.0,
+      );
+      expect(ratio, equals(0.5)); // minRatio floor
+    });
+
+    test('portrait boundary clamps on height', () {
+      // 1000x4000 boundary at 2.0 → longest side is 4000, result 8000 > 4096.
+      // Expected: 4096 / 4000 = 1.024.
+      final ratio = CanvasExportService.clampPixelRatio(
+        const Size(1000, 4000),
+        pixelRatio: 2.0,
+        maxDim: 4096,
+      );
+      expect(ratio, closeTo(4096 / 4000, 0.0001));
+    });
+  });
+
   group('CanvasExportService', () {
     test('encodes + decodes a snapshot losslessly', () {
       // Coords are in absolute canvas-space pixels (kCanvasWidth × kCanvasHeight).
