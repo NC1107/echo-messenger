@@ -38,6 +38,10 @@ class _VoiceVideoSectionState extends ConsumerState<VoiceVideoSection> {
   ];
   bool _devicesLoaded = false;
 
+  /// Set to true when [_loadAudioDevices] catches an exception so the UI can
+  /// offer a Retry button rather than silently showing stale defaults.
+  bool _deviceEnumerationFailed = false;
+
   // Mic test state
   bool _isMicTesting = false;
   double _micLevel = 0.0;
@@ -73,8 +77,31 @@ class _VoiceVideoSectionState extends ConsumerState<VoiceVideoSection> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    // Kick off device enumeration exactly once, safely outside build.
+    // unawaited is intentional: the async result is handled inside
+    // _loadAudioDevices via setState / _deviceEnumerationFailed.
+    unawaited(_loadAudioDevices());
+  }
+
+  @override
   void dispose() {
-    _stopMicTest();
+    // Cancel the timer and release native resources without calling setState —
+    // setState during dispose triggers a _lifecycleState assertion because the
+    // element is already being torn down.
+    _micTestTimer?.cancel();
+    _micTestTimer = null;
+    _audioLevelAnalyzer?.dispose();
+    _audioLevelAnalyzer = null;
+    final stream = _micTestStream;
+    _micTestStream = null;
+    if (stream != null) {
+      for (final track in stream.getTracks()) {
+        track.stop();
+      }
+      stream.dispose();
+    }
     super.dispose();
   }
 
@@ -313,6 +340,14 @@ class _VoiceVideoSectionState extends ConsumerState<VoiceVideoSection> {
         'VoiceSettings',
         '_loadAudioDevices threw: $e\n$st',
       );
+      // Mark failure so the UI can show a note + Retry button instead of
+      // silently displaying stale defaults. _devicesLoaded is already true
+      // (set above the try), so a rebuild will never retry automatically.
+      if (mounted) {
+        setState(() {
+          _deviceEnumerationFailed = true;
+        });
+      }
     }
   }
 
@@ -352,9 +387,6 @@ class _VoiceVideoSectionState extends ConsumerState<VoiceVideoSection> {
   Widget build(BuildContext context) {
     final voice = ref.watch(voiceSettingsProvider);
     final notifier = ref.read(voiceSettingsProvider.notifier);
-
-    // Load real devices on first build
-    _loadAudioDevices();
 
     final inputDevices = _audioInputDevices;
     final outputDevices = _audioOutputDevices;
@@ -400,6 +432,18 @@ class _VoiceVideoSectionState extends ConsumerState<VoiceVideoSection> {
           currentId: voice.cameraDeviceId,
           onChanged: notifier.setCameraDevice,
         ),
+        if (_deviceEnumerationFailed) ...[
+          const SizedBox(height: 8),
+          _DeviceEnumerationErrorNote(
+            onRetry: () {
+              setState(() {
+                _devicesLoaded = false;
+                _deviceEnumerationFailed = false;
+              });
+              unawaited(_loadAudioDevices());
+            },
+          ),
+        ],
         const SizedBox(height: 12),
         _CameraPreview(deviceId: voice.cameraDeviceId),
         const SizedBox(height: 16),
@@ -601,6 +645,45 @@ class _VoiceVideoSectionState extends ConsumerState<VoiceVideoSection> {
           ),
           value: voice.confirmBeforeJoinVoice,
           onChanged: notifier.setConfirmBeforeJoinVoice,
+        ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Device enumeration error note
+// ---------------------------------------------------------------------------
+
+/// Shown below the device pickers when [_VoiceVideoSectionState._loadAudioDevices]
+/// throws (e.g. WebRTC not ready, permission not granted, unsupported platform).
+/// Keeps the defaults visible so the rest of the settings screen remains usable.
+class _DeviceEnumerationErrorNote extends StatelessWidget {
+  const _DeviceEnumerationErrorNote({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(Icons.warning_amber_rounded, size: 14, color: context.textMuted),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            "Couldn't list audio/video devices — showing defaults.",
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+        ),
+        const SizedBox(width: 8),
+        TextButton(
+          onPressed: onRetry,
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: const Text('Retry', style: TextStyle(fontSize: 12)),
         ),
       ],
     );
