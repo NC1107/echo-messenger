@@ -414,13 +414,26 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
 
   @override
   Widget build(BuildContext context) {
-    return Listener(
-      behavior: HitTestBehavior.opaque,
-      onPointerDown: _onPointerDown,
-      onPointerMove: _onPointerMove,
-      onPointerUp: _onPointerUp,
-      onPointerCancel: _onPointerCancel,
-      child: Transform(transform: _transform, child: widget.child),
+    // The Listener must claim the full visible viewport — not just the
+    // bounds of the Transform'd child — otherwise pointer-down outside
+    // the (possibly down-scaled) canvas surface never reaches the
+    // gesture machine. SizedBox.expand inflates the Listener's render
+    // box to the parent's constraints; `behavior: opaque` then
+    // guarantees every pixel in that box is a hit-test target.
+    //
+    // ClipRect keeps the 100 000-px canvas child from painting outside
+    // the lounge body when zoomed in or panned.
+    return ClipRect(
+      child: SizedBox.expand(
+        child: Listener(
+          behavior: HitTestBehavior.opaque,
+          onPointerDown: _onPointerDown,
+          onPointerMove: _onPointerMove,
+          onPointerUp: _onPointerUp,
+          onPointerCancel: _onPointerCancel,
+          child: Transform(transform: _transform, child: widget.child),
+        ),
+      ),
     );
   }
 }
