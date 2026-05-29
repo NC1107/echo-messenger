@@ -1490,6 +1490,18 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   Widget _buildCanvasArea(BoxConstraints constraints, Widget contentArea) {
     final viewportSize = Size(constraints.maxWidth, constraints.maxHeight);
     _cacheViewportSize(viewportSize);
+    // Defer mounting the gesture surface until LayoutBuilder gives us a
+    // real viewport — otherwise LoungeCanvasGestures initStates with an
+    // identity transform and never reapplies the auto-fit pose on the
+    // next layout pass (the GlobalKey keeps the gesture state alive).
+    // The visible symptom was a 100 000 x 100 000 surface rendering with
+    // top-left at (0, 0) of the viewport, hiding avatars + images
+    // 50 000 px below the visible area.
+    //
+    // User feedback 2026-05-29 on canvas rewrite live test, bugs 2 + 3.
+    if (viewportSize.width <= 0 || viewportSize.height <= 0) {
+      return const SizedBox.expand();
+    }
     final initialTransform = _resolveInitialTransform(viewportSize);
     final canvas = ref.watch(canvasProvider);
     final channelId = ref.read(livekitVoiceProvider).channelId ?? '';
@@ -1543,6 +1555,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   /// pose the gesture widget was mounted with.
   void _cacheViewportSize(Size viewportSize) {
     if (_interactiveViewportSize == viewportSize) return;
+    if (viewportSize.width <= 0 || viewportSize.height <= 0) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _interactiveViewportSize = viewportSize;
