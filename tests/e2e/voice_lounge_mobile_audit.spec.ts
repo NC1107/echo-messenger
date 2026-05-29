@@ -178,15 +178,36 @@ async function getJson(p: string, token: string) {
 
 async function seedUser(slug: string): Promise<SeededUser> {
   const { randomBytes } = await import('node:crypto');
-  const tag = `${Date.now().toString(36)}${randomBytes(2).toString('hex')}`.slice(0, 10);
-  const username = `audit_${slug}_${tag}`;
+  // Keep total username ≤ 20 chars (server limit is 32; margin for reruns).
+  // Shape: audit_<4-char-slug>_<4-char-hex>  e.g. audit_ipho_a3f1
+  const devSlug = slug.slice(0, 4);
+  const tag = randomBytes(2).toString('hex'); // 4 hex chars
+  const username = `audit_${devSlug}_${tag}`; // 15 chars max
   const password = 'AuditPass123!';
-  const reg = await postJson('/api/auth/register', { username, password });
+
+  // Rate-limit awareness: retry on 429 with exponential backoff.
+  let reg = await postJson('/api/auth/register', { username, password });
+  if (reg.status === 429) {
+    await new Promise((r) => setTimeout(r, 1000));
+    reg = await postJson('/api/auth/register', { username, password });
+  }
+  if (reg.status === 429) {
+    await new Promise((r) => setTimeout(r, 2000));
+    reg = await postJson('/api/auth/register', { username, password });
+  }
+  if (reg.status === 429) {
+    await new Promise((r) => setTimeout(r, 4000));
+    reg = await postJson('/api/auth/register', { username, password });
+  }
+
   const userId = reg.data?.user_id as string;
   const accessToken = reg.data?.access_token as string;
   if (!userId || !accessToken) {
     throw new Error(`seedUser register failed: ${reg.status} ${JSON.stringify(reg.data)}`);
   }
+  // Brief pause between registrations to avoid cascading 429s when the
+  // device matrix boots all users in close succession.
+  await new Promise((r) => setTimeout(r, 500));
   // Solo group with a default voice channel; we don't need a second member
   // for the gesture audit -- the channel exists and the WS will broadcast
   // our own strokes back so we can verify commit.
