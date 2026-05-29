@@ -653,3 +653,18 @@ Convergent theme across reviewers: **untrusted/peer canvas data reaches the clie
 6. **VL-8** (real tests for the WS handler + connection lifecycle) — locks in the above.
 
 Per-finding evidence (file:line + code quotes) captured in this session's audit run.
+
+## Status — 2026-05-29 fix batch (critical + all high)
+
+Shipped on `fix/voice-lounge-crash-batch`:
+
+- [x] **VL-1** — `handleCanvasEvent` wrapped in try/catch (drops + logs malformed peer frames instead of crashing the WS loop); `_parseColor` uses `tryParse` + fallback. Tests drive the **real** `handleCanvasEvent` via a `ProviderContainer`.
+- [x] **VL-2** — stroke points clamped to the surface in `_onStrokeStart`/`_onStrokeMove` (`_clampedCanvasPoint`).
+- [x] **VL-3** — WS heartbeat calls `touch_user_voice_sessions` every 30s so the 120s sweep no longer evicts connected-but-idle members. DB-level regression test added.
+- [x] **VL-4** — inbound `stroke` / `image_add` dedupe by id (replace-in-place).
+- [x] **VL-5** — client stroke/image lists capped to the server limit (2000), oldest-first trim.
+- [~] **VL-6** — remote `clear` now aborts an in-flight local stroke (`_abortActiveStroke`), closing the common same-device resurrection. **Residual:** the cross-peer case (a stroke committed before a peer saw the clear, arriving after) still needs a server-assigned board-generation/sequence to fence fully — kept open.
+- [x] **VL-7** — **FALSE POSITIVE.** The audit assumed `_seedPinch` fires only on phase *change*; in fact `_applyTransition` re-seeds on every transition that lands in `pinching`, so the 3-finger lift already re-seeds and does not jump. Added a widget regression test + a guard-rail comment so a future refactor can't reintroduce it. No code change to the gesture math.
+- [~] **VL-8** — the `handleCanvasEvent` half is now covered by `canvas_provider_hardening_test.dart` (drives the real method, the crash-linked gap). The LiveKit `joinChannel`/`leaveChannel`/teardown-race half remains open: it needs a `Room`-injection seam in `livekit_voice_provider.dart` first (a production refactor out of scope for this batch). **Follow-up.**
+
+Not in this batch (medium/low, still open): VL-9..VL-31, plus the VL-6 cross-peer residual and the VL-8 LiveKit-seam test.
