@@ -12,7 +12,12 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/canvas_models.dart'
-    show CanvasState, CanvasTool, kCanvasHeight, kCanvasWidth;
+    show
+        CanvasAttachState,
+        CanvasState,
+        CanvasTool,
+        kCanvasHeight,
+        kCanvasWidth;
 import '../providers/auth_provider.dart';
 import '../providers/canvas_authority_provider.dart';
 import '../providers/canvas_provider.dart';
@@ -34,6 +39,7 @@ import '../utils/canvas_utils.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/echo_bottom_sheet.dart';
 import '../widgets/lounge_drawing_canvas.dart';
+import '../widgets/voice_lounge/canvas_loading_banner.dart';
 import '../widgets/voice_lounge/encrypted_canvas_notice.dart';
 import '../widgets/vertex_mesh_background.dart';
 import '../widgets/voice_canvas.dart';
@@ -1313,6 +1319,22 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
           right: 0,
           child: Center(child: authorityPill),
         ),
+      if (!_spotlightMode)
+        Positioned(
+          top: authorityPill != null ? 96 : 54,
+          left: 0,
+          right: 0,
+          child: Center(
+            child: IgnorePointer(
+              ignoring: ref.watch(
+                canvasProvider.select(
+                  (s) => s.attachState != CanvasAttachState.failed,
+                ),
+              ),
+              child: const CanvasLoadingBanner(),
+            ),
+          ),
+        ),
     ]);
   }
 
@@ -1379,6 +1401,24 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
           left: 0,
           right: 0,
           child: Center(child: authorityPill),
+        ),
+      if (!_spotlightMode)
+        Positioned(
+          top: authorityPill != null
+              ? (isFull ? (MediaQuery.viewPaddingOf(context).top + 54) : 150)
+              : (isFull ? (MediaQuery.viewPaddingOf(context).top + 8) : 108),
+          left: 0,
+          right: 0,
+          child: Center(
+            child: IgnorePointer(
+              ignoring: ref.watch(
+                canvasProvider.select(
+                  (s) => s.attachState != CanvasAttachState.failed,
+                ),
+              ),
+              child: const CanvasLoadingBanner(),
+            ),
+          ),
         ),
     ]);
   }
