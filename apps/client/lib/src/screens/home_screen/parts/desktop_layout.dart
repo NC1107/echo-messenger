@@ -200,13 +200,21 @@ mixin _HomeScreenDesktopLayoutMixin
                   final updateState = ref.watch(updateProvider);
                   final showUpdateDot =
                       updateState.updateAvailable && !updateState.dismissed;
+                  final snoozedUntil = ref.watch(notificationsSnoozeProvider);
+                  final showSnoozeDot =
+                      snoozedUntil != null &&
+                      snoozedUntil.isAfter(DateTime.now().toUtc());
+                  final snoozeTooltip = showSnoozeDot
+                      ? 'Notifications snoozed until '
+                            '${TimeOfDay.fromDateTime(snoozedUntil.toLocal()).format(context)}'
+                      : null;
                   return Stack(
                     clipBehavior: Clip.none,
                     children: [
                       IconButton(
                         icon: const Icon(Icons.settings_outlined, size: 18),
                         color: context.textSecondary,
-                        tooltip: 'Settings',
+                        tooltip: snoozeTooltip ?? 'Settings',
                         onPressed: _openSettings,
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(
@@ -222,6 +230,26 @@ mixin _HomeScreenDesktopLayoutMixin
                           child: _DotBadge(
                             ringColor: context.sidebarBg,
                             bgColor: context.accent,
+                          ),
+                        ),
+                      if (showSnoozeDot)
+                        Positioned(
+                          bottom: 8,
+                          right: 8,
+                          child: Tooltip(
+                            message: snoozeTooltip!,
+                            child: Container(
+                              padding: const EdgeInsets.all(2),
+                              decoration: BoxDecoration(
+                                color: context.sidebarBg,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.notifications_off,
+                                size: 10,
+                                color: context.textSecondary,
+                              ),
+                            ),
                           ),
                         ),
                     ],

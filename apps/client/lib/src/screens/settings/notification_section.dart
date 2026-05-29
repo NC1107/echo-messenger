@@ -1,7 +1,9 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../providers/notifications_snooze_provider.dart';
 import '../../services/notification_service.dart';
 import '../../services/sound_service.dart';
 import '../../services/toast_service.dart';
@@ -234,6 +236,10 @@ class _NotificationSectionState extends State<NotificationSection> {
           ),
         ],
 
+        // ---- Snooze notifications ----------------------------------------
+        const _SnoozeSection(),
+        const Divider(height: 32),
+
         // ---- Do Not Disturb toggle ----------------------------------------
         SwitchListTile.adaptive(
           contentPadding: EdgeInsets.zero,
@@ -404,5 +410,119 @@ class _NotificationSectionState extends State<NotificationSection> {
         ],
       ],
     );
+  }
+}
+
+/// "Snooze notifications" section inside [NotificationSection].
+///
+/// Off + four presets (1h, 8h, 24h, until tomorrow 9 AM local). When
+/// active, shows the absolute snooze-until time and a Cancel button.
+/// Backed by [notificationsSnoozeProvider].
+class _SnoozeSection extends ConsumerWidget {
+  const _SnoozeSection();
+
+  static const _presets = <({String label, SnoozeDuration? value})>[
+    (label: 'Off', value: null),
+    (label: '1 hour', value: SnoozeDuration.oneHour),
+    (label: '8 hours', value: SnoozeDuration.eightHours),
+    (label: '24 hours', value: SnoozeDuration.twentyFourHours),
+    (
+      label: 'Until tomorrow morning (9 AM)',
+      value: SnoozeDuration.tomorrowMorning,
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final snoozedUntil = ref.watch(notificationsSnoozeProvider);
+    final isActive =
+        snoozedUntil != null && snoozedUntil.isAfter(DateTime.now().toUtc());
+    final notifier = ref.read(notificationsSnoozeProvider.notifier);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Snooze notifications',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        Text(
+          'Silence push notifications for a chosen period. Your other '
+          'devices will also stop ringing for this account.',
+          style: TextStyle(color: context.textMuted, fontSize: 12),
+        ),
+        const SizedBox(height: 8),
+        RadioGroup<SnoozeDuration?>(
+          groupValue: isActive ? _matchPreset(snoozedUntil) : null,
+          onChanged: (val) async {
+            if (val == null) {
+              await notifier.clear();
+            } else {
+              await notifier.snoozeFor(val);
+            }
+          },
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (final preset in _presets)
+                RadioListTile<SnoozeDuration?>(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  title: Text(
+                    preset.label,
+                    style: TextStyle(color: context.textPrimary, fontSize: 14),
+                  ),
+                  value: preset.value,
+                ),
+            ],
+          ),
+        ),
+        if (isActive) ...[
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Icon(
+                Icons.notifications_off,
+                size: 16,
+                color: context.textSecondary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Snoozed until '
+                  '${TimeOfDay.fromDateTime(snoozedUntil.toLocal()).format(context)}',
+                  style: TextStyle(color: context.textSecondary, fontSize: 12),
+                ),
+              ),
+              TextButton(
+                onPressed: notifier.clear,
+                child: const Text('Cancel snooze'),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// Match the persisted snooze-until against the closest preset so the
+  /// radio shows the right selection after rehydration. We accept a 5-min
+  /// jitter because client/server clock drift makes exact matches rare.
+  SnoozeDuration? _matchPreset(DateTime? until) {
+    if (until == null) return null;
+    final now = DateTime.now().toUtc();
+    for (final preset in _presets) {
+      final val = preset.value;
+      if (val == null) continue;
+      final target = resolveSnoozeUntil(val, now: now.toLocal());
+      if (target.difference(until).abs() < const Duration(minutes: 5)) {
+        return val;
+      }
+    }
+    return null;
   }
 }
