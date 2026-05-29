@@ -116,5 +116,22 @@ void main() {
 
       expect(selected, '/shrug ');
     });
+
+    testWidgets('onSelect fires exactly once per tap (haptic path)', (
+      tester,
+    ) async {
+      // Confirms the HapticFeedback wrapper does not break the callback or
+      // cause it to fire more than once.
+      var callCount = 0;
+      await tester.pumpApp(
+        harness(inputText: '/sh', onSelect: (_) => callCount++),
+      );
+      await tester.pump();
+
+      await tester.tap(find.text('/shrug'));
+      await tester.pump();
+
+      expect(callCount, equals(1));
+    });
   });
 }

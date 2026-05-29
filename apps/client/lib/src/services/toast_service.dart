@@ -161,8 +161,9 @@ class _ToastWidgetState extends State<_ToastWidget>
   @override
   Widget build(BuildContext context) {
     final actionLabel = widget.actionLabel;
+    final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
     return Positioned(
-      bottom: 24,
+      bottom: keyboardInset + 24,
       right: 24,
       child: SlideTransition(
         position: _slide,
