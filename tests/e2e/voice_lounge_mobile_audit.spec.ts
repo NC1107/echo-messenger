@@ -646,6 +646,86 @@ async function bootAndSignIn(page: Page, user: SeededUser): Promise<void> {
   await page.waitForTimeout(2500);
 }
 
+/**
+ * Navigate from the signed-in chat list into the seeded group's voice
+ * lounge canvas. Steps:
+ *   1. Dismiss any "Welcome to Echo" first-run popup if present.
+ *   2. Tap the seeded group row in the conversation list (matched by the
+ *      group name, which `seedUser` constructs as `audit <slug>`).
+ *   3. Inside the conversation, tap a "Join voice" affordance (we try a
+ *      few label matchers since the exact text varies by build).
+ *   4. Wait for the lounge canvas to mount — proxied by the absence of
+ *      the chat input field, which the lounge replaces with the canvas.
+ *
+ * Best-effort: each step swallows errors and moves on. The downstream
+ * tool-stroke checks will surface "no canvas reached" naturally if any
+ * step silently failed.
+ */
+async function enterLounge(page: Page, signedInUsername: string): Promise<void> {
+  // 1. Dismiss the welcome popup if present.
+  try {
+    const gotIt = page.getByRole('button', { name: /got it/i }).first();
+    if (await gotIt.isVisible({ timeout: 1_000 })) {
+      await gotIt.click({ timeout: 2_000 });
+      await page.waitForTimeout(500);
+    }
+  } catch {
+    /* no popup */
+  }
+
+  // 2. Tap the seeded group row. seedUser names the group `audit <slug>`
+  //    or similar; match anything containing `audit`.
+  try {
+    const groupRow = page.getByText(/audit\s+/i).first();
+    await groupRow.click({ timeout: 5_000 });
+    await page.waitForTimeout(1_000);
+  } catch {
+    /* fall through; lounge entry may fail downstream and be recorded */
+  }
+
+  // 3. Tap a "Join voice" affordance. Try several text matchers — exact
+  //    label varies (Join voice / Join Lounge / Join voice channel / etc).
+  const joinMatchers = [
+    /join voice/i,
+    /join lounge/i,
+    /enter lounge/i,
+    /^lounge$/i,
+    /voice channel/i,
+  ];
+  let joined = false;
+  for (const re of joinMatchers) {
+    try {
+      const btn = page.getByText(re).first();
+      if (await btn.isVisible({ timeout: 1_000 })) {
+        await btn.click({ timeout: 2_000 });
+        joined = true;
+        break;
+      }
+    } catch {
+      /* try next matcher */
+    }
+  }
+  if (!joined) {
+    // Try aria-label fallback
+    try {
+      const labeled = page.getByLabel(/voice|lounge/i).first();
+      if (await labeled.isVisible({ timeout: 1_000 })) {
+        await labeled.click({ timeout: 2_000 });
+        joined = true;
+      }
+    } catch {
+      /* downstream will record */
+    }
+  }
+
+  // 4. Settle. The lounge needs a few seconds to mount + run the
+  //    `_centeredPose` initial transform after the canvas attaches.
+  await page.waitForTimeout(3_500);
+
+  // signedInUsername param kept for future use (e.g. asserting the avatar).
+  void signedInUsername;
+}
+
 // ---------------------------------------------------------------------------
 // Gesture targets. We work in viewport coordinates and just pick a generous
 // canvas-center region; the lounge canvas occupies most of the screen on
@@ -693,6 +773,19 @@ async function runDevice(
       orientation,
       n: nextN(),
       name: 'after-sign-in',
+      scenario: currentScenario.value,
+    });
+
+    // Navigate from the conversation list into the seeded group's voice
+    // lounge. Without this every "tool stroke" check is vacuous because
+    // the audit was driving touch events on the chat list, not the canvas.
+    currentScenario.value = 'enter-lounge';
+    await enterLounge(page, user.username);
+    await snap(page, {
+      device: profile.slug,
+      orientation,
+      n: nextN(),
+      name: 'after-enter-lounge',
       scenario: currentScenario.value,
     });
 
