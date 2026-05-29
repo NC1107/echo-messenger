@@ -11,7 +11,6 @@ import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
 import '../version.dart';
-import '../widgets/account_switcher_sheet.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/settings/card_row.dart';
 import '../widgets/settings/section_header.dart';
@@ -259,24 +258,9 @@ class SettingsRootView extends ConsumerWidget {
               ),
             ],
           ),
-          // Switch account → opens AccountSwitcherSheet. Sits in a card
-          // above Log out so the user sees "switch" before the
-          // destructive "Log out" row.
-          const SizedBox(height: EchoSectionTokens.groupGap),
-          _CardGroup(
-            children: [
-              Semantics(
-                label: 'settings switch account',
-                button: true,
-                child: CardRow(
-                  icon: Icons.switch_account_outlined,
-                  iconColor: context.settingsIconPalette.info,
-                  label: 'Switch account',
-                  onTap: () => showAccountSwitcherSheet(context),
-                ),
-              ),
-            ],
-          ),
+          // "Switch account" is no longer a Settings row — account switching
+          // is surfaced from the Log out flow instead (if other accounts are
+          // stored on this device, logging out routes to the account picker).
           // Log out in its own card — destructive-action-at-the-bottom pattern (F-039).
           const SizedBox(height: EchoSectionTokens.groupGap),
           _CardGroup(
@@ -431,18 +415,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     await ref.read(cryptoProvider.notifier).resetState();
 
     final auth = ref.read(authProvider.notifier);
+    // Drop the active account but keep any others stored on this device. If
+    // other accounts remain, route to the account picker so the user can
+    // switch into one (or add another) — account switching now lives in the
+    // logout flow, not as a standalone Settings row. Otherwise go to login.
     final nextAccount = await auth.logoutAndPickNextAccount();
 
     if (!mounted) return;
-    if (nextAccount != null) {
-      final ok = await auth.switchToAccount(nextAccount.id);
-      if (!mounted) return;
-      if (ok) {
-        context.go('/home');
-        return;
-      }
-    }
-    context.go('/login');
+    context.go(nextAccount != null ? '/auth/pick-account' : '/login');
   }
 
   void _openSavedMessages() {
