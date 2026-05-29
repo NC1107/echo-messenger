@@ -87,6 +87,15 @@ export default defineConfig({
         viewport: { width: 1920, height: 1080 },
       },
     },
+    {
+      // Deep mobile-canvas audit. Has its own config file
+      // (playwright.audit.config.ts) used by `scripts/audit_lounge_deep.sh`
+      // and `.github/workflows/canvas-audit.yml`. Listed here so the
+      // spec-coverage validator in `e2e.yml` doesn't reject the file.
+      name: 'deep-audit-placeholder',
+      testMatch: ['voice_lounge_mobile_audit.spec.ts'],
+      use: { browserName: 'chromium' },
+    },
   ],
   outputDir: './test-results',
 });

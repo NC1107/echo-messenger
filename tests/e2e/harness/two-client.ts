@@ -143,7 +143,16 @@ async function registerOrLogin(
   username: string,
   password: string,
 ): Promise<HarnessUser> {
-  const reg = await postJson('/api/auth/register', { username, password });
+  // Retry register on 429 with exponential backoff (1s/2s/4s/8s). The
+  // rate-limiter is per-IP, so parallel Playwright workers register through
+  // one bucket and the first slow shard hits 429 before later shards.
+  // Mirrors the fix landed in commit e5fe02b4 for the deep-audit spec.
+  let reg = await postJson('/api/auth/register', { username, password });
+  for (let attempt = 0; attempt < 4 && reg.status === 429; attempt++) {
+    const delayMs = 1000 * Math.pow(2, attempt);
+    await new Promise((r) => setTimeout(r, delayMs));
+    reg = await postJson('/api/auth/register', { username, password });
+  }
   if (reg.status === 201 && reg.data?.access_token) {
     return {
       username,

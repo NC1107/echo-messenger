@@ -1197,7 +1197,12 @@ async function writeReport(): Promise<void> {
       let i = 0;
       for (const f of slice) {
         i++;
-        const detail = f.detail.replace(/\|/g, '\\|').slice(0, 220);
+        // Backslashes first, then pipes (otherwise CodeQL flags incomplete
+        // sanitization — markdown-table sink, but easier to escape correctly).
+        const detail = f.detail
+          .replace(/\\/g, '\\\\')
+          .replace(/\|/g, '\\|')
+          .slice(0, 220);
         const shot = f.screenshot ? `\`${f.screenshot}\`` : '';
         lines.push(
           `| ${i} | ${f.scenario} | ${f.label} | ${f.passed ? 'YES' : 'NO'} | ${detail} | ${f.ruleCitation ?? ''} | ${shot} |`,
@@ -1238,7 +1243,11 @@ async function writeReport(): Promise<void> {
     lines.push('| Device | Orientation | Kind | Scenario | Detail |');
     lines.push('|--------|-------------|------|----------|--------|');
     for (const c of crashes) {
-      const d = c.detail.replace(/\|/g, '\\|').replace(/\n/g, ' / ').slice(0, 300);
+      const d = c.detail
+        .replace(/\\/g, '\\\\')
+        .replace(/\|/g, '\\|')
+        .replace(/\n/g, ' / ')
+        .slice(0, 300);
       lines.push(`| ${c.device} | ${c.orientation} | ${c.kind} | ${c.whenScenario ?? ''} | ${d} |`);
     }
   }
