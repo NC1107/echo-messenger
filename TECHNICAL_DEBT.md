@@ -4,6 +4,8 @@ Open items from the **2026-05-29 voice-lounge focused audit** (5 parallel review
 
 Last updated: 2026-05-29.
 
+> A second, broader tranche — the **2026-05-29 product-testing backlog** (~36 cross-platform items, each code-audited but not yet fixed) — is recorded in its own section at the bottom of this file: [2026-05-29 — broad product-testing backlog](#2026-05-29--broad-product-testing-backlog-audited-not-yet-fixed).
+
 ## Summary
 
 **Open: 14** — 0 critical, 0 high, 8 medium, 6 low. None is a known crash; the crash-class findings all shipped in #1288.
@@ -134,3 +136,67 @@ Last updated: 2026-05-29.
 ---
 
 *Items resolved in PR #1288 (VL-1..VL-5, VL-7, VL-9..VL-13, VL-18, VL-20, VL-22, VL-27, VL-31) and the non-issues (VL-7 pinch re-seed, VL-25 fullscreen/view-mode) are recorded in that PR and its commits; they are intentionally omitted here so this file tracks only open work.*
+
+---
+
+# 2026-05-29 — broad product-testing backlog (audited, not yet fixed)
+
+~36 items from a live cross-platform testing pass. Each was validated by a **read-only code audit** (does it reproduce in the code? where? root cause?) and recorded here **before** any fix lands, per the working rule. Verdict legend: **BUG** = real defect; **GAP** = feature not built; **BY-DESIGN** = current behaviour is intentional (UX call to change it); **REPRO?** = code looks correct, needs a live repro to confirm. IDs reference [[project-backlog-may29-full]] in project memory.
+
+## Summary
+
+| ID | Area | Verdict | Sev | Effort | Root cause (file) |
+|----|------|---------|-----|--------|-------------------|
+| 1 | composer | BUG | med | S | slash select no haptic — `input/slash_command_autocomplete.dart:92` |
+| 2 | composer | REPRO? | — | — | autoscroll IS wired — `chat_panel.dart:1020` (`onMessageSent`→`_scrollToBottom`) |
+| 3 | composer | BY-DESIGN | low | M | one cmd/msg by parser design — `services/slash_commands.dart` |
+| 4 | composer | GAP | med | M | no `/gif` in registry — `services/slash_commands.dart` |
+| 5 | composer | BUG | high | M | body uses `RichText`, not selectable — `message/rich_text_content.dart` |
+| 6 | composer | BUG | low | S | typing bubble opaque/large — `typing_bubble.dart:57` |
+| 7 | markdown | BUG | med | M | no `***bold-italic***` pattern — `message/markdown_patterns.dart:15` |
+| 8 | composer | BUG | high | S–M | URL not stripped when embed card shows — `message_item.dart:851` |
+| 9 | media | GAP | med | M–L | one media/msg, multi sent separately — `message/media_content.dart:336`, `chat_input_bar/parts/send_handling.dart:101` |
+| 10 | media | BUG | med | M | multi-select sends immediately, no staging — `chat_input_bar/file_pickers.dart:202` |
+| 11 | media | REPRO?/BUG | high | L–M | sender sees own video, peers can't (Linux) — media URL resolve `message/media_content.dart:82`; needs logging |
+| 12 | media | BUG | high | M–L | inline player hardcodes 16:9, ignores rotation — `message/video_player.dart:134` |
+| 13 | media | BUG | med | M | images not size-reserved → reflow/jump — `chat_panel/chat_message_list.dart:249` (`addAutomaticKeepAlives:false`), `message/image_attachment.dart:90` |
+| 14 | threads | BY-DESIGN | med | M | mobile thread = draggable sheet, rough — `thread_view_panel.dart:845` |
+| 15 | threads | BY-DESIGN | low–med | M | mobile thread layout cramped/modal — `thread_view_panel.dart:545` |
+| 16 | perms | BUG | high | S | pin-error toast behind keyboard — `services/toast_service.dart:164` (`bottom:24` ignores `viewInsets`) |
+| 17 | perms | GAP | med | M | no per-group role-change endpoint or UI — `routes/groups/members.rs`, `group_info_screen/parts/members_section.dart` |
+| 18 | calls | GAP | low–med | M | no call_history/duration persisted — only "Voice call started" sys event |
+| 19 | theme | BUG | high | S | Ember reply quote uses dark `onPrimary` on amber bubble — `message/reply_quote.dart:93`, `theme/echo_theme.dart:343,613` |
+| 20 | canvas | BUG | high | M | Android draw blocked / wrong-writer — authority desync on reconnect (stale cached device authority); `providers/canvas_provider.dart:1179`, `ws/events/canvas_authority.rs` |
+| 21 | canvas | BUG | high(mobile) | S | minimap re-centres every `onPanUpdate` → over-sensitive — `widgets/voice_lounge/canvas_minimap.dart:68` |
+| 22 | canvas | BUG/VERIFY | high | M | avatars not movable in post-rewrite lounge — drag exists in `widgets/voice_canvas.dart:974` but verify it's wired into `voice_lounge_screen`; also no authority gate on `moveAvatar` (`canvas_provider.dart:692`) |
+| 23 | canvas | PENDING AUDIT | ? | ? | "screenshare not appearing on canvas" — not yet validated; likely tied to screenshare rendering in viewport-space outside the canvas transform |
+| 24 | canvas | PARTIAL | med | M | images/screenshare not resizable (avatars have a resize ring) — `widgets/voice_canvas.dart:1037`, `voice_lounge/screen_share.dart` |
+| 25 | canvas | BUG | med | S | PNG export OOM/`invalid arguments` on Android — `toImage(pixelRatio:2.0)`×6000 board exceeds GPU tex limit — `services/canvas_export_service.dart:35` |
+| 26 | canvas | BUG | med | M | image-adder doesn't see own image — server excludes sender from broadcast (relates to VL-19) — `ws/events/canvas.rs:343`; needs self-render or own-echo |
+| 27 | canvas | GAP | low | M | only URL paste, no binary image paste — `widgets/voice_canvas.dart:_handlePasteImage` (helpers exist: `utils/clipboard_image_helper*.dart`) |
+| 28 | canvas | BY-DESIGN | low–med | S | switching back to canvas keeps last pose, doesn't recenter — `voice_lounge_screen.dart:1599` (recenter only on first mount) |
+| 29 | canvas | BUG | high | M | `_clampTransform` centres when zoomed-out → "invisible wall" — `widgets/voice_lounge/lounge_canvas_gestures.dart:488` |
+| 30 | canvas | BUG(race) | low–med | M–H | can escape bounds on mobile via multi-touch race (all paths call clamp; pinch/pan seed race) — `lounge_canvas_gestures.dart:372` |
+| 31 | voice | BUG | med | S | Android bg audio can suspend — foreground service lacks `AudioManager` audio-focus (USAGE_VOICE_COMMUNICATION) — `android/.../EchoForegroundService.kt:72` |
+| 32 | voice | REPRO? | low | — | bottom bars guarded mutually-exclusive (`narrow_layout.dart:249` `!_showingLounge`); "doubled" likely transient on swipe |
+| US | search | PARTIAL/MOSTLY-DONE | low | S–M | global search ALREADY returns users+groups via `/api/search` — `widgets/global_search_overlay.dart:208`; only gap is *discoverable public* groups + join affordance |
+| AV | sidebar | NEEDS-LOCATING | ? | ? | bottom-left self-avatar not found in `desktop_layout.dart`; check sidebar account row / status pill (memory [[feedback_status_surfacing]]) then fix provider-watch/cache-bust |
+| GIF | media | BUG | med | S | GIF re-decodes smaller when unfocused — `providers/gif_playback_provider.dart:38` pauses on `AppLifecycleState`; decouple focus from playback |
+| SQ | voice | GAP (approved) | med | M | video bitrate caps ~1.5 Mbps — `livekit_voice_provider.dart:99`; add presets to ~5 Mbps + quality indicator |
+| NAV | nav | GAP (approved) | low | M | no conversation history stack — `home_screen.dart:86` single ref; add stack + title-bar back/forward (`window_chrome.dart`) |
+| TASKBAR | layout | PENDING AUDIT | ? | ? | "screens render over the OS taskbar" — not yet validated; find the fullscreen screen(s) / `SystemChrome` usage |
+
+## Notable corrections from the audit (before building)
+
+- **#2 / #32 are likely non-issues** in the code (autoscroll-on-send and the mobile double-bar are both already handled/guarded) — get a fresh repro before spending effort.
+- **#US is mostly already built** — `/api/search` already returns contacts + groups and the overlay renders them; the real remaining work is *public/discoverable* groups + a join affordance, not a from-scratch feature. (Supersedes the earlier "expand universal search" scoping.)
+- **#3 (chaining slash commands)** matches Discord/Slack convention (one per message) — recommend won't-fix unless a delimiter syntax is desired.
+- **#22/#24 hinge on whether `widgets/voice_canvas.dart` is still wired** post-canvas-rewrite (#1278); confirm the active avatar/image layer before estimating.
+- **#20 and #26 both touch the canvas sender-identity / echo model** and relate to open **VL-19** (broadcast excludes by user-id) — fix them together.
+
+## Suggested fix order (when work resumes)
+
+1. **Cheap, high-impact BUGs:** #16 pin-toast (`viewInsets`), #19 Ember reply colour, #8 embed double-text, #6 typing bubble, #1 slash haptic, #21 minimap sensitivity, #25 PNG export clamp.
+2. **Medium UX BUGs:** #5 selectable message text, #13 image size-reservation (also explains #2/"jumping"), #12 vertical video, #29 canvas pan clamp, #31 Android audio-focus, #GIF focus re-decode.
+3. **Feature gaps (scoped):** #10 staged multi-photo, #9 gallery, #SQ bitrate presets, #17 promote-to-admin, #4 `/gif`, #US public-group search, #18 call history, #NAV nav arrows, #27 canvas image paste.
+4. **Needs repro/verify first:** #2, #32, #11, #22, #23 (screenshare), #TASKBAR, #30.
