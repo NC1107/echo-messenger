@@ -338,17 +338,12 @@ mixin _HomeScreenActionsMixin on ConsumerState<HomeScreen> {
     unawaited(ref.read(cryptoProvider.notifier).resetState());
 
     final auth = ref.read(authProvider.notifier);
+    // Account switching is surfaced here (not as a Settings row): if other
+    // accounts are still stored on this device, route to the picker; else
+    // go to login.
     final nextAccount = await auth.logoutAndPickNextAccount();
 
     if (!mounted) return;
-    if (nextAccount != null) {
-      final ok = await auth.switchToAccount(nextAccount.id);
-      if (!mounted) return;
-      if (ok) {
-        context.go('/home');
-        return;
-      }
-    }
-    context.go('/login');
+    context.go(nextAccount != null ? '/auth/pick-account' : '/login');
   }
 }
