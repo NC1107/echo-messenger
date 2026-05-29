@@ -14,7 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// * A "Skip" affordance (not "Skip step") is visible on every non-final page.
 /// * The "Next / Get Started" CTA renames on the final page.
 /// * Theme page shows all 4 curated themes including Indigo.
-/// * UI style page shows all 3 style options.
+/// * App-familiarity page shows all 3 style cards and sets layout + density.
 void main() {
   setUp(() {
     // Reset SharedPreferences so each test starts with a clean profile-nudge
@@ -100,7 +100,7 @@ void main() {
     expect(find.text('Ember'), findsOneWidget);
   });
 
-  testWidgets('ui style page renders three style cards', (tester) async {
+  testWidgets('app-familiarity page renders three style cards', (tester) async {
     await pumpWizard(tester);
 
     // Fill required display name so _next() doesn't block on page 0.
