@@ -22,8 +22,8 @@ import '../providers/crypto_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../services/accounts_storage.dart';
 import '../theme/echo_theme.dart';
+import 'account_list_row.dart';
 import 'echo_bottom_sheet.dart';
-import 'user_avatar.dart';
 
 const String _kSwitchAccountTitle = 'Switch account';
 const String _kAddAccountLabel = 'Add another account';
@@ -104,7 +104,7 @@ class _AccountSwitcherSheetState extends ConsumerState<AccountSwitcherSheet> {
           ),
         ),
         for (final account in accounts)
-          _AccountRow(
+          AccountListRow(
             account: account,
             isActive: account.id == snap.activeAccountId,
             onTap: _switching ? null : () => _onTapAccount(account),
@@ -161,80 +161,6 @@ class _AccountSwitcherSheetState extends ConsumerState<AccountSwitcherSheet> {
     ref.read(cryptoProvider.notifier).resetState();
     ref.read(authProvider.notifier).logout(forgetAccount: false);
     context.go('/login');
-  }
-}
-
-class _AccountRow extends StatelessWidget {
-  final StoredAccount account;
-  final bool isActive;
-  final VoidCallback? onTap;
-
-  const _AccountRow({
-    required this.account,
-    required this.isActive,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      label: isActive
-          ? 'account ${account.username} active'
-          : 'switch to ${account.username}',
-      button: true,
-      selected: isActive,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-          child: Row(
-            children: [
-              UserAvatar(
-                userId: account.userId,
-                username: account.username,
-                avatarUrl: account.avatarUrl,
-                radius: 20,
-                openProfileOnTap: false,
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      account.username,
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: context.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      _hostLabel(account.serverUrl),
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: context.textSecondary,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-              if (isActive)
-                Icon(Icons.check_circle, size: 20, color: context.accent),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  String _hostLabel(String url) {
-    final host = Uri.tryParse(url)?.host;
-    if (host == null || host.isEmpty) return url;
-    return host;
   }
 }
 
