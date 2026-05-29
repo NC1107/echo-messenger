@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -21,6 +22,30 @@ class CanvasExportService {
   /// it's reading an incompatible payload.
   static const int snapshotFormatVersion = 1;
 
+  /// Maximum pixel dimension safe on mobile GPUs (most cap at 4096–8192).
+  /// Using 4096 keeps us inside even the most conservative Android devices.
+  static const double _kMaxTextureDim = 4096;
+
+  /// Minimum pixel ratio to keep the output legible even on tiny boundaries.
+  static const double _kMinPixelRatio = 0.5;
+
+  /// Clamp [pixelRatio] so that neither dimension of the rendered image
+  /// exceeds [maxDim] pixels. Protects against "invalid arguments" on Android
+  /// when the boundary size × ratio overflows the GPU texture limit.
+  ///
+  /// This is a pure helper exposed for testing.
+  static double clampPixelRatio(
+    Size boundarySize, {
+    double pixelRatio = 2.0,
+    double maxDim = _kMaxTextureDim,
+    double minRatio = _kMinPixelRatio,
+  }) {
+    final longest = math.max(boundarySize.width, boundarySize.height);
+    if (longest <= 0) return minRatio;
+    final clamped = math.min(pixelRatio, maxDim / longest);
+    return math.max(clamped, minRatio);
+  }
+
   /// Capture the active canvas as a PNG. Returns the PNG bytes ready to be
   /// written to disk. Caller is responsible for picking a destination path
   /// — most surfaces will use `file_picker.saveFile`.
@@ -32,7 +57,8 @@ class CanvasExportService {
     if (object is! RenderRepaintBoundary) {
       throw StateError('Voice canvas repaint boundary is not mounted yet.');
     }
-    final image = await object.toImage(pixelRatio: pixelRatio);
+    final effectiveRatio = clampPixelRatio(object.size, pixelRatio: pixelRatio);
+    final image = await object.toImage(pixelRatio: effectiveRatio);
     try {
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       if (byteData == null) {

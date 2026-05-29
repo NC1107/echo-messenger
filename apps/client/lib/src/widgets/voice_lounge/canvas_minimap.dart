@@ -62,10 +62,25 @@ class CanvasMinimap extends ConsumerWidget {
         void recenterFrom(Offset boxPoint) =>
             onRecenter(proj.boxToWorld(boxPoint));
 
+        // Incremental pan: translate the viewport by the minimap delta scaled
+        // to world space. Absolute snap-to-touch on every event overshoots on
+        // mobile because coarse-touch deltas jump the viewport centre rather
+        // than nudging it.
+        void recenterDelta(Offset delta) {
+          final worldDelta = delta / proj.fit;
+          final current = proj.boxToWorld(
+            Offset(
+              proj.offset.dx + (viewportRect.width * proj.fit) / 2,
+              proj.offset.dy + (viewportRect.height * proj.fit) / 2,
+            ),
+          );
+          onRecenter(current + worldDelta);
+        }
+
         final scheme = Theme.of(context).colorScheme;
         return GestureDetector(
           onTapDown: (d) => recenterFrom(d.localPosition),
-          onPanUpdate: (d) => recenterFrom(d.localPosition),
+          onPanUpdate: (d) => recenterDelta(d.delta),
           child: Container(
             width: width,
             height: height,
