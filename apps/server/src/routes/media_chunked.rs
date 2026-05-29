@@ -382,18 +382,63 @@ pub async fn finalize(
         );
     }
 
-    let mime_type = detect_mime_from_file(&session.temp_path, &session.mime_type).await?;
+    let mime_type = detect_mime_from_file(&session.temp_path, &session.mime_type)
+        .await
+        .map_err(|e| log_finalize_step(id, "detect_mime", &session.temp_path, e))?;
     let ext = media::extension_for_mime(&mime_type);
     let file_uuid = Uuid::new_v4();
     let disk_path = format!("./uploads/{file_uuid}.{ext}");
 
-    fs::create_dir_all("./uploads")
-        .await
-        .map_err(|e| AppError::internal(format!("Failed to create uploads directory: {e}")))?;
+    fs::create_dir_all("./uploads").await.map_err(|e| {
+        log_finalize_io(
+            id,
+            "create_uploads_dir",
+            &session.temp_path,
+            "./uploads",
+            &e,
+        )
+    })?;
+
+    // Pre-rename sanity check: the temp file must exist and its on-disk
+    // size must match `total_size`.  If it doesn't, surface a structured
+    // message instead of relying on `fs::rename` to fail with a generic
+    // IO error.  This is the diagnostic hook for the chronic CI flake --
+    // the most likely race is the background cleanup sweep unlinking the
+    // file between mime-sniff and rename, in which case `metadata` reports
+    // ENOENT here with a clear log line naming the upload.
+    match fs::metadata(&session.temp_path).await {
+        Ok(meta) => {
+            if meta.len() as i64 != session.total_size {
+                tracing::error!(
+                    upload_id = %id,
+                    temp_path = %session.temp_path,
+                    on_disk = meta.len(),
+                    expected = session.total_size,
+                    "chunked_upload/finalize: temp file size mismatch before rename",
+                );
+                return Err(AppError::internal(format!(
+                    "Temp upload size mismatch: on_disk={} expected={}",
+                    meta.len(),
+                    session.total_size
+                )));
+            }
+        }
+        Err(e) => {
+            tracing::error!(
+                upload_id = %id,
+                temp_path = %session.temp_path,
+                error = %e,
+                "chunked_upload/finalize: temp file missing before rename (likely cleanup race)",
+            );
+            return Err(AppError::internal(format!(
+                "Temp upload file missing before rename: {e}"
+            )));
+        }
+    }
 
     fs::rename(&session.temp_path, &disk_path)
         .await
-        .map_err(|e| AppError::internal(format!("Failed to move temp upload into place: {e}")))?;
+        .map_err(|e| log_finalize_io(id, "rename", &session.temp_path, &disk_path, &e))?;
 
     let safe_filename = sanitize_filename(&session.filename);
     let (img_w, img_h) = if mime_type.starts_with("image/") {
@@ -438,6 +483,53 @@ pub async fn finalize(
     Ok((
         StatusCode::CREATED,
         Json(media::build_upload_response(&row, thumb_url)),
+    ))
+}
+
+/// Annotate a finalize-step error with the upload id + step name so the
+/// 500 returned to the client and the server log line both point at the
+/// exact failing operation.  Used to make the chronic CI flake
+/// (`chunks_append_in_order_and_finalize_returns_media_url`) diagnostic
+/// instead of opaque -- the original code wrapped each `?` in a generic
+/// "internal error" message that didn't say which step failed.
+fn log_finalize_step(id: Uuid, step: &'static str, temp_path: &str, err: AppError) -> AppError {
+    tracing::error!(
+        upload_id = %id,
+        step,
+        temp_path,
+        message = %err.message,
+        "chunked_upload/finalize: step failed"
+    );
+    AppError {
+        status: err.status,
+        message: format!("finalize step {step} failed: {}", err.message),
+        code: err.code,
+        body: err.body,
+    }
+}
+
+/// Same idea as [`log_finalize_step`] but for raw `std::io::Error` returns
+/// from filesystem operations -- formats the error with its source path so
+/// flakes that depend on a cleanup race show the unlink in the log next to
+/// the failing rename.
+fn log_finalize_io(
+    id: Uuid,
+    step: &'static str,
+    src: &str,
+    dst: &str,
+    err: &std::io::Error,
+) -> AppError {
+    tracing::error!(
+        upload_id = %id,
+        step,
+        src,
+        dst,
+        kind = ?err.kind(),
+        error = %err,
+        "chunked_upload/finalize: io step failed"
+    );
+    AppError::internal(format!(
+        "finalize step {step} failed (src={src}, dst={dst}): {err}"
     ))
 }
 
@@ -563,7 +655,18 @@ pub async fn get_state(
 /// Spawned from `main.rs` on the same `spawn_periodic` cadence used by
 /// the other cleanup loops.
 pub async fn cleanup_stale_uploads(pool: &sqlx::PgPool, idle_seconds: i64) {
-    let rows = match db::upload_sessions::list_stale_pending(pool, idle_seconds).await {
+    cleanup_stale_uploads_scoped(pool, idle_seconds, None).await;
+}
+
+/// Variant of [`cleanup_stale_uploads`] scoped to a single `user_id` so
+/// integration tests can exercise the sweep without reaping in-flight
+/// uploads belonging to parallel tests sharing the same database.
+pub async fn cleanup_stale_uploads_scoped(
+    pool: &sqlx::PgPool,
+    idle_seconds: i64,
+    user_id: Option<Uuid>,
+) {
+    let rows = match db::upload_sessions::list_stale_pending(pool, idle_seconds, user_id).await {
         Ok(r) => r,
         Err(e) => {
             tracing::warn!("chunked upload cleanup: list_stale_pending failed: {e}");
