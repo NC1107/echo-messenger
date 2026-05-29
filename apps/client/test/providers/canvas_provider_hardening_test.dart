@@ -5,6 +5,7 @@
 // regression in the actual ingress path is caught.
 
 import 'package:echo_app/src/models/canvas_models.dart';
+import 'package:echo_app/src/providers/canvas_authority_provider.dart';
 import 'package:echo_app/src/providers/canvas_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -178,6 +179,48 @@ void main() {
       // The since-aborted stroke must not commit/append on endStroke.
       n.endStroke();
       expect(c.read(canvasProvider).strokes, isEmpty);
+    });
+  });
+
+  group('VL-12: detach clears per-channel canvas authority', () {
+    test('a stale authority device does not survive into the next session', () {
+      final c = makeContainer();
+      final n = c.read(canvasProvider.notifier);
+
+      // Some other device held the write lock for this channel.
+      c.read(canvasAuthorityNotifierProvider(_chan).notifier).setAuthority(7);
+      n.debugAttachChannel(_chan);
+      expect(c.read(canvasAuthorityNotifierProvider(_chan)), 7);
+
+      n.detach();
+      expect(
+        c.read(canvasAuthorityNotifierProvider(_chan)),
+        isNull,
+        reason: 'detach must reset authority so the next join starts clean',
+      );
+    });
+  });
+
+  group('VL-31: degenerate single-point shapes are dropped', () {
+    test('single-tap with a shape tool commits nothing', () {
+      final c = makeContainer();
+      final n = _attached(c);
+      n.setTool(CanvasTool.rect);
+      n.startStroke(const CanvasPoint(x: 1000, y: 1000)); // tap, no drag
+      n.endStroke();
+      expect(c.read(canvasProvider).strokes, isEmpty);
+    });
+
+    test('a dragged two-point shape commits', () {
+      final c = makeContainer();
+      final n = _attached(c);
+      n.setTool(CanvasTool.rect);
+      n.startStroke(const CanvasPoint(x: 1000, y: 1000));
+      n.continueStroke(const CanvasPoint(x: 2000, y: 2000));
+      n.endStroke();
+      final strokes = c.read(canvasProvider).strokes;
+      expect(strokes.length, 1);
+      expect(strokes.single.kind, StrokeKind.rect);
     });
   });
 }

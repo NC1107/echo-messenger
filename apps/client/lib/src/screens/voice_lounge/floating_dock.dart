@@ -7,7 +7,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../providers/channels_provider.dart';
 import '../../providers/livekit_voice/livekit_voice_provider.dart';
 import '../../providers/screen_share_provider.dart';
 import '../../providers/voice_settings_provider.dart';
@@ -91,16 +90,23 @@ class _FloatingDockState extends ConsumerState<FloatingDock> {
     // gone. The notifiers themselves are keepAlive providers so the
     // captured handles stay valid across this widget's lifetime.
     final livekit = ref.read(livekitVoiceProvider.notifier);
-    final channels = ref.read(channelsProvider.notifier);
     final screenShareNotifier = ref.read(screenShareProvider.notifier);
 
-    if (screenShare.isScreenSharing) {
-      await livekit.setScreenShareEnabled(false);
-      screenShareNotifier.setLiveKitScreenShareActive(false);
+    // VL-10: on success the screen navigates away and this dock unmounts, so
+    // the `_isLeaving` latch is intentionally left set (no setState on a dead
+    // widget). On FAILURE, re-enable the button so a throw mid-teardown can't
+    // permanently wedge it and strand the user in the lounge.
+    try {
+      if (screenShare.isScreenSharing) {
+        await livekit.setScreenShareEnabled(false);
+        screenShareNotifier.setLiveKitScreenShareActive(false);
+      }
+      // leaveChannel() already clears the server-side voice session via
+      // channelsProvider.leaveVoiceChannel internally — don't call it twice.
+      await livekit.leaveChannel();
+    } catch (_) {
+      if (mounted) setState(() => _isLeaving = false);
     }
-    await channels.leaveVoiceChannel(conversationId, channelId);
-    await livekit.leaveChannel();
-    // Screen is leaving — no setState after this point.
   }
 
   @override

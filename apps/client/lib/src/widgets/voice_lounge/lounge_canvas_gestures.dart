@@ -236,7 +236,16 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
     // Double-tap detection runs BEFORE the state-machine transition so
     // the second tap doesn't get consumed as a "start a stroke / start
     // a pan" event. Spec: only when tool == none.
-    if (!widget.isToolSelected && _isDoubleTap(event)) {
+    //
+    // VL-22: require this to be the SOLE pointer landing on an idle canvas.
+    // Without the `length == 1 && idle` guard, a second finger tapped during
+    // an in-progress pan would pass the timing check, fire a double-tap zoom,
+    // and `return` without telling the state machine — leaving `_phase` stuck
+    // in `panning` with two physical pointers down (combined zoom+pan jump).
+    if (!widget.isToolSelected &&
+        _pointers.length == 1 &&
+        _phase == CanvasGesturePhase.idle &&
+        _isDoubleTap(event)) {
       _handleDoubleTap(event.localPosition);
       _lastTapPosition = null;
       _lastTapAt = null;

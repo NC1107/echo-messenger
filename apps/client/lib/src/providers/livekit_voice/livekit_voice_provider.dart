@@ -875,6 +875,13 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
           'LiveKitVoice',
           'Room disconnected',
         );
+        // VL-11: a terminal disconnect (e.g. network drop) doesn't go through
+        // leaveChannel/_cleanupRoom, so the 2s RTC-stats + audio-level timers
+        // would keep reflecting into a dead room. Stop them here; they restart
+        // on the next join. (Transient blips fire Reconnecting/Reconnected, not
+        // Disconnected, so this doesn't kill polling across auto-reconnect.)
+        _stopRtcStatsPolling();
+        _stopAudioLevelPolling();
         if (!_disposed) {
           state = state.copyWith(
             isActive: false,

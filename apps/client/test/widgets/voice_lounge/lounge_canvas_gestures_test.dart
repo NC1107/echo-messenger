@@ -562,5 +562,48 @@ void main() {
             'jumped on finger lift (VL-7 regression)',
       );
     });
+
+    // VL-22 regression: a second finger landing during an in-progress pan
+    // must enter pinching, NOT be consumed as a double-tap zoom (which would
+    // leave _phase stuck in panning with two pointers down and jump the zoom).
+    testWidgets('second finger during a pan enters pinching, not double-tap', (
+      tester,
+    ) async {
+      final rec = _Recorder();
+      const key = ValueKey('vl22');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: _harness(rec: rec, isToolSelected: false, key: key),
+        ),
+      );
+      final state = _stateOf(tester, key);
+
+      // First finger down → panning. This also arms the double-tap window
+      // (_lastTapPosition / _lastTapAt are set on every pointer-down).
+      await _pointerDown(
+        tester,
+        () => null,
+        at: const Offset(100, 100),
+        pointer: 1,
+      );
+      expect(state.phase, CanvasGesturePhase.panning);
+
+      // A second finger lands quickly and nearby — close enough to satisfy the
+      // double-tap timing/distance test, which (pre-fix) would zoom + strand
+      // the pan. With the guard it falls through to a normal pinch transition.
+      await _pointerDown(
+        tester,
+        () => null,
+        at: const Offset(108, 106),
+        pointer: 2,
+      );
+
+      expect(state.phase, CanvasGesturePhase.pinching);
+      expect(
+        state.debugTransform.getMaxScaleOnAxis(),
+        closeTo(1.0, 0.01),
+        reason: 'a double-tap zoom must not fire from the 2nd pan finger',
+      );
+    });
   });
 }

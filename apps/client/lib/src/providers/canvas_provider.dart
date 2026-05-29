@@ -193,6 +193,17 @@ class CanvasController extends _$CanvasController {
     _perfLogTimer?.cancel();
     _perfLogTimer = null;
     _pendingEvents.clear();
+    // VL-12: reset the per-channel authority. The authority notifier is
+    // keepAlive + family-keyed by channelId, so without this the stale
+    // write-lock device survives into the next join of the SAME channel —
+    // and if that device is gone, _canIWrite() returns false for everyone
+    // and nobody can draw until a manual re-claim.
+    final detachingChannelId = _channelId ?? _attachingChannelId;
+    if (detachingChannelId != null) {
+      ref
+          .read(canvasAuthorityNotifierProvider(detachingChannelId).notifier)
+          .clear();
+    }
     _channelId = null;
     _attachingChannelId = null;
     state = const CanvasState(); // attachState defaults back to idle
@@ -413,6 +424,7 @@ class CanvasController extends _$CanvasController {
     required Color color,
   }) {
     if (_channelId == null) return;
+    if (!_canIWrite()) return; // VL-20: read-only device, don't ghost locally
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
     final stroke = CanvasStroke(
@@ -471,9 +483,18 @@ class CanvasController extends _$CanvasController {
     if (!wasActive) return;
     if (committedPoints == null || committedPoints.isEmpty) return;
     if (_channelId == null) return;
+    // VL-20: gate the LOCAL mutation, not just the broadcast. _sendCanvasEvent
+    // already drops the WS send when this device isn't the canvas authority;
+    // without the same gate here the stroke would append to our own state but
+    // never reach peers — a permanent local-only ghost that diverges forever.
+    if (!_canIWrite()) return;
 
     final tool = state.selectedTool;
     final kind = strokeKindForTool(tool);
+    // VL-31: a shape tool (line/rect/ellipse) tapped without dragging leaves a
+    // single point. _paintShape needs >= 2 points to render, so a 1-point shape
+    // is invisible yet still persists and broadcasts. Drop it.
+    if (isShapeKind(kind) && committedPoints.length < 2) return;
     final isEraser = kind == StrokeKind.eraser;
     final stroke = CanvasStroke(
       id: newCanvasId(),
@@ -565,6 +586,7 @@ class CanvasController extends _$CanvasController {
 
   void addImage(CanvasImage image) {
     if (_channelId == null) return;
+    if (!_canIWrite()) return; // VL-20: read-only device, don't ghost locally
     final newImages = List<CanvasImage>.from(state.images)..add(image);
     state = state.copyWith(images: _capImages(newImages));
     _myImageIds.add(image.id);

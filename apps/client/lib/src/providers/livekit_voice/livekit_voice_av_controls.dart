@@ -22,6 +22,11 @@ mixin LiveKitVoiceAvControlsMixin on Notifier<LiveKitVoiceState> {
 
   /// Enable or disable the local microphone.
   void setCaptureEnabled(bool enabled) {
+    // VL-9: reachable from CallKit / notification action streams whose
+    // cancellation is synchronous but can't drain an already-queued event.
+    // Without this guard a queued mute action after dispose assigns `state`
+    // on a disposed Notifier → StateError. Mirrors toggleVideo/switchCamera.
+    if (_disposed) return;
     DebugLogService.instance.log(
       LogLevel.info,
       'LiveKitVoice',
@@ -48,8 +53,11 @@ mixin LiveKitVoiceAvControlsMixin on Notifier<LiveKitVoiceState> {
   /// Following Discord convention, deafening also mutes the microphone.
   /// Un-deafening restores mic to whatever state it was before deafening.
   Future<void> setDeafened(bool deafened) async {
+    if (_disposed) return;
     _syncMicStateForDeafen(deafened);
     await _setRemoteAudioEnabled(!deafened);
+    // Re-check after the await — the room may have been torn down mid-call.
+    if (_disposed) return;
     state = state.copyWith(isDeafened: deafened);
   }
 
