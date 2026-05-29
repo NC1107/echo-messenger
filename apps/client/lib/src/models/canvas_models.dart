@@ -446,8 +446,19 @@ class CanvasState {
   /// never persisted server-side.
   final Map<String, ScreenShareWindow> screenSharePositions;
 
-  /// Points being accumulated for the currently-in-progress stroke.
-  /// Cleared and appended to [strokes] on pointer-up.
+  /// Deprecated — read in-flight stroke points from the
+  /// `ActiveStrokeNotifier` mounted by `LoungeCanvasStrokes` instead.
+  ///
+  /// Prior to the canvas-rewrite PR-B chunk 2 this held the user's
+  /// in-flight stroke and every pointer-move tick wrote a fresh
+  /// `state.copyWith(activePoints: ...)`, dragging every Riverpod
+  /// consumer (dock, perf counters, tool indicators) into a per-tick
+  /// rebuild storm. The field now stays empty after pointer-up; we
+  /// keep it on the type for backwards-compat with external readers
+  /// (e.g. extension code, server-snapshot replay paths) until two
+  /// release cycles have passed and we can drop it cleanly.
+  ///
+  /// See docs/voice-lounge/05-canvas-rewrite-spec.md §B.2.
   final List<CanvasPoint> activePoints;
 
   final CanvasTool selectedTool;

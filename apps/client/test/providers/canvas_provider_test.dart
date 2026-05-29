@@ -765,9 +765,12 @@ void main() {
         // ignore: invalid_use_of_visible_for_testing_member
         notifier.debugFlushStrokePoints();
 
-        // Drag 2's active points must still be (50000, 60000) — untouched by
-        // any phantom drag-1 state.
-        final pts = container.read(canvasProvider).activePoints;
+        // Drag 2's accumulated points must still be (50000, 60000) —
+        // untouched by any phantom drag-1 state. In-flight points live in
+        // the notifier's off-state accumulator now (not state.activePoints)
+        // so we read them via the debug hook.
+        // ignore: invalid_use_of_visible_for_testing_member
+        final pts = notifier.debugStrokePoints;
         expect(pts.length, 2);
         expect(pts.first.x, closeTo(50000.0, 1e-10));
         expect(pts.last.x, closeTo(60000.0, 1e-10));
