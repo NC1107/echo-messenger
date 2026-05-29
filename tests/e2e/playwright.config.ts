@@ -33,6 +33,7 @@ export default defineConfig({
         'qa_comprehensive.spec.ts',
         'ws_check.spec.ts',
         'voice_lounge_canvas_sync.spec.ts',
+        'voice_lounge_mobile_audit.spec.ts',
       ],
       use: { browserName: 'chromium' },
     },
