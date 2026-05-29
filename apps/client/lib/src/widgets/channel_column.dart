@@ -197,13 +197,15 @@ class _ChannelColumnState extends ConsumerState<ChannelColumn> {
     if (!success) return;
 
     final voiceSettings = ref.read(voiceSettingsProvider);
-    await ref
+    final joined = await ref
         .read(livekitVoiceProvider.notifier)
         .joinChannel(
           conversationId: widget.conversation.id,
           channelId: channel.id,
           startMuted: voiceSettings.selfMuted || voiceSettings.selfDeafened,
         );
+    // Don't open the lounge for a join that failed to connect.
+    if (!joined || !mounted) return;
     widget.onShowLounge?.call();
   }
 

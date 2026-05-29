@@ -27,11 +27,11 @@ class _FakeLiveKitNotifier extends LiveKitVoiceNotifier {
   }
 
   @override
-  Future<void> joinChannel({
+  Future<bool> joinChannel({
     required String conversationId,
     required String channelId,
     bool startMuted = false,
-  }) async {}
+  }) async => true;
 }
 
 class _FakeChannelsNotifier extends Channels {

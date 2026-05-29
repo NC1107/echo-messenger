@@ -116,11 +116,11 @@ class _FakeLiveKit extends LiveKitVoiceNotifier {
   Future<void> leaveChannel() async {}
 
   @override
-  Future<void> joinChannel({
+  Future<bool> joinChannel({
     required String conversationId,
     required String channelId,
     bool startMuted = false,
-  }) async {}
+  }) async => true;
 }
 
 // `standardOverrides()` covers auth, server URL, conversations, contacts,

@@ -773,14 +773,25 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
           .read(conversationsProvider.notifier)
           .getOrCreateDm(widget.userId, _username);
       if (!mounted) return;
-      await ref
+      final joined = await ref
           .read(livekitVoiceProvider.notifier)
           .joinChannel(conversationId: conv.id, channelId: conv.id);
-      ref.read(websocketProvider.notifier).sendCallStarted(conv.id);
-      ref
-          .read(chatProvider.notifier)
-          .addSystemEvent(conv.id, 'Voice call started');
       if (!mounted) return;
+      if (joined) {
+        // Only announce the call when the room actually connected.
+        ref.read(websocketProvider.notifier).sendCallStarted(conv.id);
+        ref
+            .read(chatProvider.notifier)
+            .addSystemEvent(conv.id, 'Voice call started');
+      } else {
+        ToastService.show(
+          context,
+          'Could not start voice call',
+          type: ToastType.error,
+        );
+      }
+      // Land the user in the conversation either way (the call simply didn't
+      // connect; the chat is still useful).
       if (Navigator.canPop(context)) Navigator.pop(context);
       context.go('/home?conversation=${conv.id}');
     } on DmException catch (e) {

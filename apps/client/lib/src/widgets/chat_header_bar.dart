@@ -538,7 +538,11 @@ class ChatHeaderBar extends ConsumerWidget {
     );
   }
 
-  void _startVoiceCall(BuildContext context, WidgetRef ref, Conversation conv) {
+  Future<void> _startVoiceCall(
+    BuildContext context,
+    WidgetRef ref,
+    Conversation conv,
+  ) async {
     final voiceState = ref.read(livekitVoiceProvider);
     if (voiceState.isActive) {
       // Already in a call — show info
@@ -550,11 +554,21 @@ class ChatHeaderBar extends ConsumerWidget {
       return;
     }
 
-    ref
+    final joined = await ref
         .read(livekitVoiceProvider.notifier)
         .joinChannel(conversationId: conv.id, channelId: conv.id);
+    if (!context.mounted) return;
+    if (!joined) {
+      ToastService.show(
+        context,
+        'Couldn\'t start the voice call.',
+        type: ToastType.error,
+      );
+      return;
+    }
 
-    // Notify peers and add system event to chat timeline
+    // Only announce the call once we're actually connected — otherwise peers
+    // get a "Voice call started" event for a call that never connected.
     ref.read(websocketProvider.notifier).sendCallStarted(conv.id);
     ref
         .read(chatProvider.notifier)
