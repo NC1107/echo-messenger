@@ -16,11 +16,36 @@ extension WsLifecycle on WebSocketNotifier {
   /// Request a short-lived WebSocket ticket from the server. Returns the
   /// ticket string on success, or `null` on any failure (network, 401, …).
   /// Includes `device_id` in the body for multi-device routing.
+  ///
+  /// BUG #20 FIX: if the crypto service is not yet initialized, returning
+  /// null here causes the caller to schedule a reconnect rather than
+  /// connecting with device_id=0.  A device_id=0 ticket causes the server
+  /// to record the canvas authority under device 0; once crypto initializes
+  /// the client's real device_id is non-zero, making _canIWrite() return
+  /// false for the rest of the session — drawing is permanently blocked on
+  /// Android where crypto init is sometimes slower than the first WS
+  /// connect attempt.  The reconnect fires quickly (first-attempt backoff
+  /// is only 1s) and by then crypto is always initialized.
   Future<String?> _fetchWsTicketImpl() async {
     final serverUrl = ref.read(serverUrlProvider);
-    // The crypto service may not be initialised yet on first connect.
     final crypto = ref.read(cryptoServiceProvider);
-    final deviceId = crypto.isInitialized ? crypto.deviceId : 0;
+    // Guard: do not connect until crypto is initialized. A device_id of 0
+    // would mismatch the real device_id once crypto finishes, permanently
+    // breaking the canvas write-authority check for this session (BUG #20).
+    if (!crypto.isInitialized) {
+      debugLog(
+        'Crypto not yet initialized; deferring WS ticket fetch.',
+        'WebSocket',
+      );
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'WebSocket',
+        'Crypto not initialized — deferring WS ticket fetch to avoid '
+            'device_id=0 canvas authority mismatch (BUG #20).',
+      );
+      return null;
+    }
+    final deviceId = crypto.deviceId;
     try {
       final response = await ref
           .read(authProvider.notifier)

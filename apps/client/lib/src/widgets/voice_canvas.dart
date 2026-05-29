@@ -17,6 +17,7 @@ import '../theme/motion_tokens.dart';
 import '../utils/canvas_utils.dart';
 import 'puck_trail.dart';
 import 'voice/participant_attention.dart';
+import 'voice_lounge/lounge_canvas_gestures.dart' show CanvasDragScope;
 import 'voice_speaking_ring.dart';
 
 const double _kAvatarSize = 48.0;
@@ -987,6 +988,15 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
             // mid-drag.
             dragStartBehavior: DragStartBehavior.down,
             onDoubleTap: widget.onDoubleTap,
+            onPanStart: (_) {
+              // BUG #22: suppress canvas pan while this avatar drag owns the
+              // pointer.  The parent LoungeCanvasGestures Listener always
+              // fires pointer-move events (it's a raw Listener, not a
+              // GestureDetector), so without suppression the canvas transform
+              // pans simultaneously with the avatar position update, making
+              // the two movements cancel and the avatar appear stuck.
+              CanvasDragScope.of(context)?.suppress();
+            },
             onPanUpdate: (details) {
               // Pointer delta is in canvas-space pixels because the
               // GestureDetector lives inside the InteractiveViewer-scaled
@@ -1002,7 +1012,12 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
               widget.onDrag(newPos);
             },
             onPanEnd: (_) {
+              CanvasDragScope.of(context)?.release();
               widget.onDragEnd(_localPos ?? widget.currentPos);
+              _localPos = null;
+            },
+            onPanCancel: () {
+              CanvasDragScope.of(context)?.release();
               _localPos = null;
             },
             child: content,
@@ -1074,8 +1089,15 @@ class _CanvasImageWidgetState extends State<_CanvasImageWidget> {
         // mid-gesture and detached, forcing the user to click and start
         // the drag over (user-reported 2026-05-27).
         dragStartBehavior: DragStartBehavior.down,
+        // BUG #22: suppress canvas pan while the image drag owns the
+        // pointer (same root cause as avatar dragging — raw Listener).
+        onPanStart: (_) => CanvasDragScope.of(context)?.suppress(),
         onPanUpdate: (d) => widget.onMove(d.delta.dx, d.delta.dy),
-        onPanEnd: (_) => widget.onMoveEnd(),
+        onPanEnd: (_) {
+          CanvasDragScope.of(context)?.release();
+          widget.onMoveEnd();
+        },
+        onPanCancel: () => CanvasDragScope.of(context)?.release(),
         child: Stack(
           fit: StackFit.expand,
           children: [

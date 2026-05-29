@@ -16,6 +16,17 @@
 // Intentionally NOT integrated with voice_lounge_screen.dart in this
 // PR — the parent agent wires it in after the Round-2 strokes layer
 // lands. The widget compiles standalone.
+//
+// BUG #22 FIX: Added [CanvasDragScope] so avatar and image drag gestures
+// can suppress the Listener's pan logic while they own the pointer.  The
+// root cause was that [LoungeCanvasGestures] uses a raw Listener (not a
+// GestureDetector) that always fires pointer-move events; child
+// GestureDetectors win the arena for their own pan but can't stop the
+// parent Listener from also panning the canvas transform simultaneously.
+// When both fire the net visual displacement is near-zero, making avatars
+// appear unmovable.  [CanvasDragScope] exposes suppress/release callbacks
+// that increment a reference-count; the Listener skips pan updates while
+// any child drag is active.
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -35,6 +46,51 @@ const Duration _kDoubleTapTimeout = Duration(milliseconds: 250);
 /// This constant drives [clampAxis], the per-axis helper shared by all
 /// transform-mutating paths so no gesture can bypass the visibility guarantee.
 const double _kPanMarginFraction = 0.15;
+
+// ---------------------------------------------------------------------------
+// CanvasDragScope — inherited suppressor for child-drag-vs-parent-pan (BUG #22)
+// ---------------------------------------------------------------------------
+
+/// Inherited widget placed by [LoungeCanvasGestures] around its child.
+///
+/// Avatar and image drag widgets call [suppress] when their pan gesture
+/// begins and [release] when it ends.  The Listener in
+/// [LoungeCanvasGesturesState] reads [_dragCount] and skips
+/// [_applyPanDelta] while any child drag is active, so canvas panning
+/// and avatar dragging can no longer fight each other simultaneously.
+///
+/// Usage from a descendant widget:
+/// ```dart
+/// CanvasDragScope.of(context)?.suppress();
+/// // ...drag...
+/// CanvasDragScope.of(context)?.release();
+/// ```
+class CanvasDragScope extends InheritedWidget {
+  const CanvasDragScope({
+    super.key,
+    required this.suppress,
+    required this.release,
+    required this.isDragActive,
+    required super.child,
+  });
+
+  /// Call when a child drag gesture begins. Idempotent (reference-counted).
+  final VoidCallback suppress;
+
+  /// Call when a child drag gesture ends or is cancelled. Idempotent.
+  final VoidCallback release;
+
+  /// Returns true when at least one child drag is currently suppressing pan.
+  final bool Function() isDragActive;
+
+  /// Returns the nearest [CanvasDragScope] ancestor, or null if none exists.
+  static CanvasDragScope? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<CanvasDragScope>();
+
+  @override
+  bool updateShouldNotify(CanvasDragScope old) =>
+      suppress != old.suppress || release != old.release;
+}
 
 /// Target zoom level when double-tapping into the canvas. Matches the
 /// behaviour preserved from `voice_lounge_screen.dart`'s
@@ -180,6 +236,22 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
   /// PointerUpEvent without re-reading the state machine output.
   bool _strokeActive = false;
 
+  // BUG #22: reference count of child drags (avatars, images) currently
+  // suppressing the parent Listener's pan logic.  Zero means no child is
+  // dragging; >0 means at least one child owns the pointer and we must
+  // not move the canvas transform at the same time.
+  int _childDragCount = 0;
+
+  void _suppressPan() {
+    _childDragCount++;
+  }
+
+  void _releasePan() {
+    if (_childDragCount > 0) _childDragCount--;
+  }
+
+  bool _isPanSuppressed() => _childDragCount > 0;
+
   @override
   void initState() {
     super.initState();
@@ -215,6 +287,16 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
 
   @visibleForTesting
   int get pointerCount => _pointers.length;
+
+  /// Direct suppress call for widget tests — mirrors what
+  /// [CanvasDragScope.suppress] triggers in a real child drag, without
+  /// needing a nested GestureDetector in the test tree.
+  @visibleForTesting
+  void suppressPanForTest() => _suppressPan();
+
+  /// Direct release call for widget tests.
+  @visibleForTesting
+  void releasePanForTest() => _releasePan();
 
   // --- Imperative controller surface -----------------------------------
 
@@ -406,6 +488,16 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
   // --- Pan / pinch / zoom math -----------------------------------------
 
   void _applyPanDelta(Offset current) {
+    // BUG #22: skip canvas pan while a child drag (avatar / image) is active.
+    // Without this, a Listener-driven pan fires simultaneously with the child
+    // GestureDetector pan, making the two movements cancel out so the avatar
+    // appears stuck. Update _panLastPosition even when suppressed so the
+    // position baseline stays current and the canvas doesn't jump when the
+    // child drag ends.
+    if (_isPanSuppressed()) {
+      _panLastPosition = current;
+      return;
+    }
     final last = _panLastPosition;
     if (last == null) {
       _panLastPosition = current;
@@ -555,6 +647,19 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
     //
     // ClipRect keeps the 100 000-px canvas child from painting outside
     // the lounge body when zoomed in or panned.
+    // Wrap the transformed child in CanvasDragScope so descendant avatars
+    // and images can suppress the Listener's pan logic while they own the
+    // pointer (BUG #22 fix).
+    final transformedChild = Transform(
+      transform: _transform,
+      child: CanvasDragScope(
+        suppress: _suppressPan,
+        release: _releasePan,
+        isDragActive: _isPanSuppressed,
+        child: widget.child,
+      ),
+    );
+
     return ClipRect(
       child: SizedBox.expand(
         child: Listener(
@@ -564,7 +669,7 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
           onPointerUp: _onPointerUp,
           onPointerCancel: _onPointerCancel,
           onPointerSignal: _onPointerSignal,
-          child: Transform(transform: _transform, child: widget.child),
+          child: transformedChild,
         ),
       ),
     );
