@@ -66,7 +66,14 @@ mixin _HomeScreenWideLayoutMixin
     return Scaffold(
       body: Column(
         children: [
-          if (!loungeFullscreen) AppTitleBar(title: titleBarText),
+          if (!loungeFullscreen)
+            AppTitleBar(
+              title: titleBarText,
+              onBack: _goBackConversation,
+              onForward: _goForwardConversation,
+              canGoBack: _self._canGoBack,
+              canGoForward: _self._canGoForward,
+            ),
           Expanded(
             child: Stack(
               children: [
