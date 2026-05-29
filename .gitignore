@@ -106,7 +106,10 @@ tests/e2e/*.spec.ts
 !tests/e2e/theme_tour.spec.ts
 !tests/e2e/audit_tour.spec.ts
 !tests/e2e/voice_lounge_canvas_sync.spec.ts
+!tests/e2e/voice_lounge_mobile_audit.spec.ts
+!tests/e2e/playwright.audit.config.ts
 test-results/
+tests/e2e/output/
 
 # Uploaded media files
 uploads/
