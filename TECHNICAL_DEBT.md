@@ -667,4 +667,36 @@ Shipped on `fix/voice-lounge-crash-batch`:
 - [x] **VL-7** — **FALSE POSITIVE.** The audit assumed `_seedPinch` fires only on phase *change*; in fact `_applyTransition` re-seeds on every transition that lands in `pinching`, so the 3-finger lift already re-seeds and does not jump. Added a widget regression test + a guard-rail comment so a future refactor can't reintroduce it. No code change to the gesture math.
 - [~] **VL-8** — the `handleCanvasEvent` half is now covered by `canvas_provider_hardening_test.dart` (drives the real method, the crash-linked gap). The LiveKit `joinChannel`/`leaveChannel`/teardown-race half remains open: it needs a `Room`-injection seam in `livekit_voice_provider.dart` first (a production refactor out of scope for this batch). **Follow-up.**
 
-Not in this batch (medium/low, still open): VL-9..VL-31, plus the VL-6 cross-peer residual and the VL-8 LiveKit-seam test.
+## Status — 2026-05-29 follow-up batch (medium/low, verified-then-fixed)
+
+Each item below was re-verified against the actual code before any change (VL-7
+proved the audit isn't infallible). Shipped on `fix/voice-lounge-crash-batch`:
+
+- [x] **VL-9** — `_disposed` guard added to `setCaptureEnabled` / `setDeafened` (the only AV methods missing it); prevents a queued CallKit/notification action assigning `state` on a disposed Notifier.
+- [x] **VL-10** — `_handleLeave` resets `_isLeaving` on a thrown teardown (no permanent button wedge) and stops double-calling `leaveVoiceChannel` (delegated to `leaveChannel`). Dock + lifecycle tests updated to the corrected single-call contract.
+- [x] **VL-11** — `RoomDisconnectedEvent` stops the RTC-stats + audio-level poll timers (they restart on next join).
+- [x] **VL-12** — `detach()` clears per-channel canvas authority (regression test added).
+- [x] **VL-13** — the stale-voice-session sweep clears canvas authority for evicted sessions, mirroring the disconnect path.
+- [x] **VL-18** — committed-strokes `shouldRepaint` now compares list identity (repaints on any mutation, not just a last-element change) — cheap because the list is reference-stable from watched state.
+- [x] **VL-20** — the canvas-authority gate is applied before the LOCAL mutation in `endStroke`/`addTextLabel`/`addImage`, not only in the broadcast — a read-only device no longer accumulates ghost content.
+- [x] **VL-22** — double-tap is gated to a sole pointer on an idle canvas, so a 2nd finger during a pan enters pinching instead of mis-firing a zoom (regression test added).
+- [x] **VL-27** — channel-lookup + membership check moved before canvas geometry validation (no validation-oracle / wasted work for non-members).
+- [x] **VL-31** — a shape tapped without dragging (single point) is dropped in `endStroke` instead of persisting an invisible zero-size shape (regression test added).
+
+### Deliberately deferred (verified valid but NOT fixed this batch, with reason)
+
+- **VL-14** (LiveKit token roles / short expiry / post-kick eviction) — needs a product decision (is there a listener-only role?) and the LiveKit server API for eviction. Product/infra call, not a code-correctness fix.
+- **VL-15** (`clear scope:"mine"`) — per-user clear requires per-stroke author tracking (a schema/data-model change); clear-all-by-any-member is documented intent. The only quick change (drop `"mine"` from the validator) is a marginal wire-contract tweak with its own risk. Left for a dedicated design pass.
+- **VL-16** (flip validation to `Enforce`) — an **ops** decision gated on the documented soak window, not a code change; flipping enforcement is a behavior change that needs a deliberate rollout. The image-URL-ownership half needs a media-authz analysis first.
+- **VL-17** (live eraser preview is a no-op) — large architectural: `BlendMode.dstOut` fundamentally can't composite across the L1/L2 `RepaintBoundary` split. Needs a rethink of the layer model.
+- **VL-19** (per-user vs per-device broadcast exclude) — switching to `None` + relying on the new VL-4 dedup is plausible now, but it changes broadcast semantics for ALL canvas kinds and interacts with `stroke_partial` self-echo; deferred pending a real multi-device test harness.
+- **VL-21** (pan never clamped) — conflicts with the documented Miro-style infinite-canvas intent ([[feedback_canvas_navigation]]); the reset-view button is the intended recovery. A clamp is a UX decision, not a clear bug.
+- **VL-23** (import truncation at the server cap) — needs an atomic "replace board" event or chunked acks (protocol work).
+- **VL-24** (no per-user LiveKit participant cap) — LiveKit room config / product.
+- **VL-25** — **NOT A BUG.** Fullscreen IS already reset on `dispose()` (`voice_lounge_screen.dart`). View-mode persistence across remounts is intentional (its own doc explains resetting it re-breaks the fullscreen-toggle remount bug).
+- **VL-26** (partial-stroke placeholder keyed by user only) — needs a `from_device_id` in the server broadcast payload; largely mitigated already by VL-20 single-writer gating.
+- **VL-28** (voice-signal relay does 5 sequential DB queries) — perf optimization, rate-limited (3 msg/s), non-crash. Query-collapse refactor for a later perf pass.
+- **VL-29** (`update_image` rewrites the full client object) — perf/hardening, bounded by the 16 KB frame cap + rate limit, non-crash.
+- **VL-30** (GET canvas unpaginated) — large/design (pagination or streaming of the stroke/image arrays).
+
+Still open after both batches: the VL-6 cross-peer residual, the VL-8 LiveKit-seam test, and VL-14/15/16/17/19/21/23/24/26/28/29/30 as scoped above.
