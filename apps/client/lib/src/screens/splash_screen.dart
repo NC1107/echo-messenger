@@ -205,7 +205,26 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       return;
     }
 
-    context.go('/login');
+    // Auto-login failed. When the device has at least one persisted account,
+    // route to the launch-time picker so the user can tap-to-resume without
+    // re-typing credentials. Falls back to plain /login when no accounts are
+    // stored or the storage read errors out (treated as "no accounts").
+    unawaited(_routeToPickerOrLogin());
+  }
+
+  /// Pick between the launch-time account picker and the plain login screen
+  /// based on whether [AccountsStorage] has any rows.
+  Future<void> _routeToPickerOrLogin() async {
+    final auth = ref.read(authProvider.notifier);
+    var hasAccounts = false;
+    try {
+      final snap = await auth.listAccounts();
+      hasAccounts = snap.accounts.isNotEmpty;
+    } catch (_) {
+      hasAccounts = false;
+    }
+    if (!mounted) return;
+    context.go(hasAccounts ? '/auth/pick-account' : '/login');
   }
 
   /// Navigate home, setting onboarding flag and showing crypto notice.
