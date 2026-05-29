@@ -3,7 +3,7 @@ import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_colorpicker/flutter_colorpicker.dart';
+import 'package:flutter_colorpicker/flutter_colorpicker.dart' hide colorToHex;
 import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,7 +12,14 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/canvas_models.dart'
-    show CanvasState, CanvasTool, kCanvasHeight, kCanvasWidth;
+    show
+        CanvasPoint,
+        CanvasState,
+        CanvasTool,
+        StrokeKind,
+        kCanvasHeight,
+        kCanvasWidth,
+        strokeKindForTool;
 import '../providers/auth_provider.dart';
 import '../providers/canvas_authority_provider.dart';
 import '../providers/canvas_provider.dart';
@@ -33,8 +40,9 @@ import '../theme/echo_theme.dart';
 import '../utils/canvas_utils.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/echo_bottom_sheet.dart';
-import '../widgets/lounge_drawing_canvas.dart';
 import '../widgets/voice_lounge/encrypted_canvas_notice.dart';
+import '../widgets/voice_lounge/lounge_canvas_gestures.dart';
+import '../widgets/voice_lounge/lounge_canvas_strokes.dart';
 import '../widgets/vertex_mesh_background.dart';
 import '../widgets/voice_canvas.dart';
 import 'voice_lounge/call_metrics_chip.dart';
@@ -63,39 +71,6 @@ const double _kAvatarTileRadius = 24.0;
 /// magic number in `_defaultAvatarPos`; kept in sync with that
 /// helper by the `voice_canvas` widget tests.
 const double _kDefaultAvatarRingRadius = 0.3 * kCanvasWidth;
-
-/// Returns a new transform that scales the lounge canvas to
-/// [targetScale] while keeping the canvas-space point currently under
-/// [tapPoint] (in InteractiveViewer-region-local pixels) anchored to
-/// the same viewport pixel — i.e. the user's tap stays under their
-/// finger.
-///
-/// The transform `T` maps canvas-space points to viewport-space
-/// points. For a point `p` under the tap, `T(p) = tapPoint`, so
-/// `p = T⁻¹(tapPoint)`. The output `T'` is constructed so that
-/// `T'(p) = tapPoint` at `scale = targetScale`:
-///
-///   T'.x = s · p.x + tx   where   tx = tapPoint.dx − s · p.x
-///   T'.y = s · p.y + ty   where   ty = tapPoint.dy − s · p.y
-///
-/// Exposed as a top-level function so the math is unit-testable
-/// without spinning up a full lounge widget tree.
-@visibleForTesting
-Matrix4 zoomAroundPoint({
-  required Matrix4 current,
-  required Offset tapPoint,
-  required double targetScale,
-}) {
-  final inverse = Matrix4.copy(current)..invert();
-  final canvasPoint = MatrixUtils.transformPoint(inverse, tapPoint);
-  return Matrix4.identity()
-    ..scaleByDouble(targetScale, targetScale, targetScale, 1)
-    ..setTranslationRaw(
-      tapPoint.dx - canvasPoint.dx * targetScale,
-      tapPoint.dy - canvasPoint.dy * targetScale,
-      0,
-    );
-}
 
 /// Discord-style voice lounge that replaces the chat content area when the
 /// user is in a voice call and chooses to view the lounge.
@@ -132,9 +107,6 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   /// Format: 'local', 'remote-{sid}', 'screenshare-local', 'screenshare-{sid}'.
   String? _focusedTileKey;
 
-  /// Whether the drawing canvas overlay is active.
-  bool _isDrawing = false;
-
   // Members-panel collapse state lives on HomeScreen; this widget only
   // forwards the toggle. See [VoiceLoungeScreen.onToggleMembersPanel].
 
@@ -154,27 +126,29 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   bool get _spotlightMode =>
       ref.watch(voiceLoungeViewModeProvider) == VoiceLoungeView.spotlight;
 
-  /// Pan + zoom controller for the canvas. Identity = 1x, no offset.
-  /// The lounge background sits OUTSIDE this transform so zoom/pan only
-  /// moves the canvas content (Figma-style); the bg stays fixed.
-  late final TransformationController _viewport;
+  /// Owner of the local in-flight stroke preview. Bypasses Riverpod's
+  /// `state.copyWith` rebuild path so a `continueStroke` only repaints
+  /// the in-flight stroke layer (see
+  /// docs/voice-lounge/05-canvas-rewrite-spec.md §B.2).
+  final ActiveStrokeNotifier _activeStroke = ActiveStrokeNotifier();
 
-  /// Visibility flag for the reset-view button. Tracks whether the
-  /// transform differs from identity (any zoom or pan applied).
+  /// Imperative handle on the gesture surface. The gesture widget owns
+  /// its own transform; the lounge screen pushes a fresh auto-fit pose
+  /// through this key when the user taps "reset view".
+  final GlobalKey<LoungeCanvasGesturesState> _canvasGesturesKey =
+      GlobalKey<LoungeCanvasGesturesState>();
+
+  /// Visibility flag for the reset-view button. Flipped by the gesture
+  /// widget's `onTransformChanged` callback when the transform diverges
+  /// from the current auto-fit pose by more than the configured
+  /// tolerance.
   bool _viewportTransformed = false;
 
-  /// True once the viewport has been initialised to the auto-fit-content
-  /// pose. Reset to false when this widget is rebuilt for a different
-  /// conversation/channel so each lounge session starts from a clean
-  /// canvas overview.
-  bool _viewportInitialised = false;
-
-  /// Tracks the actual InteractiveViewer region (from LayoutBuilder
-  /// constraints) so listener-driven callbacks like [_onViewportChanged]
-  /// + [_resetViewport] + [_toggleDoubleTapZoom] use the same dimensions
-  /// the initial pose was computed against. MediaQuery.sizeOf would
-  /// over-count by the header band + dock + members panel on tablets
-  /// and desktops, leaving reset/double-tap landing in the wrong pose.
+  /// Tracks the actual gesture-surface region (from LayoutBuilder
+  /// constraints) so the lounge screen and the gesture widget agree on
+  /// the dimensions used to compute `_computeInitialPose`. MediaQuery
+  /// would over-count by the header band + dock + members panel on
+  /// tablets and desktops, leaving the reset pose in the wrong place.
   Size? _interactiveViewportSize;
 
   /// Captured at initState so dispose() can clear fullscreen without
@@ -186,7 +160,6 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   @override
   void initState() {
     super.initState();
-    _viewport = TransformationController()..addListener(_onViewportChanged);
     _fullscreenNotifier = ref.read(voiceLoungeFullscreenProvider.notifier);
     // Breadcrumb fires post-joinChannel: missing = crash in joinChannel; present-but-alone = crash in build.
     final voiceLk = ref.read(livekitVoiceProvider);
@@ -214,9 +187,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
 
   @override
   void dispose() {
-    _viewport
-      ..removeListener(_onViewportChanged)
-      ..dispose();
+    _activeStroke.dispose();
     // Clear fullscreen so the user doesn't return to an immersive
     // HomeScreen the next time they open the lounge. Uses the notifier
     // captured at initState — ref is unsafe in dispose().
@@ -229,20 +200,17 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     super.dispose();
   }
 
-  void _onViewportChanged() {
-    // Show the reset-view affordance whenever the user is no longer at
-    // the auto-fit pose (either scale or translation differs by more
-    // than a tolerance). Uses the actual InteractiveViewer constraints
-    // captured by the LayoutBuilder — MediaQuery.sizeOf would over-count
-    // by the header band + dock + members panel.
+  /// Bridge from `LoungeCanvasGestures.onTransformChanged` into the
+  /// lounge's reset-view affordance state. Shows the reset button as
+  /// soon as the user has zoomed / panned away from the auto-fit pose.
+  void _onTransformChanged(Matrix4 next) {
     final size = _interactiveViewportSize;
     if (size == null || size.width <= 0 || size.height <= 0) return;
     final fitPose = _computeInitialPose(ref.read(canvasProvider), size);
     final fitScale = fitPose.getMaxScaleOnAxis();
     final fitTranslation = fitPose.getTranslation();
-    final cur = _viewport.value;
-    final scaleDiff = (cur.getMaxScaleOnAxis() - fitScale).abs();
-    final translationDiff = (cur.getTranslation() - fitTranslation).length;
+    final scaleDiff = (next.getMaxScaleOnAxis() - fitScale).abs();
+    final translationDiff = (next.getTranslation() - fitTranslation).length;
     // Tolerances: scale within 0.1% of fit, translation within 0.5 px.
     final transformed = scaleDiff > fitScale * 1e-3 || translationDiff > 0.5;
     if (transformed != _viewportTransformed) {
@@ -250,18 +218,19 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     }
   }
 
-  /// Toggle drawing mode from the dock's pencil button. When turning OFF,
-  /// also resets `selectedTool` to `CanvasTool.none` — otherwise the
-  /// auto-enable watch in `build()` (which flips `_isDrawing = true`
-  /// whenever a non-none tool is selected) immediately re-enables
-  /// drawing, leaving the user with no way to exit drawing mode (user
-  /// feedback 2026-05-28).
+  /// Toggle drawing mode from the dock's pencil button. The gesture
+  /// widget now decides whether single-pointer input draws (based on
+  /// `selectedTool`) so the lounge no longer tracks a `_isDrawing`
+  /// boolean — the pencil button simply maps to "select / clear the
+  /// active tool". User feedback 2026-05-28: ensure that toggling off
+  /// also clears the selected tool, otherwise the auto-enable watch in
+  /// build() immediately re-selects pen and the user can't exit
+  /// drawing mode.
   void _toggleDrawingMode() {
-    final wasDrawing = _isDrawing;
-    setState(() => _isDrawing = !wasDrawing);
-    if (wasDrawing) {
-      // Exiting drawing mode — clear the tool so the build watch doesn't
-      // immediately auto-re-enable on the next frame.
+    final currentTool = ref.read(canvasProvider).selectedTool;
+    if (currentTool == CanvasTool.none) {
+      ref.read(canvasProvider.notifier).setTool(CanvasTool.pen);
+    } else {
       ref.read(canvasProvider.notifier).setTool(CanvasTool.none);
     }
   }
@@ -269,16 +238,15 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   void _resetViewport() {
     // Recompute the same auto-fit pose used on first mount so the user
     // can always get back to "looking at the existing content". Uses
-    // the actual InteractiveViewer region (captured by LayoutBuilder)
-    // so the reset lands in the right place on any device — tablets +
+    // the actual gesture-surface region (captured by LayoutBuilder) so
+    // the reset lands in the right place on any device — tablets +
     // desktops include sidebars / members panel that MediaQuery
     // doesn't subtract.
     final size = _interactiveViewportSize;
-    if (size == null || size.width <= 0 || size.height <= 0) {
-      _viewport.value = Matrix4.identity();
-      return;
-    }
-    _viewport.value = _computeInitialPose(ref.read(canvasProvider), size);
+    final next = (size == null || size.width <= 0 || size.height <= 0)
+        ? Matrix4.identity()
+        : _computeInitialPose(ref.read(canvasProvider), size);
+    _canvasGesturesKey.currentState?.resetToTransform(next);
   }
 
   /// Compute the matrix that frames the existing canvas content inside
@@ -371,26 +339,6 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
         viewport.height / 2 - cy * fit,
         0,
       );
-  }
-
-  /// Toggle between auto-fit and a 2× zoom centred on the tap point.
-  /// `tapPoint` is viewport-local pixels.
-  void _toggleDoubleTapZoom(Offset tapPoint) {
-    final current = _viewport.value.getMaxScaleOnAxis();
-    final size = _interactiveViewportSize ?? Size.zero;
-    final fitPose = _computeInitialPose(ref.read(canvasProvider), size);
-    final fitScale = fitPose.getMaxScaleOnAxis();
-    final isAtFit = (current - fitScale).abs() < 1e-3;
-    if (isAtFit) {
-      // Zoom in 2× anchored on the tap point.
-      _viewport.value = zoomAroundPoint(
-        current: _viewport.value,
-        tapPoint: tapPoint,
-        targetScale: 2.0,
-      );
-    } else {
-      _viewport.value = fitPose;
-    }
   }
 
   String? _buildAvatarUrl() {
@@ -1241,8 +1189,14 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   Widget _buildLoungeScaffold(BuildContext context, List<Widget> layers) {
     return Listener(
       onPointerDown: (e) {
-        if (e.buttons == kSecondaryButton && _isDrawing) {
-          setState(() => _isDrawing = false);
+        // Right-click cancels any in-flight tool selection / stroke so
+        // the user can quickly bail out of draw mode without hunting
+        // for the pencil button.
+        if (e.buttons == kSecondaryButton &&
+            ref.read(canvasProvider).selectedTool != CanvasTool.none) {
+          ref.read(canvasProvider.notifier).setTool(CanvasTool.none);
+          ref.read(canvasProvider.notifier).cancelStroke();
+          _activeStroke.cancel();
         }
       },
       child: Container(
@@ -1406,9 +1360,11 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
         content = ScreenShareSubmenuStandalone(onRequestClose: _closeSubmenu);
       case DockSubmenu.draw:
         link = _drawingToolsLayerLink;
+        final isDrawing =
+            ref.read(canvasProvider).selectedTool != CanvasTool.none;
         content = DrawingToolsMenu(
           onToggleDrawing: _toggleDrawingMode,
-          isDrawing: _isDrawing,
+          isDrawing: isDrawing,
           conversationId: conversationId,
           onRequestClose: _closeSubmenu,
         );
@@ -1429,6 +1385,147 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     ];
   }
 
+  // -------------------------------------------------------------------------
+  // Canvas integration (LoungeCanvasGestures + LoungeCanvasStrokes)
+  // -------------------------------------------------------------------------
+
+  /// Bridge between the lounge dock's brush settings and the
+  /// [ActiveStrokeNotifier]: pulls the selected tool / colour / width from
+  /// the canvas provider, applies the eraser 3× width inflation that the
+  /// painter expects to be precomputed, and starts the local in-flight
+  /// preview at [canvasPoint].
+  void _onStrokeStart(Offset canvasPoint) {
+    final canvas = ref.read(canvasProvider);
+    final tool = canvas.selectedTool;
+    if (tool == CanvasTool.none || tool == CanvasTool.text) return;
+    final kind = strokeKindForTool(tool);
+    final width = kind == StrokeKind.eraser
+        ? canvas.strokeWidth * 3
+        : canvas.strokeWidth;
+    final colorHex = kind == StrokeKind.eraser
+        ? '#00000000'
+        : colorToHex(canvas.currentColor);
+    final pt = CanvasPoint(x: canvasPoint.dx, y: canvasPoint.dy);
+    _activeStroke.start(kind: kind, color: colorHex, width: width, first: pt);
+    ref.read(canvasProvider.notifier).startStroke(pt);
+  }
+
+  void _onStrokeMove(Offset canvasPoint) {
+    final pt = CanvasPoint(x: canvasPoint.dx, y: canvasPoint.dy);
+    _activeStroke.addPoint(pt);
+    ref.read(canvasProvider.notifier).continueStroke(pt);
+  }
+
+  void _onStrokeEnd() {
+    _activeStroke.end();
+    ref.read(canvasProvider.notifier).endStroke();
+  }
+
+  void _onStrokeCancel() {
+    _activeStroke.cancel();
+    ref.read(canvasProvider.notifier).cancelStroke();
+  }
+
+  /// Spotlight mode keeps the avatars + screen-share layout but drops
+  /// the gesture surface (drawing is hidden when the user is on the
+  /// camera-grid view).
+  Widget _buildSpotlightCanvasFallback(Widget contentArea) {
+    return SizedBox(
+      width: kCanvasWidth,
+      height: kCanvasHeight,
+      child: contentArea,
+    );
+  }
+
+  /// Builds the gesture-surface + three-layer stroke painter for the
+  /// canvas view. Extracted so the parent build method stays under the
+  /// project's cognitive-complexity budget (CLAUDE.md S3776).
+  Widget _buildCanvasArea(BoxConstraints constraints, Widget contentArea) {
+    final viewportSize = Size(constraints.maxWidth, constraints.maxHeight);
+    _cacheViewportSize(viewportSize);
+    final initialTransform = _resolveInitialTransform(viewportSize);
+    final canvas = ref.watch(canvasProvider);
+    final channelId = ref.read(livekitVoiceProvider).channelId ?? '';
+    final isToolSelected =
+        canvas.selectedTool != CanvasTool.none &&
+        canvas.selectedTool != CanvasTool.text;
+
+    return GestureDetector(
+      key: const Key('canvas-tap-to-claim'),
+      behavior: HitTestBehavior.translucent,
+      onTap: _buildCanvasClaimTapHandler(channelId),
+      child: LoungeCanvasGestures(
+        key: _canvasGesturesKey,
+        isToolSelected: isToolSelected,
+        initialTransform: initialTransform,
+        onStrokeStart: _onStrokeStart,
+        onStrokeMove: _onStrokeMove,
+        onStrokeEnd: _onStrokeEnd,
+        onStrokeCancel: _onStrokeCancel,
+        onTransformChanged: _onTransformChanged,
+        child: SizedBox(
+          width: kCanvasWidth,
+          height: kCanvasHeight,
+          // Layer order (bottom → top), matching
+          // docs/voice-lounge/05-canvas-rewrite-spec.md §B.2:
+          //   L0 background (transparent here — the lounge mounts the
+          //     real background in the scaffold so it doesn't pan/zoom)
+          //   L1 committed strokes
+          //   L2 active (in-flight) stroke
+          //   L3 avatars + images + screen-share placeholders
+          // L3 lives in `voice_canvas.dart` and sits as a sibling layer
+          // on top so puck drag still hit-tests above strokes.
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              LoungeCanvasStrokes(
+                committedStrokes: canvas.strokes,
+                activeStroke: _activeStroke,
+                background: const SizedBox.expand(),
+              ),
+              contentArea,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Persist the latest LayoutBuilder constraints so the reset-view
+  /// affordance + transform-change callbacks compute the same auto-fit
+  /// pose the gesture widget was mounted with.
+  void _cacheViewportSize(Size viewportSize) {
+    if (_interactiveViewportSize == viewportSize) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _interactiveViewportSize = viewportSize;
+      ref.read(canvasProvider.notifier).setViewportSize(viewportSize);
+    });
+  }
+
+  /// Initial transform for `LoungeCanvasGestures`. Computed once on the
+  /// first LayoutBuilder pass with non-zero constraints so a late joiner
+  /// auto-fits to existing strokes + images + avatars. Cached so that
+  /// subsequent rebuilds (selectedTool changes, dock toggles, etc.) pass
+  /// the same identity through `initialTransform` — the gesture widget
+  /// only reads `initialTransform` at initState, so changing it after
+  /// mount is a no-op and the user's live pan/zoom survives rebuilds.
+  Matrix4? _cachedInitialTransform;
+
+  Matrix4 _resolveInitialTransform(Size viewportSize) {
+    final cached = _cachedInitialTransform;
+    if (cached != null) return cached;
+    if (viewportSize.width <= 0 || viewportSize.height <= 0) {
+      // Can't compute a real pose without dimensions yet; fall back to
+      // identity without caching so the next layout pass with real
+      // constraints replaces this with the auto-fit pose.
+      return Matrix4.identity();
+    }
+    final next = _computeInitialPose(ref.read(canvasProvider), viewportSize);
+    _cachedInitialTransform = next;
+    return next;
+  }
+
   @override
   Widget build(BuildContext context) {
     final voiceLk = ref.watch(livekitVoiceProvider);
@@ -1437,21 +1534,14 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     final channelsState = ref.watch(channelsProvider);
     final inPip = ref.watch(pipModeProvider).inPip;
 
-    // Auto-enable drawing mode when the user picks a tool from the drawing
-    // menu (Pen / Shape / Text / Eraser). Previously the menu only set the
-    // tool, leaving `_isDrawing=false`, so the InteractiveViewer kept
-    // claiming single-finger drags as pans — particularly visible on
-    // mobile where users reported shapes "not drawing" (2026-05-27).
+    // The gesture widget decides single-pointer-pan-vs-draw based on
+    // whether a tool is selected, so the lounge no longer needs to track
+    // a `_isDrawing` boolean. The dock still expects a flag for its
+    // pencil-button visual state; derive it from the selected tool.
     final selectedTool = ref.watch(
       canvasProvider.select((c) => c.selectedTool),
     );
-    if (selectedTool != CanvasTool.none && !_isDrawing) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && !_isDrawing) {
-          setState(() => _isDrawing = true);
-        }
-      });
-    }
+    final isDrawing = selectedTool != CanvasTool.none;
 
     final conversationId = voiceLk.conversationId ?? '';
     final channelId = voiceLk.channelId ?? '';
@@ -1483,7 +1573,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       screenShare: screenShare,
       conversationId: conversationId,
       channelId: channelId,
-      isDrawing: _isDrawing,
+      isDrawing: isDrawing,
       onToggleDrawing: _toggleDrawingMode,
       activeSubmenu: _activeSubmenu,
       onToggleSubmenu: (submenu) {
@@ -1503,133 +1593,30 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
             : VoiceLoungeView.spotlight;
         notifier.state = next;
         if (next == VoiceLoungeView.spotlight) {
-          setState(() {
-            _isDrawing = false;
-            _activeSubmenu = null;
-          });
+          // Drop the tool selection when the user flips to spotlight so
+          // they don't re-enter the canvas with a stale pen active.
+          ref.read(canvasProvider.notifier).setTool(CanvasTool.none);
+          setState(() => _activeSubmenu = null);
         }
       },
     );
 
-    // Wrap the canvas content in a fixed-size SizedBox so the
-    // InteractiveViewer treats the child as a finite scrollable surface.
-    // Every participant shares the same 4096×4096 logical canvas, which
-    // makes circles drawn on a phone read as circles on desktop — only
-    // the viewport (zoom + pan) differs between devices. See
-    // `apps/client/lib/src/models/canvas_models.dart` for the
-    // kCanvasWidth/kCanvasHeight constants and migration heuristic.
-    // LoungeDrawingCanvas is the single owner of drawing-tool pointer
-    // input (pen/highlight/shapes/eraser). Text tool is excluded — it's
-    // a single tap handled by _DrawingLayer inside voice_canvas.dart so
-    // the prompt closure can live where the State is. Including the
-    // text tool here would double-dispatch the down event (Audit
-    // Finding 1, 2026-05-28).
-    final isDrawingOverlayActive =
-        _isDrawing && selectedTool != CanvasTool.text;
-    final mergedContent = SizedBox(
-      width: kCanvasWidth,
-      height: kCanvasHeight,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          contentArea,
-          if (!_spotlightMode)
-            Positioned.fill(
-              child: LoungeDrawingCanvas(isActive: isDrawingOverlayActive),
-            ),
-        ],
-      ),
-    );
-
-    // Figma-style zoom + pan over a finite 4096×4096 surface.
-    //
-    // minScale uses the InteractiveViewer's ACTUAL region (via
-    // LayoutBuilder below), not the full screen — the previous
-    // MediaQuery-based calc included the header band + dock so the canvas
-    // rendered smaller than the available area and only the top-left
-    // corner was touchable (user feedback, 2026-05-27).
-    //
-    // Pan is disabled while drawing so single-pointer drags become
-    // strokes. **Scale stays enabled**: pinch needs two fingers and
-    // doesn't conflict with single-finger drawing — the drawing layer's
-    // PanGestureRecognizer cancels when a second pointer arrives,
-    // handing the pinch off to InteractiveViewer's ScaleGestureRecognizer.
+    // Figma-style zoom + pan + draw over a finite 4096×4096 surface,
+    // implemented by `LoungeCanvasGestures` (raw Listener + explicit
+    // gesture state machine) wrapping `LoungeCanvasStrokes` (three
+    // RepaintBoundary layers: background → committed strokes → in-flight
+    // stroke). The voice_canvas content (avatars + images + screen-share
+    // placeholders) sits in the same transformed Stack as a sibling
+    // layer — see docs/voice-lounge/05-canvas-rewrite-spec.md §B for
+    // the rationale.
     //
     // Background sits in a separate scaffold layer behind this widget
-    // so it never moves with the canvas.
-    const maxScale = 4.0;
-    // Floor on how far the user can keep pinching out. Below this scale
-    // the 100k canvas would render under one logical pixel and the math
-    // collapses; in practice a user pinches to fit-content + a couple
-    // more outs and stops. Picked an order of magnitude past
-    // viewport/canvas so the Figma "zoom out forever" feel survives
-    // without giving Flutter a degenerate transform to deal with.
-    const minScaleFloor = 0.0001;
-
+    // so it never moves with the canvas (Figma-style).
     final viewportContent = _spotlightMode
-        ? mergedContent
+        ? _buildSpotlightCanvasFallback(contentArea)
         : LayoutBuilder(
-            builder: (ctx, constraints) {
-              final viewportW = constraints.maxWidth;
-              final viewportH = constraints.maxHeight;
-              final viewportSize = Size(viewportW, viewportH);
-              // Cache the actual InteractiveViewer region so the
-              // listener-driven helpers (_onViewportChanged,
-              // _resetViewport, _toggleDoubleTapZoom) compute the same
-              // pose on tablets / desktops as the initial-mount path.
-              // MediaQuery.sizeOf includes the header + dock + members
-              // panel and would mis-anchor the reset / double-tap.
-              if (_interactiveViewportSize != viewportSize) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (!mounted) return;
-                  _interactiveViewportSize = viewportSize;
-                  ref
-                      .read(canvasProvider.notifier)
-                      .setViewportSize(viewportSize);
-                });
-              }
-              // Initial pose: auto-fit to the bbox of existing strokes +
-              // images so a late joiner doesn't have to hunt for the
-              // content. Falls back to identity-at-origin when the
-              // canvas is empty.
-              if (!_viewportInitialised && viewportW > 0 && viewportH > 0) {
-                _viewportInitialised = true;
-                final canvas = ref.read(canvasProvider);
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (!mounted) return;
-                  _viewport.value = _computeInitialPose(canvas, viewportSize);
-                });
-              }
-
-              // Double-tap-to-zoom is gated on `!_isDrawing`. With a
-              // drawing tool active, mouse double-clicks (and fast
-              // drag-then-tap sequences) used to zoom the canvas
-              // mid-stroke because the drawing layer's pan recogniser
-              // only claims after kPanSlop (~18 px) — so a snappy
-              // double-click never reached the drawing layer and fell
-              // through to InteractiveViewer's double-tap (user
-              // feedback 2026-05-28). Returning null keeps the tap
-              // unrecognised by this layer so it dies in the gesture
-              // arena rather than firing a zoom.
-              return GestureDetector(
-                key: const Key('canvas-tap-to-claim'),
-                behavior: HitTestBehavior.translucent,
-                onDoubleTapDown: _isDrawing
-                    ? null
-                    : (details) => _toggleDoubleTapZoom(details.localPosition),
-                onTap: _buildCanvasClaimTapHandler(channelId),
-                child: InteractiveViewer(
-                  transformationController: _viewport,
-                  minScale: minScaleFloor,
-                  maxScale: maxScale,
-                  panEnabled: !_isDrawing,
-                  scaleEnabled: true,
-                  trackpadScrollCausesScale: true,
-                  boundaryMargin: EdgeInsets.zero,
-                  child: mergedContent,
-                ),
-              );
-            },
+            builder: (ctx, constraints) =>
+                _buildCanvasArea(constraints, contentArea),
           );
 
     return OrientationBuilder(

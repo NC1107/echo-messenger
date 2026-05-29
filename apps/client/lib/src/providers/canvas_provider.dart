@@ -406,6 +406,22 @@ class CanvasController extends _$CanvasController {
     return state.strokeWidth;
   }
 
+  /// Cancel the in-flight stroke without committing it. Used by the new
+  /// gesture state machine when a second pointer arrives mid-draw
+  /// (cancel-then-yield-to-pinch per
+  /// docs/voice-lounge/05-canvas-rewrite-spec.md §B.1) and when the user
+  /// taps Esc / right-clicks / switches tools mid-stroke. The local
+  /// in-flight preview is cleared by [ActiveStrokeNotifier.cancel] on the
+  /// gesture-widget side; this method just closes the WS partial broadcast
+  /// window and drops the accumulated points so they aren't committed.
+  void cancelStroke() {
+    _strokeActive = false;
+    _strokeThrottle?.cancel();
+    _strokeThrottle = null;
+    _pendingStrokePoints = null;
+    _strokePoints = null;
+  }
+
   void endStroke() {
     // Always close the drag, even if we have nothing to commit — a gesture
     // cancel from InteractiveViewer reclaiming the pointer mid-stroke

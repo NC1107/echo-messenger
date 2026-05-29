@@ -1,3 +1,12 @@
+// ORPHANED 2026-05-28: replaced by `widgets/voice_lounge/lounge_canvas_gestures.dart`
+// + `widgets/voice_lounge/lounge_canvas_strokes.dart` during the canvas
+// rewrite (see docs/voice-lounge/05-canvas-rewrite-spec.md). The voice
+// lounge screen no longer mounts this widget. Kept temporarily so the
+// existing widget-test in test/widgets/lounge_drawing_canvas_test.dart and
+// the gesture-arbitration test in test/screens/voice_lounge/
+// canvas_gesture_arbitration_test.dart still compile; the next cleanup
+// PR deletes both this file and those tests.
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 

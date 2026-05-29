@@ -174,6 +174,23 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
   @visibleForTesting
   int get pointerCount => _pointers.length;
 
+  // --- Imperative controller surface -----------------------------------
+
+  /// Replace the current viewport transform with [next]. Used by the
+  /// lounge-screen's reset-view affordance to push a fresh auto-fit
+  /// pose without rebuilding the entire subtree. Cancels any in-flight
+  /// stroke first so the reset can't strand committed-but-uncommitted
+  /// points under the new transform.
+  void resetToTransform(Matrix4 next) {
+    if (_strokeActive) {
+      _strokeActive = false;
+      widget.onStrokeCancel();
+    }
+    _transform = Matrix4.copy(next);
+    _emitTransform();
+    if (mounted) setState(() {});
+  }
+
   // --- Listener handlers -----------------------------------------------
 
   void _onPointerDown(PointerDownEvent event) {
