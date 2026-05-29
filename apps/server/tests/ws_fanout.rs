@@ -470,6 +470,118 @@ async fn at_everyone_does_not_suppress_offline_replay() {
 }
 
 // ---------------------------------------------------------------------------
+// Group multi-device sender sync: device B sees messages sent from device A
+// ---------------------------------------------------------------------------
+
+/// Regression for the group sender-sync bug: when Alice sends a plaintext group
+/// message from device 1, her other device (device 2) must receive the
+/// `new_message` frame live. Before the fix, `fanout_message` filtered ALL of
+/// the sender's connections (`id != sender_id`), so device 2 saw nothing until
+/// it re-opened the conversation.
+///
+/// Assertions:
+///   1. Alice device 2 receives `new_message` with the correct content and
+///      conversation ID.
+///   2. Alice device 1 (the originating device) does NOT receive a duplicate
+///      `new_message` within 300 ms — it already has an optimistic local echo.
+///   3. Bob and Charlie each receive their own `new_message` (basic sanity that
+///      the normal fanout path is unaffected).
+#[tokio::test]
+async fn group_sender_other_device_receives_new_message_live() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (alice_token, _alice_id, alice_name) =
+        common::register_and_login(&client, &base, "gsync_alice").await;
+    let (bob_token, bob_id, _) = common::register_and_login(&client, &base, "gsync_bob").await;
+    let (charlie_token, charlie_id, _) =
+        common::register_and_login(&client, &base, "gsync_charlie").await;
+
+    let group_id =
+        common::create_plaintext_group(&client, &base, &alice_token, "SenderSyncGroup").await;
+    common::add_member_to_group(&client, &base, &alice_token, &group_id, &bob_id).await;
+    common::add_member_to_group(&client, &base, &alice_token, &group_id, &charlie_id).await;
+
+    // Alice on two devices: device 1 sends, device 2 should receive the live update.
+    let alice_d1_ticket = common::get_ws_ticket_for_device(&client, &base, &alice_token, 1).await;
+    let alice_d2_ticket = common::get_ws_ticket_for_device(&client, &base, &alice_token, 2).await;
+    let bob_ticket = common::get_ws_ticket(&client, &base, &bob_token).await;
+    let charlie_ticket = common::get_ws_ticket(&client, &base, &charlie_token).await;
+
+    let mut alice_d1_ws = connect_ws(&base, &alice_d1_ticket).await;
+    let mut alice_d2_ws = connect_ws(&base, &alice_d2_ticket).await;
+    let mut bob_ws = connect_ws(&base, &bob_ticket).await;
+    let mut charlie_ws = connect_ws(&base, &charlie_ticket).await;
+
+    common::drain_pending(&mut alice_d1_ws).await;
+    common::drain_pending(&mut alice_d2_ws).await;
+    common::drain_pending(&mut bob_ws).await;
+    common::drain_pending(&mut charlie_ws).await;
+
+    let send_msg = serde_json::json!({
+        "type": "send_message",
+        "conversation_id": group_id,
+        "content": "hello from device 1",
+    });
+    alice_d1_ws
+        .send(Message::Text(send_msg.to_string().into()))
+        .await
+        .expect("Alice d1 send failed");
+
+    // Alice device 1 — should get message_sent (send confirmation), not new_message.
+    let ack = common::recv_until_event(&mut alice_d1_ws, &["message_sent"]).await;
+    assert_eq!(
+        ack["type"], "message_sent",
+        "originating device must get message_sent"
+    );
+
+    // Alice device 2 — must receive new_message live (the bug: previously received nothing).
+    let d2_event = common::recv_until_event(&mut alice_d2_ws, &["new_message"]).await;
+    assert_eq!(
+        d2_event["type"], "new_message",
+        "sender's sibling device must receive new_message"
+    );
+    assert_eq!(
+        d2_event["content"], "hello from device 1",
+        "sibling device must receive correct content"
+    );
+    assert_eq!(
+        d2_event["conversation_id"], group_id,
+        "sibling device must receive correct conversation_id"
+    );
+    assert_eq!(
+        d2_event["from_username"],
+        alice_name.as_str(),
+        "sibling device must see correct sender username"
+    );
+
+    // Alice device 1 — must NOT receive a duplicate new_message within 300 ms.
+    let dup_result = tokio::time::timeout(
+        std::time::Duration::from_millis(300),
+        recv_new_message(&mut alice_d1_ws),
+    )
+    .await;
+    assert!(
+        dup_result.is_err(),
+        "originating device must not receive a duplicate new_message; got: {dup_result:?}"
+    );
+
+    // Bob and Charlie must still receive new_message (regression guard).
+    let bob_event = common::recv_until_event(&mut bob_ws, &["new_message"]).await;
+    assert_eq!(bob_event["type"], "new_message");
+    assert_eq!(bob_event["content"], "hello from device 1");
+
+    let charlie_event = common::recv_until_event(&mut charlie_ws, &["new_message"]).await;
+    assert_eq!(charlie_event["type"], "new_message");
+    assert_eq!(charlie_event["content"], "hello from device 1");
+
+    let _ = alice_d1_ws.close(None).await;
+    let _ = alice_d2_ws.close(None).await;
+    let _ = bob_ws.close(None).await;
+    let _ = charlie_ws.close(None).await;
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
