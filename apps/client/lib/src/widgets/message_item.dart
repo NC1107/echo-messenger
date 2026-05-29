@@ -1216,6 +1216,11 @@ class _MessageItemState extends State<MessageItem>
             child: Text(
               _formatHourMinute(msg.timestamp),
               textAlign: TextAlign.right,
+              // The gutter is only as wide as the avatar slot, so the time
+              // must stay on one line — never wrap into "3:0 / 6 / PM".
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.visible,
               style: GoogleFonts.inter(
                 fontSize: fontSize,
                 color: context.textMuted,
@@ -1227,14 +1232,16 @@ class _MessageItemState extends State<MessageItem>
     );
   }
 
-  /// "HH:MM" only — Discord-style compact hover timestamp.
+  /// "h:mm" only — Discord-style compact hover timestamp. No AM/PM suffix:
+  /// the gutter is only as wide as the avatar slot, and "3:06 PM" wraps into
+  /// a crunched 3-line "3:0 / 6 / PM". The full timestamp (with AM/PM) is
+  /// still shown on the group-header row and the below-bubble timestamp.
   String _formatHourMinute(String iso) {
     try {
       final dt = DateTime.parse(iso).toLocal();
       final h = dt.hour;
       final h12 = h == 0 ? 12 : (h > 12 ? h - 12 : h);
-      final am = h < 12 ? 'AM' : 'PM';
-      return '${h12.toString()}:${dt.minute.toString().padLeft(2, '0')} $am';
+      return '$h12:${dt.minute.toString().padLeft(2, '0')}';
     } catch (_) {
       return '';
     }

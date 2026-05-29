@@ -93,6 +93,45 @@ void main() {
   });
 
   testWidgets(
+    'continuation-row hover timestamp stays on one line with no AM/PM',
+    (tester) async {
+      await mockNetworkImagesFor(() async {
+        // showHeader:false => avatar slot becomes the narrow hover-time gutter.
+        await tester.pumpApp(
+          MessageItem(
+            message: _msg(),
+            showHeader: false,
+            isLastInGroup: false,
+            myUserId: 'me',
+          ),
+        );
+        await tester.pump();
+
+        final hhmm = RegExp(r'^\d{1,2}:\d{2}$');
+        final gutterTimes = tester
+            .widgetList<Text>(find.byType(Text))
+            .where((t) => t.data != null && hhmm.hasMatch(t.data!))
+            .toList();
+        expect(
+          gutterTimes,
+          isNotEmpty,
+          reason: 'gutter h:mm timestamp should render on a continuation row',
+        );
+        for (final t in gutterTimes) {
+          expect(t.maxLines, 1, reason: 'gutter time must never wrap');
+          expect(t.softWrap, isFalse);
+        }
+        // The gutter time replaces the below-bubble timestamp on continuation
+        // rows, so there is no AM/PM text to crunch into "3:0 / 6 / PM".
+        final amPm = tester
+            .widgetList<Text>(find.byType(Text))
+            .where((t) => (t.data ?? '').contains(RegExp(r'\b(AM|PM)\b')));
+        expect(amPm, isEmpty);
+      });
+    },
+  );
+
+  testWidgets(
     'hover state is exposed through scoped ValueListenableBuilder subtrees, not setState (#872)',
     (tester) async {
       await mockNetworkImagesFor(() async {
