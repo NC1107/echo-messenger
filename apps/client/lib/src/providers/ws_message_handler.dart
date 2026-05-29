@@ -341,6 +341,8 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
         _handleCanvasAuthorityChanged(json);
       case 'member_added':
         _handleMemberAdded(json);
+      case 'member_role_changed':
+        _handleMemberRoleChanged(json);
       default:
         DebugLogService.instance.log(
           LogLevel.warning,

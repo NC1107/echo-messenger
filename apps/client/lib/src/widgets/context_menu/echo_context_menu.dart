@@ -315,6 +315,8 @@ class MemberTarget extends ContextMenuTarget {
     required this.isSelf,
     required this.targetIsOwner,
     required this.viewerIsAdminOrOwner,
+    required this.viewerIsOwner,
+    required this.targetIsAdmin,
     this.onViewProfile,
     this.onSendMessage,
     this.onAddContact,
@@ -325,6 +327,7 @@ class MemberTarget extends ContextMenuTarget {
     this.onCopyUsername,
     this.onKick,
     this.onBan,
+    this.onChangeRole,
   });
 
   final String userId;
@@ -342,6 +345,14 @@ class MemberTarget extends ContextMenuTarget {
   /// section (kick / ban).
   final bool viewerIsAdminOrOwner;
 
+  /// True when the viewer is the group owner. Required to show the
+  /// promote/demote action (only owners may change member roles).
+  final bool viewerIsOwner;
+
+  /// True when the target currently holds the `admin` role.  Determines
+  /// whether the change-role label reads "Make admin" or "Remove admin".
+  final bool targetIsAdmin;
+
   final VoidCallback? onViewProfile;
   final VoidCallback? onSendMessage;
   final VoidCallback? onAddContact;
@@ -352,6 +363,10 @@ class MemberTarget extends ContextMenuTarget {
   final VoidCallback? onCopyUsername;
   final VoidCallback? onKick;
   final VoidCallback? onBan;
+
+  /// Promote member → admin or demote admin → member.  Null when the
+  /// viewer is not the owner, or when the target is the owner or self.
+  final VoidCallback? onChangeRole;
 
   @override
   String get analyticsName => 'member';
