@@ -326,7 +326,10 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpNet>) -> Route
             post(keys::revoke_other_devices).layer(middleware::from_fn(revoke_others_limit)),
         )
         .route("/devices/{user_id}", get(keys::get_devices))
-        .route("/device/{device_id}", delete(keys::revoke_device))
+        .route(
+            "/device/{device_id}",
+            delete(keys::revoke_device).patch(keys::rename_device),
+        )
         .route("/otp-count", get(keys::get_otp_count));
 
     // Chunked-upload routes (#556): each carries its own 32 MB DefaultBodyLimit
