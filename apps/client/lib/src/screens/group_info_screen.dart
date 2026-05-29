@@ -133,16 +133,35 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   // Build
   // ---------------------------------------------------------------------------
 
-  Widget _buildLoadingState() {
+  /// Back affordance. The group-info screen is reached both as a dismissible
+  /// sheet (canPop) AND as a full page via `context.go('/group-info/:id')`
+  /// (which replaces the stack, so there's nothing to pop) — the latter left
+  /// the user stranded with no exit. Pop when we can, else fall back to the
+  /// conversation.
+  Widget _backButton(BuildContext context) => IconButton(
+    icon: const Icon(Icons.arrow_back),
+    tooltip: 'Back',
+    onPressed: () => context.canPop()
+        ? context.pop()
+        : context.go('/home?conversation=${widget.conversationId}'),
+  );
+
+  Widget _buildLoadingState(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text(_kGroupInfoTitle)),
+      appBar: AppBar(
+        title: const Text(_kGroupInfoTitle),
+        leading: _backButton(context),
+      ),
       body: const Center(child: CircularProgressIndicator()),
     );
   }
 
-  Widget _buildErrorState() {
+  Widget _buildErrorState(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text(_kGroupInfoTitle)),
+      appBar: AppBar(
+        title: const Text(_kGroupInfoTitle),
+        leading: _backButton(context),
+      ),
       body: const Center(child: Text('Could not load group information')),
     );
   }
@@ -151,8 +170,8 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   Widget build(BuildContext context) {
     final myUserId = ref.watch(authProvider).userId ?? '';
 
-    if (_isLoading) return _buildLoadingState();
-    if (_conversation == null) return _buildErrorState();
+    if (_isLoading) return _buildLoadingState(context);
+    if (_conversation == null) return _buildErrorState(context);
 
     final conv = _conversation!;
     final displayName = conv.displayName(myUserId);
@@ -163,7 +182,10 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     final isOwnerOrAdmin = myRole == 'owner' || myRole == 'admin';
 
     return Scaffold(
-      appBar: AppBar(title: const Text(_kGroupInfoTitle)),
+      appBar: AppBar(
+        title: const Text(_kGroupInfoTitle),
+        leading: _backButton(context),
+      ),
       body: LayoutBuilder(
         builder: (context, constraints) {
           // Wide (split-pane / desktop): 2-column layout — avatar+identity

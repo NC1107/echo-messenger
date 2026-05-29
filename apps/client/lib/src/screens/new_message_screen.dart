@@ -38,6 +38,12 @@ class _NewMessageScreenState extends ConsumerState<NewMessageScreen> {
 
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
+  // Stable identity for the search field. Each keystroke calls setState, which
+  // rebuilds the surrounding Wrap/Column; without a stable key the field's
+  // EditableText element can't be matched across the rebuild, gets recreated,
+  // and Android tears down the input connection (the soft keyboard closes on
+  // the first letter). A GlobalKey forces element reuse so focus survives.
+  final _searchFieldKey = GlobalKey();
   final _searchLayerLink = LayerLink();
   OverlayEntry? _overlayEntry;
   String _query = '';
@@ -414,6 +420,7 @@ class _NewMessageScreenState extends ConsumerState<NewMessageScreen> {
                       constraints: const BoxConstraints(minWidth: 120),
                       child: IntrinsicWidth(
                         child: TextField(
+                          key: _searchFieldKey,
                           controller: _searchController,
                           focusNode: _searchFocusNode,
                           style: TextStyle(
