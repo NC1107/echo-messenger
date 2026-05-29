@@ -433,6 +433,7 @@ class MediaContentState extends State<MediaContent> {
           onTap: () => widget.onImageTap != null
               ? widget.onImageTap!(fullUrl)
               : showImageViewer(imageUrl: fullUrl),
+          decodeWidth: 300,
         );
       },
     );
@@ -566,6 +567,9 @@ class _PausedGifPlaceholder extends StatefulWidget {
   final String rawUrl;
   final Map<String, String> headers;
   final VoidCallback onTap;
+  // Decode cap in logical pixels — matches the ResizeImage width used by the
+  // animated path so the two code-paths resolve at the same size (#GIF).
+  final double decodeWidth;
 
   const _PausedGifPlaceholder({
     required this.width,
@@ -573,6 +577,7 @@ class _PausedGifPlaceholder extends StatefulWidget {
     required this.rawUrl,
     required this.headers,
     required this.onTap,
+    this.decodeWidth = 300,
   });
 
   @override
@@ -606,7 +611,20 @@ class _PausedGifPlaceholderState extends State<_PausedGifPlaceholder> {
         setState(() => _loadFailed = true);
         return;
       }
-      final codec = await ui.instantiateImageCodec(response.bodyBytes);
+      // Cap the decode at the same logical pixel width used by the animated
+      // path (ResizeImage width: 300 * dpr) so that switching between
+      // paused and animated states does not produce a resolution jump (#GIF).
+      final dpr = WidgetsBinding
+          .instance
+          .platformDispatcher
+          .views
+          .first
+          .devicePixelRatio;
+      final targetPx = (widget.decodeWidth * dpr).round();
+      final codec = await ui.instantiateImageCodec(
+        response.bodyBytes,
+        targetWidth: targetPx,
+      );
       final frame = await codec.getNextFrame();
       codec.dispose();
       if (!mounted) {

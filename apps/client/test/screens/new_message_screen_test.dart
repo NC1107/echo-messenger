@@ -79,101 +79,70 @@ Future<void> pumpScreen(
 // ---------------------------------------------------------------------------
 
 void main() {
-  group('NewMessageScreen chip flow', () {
-    testWidgets('typing a name and pressing Enter materialises a chip', (
+  group('NewMessageScreen (search + tappable rows)', () {
+    testWidgets('shows contacts and a New group entry, no chips', (
       tester,
     ) async {
       await pumpScreen(tester);
 
-      // The "To:" label and search field should be visible.
-      expect(find.text('To:'), findsOneWidget);
-      expect(find.byType(TextField), findsAtLeastNWidgets(1));
-
-      // Type "alice" into the search field.
-      await tester.enterText(find.byType(TextField).first, 'alice');
-      await tester.pump();
-
-      // Submit (simulates pressing Enter / done action on the field).
-      await tester.testTextInput.receiveAction(TextInputAction.done);
-      await tester.pump();
-
-      // Alice should now appear as a chip with "@Alice A" (displayName).
-      expect(find.text('@Alice A'), findsOneWidget);
-
-      // The "Start chat with @Alice A" CTA should be active.
-      expect(find.text('Start chat with @Alice A'), findsOneWidget);
+      expect(find.text('New chat'), findsOneWidget); // header
+      expect(find.text('New group'), findsOneWidget); // pinned row
+      expect(find.text('Alice A'), findsOneWidget);
+      expect(find.text('Bob B'), findsOneWidget);
+      // No chip ceremony / "Start chat" CTA in the new design.
+      expect(find.textContaining('Start chat'), findsNothing);
     });
 
-    testWidgets(
-      'adding a second chip switches CTA to "Create group" and shows group name field',
-      (tester) async {
-        await pumpScreen(tester);
+    testWidgets('typing filters the contact list', (tester) async {
+      await pumpScreen(tester);
 
-        // Add alice chip.
-        await tester.enterText(find.byType(TextField).first, 'alice');
-        await tester.pump();
-        await tester.testTextInput.receiveAction(TextInputAction.done);
-        await tester.pump();
+      await tester.enterText(find.byType(TextField).first, 'ali');
+      await tester.pump();
 
-        expect(find.text('@Alice A'), findsOneWidget);
+      expect(find.text('Alice A'), findsOneWidget);
+      expect(find.text('Bob B'), findsNothing);
+      // The "New group" row only shows on the empty query.
+      expect(find.text('New group'), findsNothing);
+    });
 
-        // Add bob chip.
-        await tester.enterText(find.byType(TextField).first, 'bob');
-        await tester.pump();
-        await tester.testTextInput.receiveAction(TextInputAction.done);
-        await tester.pump();
-
-        expect(find.text('@Bob B'), findsOneWidget);
-
-        // "Create group" CTA should be visible.
-        expect(find.text('Create group'), findsOneWidget);
-
-        // The group name text field should have appeared.
-        // There are now 2 TextFields: the chip-search field + the group name field.
-        expect(find.byType(TextField), findsAtLeastNWidgets(2));
-      },
-    );
-
-    testWidgets(
-      'removing a chip via the × button reverts CTA to single-chip label',
-      (tester) async {
-        await pumpScreen(tester);
-
-        // Add both chips.
-        await tester.enterText(find.byType(TextField).first, 'alice');
-        await tester.pump();
-        await tester.testTextInput.receiveAction(TextInputAction.done);
-        await tester.pump();
-
-        await tester.enterText(find.byType(TextField).first, 'bob');
-        await tester.pump();
-        await tester.testTextInput.receiveAction(TextInputAction.done);
-        await tester.pump();
-
-        expect(find.text('Create group'), findsOneWidget);
-
-        // Tap the × on the Bob chip (Semantics label "remove Bob B").
-        final removeButton = find.bySemanticsLabel('remove Bob B');
-        expect(removeButton, findsOneWidget);
-        await tester.tap(removeButton);
-        await tester.pump();
-
-        // Back to 1 chip — CTA reverts.
-        expect(find.text('Start chat with @Alice A'), findsOneWidget);
-        expect(find.text('Create group'), findsNothing);
-      },
-    );
-
-    testWidgets('with zero chips the Start chat button is disabled', (
+    testWidgets('tapping New group enters group mode with checkboxes', (
       tester,
     ) async {
       await pumpScreen(tester);
 
-      final btn = find.widgetWithText(FilledButton, 'Start chat');
-      expect(btn, findsOneWidget);
+      await tester.tap(find.text('New group'));
+      await tester.pump();
 
-      final filledBtn = tester.widget<FilledButton>(btn);
-      expect(filledBtn.onPressed, isNull);
+      // Header title flips, a disabled Create-group CTA + checkboxes appear.
+      expect(find.widgetWithText(FilledButton, 'Create group'), findsOneWidget);
+      expect(find.byType(Checkbox), findsNWidgets(2)); // alice + bob
+
+      final btn = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Create group'),
+      );
+      expect(btn.onPressed, isNull); // nothing selected yet
+    });
+
+    testWidgets('selecting members enables + counts the Create group CTA', (
+      tester,
+    ) async {
+      await pumpScreen(tester);
+      await tester.tap(find.text('New group'));
+      await tester.pump();
+
+      await tester.tap(find.text('Alice A'));
+      await tester.pump();
+      expect(
+        find.widgetWithText(FilledButton, 'Create group · 1'),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('Bob B'));
+      await tester.pump();
+      final btn = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Create group · 2'),
+      );
+      expect(btn.onPressed, isNotNull); // enabled with 2 selected
     });
   });
 }

@@ -141,4 +141,35 @@ void main() {
       expect(snap.paintP50Ms, 5.0);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // CanvasPerfSnapshot.isIdle — log-spam suppression
+  // -------------------------------------------------------------------------
+
+  group('CanvasPerfSnapshot.isIdle', () {
+    test('true when no data recorded', () {
+      final snap = CanvasPerf.snapshot();
+      expect(snap.isIdle, isTrue);
+    });
+
+    test('false after a paint sample is recorded', () {
+      CanvasPerf.recordPaintMs(3.0);
+      final snap = CanvasPerf.snapshot();
+      expect(snap.isIdle, isFalse);
+    });
+
+    test('false after a send event is recorded', () {
+      CanvasPerf.recordSendEvent();
+      final snap = CanvasPerf.snapshot();
+      expect(snap.isIdle, isFalse);
+    });
+
+    test('true again after reset', () {
+      CanvasPerf.recordPaintMs(1.0);
+      CanvasPerf.recordSendEvent();
+      CanvasPerf.reset();
+      final snap = CanvasPerf.snapshot();
+      expect(snap.isIdle, isTrue);
+    });
+  });
 }

@@ -8,7 +8,7 @@ class TypingDots extends StatefulWidget {
   final Color? color;
   final double dotSize;
 
-  const TypingDots({super.key, this.color, this.dotSize = 8});
+  const TypingDots({super.key, this.color, this.dotSize = 5});
 
   @override
   State<TypingDots> createState() => TypingDotsState();
@@ -55,9 +55,9 @@ class TypingDotsState extends State<TypingDots>
   Widget build(BuildContext context) {
     final dotColor = widget.color ?? context.textMuted;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: context.recvBubble,
+        color: context.recvBubble.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(

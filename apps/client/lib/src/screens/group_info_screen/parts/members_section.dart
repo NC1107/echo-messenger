@@ -51,6 +51,75 @@ extension _MembersSection on _GroupInfoScreenState {
     }
   }
 
+  /// Promote a member to admin or demote an admin back to member.
+  ///
+  /// Only the owner may call this; the server enforces the same rule.
+  /// Optimistic update: role flipped locally immediately and rolled back on
+  /// failure so the UI stays responsive on slow connections.
+  Future<void> _changeRole(ConversationMember member) async {
+    final currentRole = member.role ?? 'member';
+    final isPromoting = currentRole != 'admin';
+    final newRole = isPromoting ? 'admin' : 'member';
+    final actionLabel = isPromoting ? 'Make admin' : 'Remove admin';
+
+    final confirmed = await showEchoConfirmDialog(
+      context,
+      title: actionLabel,
+      content: isPromoting
+          ? 'Make ${member.username} an admin of this group?'
+          : 'Remove admin from ${member.username}?',
+      confirmLabel: actionLabel,
+      destructive: false,
+    );
+    if (!confirmed) return;
+
+    final token = ref.read(authProvider).token;
+    if (token == null) return;
+    final serverUrl = ref.read(serverUrlProvider);
+
+    try {
+      final response = await http.patch(
+        Uri.parse(
+          '$serverUrl/api/groups/${widget.conversationId}'
+          '/members/${member.userId}/role',
+        ),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: '{"role":"$newRole"}',
+      );
+      if (response.statusCode == 200 && mounted) {
+        await ref.read(conversationsProvider.notifier).loadConversations();
+        await _loadGroupInfo(force: true);
+        if (mounted) {
+          ToastService.show(
+            context,
+            isPromoting
+                ? '${member.username} is now an admin'
+                : '${member.username} is no longer an admin',
+            type: ToastType.success,
+          );
+        }
+      } else if (mounted) {
+        ToastService.show(
+          context,
+          'Failed to change role (${response.statusCode})',
+          type: ToastType.error,
+        );
+      }
+    } catch (e) {
+      debugPrint('[GroupInfo] _changeRole failed: $e');
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Failed to change role',
+          type: ToastType.error,
+        );
+      }
+    }
+  }
+
   Future<void> _banMember(ConversationMember member) async {
     final confirmed = await showEchoConfirmDialog(
       context,
@@ -105,6 +174,7 @@ extension _MembersSection on _GroupInfoScreenState {
   Widget? _buildMemberActions({
     required ConversationMember member,
     required bool isOwnerOrAdmin,
+    required bool viewerIsOwner,
     required bool isMe,
     required String role,
   }) {
@@ -126,6 +196,7 @@ extension _MembersSection on _GroupInfoScreenState {
             member: member,
             role: role,
             viewerIsAdminOrOwner: isOwnerOrAdmin,
+            viewerIsOwner: viewerIsOwner,
             isMe: isMe,
           );
         },
@@ -146,10 +217,14 @@ extension _MembersSection on _GroupInfoScreenState {
     required ConversationMember member,
     required String role,
     required bool viewerIsAdminOrOwner,
+    required bool viewerIsOwner,
     required bool isMe,
   }) {
     final isBlocked = _isMemberBlocked(member.userId);
     final canModerate = viewerIsAdminOrOwner && !isMe && role != 'owner';
+    // Only the owner can promote/demote; never for self or the owner target.
+    final canChangeRole = viewerIsOwner && !isMe && role != 'owner';
+    final targetIsAdmin = role == 'admin';
 
     final target = MemberTarget(
       userId: member.userId,
@@ -157,6 +232,8 @@ extension _MembersSection on _GroupInfoScreenState {
       isSelf: isMe,
       targetIsOwner: role == 'owner',
       viewerIsAdminOrOwner: viewerIsAdminOrOwner,
+      viewerIsOwner: viewerIsOwner,
+      targetIsAdmin: targetIsAdmin,
       onViewProfile: () => showUserProfileSheet(context, ref, member.userId),
       onSendMessage: isMe ? null : () => _openDmWithMember(member),
       onUnblock: (isMe || !isBlocked)
@@ -168,6 +245,7 @@ extension _MembersSection on _GroupInfoScreenState {
           _copyToClipboardWithToast(member.userId, 'User ID copied'),
       onKick: canModerate ? () => _kickMember(member) : null,
       onBan: canModerate ? () => _banMember(member) : null,
+      onChangeRole: canChangeRole ? () => _changeRole(member) : null,
     );
 
     EchoContextMenu.open(
@@ -217,6 +295,7 @@ extension _MembersSection on _GroupInfoScreenState {
     required ConversationMember member,
     required String myUserId,
     required bool isOwnerOrAdmin,
+    required bool viewerIsOwner,
   }) {
     final isMe = member.userId == myUserId;
     final role = member.role ?? 'member';
@@ -244,6 +323,7 @@ extension _MembersSection on _GroupInfoScreenState {
         member: member,
         role: role,
         viewerIsAdminOrOwner: isOwnerOrAdmin,
+        viewerIsOwner: viewerIsOwner,
         isMe: isMe,
       ),
       onLongPress: () => _openMemberContextMenu(
@@ -251,6 +331,7 @@ extension _MembersSection on _GroupInfoScreenState {
         member: member,
         role: role,
         viewerIsAdminOrOwner: isOwnerOrAdmin,
+        viewerIsOwner: viewerIsOwner,
         isMe: isMe,
       ),
       child: Container(
@@ -307,6 +388,7 @@ extension _MembersSection on _GroupInfoScreenState {
             _buildMemberActions(
                   member: member,
                   isOwnerOrAdmin: isOwnerOrAdmin,
+                  viewerIsOwner: viewerIsOwner,
                   isMe: isMe,
                   role: role,
                 ) ??
@@ -324,6 +406,7 @@ extension _MembersSection on _GroupInfoScreenState {
     required Conversation conv,
     required String myUserId,
     required bool isOwnerOrAdmin,
+    required bool viewerIsOwner,
   }) {
     int sortByName(ConversationMember a, ConversationMember b) =>
         a.username.toLowerCase().compareTo(b.username.toLowerCase());
@@ -362,6 +445,7 @@ extension _MembersSection on _GroupInfoScreenState {
           member: m,
           myUserId: myUserId,
           isOwnerOrAdmin: isOwnerOrAdmin,
+          viewerIsOwner: viewerIsOwner,
         );
       }
     }

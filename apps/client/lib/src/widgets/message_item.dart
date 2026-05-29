@@ -869,10 +869,16 @@ class _MessageItemState extends State<MessageItem>
 
     if (embeddedImages.isEmpty && linkPreview == null) return textWidget;
     if (embeddedImages.isEmpty) {
+      // When the message body is exactly the preview URL (and nothing else),
+      // show only the preview card — rendering both would double the URL.
+      final previewUrlMatch = urlRegex.firstMatch(displayContent);
+      final bodyIsOnlyUrl =
+          previewUrlMatch != null &&
+          displayContent.trim() == previewUrlMatch.group(0)!.trim();
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
-        children: [textWidget, linkPreview!],
+        children: [if (!bodyIsOnlyUrl) textWidget, linkPreview!],
       );
     }
 
@@ -1216,6 +1222,11 @@ class _MessageItemState extends State<MessageItem>
             child: Text(
               _formatHourMinute(msg.timestamp),
               textAlign: TextAlign.right,
+              // The gutter is only as wide as the avatar slot, so the time
+              // must stay on one line — never wrap into "3:0 / 6 / PM".
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.visible,
               style: GoogleFonts.inter(
                 fontSize: fontSize,
                 color: context.textMuted,
@@ -1227,14 +1238,16 @@ class _MessageItemState extends State<MessageItem>
     );
   }
 
-  /// "HH:MM" only — Discord-style compact hover timestamp.
+  /// "h:mm" only — Discord-style compact hover timestamp. No AM/PM suffix:
+  /// the gutter is only as wide as the avatar slot, and "3:06 PM" wraps into
+  /// a crunched 3-line "3:0 / 6 / PM". The full timestamp (with AM/PM) is
+  /// still shown on the group-header row and the below-bubble timestamp.
   String _formatHourMinute(String iso) {
     try {
       final dt = DateTime.parse(iso).toLocal();
       final h = dt.hour;
       final h12 = h == 0 ? 12 : (h > 12 ? h - 12 : h);
-      final am = h < 12 ? 'AM' : 'PM';
-      return '${h12.toString()}:${dt.minute.toString().padLeft(2, '0')} $am';
+      return '$h12:${dt.minute.toString().padLeft(2, '0')}';
     } catch (_) {
       return '';
     }
@@ -1329,12 +1342,15 @@ class _MessageItemState extends State<MessageItem>
           defaultTargetPlatform == TargetPlatform.iOS);
 
   /// Wrap [messageWidget] with swipe-to-reply gesture handlers on mobile.
+  ///
+  /// The outermost widget is always full-row width so that even a narrow
+  /// bubble (e.g. a one-word message) has a full-row horizontal drag target.
   Widget _buildSwipeToReplyWrapper({
     required bool canSwipe,
     required ChatMessage msg,
     required Widget messageWidget,
   }) {
-    return Stack(
+    final stack = Stack(
       children: [
         if (canSwipe && _swipeDx > 0)
           Positioned(
@@ -1364,6 +1380,11 @@ class _MessageItemState extends State<MessageItem>
         Transform.translate(offset: Offset(_swipeDx, 0), child: messageWidget),
       ],
     );
+    // Expand to full row width when swipe is active so a narrow bubble
+    // (e.g. one-word message) still registers the horizontal drag anywhere
+    // along the row, matching the visual hover-tint area.
+    if (!canSwipe) return stack;
+    return SizedBox(width: double.infinity, child: stack);
   }
 
   /// Handle long-press: open the centralised context menu on mobile,
@@ -1806,11 +1827,11 @@ class _HoverStyleSpec {
           background: context.surface.withValues(alpha: 0.98),
           borderColor: context.border,
           iconColor: context.textPrimary,
-          shadow: const [
+          shadow: [
             BoxShadow(
-              color: Color(0x3D000000),
+              color: context.textPrimary.withValues(alpha: 0.24),
               blurRadius: 14,
-              offset: Offset(0, 4),
+              offset: const Offset(0, 4),
             ),
           ],
           borderWidth: 1,
@@ -1829,11 +1850,11 @@ class _HoverStyleSpec {
           background: context.surface.withValues(alpha: 0.76),
           borderColor: context.accent.withValues(alpha: 0.28),
           iconColor: context.textPrimary,
-          shadow: const [
+          shadow: [
             BoxShadow(
-              color: Color(0x29000000),
+              color: context.textPrimary.withValues(alpha: 0.16),
               blurRadius: 8,
-              offset: Offset(0, 2),
+              offset: const Offset(0, 2),
             ),
           ],
           borderWidth: 1,

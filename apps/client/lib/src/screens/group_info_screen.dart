@@ -180,6 +180,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         .firstOrNull;
     final myRole = myMember?.role ?? 'member';
     final isOwnerOrAdmin = myRole == 'owner' || myRole == 'admin';
+    final viewerIsOwner = myRole == 'owner';
 
     return Scaffold(
       appBar: AppBar(
@@ -200,6 +201,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
               myUserId: myUserId,
               myRole: myRole,
               isOwnerOrAdmin: isOwnerOrAdmin,
+              viewerIsOwner: viewerIsOwner,
             );
           }
           return _buildNarrowLayout(
@@ -208,6 +210,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
             myUserId: myUserId,
             myRole: myRole,
             isOwnerOrAdmin: isOwnerOrAdmin,
+            viewerIsOwner: viewerIsOwner,
           );
         },
       ),
@@ -220,6 +223,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     required String myUserId,
     required String myRole,
     required bool isOwnerOrAdmin,
+    required bool viewerIsOwner,
   }) {
     return SafeArea(
       child: Center(
@@ -251,6 +255,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                 conv: conv,
                 myUserId: myUserId,
                 isOwnerOrAdmin: isOwnerOrAdmin,
+                viewerIsOwner: viewerIsOwner,
               ),
               if (isOwnerOrAdmin) ..._buildChannelsSection(),
               if (isOwnerOrAdmin) _buildDisappearingSection(),
@@ -268,6 +273,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     required String myUserId,
     required String myRole,
     required bool isOwnerOrAdmin,
+    required bool viewerIsOwner,
   }) {
     return Center(
       child: ConstrainedBox(
@@ -314,6 +320,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                       conv: conv,
                       myUserId: myUserId,
                       isOwnerOrAdmin: isOwnerOrAdmin,
+                      viewerIsOwner: viewerIsOwner,
                     ),
                     if (isOwnerOrAdmin) ..._buildChannelsSection(),
                     if (isOwnerOrAdmin) _buildDisappearingSection(),

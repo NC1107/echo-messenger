@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../services/slash_commands.dart';
 import '../../theme/echo_theme.dart';
@@ -90,7 +91,10 @@ class _CommandRow extends StatelessWidget {
       hint: command.description,
       button: true,
       child: InkWell(
-        onTap: onTap,
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Row(

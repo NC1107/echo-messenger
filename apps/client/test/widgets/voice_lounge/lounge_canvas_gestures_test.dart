@@ -698,8 +698,19 @@ void main() {
       );
     });
 
-    // Beta bounded-canvas: with viewportSize + canvasSize provided, pan is
-    // clamped so the board can't be dragged out of view.
+    // Bounded-canvas: with viewportSize + canvasSize provided, pan is
+    // clamped so the board can't be fully dragged out of view (#29 / #30).
+    //
+    // New rule (overscroll-margin): margin = min(scaled, viewport) * 0.15.
+    // tx ∈ [margin - scaled, viewport - margin].
+    //
+    // At scale 1, canvas=1000, viewport=800x600:
+    //   X: margin = 800*0.15 = 120  → lo = 120-1000 = -880,  hi = 800-120 = 680
+    //   Y: margin = 600*0.15 = 90   → lo = 90-1000 = -910,   hi = 600-90  = 510
+    //
+    // resetToTransform pushes the transform through _clampTransform and is the
+    // canonical way to assert the clamp boundary from tests (avoids pointer hit-
+    // test coordinate limits in the test harness).
     testWidgets('pan is clamped to the bounded canvas', (tester) async {
       final rec = _Recorder();
       const key = ValueKey('clamp');
@@ -714,26 +725,249 @@ void main() {
           ),
         ),
       );
-      // At scale 1 the 1000px board is larger than the 800x600 viewport, so
-      // translation is clamped to [viewport-scaled, 0] = x:[-200,0], y:[-400,0].
-      // Drag up-left (on-screen points): the -600,-400 delta over-shoots the
-      // bounds and clamps to the corner (-200,-400).
+
+      final state = _stateOf(tester, key);
+
+      // Push an extreme lo-bound translation: tx = -5000, -5000.
+      // At scale 1, canvas=1000, viewport=800x600:
+      //   X: margin=120, lo=-880 → clamped to -880
+      //   Y: margin=90,  lo=-910 → clamped to -910
+      state.resetToTransform(
+        Matrix4.identity()..setTranslationRaw(-5000, -5000, 0),
+      );
+      await tester.pump();
+      var t = state.debugTransform.getTranslation();
+      expect(t.x, closeTo(-880, 0.01), reason: 'lo-x clamp (#30 escape)');
+      expect(t.y, closeTo(-910, 0.01), reason: 'lo-y clamp (#30 escape)');
+
+      // Push an extreme hi-bound translation: tx = +5000, +5000.
+      //   X: hi = 800 - 120 = 680
+      //   Y: hi = 600 - 90  = 510
+      state.resetToTransform(
+        Matrix4.identity()..setTranslationRaw(5000, 5000, 0),
+      );
+      await tester.pump();
+      t = state.debugTransform.getTranslation();
+      expect(t.x, closeTo(680, 0.01), reason: 'hi-x clamp (#30 escape)');
+      expect(t.y, closeTo(510, 0.01), reason: 'hi-y clamp (#30 escape)');
+    });
+
+    // When the board is SMALLER than the viewport (zoomed out), the old code
+    // force-centered it so panning was impossible (#29). The new overscroll-
+    // margin rule keeps the board pannable while staying on-screen.
+    testWidgets('zoomed-out board is pannable, not force-centred', (
+      tester,
+    ) async {
+      final rec = _Recorder();
+      const key = ValueKey('clamp-small');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: _harness(
+            rec: rec,
+            isToolSelected: false,
+            key: key,
+            viewportSize: const Size(800, 600),
+            canvasSize: const Size(400, 300), // board smaller than viewport
+          ),
+        ),
+      );
+
+      // Scale=1, canvas=400x300, viewport=800x600.
+      // X: margin = 400*0.15=60, lo=60-400=-340, hi=800-60=740.
+      // Board IS pannable — the centre (200, 150) is valid, and so is (0, 0).
       await _pointerDown(
         tester,
         () => null,
-        at: const Offset(700, 500),
+        at: const Offset(400, 300),
         pointer: 1,
       );
-      await _pointerMove(tester, to: const Offset(100, 100), pointer: 1);
-      var t = _stateOf(tester, key).debugTransform.getTranslation();
-      expect(t.x, closeTo(-200, 0.01));
-      expect(t.y, closeTo(-400, 0.01));
-
-      // Drag back down-right: clamps to the opposite bound (0,0).
-      await _pointerMove(tester, to: const Offset(700, 500), pointer: 1);
-      t = _stateOf(tester, key).debugTransform.getTranslation();
-      expect(t.x, closeTo(0, 0.01));
-      expect(t.y, closeTo(0, 0.01));
+      // Pan left by 100px — should apply freely (tx goes from 0 to -100, within [-340, 740]).
+      await _pointerMove(tester, to: const Offset(300, 240), pointer: 1);
+      final t = _stateOf(tester, key).debugTransform.getTranslation();
+      expect(
+        t.x,
+        closeTo(-100, 1.0),
+        reason: 'zoomed-out board must be pannable left (#29 regression)',
+      );
+      expect(
+        t.y,
+        closeTo(-60, 1.0),
+        reason: 'zoomed-out board must be pannable up (#29 regression)',
+      );
+      await _pointerUp(tester, at: const Offset(300, 240), pointer: 1);
     });
+  });
+
+  // ---------------------------------------------------------------------------
+  // CanvasDragScope — BUG #22 regression tests
+  //
+  // The core logic lives in [LoungeCanvasGesturesState._applyPanDelta]:
+  // when _childDragCount > 0 the method updates _panLastPosition but skips
+  // the transform update, so canvas pan and avatar / image drag don't both
+  // fire at the same time. These tests drive the state directly via the
+  // @visibleForTesting accessors, then confirm behaviour through the
+  // existing pan/transform assertions.
+  // ---------------------------------------------------------------------------
+  group('CanvasDragScope — child drag suppresses parent pan (BUG #22)', () {
+    testWidgets('balanced suppress+release leaves pan enabled', (tester) async {
+      final rec = _Recorder();
+      const key = ValueKey('suppressed-initial');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: _harness(rec: rec, isToolSelected: false, key: key),
+        ),
+      );
+      final state = _stateOf(tester, key);
+
+      // Suppress then immediately release (count stays 0).
+      state.suppressPanForTest();
+      state.releasePanForTest();
+
+      // Pan must work (same coordinate range as existing passing tests).
+      await _pointerDown(
+        tester,
+        () => null,
+        at: const Offset(400, 300),
+        pointer: 1,
+      );
+      await _pointerMove(tester, to: const Offset(460, 300), pointer: 1);
+      await _pointerUp(tester, at: const Offset(460, 300), pointer: 1);
+      final tx = state.debugTransform.getTranslation().x;
+      expect(
+        tx,
+        closeTo(60, 1.0),
+        reason: 'Pan works when suppression count is 0',
+      );
+    });
+
+    testWidgets('suppress blocks pan; release restores it', (tester) async {
+      final rec = _Recorder();
+      const key = ValueKey('suppress-release');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: _harness(rec: rec, isToolSelected: false, key: key),
+        ),
+      );
+      final state = _stateOf(tester, key);
+
+      // Record the transform before any pointer events.
+      final txInit = state.debugTransform.getTranslation().x;
+
+      // Suppress.
+      state.suppressPanForTest();
+
+      // Try to pan — canvas must NOT move. Use pointer 1 at one position.
+      await _pointerDown(
+        tester,
+        () => null,
+        at: const Offset(400, 300),
+        pointer: 1,
+      );
+      await _pointerMove(tester, to: const Offset(460, 300), pointer: 1);
+      final txSuppressed = state.debugTransform.getTranslation().x;
+      await _pointerUp(tester, at: const Offset(460, 300), pointer: 1);
+      expect(
+        txSuppressed,
+        closeTo(txInit, 1.0),
+        reason: 'Canvas must not pan while suppressed (BUG #22 core assertion)',
+      );
+
+      // Release.
+      state.releasePanForTest();
+
+      // Pan must work again. Use a DIFFERENT start position to avoid the
+      // double-tap detector firing (the first DOWN set _lastTapAt; using
+      // a position far from (400,300) guarantees |distance| >= 24 px).
+      await _pointerDown(
+        tester,
+        () => null,
+        at: const Offset(200, 100),
+        pointer: 2,
+      );
+      await _pointerMove(tester, to: const Offset(260, 100), pointer: 2);
+      final txRestored = state.debugTransform.getTranslation().x;
+      await _pointerUp(tester, at: const Offset(260, 100), pointer: 2);
+      expect(
+        txRestored,
+        greaterThan(txInit + 1.0),
+        reason: 'Canvas must pan again after suppression is released',
+      );
+    });
+
+    testWidgets(
+      'reference count: suppress twice, release once still suppresses',
+      (tester) async {
+        final rec = _Recorder();
+        const key = ValueKey('scope-refcount');
+        await tester.pumpWidget(
+          MaterialApp(
+            home: _harness(rec: rec, isToolSelected: false, key: key),
+          ),
+        );
+        final state = _stateOf(tester, key);
+
+        final txInit = state.debugTransform.getTranslation().x;
+
+        // Two suppress calls — refcount = 2.
+        state.suppressPanForTest();
+        state.suppressPanForTest();
+        // One release — refcount = 1, still suppressed.
+        state.releasePanForTest();
+
+        // Suppressed pan at position A.
+        await _pointerDown(
+          tester,
+          () => null,
+          at: const Offset(400, 300),
+          pointer: 1,
+        );
+        await _pointerMove(tester, to: const Offset(500, 300), pointer: 1);
+        await _pointerUp(tester, at: const Offset(500, 300), pointer: 1);
+        expect(
+          state.debugTransform.getTranslation().x,
+          closeTo(txInit, 1.0),
+          reason: 'Still suppressed after one release (refcount=1)',
+        );
+
+        // Second release — refcount = 0, pan restored.
+        state.releasePanForTest();
+
+        final txBeforeRelease = state.debugTransform.getTranslation().x;
+        // Use a DIFFERENT start position to avoid the double-tap detector.
+        await _pointerDown(
+          tester,
+          () => null,
+          at: const Offset(200, 100),
+          pointer: 2,
+        );
+        await _pointerMove(tester, to: const Offset(260, 100), pointer: 2);
+        await _pointerUp(tester, at: const Offset(260, 100), pointer: 2);
+        expect(
+          state.debugTransform.getTranslation().x,
+          greaterThan(txBeforeRelease + 1.0),
+          reason: 'Pan works after all suppresses are released',
+        );
+      },
+    );
+
+    testWidgets(
+      'CanvasDragScope.of returns null outside a LoungeCanvasGestures tree',
+      (tester) async {
+        CanvasDragScope? capturedScope;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Builder(
+              builder: (ctx) {
+                capturedScope = CanvasDragScope.of(ctx);
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        );
+
+        expect(capturedScope, isNull);
+      },
+    );
   });
 }

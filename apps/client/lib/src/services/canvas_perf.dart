@@ -161,6 +161,14 @@ class CanvasPerfSnapshot {
     required this.sendEventsPerSecP99,
   });
 
+  /// True when the rolling window contains no activity — all metrics are zero.
+  /// Used to suppress periodic log spam when nothing is happening on the canvas.
+  bool get isIdle =>
+      paintP50Ms == 0.0 &&
+      paintP99Ms == 0.0 &&
+      sendEventsPerSecAvg == 0.0 &&
+      sendEventsPerSecP99 == 0.0;
+
   @override
   String toString() {
     return 'paint p50=${paintP50Ms.toStringAsFixed(2)}ms '

@@ -7,6 +7,9 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -46,6 +49,8 @@ class EchoForegroundService : Service() {
     }
 
     private var wakeLock: PowerManager.WakeLock? = null
+    // Held for the lifetime of a voice session; null outside voice mode.
+    private var audioFocusRequest: AudioFocusRequest? = null
     private var currentMode: String = MODE_KEEPALIVE
     private var voiceChannelName: String = ""
     private var voiceIsMuted: Boolean = false
@@ -67,6 +72,26 @@ class EchoForegroundService : Service() {
             voiceIsMuted = intent?.getBooleanExtra(EXTRA_IS_MUTED, voiceIsMuted) ?: voiceIsMuted
             voiceParticipantCount = intent?.getIntExtra(EXTRA_PARTICIPANT_COUNT, voiceParticipantCount)
                 ?: voiceParticipantCount
+
+            // Request audio focus so Doze / aggressive battery policies cannot
+            // duck or suspend the voice session while the screen is off.
+            // AudioFocusRequest.Builder requires API 26; minSdk is 24.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && audioFocusRequest == null) {
+                val attrs = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+                val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                    .setAudioAttributes(attrs)
+                    .setAcceptsDelayedFocusGain(false)
+                    .setWillPauseWhenDucked(false)
+                    .build()
+                val am = getSystemService(AudioManager::class.java)
+                if (am != null) {
+                    am.requestAudioFocus(req)
+                    audioFocusRequest = req
+                }
+            }
         }
 
         val notification = buildNotification()
@@ -111,6 +136,12 @@ class EchoForegroundService : Service() {
     override fun onDestroy() {
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audioFocusRequest?.let { req ->
+                getSystemService(AudioManager::class.java)?.abandonAudioFocusRequest(req)
+            }
+        }
+        audioFocusRequest = null
         super.onDestroy()
     }
 

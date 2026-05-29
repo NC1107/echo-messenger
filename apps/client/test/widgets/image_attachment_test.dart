@@ -4,7 +4,8 @@
 // These tests verify that:
 //   1. When width + height are provided, the rendered widget tree contains an
 //      AspectRatio with the correct ratio before any image bytes arrive.
-//   2. When dimensions are absent (legacy messages), no AspectRatio is added.
+//   2. When dimensions are absent (legacy messages), the widget uses a
+//      fixed-height SizedBox so the row height is stable before and after load.
 //   3. cacheImageDimensions() pre-populates the session cache so a subsequent
 //      ImageAttachment with the same URL uses the cached ratio automatically.
 
@@ -39,7 +40,7 @@ void main() {
       expect(aspectRatio.aspectRatio, closeTo(2.0, 0.001));
     });
 
-    testWidgets('does not add AspectRatio when dimensions are absent', (
+    testWidgets('uses a stable SizedBox when dimensions are absent', (
       tester,
     ) async {
       await tester.pumpApp(
@@ -49,7 +50,17 @@ void main() {
           // No imageWidth / imageHeight — legacy message.
         ),
       );
+      // No AspectRatio — falls back to fixed-height SizedBox so the row
+      // does not reflow when the image finishes decoding (#13).
       expect(find.byType(AspectRatio), findsNothing);
+
+      // A SizedBox at the fallback height must be in the tree.
+      final boxes = tester.widgetList<SizedBox>(find.byType(SizedBox));
+      expect(
+        boxes.any((b) => b.height == kImageBubbleFallbackHeight),
+        isTrue,
+        reason: 'Expect SizedBox with height=$kImageBubbleFallbackHeight',
+      );
     });
 
     testWidgets('uses session cache when no explicit dimensions are passed', (

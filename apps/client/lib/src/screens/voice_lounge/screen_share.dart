@@ -595,7 +595,8 @@ class FullscreenVideoPage extends StatefulWidget {
   State<FullscreenVideoPage> createState() => _FullscreenVideoPageState();
 }
 
-class _FullscreenVideoPageState extends State<FullscreenVideoPage> {
+class _FullscreenVideoPageState extends State<FullscreenVideoPage>
+    with WidgetsBindingObserver {
   /// Desktop platforms (Linux/macOS/Windows) have no system UI bars to hide
   /// and some Linux window managers respond to SystemUiMode.immersive by
   /// graying out the Flutter window chrome, causing the lounge UI behind this
@@ -610,6 +611,18 @@ class _FullscreenVideoPageState extends State<FullscreenVideoPage> {
   void initState() {
     super.initState();
     if (_supportsSystemUiMode) {
+      WidgetsBinding.instance.addObserver(this);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
+    }
+  }
+
+  /// Android clears immersive mode whenever the app is backgrounded. Re-apply
+  /// it when the user returns so the video page never renders behind a
+  /// suddenly-visible taskbar.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!_supportsSystemUiMode) return;
+    if (state == AppLifecycleState.resumed) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
     }
   }
@@ -617,6 +630,7 @@ class _FullscreenVideoPageState extends State<FullscreenVideoPage> {
   @override
   void dispose() {
     if (_supportsSystemUiMode) {
+      WidgetsBinding.instance.removeObserver(this);
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     }
     super.dispose();

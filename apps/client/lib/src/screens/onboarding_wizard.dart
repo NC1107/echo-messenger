@@ -11,7 +11,7 @@ import '../providers/accessibility_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/theme_provider.dart';
-import '../providers/ui_style_provider.dart';
+import '../services/media_cache_service.dart';
 import '../services/notification_service.dart';
 import '../services/sound_service.dart';
 import '../services/toast_service.dart';
@@ -65,6 +65,9 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   // Add-contact onboarding step removed; user can add contacts after
   // landing on the home screen.
 
+  // UI style step — which chat-app familiarity the user picks.
+  _AppFamiliarity? _selectedStyle;
+
   bool _saving = false;
 
   @override
@@ -77,6 +80,29 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
       _displayNameController.text = username;
     }
     _loadNotificationPrefs();
+    _initStyleSelection();
+  }
+
+  void _initStyleSelection() {
+    final layout = ref.read(messageLayoutProvider);
+    final density = ref.read(uiDensityProvider);
+    _selectedStyle = _reverseMapStyle(layout, density);
+  }
+
+  static _AppFamiliarity? _reverseMapStyle(
+    MessageLayout layout,
+    UIDensity density,
+  ) {
+    if (layout == MessageLayout.compact && density == UIDensity.compact) {
+      return _AppFamiliarity.discord;
+    }
+    if (layout == MessageLayout.plain && density == UIDensity.normal) {
+      return _AppFamiliarity.slack;
+    }
+    if (layout == MessageLayout.bubbles && density == UIDensity.cozy) {
+      return _AppFamiliarity.imessage;
+    }
+    return null;
   }
 
   Future<void> _loadNotificationPrefs() async {
@@ -246,6 +272,14 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
 
       if (result.ok) {
         if (result.url != null) {
+          // The server reuses the same URL path on re-upload, so the disk cache
+          // would keep serving the old photo without an explicit eviction.
+          final serverUrl = ref.read(serverUrlProvider);
+          final fullUrl = result.url!.startsWith('http')
+              ? result.url!
+              : '$serverUrl${result.url!}';
+          await evictAvatarFromCache(fullUrl);
+          if (!mounted) return;
           ref.read(authProvider.notifier).updateAvatarUrl(result.url!);
         }
         ToastService.show(context, 'Avatar uploaded', type: ToastType.success);
@@ -455,7 +489,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
       children: [
         _buildWelcomePage(context),
         _buildThemePage(context),
-        _buildUiStylePage(context),
+        _buildAppStylePage(context),
         _buildAccessibilityPage(context),
         _buildNotificationsPage(context),
         _buildEncryptionPage(context),
@@ -812,29 +846,34 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   // UI style step (which app are you used to?)
   // ---------------------------------------------------------------------------
 
-  static const List<_UiStyleCardData> _uiStyleOptions = [
-    _UiStyleCardData(
-      style: UiStyle.discord,
+  static const List<_AppStyleCardData> _appStyleOptions = [
+    _AppStyleCardData(
+      style: _AppFamiliarity.discord,
+      layout: MessageLayout.compact,
+      density: UIDensity.compact,
       label: 'Discord',
-      subtitle: 'Avatar + name on first message of each group — casual',
+      subtitle: 'Grouped, compact rows — dense like Discord',
       icon: Icons.format_align_left_outlined,
     ),
-    _UiStyleCardData(
-      style: UiStyle.slack,
+    _AppStyleCardData(
+      style: _AppFamiliarity.slack,
+      layout: MessageLayout.plain,
+      density: UIDensity.normal,
       label: 'Slack',
-      subtitle: 'Avatar + name on every message group, denser',
+      subtitle: 'Clean left-aligned feed, comfortable spacing',
       icon: Icons.notes_outlined,
     ),
-    _UiStyleCardData(
-      style: UiStyle.imessage,
+    _AppStyleCardData(
+      style: _AppFamiliarity.imessage,
+      layout: MessageLayout.bubbles,
+      density: UIDensity.cozy,
       label: 'iMessage',
-      subtitle: 'Clean bubbles, no avatars on consecutive messages',
+      subtitle: 'Chat bubbles with relaxed spacing',
       icon: Icons.chat_bubble_outline,
     ),
   ];
 
-  Widget _buildUiStylePage(BuildContext context) {
-    final current = ref.watch(uiStyleProvider);
+  Widget _buildAppStylePage(BuildContext context) {
     return SingleChildScrollView(
       child: Column(
         children: [
@@ -857,18 +896,23 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 24),
-          for (final opt in _uiStyleOptions) ...[
+          for (final opt in _appStyleOptions) ...[
             _StyleCard(
               data: opt,
-              isSelected: current == opt.style,
-              onTap: () =>
-                  ref.read(uiStyleProvider.notifier).setStyle(opt.style),
+              isSelected: _selectedStyle == opt.style,
+              onTap: () => _applyStyle(opt),
             ),
             const SizedBox(height: 12),
           ],
         ],
       ),
     );
+  }
+
+  void _applyStyle(_AppStyleCardData opt) {
+    setState(() => _selectedStyle = opt.style);
+    ref.read(messageLayoutProvider.notifier).setLayout(opt.layout);
+    ref.read(uiDensityProvider.notifier).setDensity(opt.density);
   }
 
   // ---------------------------------------------------------------------------
@@ -1256,25 +1300,34 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   }
 }
 
+/// Which chat app the user is most familiar with. Used only within the
+/// onboarding wizard to drive the style-card selection state; the actual
+/// persisted preferences are [MessageLayout] + [UIDensity].
+enum _AppFamiliarity { discord, slack, imessage }
+
 /// Data holder for one UI-style card in the onboarding picker.
-class _UiStyleCardData {
-  final UiStyle style;
+class _AppStyleCardData {
+  final _AppFamiliarity style;
+  final MessageLayout layout;
+  final UIDensity density;
   final String label;
   final String subtitle;
   final IconData icon;
 
-  const _UiStyleCardData({
+  const _AppStyleCardData({
     required this.style,
+    required this.layout,
+    required this.density,
     required this.label,
     required this.subtitle,
     required this.icon,
   });
 }
 
-/// Card for the UI-style step. Extracted to keep [_buildUiStylePage]
+/// Card for the app-familiarity step. Extracted to keep [_buildAppStylePage]
 /// under the cognitive-complexity budget (S3776).
 class _StyleCard extends StatelessWidget {
-  final _UiStyleCardData data;
+  final _AppStyleCardData data;
   final bool isSelected;
   final VoidCallback onTap;
 

@@ -15,6 +15,20 @@ import '../helpers/mock_providers.dart';
 import 'package:echo_app/src/theme/echo_theme.dart';
 import 'package:echo_app/src/widgets/global_search_overlay.dart';
 
+/// Payload for /api/groups/public with one un-joined public group.
+String _publicGroupsPayload({bool isMember = false}) => jsonEncode({
+  'groups': [
+    {
+      'id': 'pg1',
+      'title': 'Rust Devs',
+      'description': 'A group for Rust enthusiasts.',
+      'icon_url': null,
+      'member_count': 42,
+      'is_member': isMember,
+    },
+  ],
+});
+
 /// Mock-response payload for /api/search: three messages, no contacts, no
 /// groups. Keeps the test stable across categories without depending on the
 /// real server.
@@ -159,6 +173,80 @@ void main() {
       },
       () => MockClient((request) async {
         return http.Response(_searchPayload(), 200);
+      }),
+    );
+  });
+
+  testWidgets(
+    'discoverable public groups section appears when API returns results',
+    (tester) async {
+      await http.runWithClient(
+        () async {
+          await tester.pumpWidget(
+            _wrap(onResultTap: (_, _) {}, onContactTap: (_, _) {}),
+          );
+
+          await tester.enterText(find.byType(TextField), 'rust');
+          await tester.pump(const Duration(milliseconds: 450));
+          await tester.pump();
+
+          // Section header must be rendered.
+          expect(find.text('Discoverable groups'), findsOneWidget);
+          // Group name must be visible.
+          expect(find.textContaining('Rust Devs'), findsOneWidget);
+          // Member count must be visible.
+          expect(find.textContaining('42 members'), findsOneWidget);
+          // Join chip must be present.
+          expect(find.text('Join'), findsOneWidget);
+        },
+        () => MockClient((request) async {
+          if (request.url.path.endsWith('/api/search')) {
+            return http.Response(
+              jsonEncode({'messages': [], 'contacts': [], 'groups': []}),
+              200,
+            );
+          }
+          if (request.url.path.endsWith('/api/groups/public')) {
+            return http.Response(_publicGroupsPayload(), 200);
+          }
+          return http.Response('not found', 404);
+        }),
+      );
+    },
+  );
+
+  testWidgets('public groups already in user groups are de-duplicated', (
+    tester,
+  ) async {
+    // The /api/search response returns a group with the same id as the
+    // public group (is_member=true path: is_member filter handles this,
+    // but we also test the id de-dup path).
+    await http.runWithClient(
+      () async {
+        await tester.pumpWidget(
+          _wrap(onResultTap: (_, _) {}, onContactTap: (_, _) {}),
+        );
+
+        await tester.enterText(find.byType(TextField), 'rust');
+        await tester.pump(const Duration(milliseconds: 450));
+        await tester.pump();
+
+        // The public group has is_member=true so it must NOT appear in the
+        // "Discoverable groups" section.
+        expect(find.text('Discoverable groups'), findsNothing);
+      },
+      () => MockClient((request) async {
+        if (request.url.path.endsWith('/api/search')) {
+          return http.Response(
+            jsonEncode({'messages': [], 'contacts': [], 'groups': []}),
+            200,
+          );
+        }
+        if (request.url.path.endsWith('/api/groups/public')) {
+          // Return the group with is_member=true — should be filtered out.
+          return http.Response(_publicGroupsPayload(isMember: true), 200);
+        }
+        return http.Response('not found', 404);
       }),
     );
   });

@@ -129,4 +129,28 @@ mixin _ConversationsWsHandlersMixin on Notifier<ConversationsState> {
     updated[index] = conv.copyWith(members: [...conv.members, member]);
     state = state.copyWith(conversations: updated);
   }
+
+  /// Update a member's role inside a group conversation in-place.
+  ///
+  /// Called by the WS `member_role_changed` event so every connected client
+  /// reflects the promotion/demotion without polling. Silently no-ops when
+  /// the conversation or the member is not found locally.
+  void updateGroupMemberRole(
+    String conversationId,
+    String userId,
+    String newRole,
+  ) {
+    final updated = List<Conversation>.from(state.conversations);
+    final convIndex = updated.indexWhere((c) => c.id == conversationId);
+    if (convIndex < 0) return;
+    final conv = updated[convIndex];
+    final memberIndex = conv.members.indexWhere((m) => m.userId == userId);
+    if (memberIndex < 0) return;
+    final updatedMembers = List<ConversationMember>.from(conv.members);
+    updatedMembers[memberIndex] = updatedMembers[memberIndex].copyWith(
+      role: newRole,
+    );
+    updated[convIndex] = conv.copyWith(members: updatedMembers);
+    state = state.copyWith(conversations: updated);
+  }
 }

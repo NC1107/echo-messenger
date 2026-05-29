@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -41,19 +42,56 @@ class InlineVideoPlayer extends StatefulWidget {
   State<InlineVideoPlayer> createState() => _InlineVideoPlayerState();
 }
 
+/// Maximum height (logical pixels) for the inline video bubble. Prevents a
+/// portrait clip from consuming the entire chat timeline vertically.
+const double _kInlineMaxHeight = 400;
+
+/// Hint shown on Linux when libmpv cannot decode a video, pointing users
+/// toward the GStreamer / ffmpeg codec packages that libmpv needs at runtime.
+/// The hint is omitted on other platforms where codec availability is not a
+/// user-actionable issue.
+const String _kLinuxCodecHint =
+    'On Linux, make sure libmpv is installed with ffmpeg support '
+    '(e.g. apt install libmpv-dev gstreamer1.0-libav).';
+
+/// Short label shown inside the inline bubble error state.
+const String _kPlaybackErrorLabel = "Couldn't play this video";
+
+/// Clamp factor shared with the fullscreen player so both behave consistently.
+const double _kAspectMin = 0.3;
+const double _kAspectMax = 5.0;
+
+/// Resolves the aspect ratio to use for the inline video surface.
+///
+/// Falls back to 16:9 while the codec hasn't reported real dimensions yet.
+/// Exposed as a top-level function so it can be exercised in unit tests.
+double resolveInlineAspectRatio(int videoWidth, int videoHeight) {
+  if (videoWidth > 0 && videoHeight > 0) {
+    return (videoWidth / videoHeight).clamp(_kAspectMin, _kAspectMax);
+  }
+  return 16 / 9;
+}
+
 class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
   Player? _player;
   VideoController? _videoController;
   bool _started = false;
   bool _initFailed = false;
+  String? _errorMessage;
   bool _isPlaying = false;
+  int _videoWidth = 0;
+  int _videoHeight = 0;
   StreamSubscription<bool>? _playingSub;
   StreamSubscription<String>? _errorSub;
+  StreamSubscription<int?>? _widthSub;
+  StreamSubscription<int?>? _heightSub;
 
   @override
   void dispose() {
     _playingSub?.cancel();
     _errorSub?.cancel();
+    _widthSub?.cancel();
+    _heightSub?.cancel();
     _player?.dispose();
     super.dispose();
   }
@@ -61,20 +99,45 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
   /// Begin inline playback. Lazily constructs the [Player] so a chat with
   /// many videos doesn't hold N libmpv instances open at once — only the
   /// videos the user actually plays get a live controller. Falls back to
-  /// the fullscreen dialog if init throws or the codec rejects the source.
+  /// the inline error state (with a "open fullscreen" affordance) if init
+  /// throws or the codec rejects the source.
   Future<void> _startInline() async {
     if (_started || _initFailed) return;
     setState(() => _started = true);
+
+    // Sanity-check the URL before handing it to libmpv. A relative path
+    // (e.g. "/api/media/abc") means resolveMediaUrl received a null/empty
+    // serverUrl; libmpv cannot fetch relative paths and will fail silently.
+    assert(
+      widget.videoUrl.startsWith('http'),
+      '[InlineVideoPlayer] videoUrl is not absolute: "${widget.videoUrl}". '
+      'Ensure resolveMediaUrl is called with a non-empty serverUrl.',
+    );
+    // Log URL and header presence so on-device debugging is easier.
+    debugPrint(
+      '[InlineVideoPlayer] opening url=${widget.videoUrl} '
+      'hasAuth=${widget.headers.containsKey("Authorization")}',
+    );
+
     try {
       final player = Player();
       final controller = VideoController(player);
       _playingSub = player.stream.playing.listen((v) {
         if (mounted) setState(() => _isPlaying = v);
       });
+      _widthSub = player.stream.width.listen((v) {
+        if (mounted && v != null) setState(() => _videoWidth = v);
+      });
+      _heightSub = player.stream.height.listen((v) {
+        if (mounted && v != null) setState(() => _videoHeight = v);
+      });
       _errorSub = player.stream.error.listen((e) {
         if (!mounted || e.isEmpty) return;
-        debugPrint('[InlineVideoPlayer] error: $e');
-        setState(() => _initFailed = true);
+        debugPrint('[InlineVideoPlayer] player error: $e');
+        setState(() {
+          _initFailed = true;
+          _errorMessage = e;
+        });
       });
       await player.open(
         Media(widget.videoUrl, httpHeaders: widget.headers),
@@ -90,7 +153,12 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       });
     } catch (e) {
       debugPrint('[InlineVideoPlayer] init failed: $e');
-      if (mounted) setState(() => _initFailed = true);
+      if (mounted) {
+        setState(() {
+          _initFailed = true;
+          _errorMessage = e.toString();
+        });
+      }
     }
   }
 
@@ -121,6 +189,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
 
   @override
   Widget build(BuildContext context) {
+    final aspectRatio = resolveInlineAspectRatio(_videoWidth, _videoHeight);
     return Container(
       width: 300,
       padding: const EdgeInsets.all(4),
@@ -131,20 +200,27 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(10),
-        child: AspectRatio(aspectRatio: 16 / 9, child: _buildVideoArea()),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: _kInlineMaxHeight),
+          child: AspectRatio(
+            aspectRatio: aspectRatio,
+            child: _buildVideoArea(),
+          ),
+        ),
       ),
     );
   }
 
-  /// Renders one of three states:
+  /// Renders one of four states:
   ///   1. Pre-play: static thumbnail with a big play button (no controller
   ///      constructed yet — cheap).
-  ///   2. Init failed: static thumbnail again, with an "Open in fullscreen"
-  ///      tap target so the user can still try the standalone player.
+  ///   2. Init failed: inline error card with the error text, a Linux codec
+  ///      hint where applicable, and a button to open the fullscreen player.
   ///   3. Playing: live [Video] surface; single-tap toggles play/pause,
   ///      double-tap opens fullscreen, and a small fullscreen icon in the
   ///      corner is the explicit entry point for users who don't discover
   ///      the gesture.
+  ///   4. Loading (started but no controller yet): loading indicator.
   Widget _buildVideoArea() {
     // Server JPEG thumbnail (#561); pre-resolved thumbUrl keeps `?ticket=` after `/thumb` (#411).
     final thumbUrl = widget.thumbUrl;
@@ -164,8 +240,14 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       errorWidget: (_, _, _) => Container(color: widget.mainBg),
     );
 
+    if (_initFailed) {
+      // State 2: playback failed — show an inline error instead of a silent
+      // black box or the misleading "tap to play" thumbnail.
+      return _buildInlineErrorState();
+    }
+
     final controller = _videoController;
-    if (_started && !_initFailed && controller != null) {
+    if (_started && controller != null) {
       // State 3: live playback. Single tap = play/pause, double tap =
       // open fullscreen, the corner icon is an explicit fullscreen affordance.
       return Semantics(
@@ -207,12 +289,33 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       );
     }
 
-    // Thumbnail + play. Init-failure routes to fullscreen player for richer error UI.
+    if (_started) {
+      // State 4: controller not yet ready — show a brief loading indicator
+      // over the thumbnail so the user knows something is happening.
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          thumb,
+          const Center(
+            child: SizedBox(
+              width: 32,
+              height: 32,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    // State 1: pre-play thumbnail with play button.
     return Semantics(
       label: 'play video',
       button: true,
       child: GestureDetector(
-        onTap: _initFailed ? _openFullscreen : _startInline,
+        onTap: _startInline,
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -223,6 +326,77 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       ),
     );
   }
+
+  /// Inline error card shown when playback fails. Surfaces the error string
+  /// and, on Linux desktop, adds a codec hint so users know what to install.
+  Widget _buildInlineErrorState() {
+    // Determine whether a Linux codec hint is relevant. kIsWeb is false on
+    // desktop; we cannot call Platform.isLinux in web builds, so guard it.
+    final showLinuxHint = !kIsWeb && _isLinuxDesktop();
+    return Container(
+      color: widget.mainBg,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.videocam_off_outlined, color: widget.border, size: 32),
+          const SizedBox(height: 8),
+          Text(
+            _kPlaybackErrorLabel,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.85),
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (_errorMessage != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              _errorMessage!,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.5),
+                fontSize: 11,
+              ),
+            ),
+          ],
+          if (showLinuxHint) ...[
+            const SizedBox(height: 6),
+            Text(
+              _kLinuxCodecHint,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.45),
+                fontSize: 10,
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          TextButton.icon(
+            onPressed: _openFullscreen,
+            icon: const Icon(Icons.open_in_new, size: 14),
+            label: const Text('Try fullscreen player'),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.white70,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Returns true when running on Linux desktop.
+  ///
+  /// [kIsWeb] is already checked by the caller, so [defaultTargetPlatform]
+  /// is safe to use here — it never throws outside tests.
+  static bool _isLinuxDesktop() =>
+      defaultTargetPlatform == TargetPlatform.linux;
 }
 
 /// Circular play button used both on the pre-play thumbnail and as the
@@ -531,9 +705,7 @@ class _FullscreenVideoPlayerState extends State<FullscreenVideoPlayer> {
         : 0.0;
     // Fall back to 16:9 until the codec reports real dimensions. Clamp wide
     // so a portrait phone clip doesn't take over the screen vertically.
-    final aspectRatio = (_videoWidth > 0 && _videoHeight > 0)
-        ? (_videoWidth / _videoHeight).clamp(0.3, 5.0)
-        : 16 / 9;
+    final aspectRatio = resolveInlineAspectRatio(_videoWidth, _videoHeight);
 
     return Stack(
       children: [

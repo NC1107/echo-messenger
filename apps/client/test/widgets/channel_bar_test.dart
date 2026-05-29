@@ -81,7 +81,7 @@ class _FakeVoiceRtcNotifier extends LiveKitVoiceNotifier {
   int leaveCalls = 0;
 
   @override
-  Future<void> joinChannel({
+  Future<bool> joinChannel({
     required String conversationId,
     required String channelId,
     bool startMuted = false,
@@ -93,6 +93,7 @@ class _FakeVoiceRtcNotifier extends LiveKitVoiceNotifier {
       conversationId: conversationId,
       channelId: channelId,
     );
+    return true;
   }
 
   @override
@@ -120,17 +121,39 @@ class _FakeVoiceSettingsConfirm extends VoiceSettings {
 class _SlowVoiceRtcNotifier extends LiveKitVoiceNotifier {
   _SlowVoiceRtcNotifier();
 
-  final _joinCompleter = Completer<void>();
+  final _joinCompleter = Completer<bool>();
 
   @override
   LiveKitVoiceState build() => LiveKitVoiceState.empty;
 
   @override
-  Future<void> joinChannel({
+  Future<bool> joinChannel({
     required String conversationId,
     required String channelId,
     bool startMuted = false,
   }) => _joinCompleter.future;
+
+  @override
+  Future<void> leaveChannel() async {}
+}
+
+/// Fake whose join always fails (returns false) without ever going active —
+/// mirrors a LiveKit signal timeout / track-publish failure.
+class _FailingVoiceRtcNotifier extends LiveKitVoiceNotifier {
+  int joinCalls = 0;
+
+  @override
+  LiveKitVoiceState build() => LiveKitVoiceState.empty;
+
+  @override
+  Future<bool> joinChannel({
+    required String conversationId,
+    required String channelId,
+    bool startMuted = false,
+  }) async {
+    joinCalls++;
+    return false;
+  }
 
   @override
   Future<void> leaveChannel() async {}
@@ -226,6 +249,45 @@ void main() {
       expect(fakeChannels.joinCalls, 1);
       expect(fakeVoiceRtc.joinCalls, 1);
       expect(activeVoice, 'voice-1');
+    });
+
+    testWidgets('failed join does not leave the voice chip highlighted', (
+      tester,
+    ) async {
+      late _FailingVoiceRtcNotifier failingVoiceRtc;
+      String? activeVoice;
+
+      await tester.pumpApp(
+        StatefulBuilder(
+          builder: (context, setState) => ChannelBar(
+            conversationId: 'conv-1',
+            activeVoiceChannelId: activeVoice,
+            onTextChannelChanged: (_) {},
+            onVoiceChannelChanged: (channelId) {
+              setState(() => activeVoice = channelId);
+            },
+          ),
+        ),
+        overrides: [
+          authOverride(loggedInAuthState),
+          webSocketOverride(),
+          channelsProvider.overrideWith(_FakeChannelsNotifier.new),
+          voiceRtcProvider.overrideWith(() {
+            failingVoiceRtc = _FailingVoiceRtcNotifier();
+            return failingVoiceRtc;
+          }),
+          voiceSettingsProvider.overrideWith(_FakeVoiceSettings.new),
+        ],
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('lounge').first);
+      await tester.pumpAndSettle();
+
+      expect(failingVoiceRtc.joinCalls, 1);
+      // Join returned false → the parent active-channel id must stay null so
+      // the chip can't remain highlighted while the toast reports a failure.
+      expect(activeVoice, isNull);
     });
 
     // -------------------------------------------------------------
@@ -360,7 +422,7 @@ void main() {
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
 
       // Release the join future and let the widget settle.
-      slowVoiceRtc._joinCompleter.complete();
+      slowVoiceRtc._joinCompleter.complete(true);
       await tester.pumpAndSettle();
 
       // Spinner is gone after join completes.

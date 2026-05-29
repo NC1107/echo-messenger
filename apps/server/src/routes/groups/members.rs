@@ -442,6 +442,104 @@ pub async fn unban_member(
     Ok(Json(serde_json::json!({ "status": "unbanned" })))
 }
 
+/// PATCH /api/groups/:id/members/:user_id/role -- Promote or demote a member.
+///
+/// Only the group OWNER may call this endpoint.  Accepted target roles:
+/// `"admin"` and `"member"`.  The `"owner"` role is immutable — it cannot be
+/// assigned via this endpoint (ownership transfer is a separate, higher-ceremony
+/// operation).  The owner may not change their own role.  The target must be an
+/// active (non-removed) member of the group.
+///
+/// On success a `member_role_changed` WS event is fanned out to all current
+/// members so connected clients update the member list without polling.
+pub async fn change_member_role(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path((group_id, target_user_id)): Path<(Uuid, Uuid)>,
+    Json(body): Json<super::types::ChangeRoleRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    // Validate the requested role up front — "owner" is immutable via this path.
+    let new_role = match body.role.as_str() {
+        "admin" | "member" => body.role.as_str(),
+        "owner" => {
+            return Err(AppError::bad_request(
+                "Cannot assign the owner role via this endpoint",
+            ));
+        }
+        _ => {
+            return Err(AppError::bad_request(
+                "Invalid role; accepted values: \"admin\", \"member\"",
+            ));
+        }
+    };
+
+    // The owner may not demote themselves (would orphan the group).
+    if target_user_id == auth.user_id {
+        return Err(AppError::bad_request("Cannot change your own role"));
+    }
+
+    let mut tx = state.pool.begin().await.db_ctx("change_role/begin_tx")?;
+
+    acquire_member_lock(&mut tx, group_id, target_user_id).await?;
+
+    // Caller must be the group owner.
+    let caller_role = db::groups::get_member_role(&mut *tx, group_id, auth.user_id)
+        .await
+        .db_ctx("change_role/get_caller_role")?
+        .ok_or_else(|| AppError::with_code(ErrorCode::NotMember, "Not a member of this group"))?;
+
+    if Role::from_str_opt(&caller_role) != Some(Role::Owner) {
+        return Err(AppError::unauthorized(
+            "Only the group owner can change member roles",
+        ));
+    }
+
+    // Fetch target role — verify they are a member and not the owner.
+    let target_role = db::groups::get_member_role(&mut *tx, group_id, target_user_id)
+        .await
+        .db_ctx("change_role/get_target_role")?
+        .ok_or_else(|| AppError::bad_request("Target user is not a member of this group"))?;
+
+    if Role::from_str_opt(&target_role) == Some(Role::Owner) {
+        return Err(AppError::bad_request("Cannot change the owner's role"));
+    }
+
+    // Apply the update.
+    let updated = db::groups::set_member_role_in_tx(&mut tx, group_id, target_user_id, new_role)
+        .await
+        .db_ctx("change_role/update")?;
+
+    if !updated {
+        return Err(AppError::bad_request(
+            "Target user is not a member of this group",
+        ));
+    }
+
+    let all_members = db::groups::get_conversation_member_ids(&mut *tx, group_id)
+        .await
+        .unwrap_or_default();
+
+    tx.commit().await.db_ctx("change_role/commit")?;
+
+    invalidate_member_cache(group_id);
+
+    // Broadcast so connected clients refresh without polling.
+    let event = serde_json::json!({
+        "type": "member_role_changed",
+        "conversation_id": group_id,
+        "user_id": target_user_id,
+        "role": new_role,
+    });
+    if let Ok(s) = serde_json::to_string(&event) {
+        state.hub.broadcast_json(&all_members, &s, None);
+    }
+
+    Ok(Json(super::types::ChangeRoleResponse {
+        user_id: target_user_id,
+        role: new_role.to_owned(),
+    }))
+}
+
 /// Shared post-removal logic: auto-delete the group if empty, rotate keys if
 /// not, and emit a system-message pill to remaining members.
 ///

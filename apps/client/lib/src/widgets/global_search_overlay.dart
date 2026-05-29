@@ -10,9 +10,12 @@ import 'package:http/http.dart' as http;
 import '../providers/auth_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
+import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
 import '../utils/fuzzy_score.dart';
+import 'avatar_utils.dart' show buildAvatar, groupAvatarColor, resolveAvatarUrl;
+import 'echo_bottom_sheet.dart';
 import 'user_avatar.dart';
 
 /// Universal search overlay (Ctrl+Shift+F or search icon).
@@ -20,6 +23,11 @@ import 'user_avatar.dart';
 /// Searches messages (full-text, non-encrypted), contacts (by
 /// username/display name), and groups (by title) in a single request.
 /// Results are grouped by category with click-through navigation.
+///
+/// Additionally fetches `/api/groups/public?search=<q>` in parallel and
+/// surfaces a "Discoverable groups" section for public groups the user has not
+/// yet joined. Tapping a discoverable group opens an inline preview sheet with
+/// a Join CTA, then reloads conversations on success.
 class GlobalSearchOverlay extends ConsumerStatefulWidget {
   final void Function(String conversationId, String messageId) onResultTap;
   final void Function(String userId, String username) onContactTap;
@@ -43,6 +51,9 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
   _UniversalResults? _results;
   bool _loading = false;
   String _lastQuery = '';
+
+  /// IDs of public groups currently mid-join (spinner state).
+  final Set<String> _joiningIds = {};
 
   /// Selected index across the flattened activator list. Held as a
   /// [ValueNotifier] so arrow-key updates only repaint the previously
@@ -91,13 +102,17 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
           Navigator.of(context).pop();
           widget.onResultTap(g.conversationId, '');
         },
+      for (final pg in r.publicGroups) () => _showPublicGroupPreview(pg),
     ];
   }
 
   int get _totalResultCount {
     final r = _results;
     if (r == null) return 0;
-    return r.messages.length + r.contacts.length + r.groups.length;
+    return r.messages.length +
+        r.contacts.length +
+        r.groups.length +
+        r.publicGroups.length;
   }
 
   /// Scroll the selected row into view. Uses the row's GlobalKey instead of
@@ -170,7 +185,8 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
     final total =
         results.messages.length +
         results.contacts.length +
-        results.groups.length;
+        results.groups.length +
+        results.publicGroups.length;
     setState(() {
       _results = results;
       _loading = false;
@@ -190,82 +206,213 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
 
     final serverUrl = ref.read(serverUrlProvider);
     final token = ref.read(authProvider).token ?? '';
-    final uri = Uri.parse(
+    final headers = {'Authorization': 'Bearer $token'};
+
+    final searchUri = Uri.parse(
       '$serverUrl/api/search?q=${Uri.encodeQueryComponent(query)}&limit=15',
     );
+    final publicUri = Uri.parse(
+      '$serverUrl/api/groups/public',
+    ).replace(queryParameters: {'search': query, 'limit': '8', 'offset': '0'});
 
     try {
-      final response = await http.get(
-        uri,
-        headers: {'Authorization': 'Bearer $token'},
-      );
+      // Fire both requests in parallel.
+      final responses = await Future.wait([
+        http.get(searchUri, headers: headers),
+        http.get(publicUri, headers: headers),
+      ]);
       if (!mounted) return;
-      if (response.statusCode == 200) {
-        final body = jsonDecode(response.body) as Map<String, dynamic>;
-        final conversations = ref.read(conversationsProvider).conversations;
-        final myUserId = ref.read(authProvider).userId ?? '';
 
-        final rawMessages = (body['messages'] as List? ?? []);
-        final messages = rawMessages.map((item) {
-          final e = item as Map<String, dynamic>;
-          final convId = (e['conversation_id'] ?? '').toString();
-          final conv = conversations.where((c) => c.id == convId).firstOrNull;
-          return _MessageResult(
-            messageId: (e['message_id'] ?? '').toString(),
-            conversationId: convId,
-            conversationName: conv?.displayName(myUserId) ?? 'Unknown',
-            senderUsername: (e['sender_username'] ?? '').toString(),
-            content: (e['content'] ?? '').toString(),
-            timestamp: (e['created_at'] ?? '').toString(),
-          );
-        }).toList();
-        messages.sort((a, b) {
-          final sa =
-              fuzzyScore(query, a.content) +
-              0.5 * fuzzyScore(query, a.conversationName) +
-              0.25 * fuzzyScore(query, a.senderUsername);
-          final sb =
-              fuzzyScore(query, b.content) +
-              0.5 * fuzzyScore(query, b.conversationName) +
-              0.25 * fuzzyScore(query, b.senderUsername);
-          return sb.compareTo(sa);
-        });
+      final searchResp = responses[0];
+      final publicResp = responses[1];
 
-        final rawContacts = (body['contacts'] as List? ?? []);
-        final contacts = rawContacts.map((item) {
-          final e = item as Map<String, dynamic>;
-          return _ContactResult(
-            userId: (e['user_id'] ?? '').toString(),
-            username: (e['username'] ?? '').toString(),
-            displayName: e['display_name'] as String?,
-            avatarUrl: e['avatar_url'] as String?,
-          );
-        }).toList();
-
-        final rawGroups = (body['groups'] as List? ?? []);
-        final groups = rawGroups.map((item) {
-          final e = item as Map<String, dynamic>;
-          return _GroupResult(
-            conversationId: (e['conversation_id'] ?? '').toString(),
-            title: (e['title'] ?? 'Unnamed Group').toString(),
-            description: e['description'] as String?,
-            memberCount: (e['member_count'] as num?)?.toInt() ?? 0,
-          );
-        }).toList();
-
-        _applyResults(
-          _UniversalResults(
-            messages: messages,
-            contacts: contacts,
-            groups: groups,
-          ),
-        );
-      } else {
+      if (searchResp.statusCode != 200) {
         _applyResults(_UniversalResults.empty());
+        return;
       }
+
+      final body = jsonDecode(searchResp.body) as Map<String, dynamic>;
+      final conversations = ref.read(conversationsProvider).conversations;
+      final myUserId = ref.read(authProvider).userId ?? '';
+
+      final rawMessages = (body['messages'] as List? ?? []);
+      final messages = rawMessages.map((item) {
+        final e = item as Map<String, dynamic>;
+        final convId = (e['conversation_id'] ?? '').toString();
+        final conv = conversations.where((c) => c.id == convId).firstOrNull;
+        return _MessageResult(
+          messageId: (e['message_id'] ?? '').toString(),
+          conversationId: convId,
+          conversationName: conv?.displayName(myUserId) ?? 'Unknown',
+          senderUsername: (e['sender_username'] ?? '').toString(),
+          content: (e['content'] ?? '').toString(),
+          timestamp: (e['created_at'] ?? '').toString(),
+        );
+      }).toList();
+      messages.sort((a, b) {
+        final sa =
+            fuzzyScore(query, a.content) +
+            0.5 * fuzzyScore(query, a.conversationName) +
+            0.25 * fuzzyScore(query, a.senderUsername);
+        final sb =
+            fuzzyScore(query, b.content) +
+            0.5 * fuzzyScore(query, b.conversationName) +
+            0.25 * fuzzyScore(query, b.senderUsername);
+        return sb.compareTo(sa);
+      });
+
+      final rawContacts = (body['contacts'] as List? ?? []);
+      final contacts = rawContacts.map((item) {
+        final e = item as Map<String, dynamic>;
+        return _ContactResult(
+          userId: (e['user_id'] ?? '').toString(),
+          username: (e['username'] ?? '').toString(),
+          displayName: e['display_name'] as String?,
+          avatarUrl: e['avatar_url'] as String?,
+        );
+      }).toList();
+
+      final rawGroups = (body['groups'] as List? ?? []);
+      final groups = rawGroups.map((item) {
+        final e = item as Map<String, dynamic>;
+        return _GroupResult(
+          conversationId: (e['conversation_id'] ?? '').toString(),
+          title: (e['title'] ?? 'Unnamed Group').toString(),
+          description: e['description'] as String?,
+          memberCount: (e['member_count'] as num?)?.toInt() ?? 0,
+        );
+      }).toList();
+
+      // Build set of conversation IDs the user is already in so we can
+      // de-duplicate against the discoverable results.
+      final joinedIds = {
+        for (final g in groups) g.conversationId,
+        for (final c in conversations) c.id,
+      };
+
+      final publicGroups = _parsePublicGroups(publicResp, joinedIds);
+
+      _applyResults(
+        _UniversalResults(
+          messages: messages,
+          contacts: contacts,
+          groups: groups,
+          publicGroups: publicGroups,
+        ),
+      );
     } catch (_) {
       if (!mounted) return;
       _applyResults(_UniversalResults.empty());
+    }
+  }
+
+  /// Parses the `/api/groups/public` response and filters to groups where
+  /// `is_member == false` and the group id is not already in [joinedIds].
+  List<_PublicGroupResult> _parsePublicGroups(
+    http.Response resp,
+    Set<String> joinedIds,
+  ) {
+    if (resp.statusCode != 200) return const [];
+    try {
+      final decoded = jsonDecode(resp.body);
+      final List<dynamic> raw = decoded is List
+          ? decoded
+          : (decoded as Map<String, dynamic>)['groups'] as List? ?? [];
+      final results = <_PublicGroupResult>[];
+      for (final item in raw) {
+        final e = item as Map<String, dynamic>;
+        final isMember = e['is_member'] as bool? ?? false;
+        if (isMember) continue;
+        final id = (e['id'] ?? e['conversation_id'] ?? '').toString();
+        if (id.isEmpty || joinedIds.contains(id)) continue;
+        results.add(
+          _PublicGroupResult(
+            id: id,
+            title: (e['title'] ?? e['name'] ?? 'Unnamed').toString(),
+            description: (e['description'] ?? e['desc']) as String?,
+            iconUrl: (e['icon_url'] ?? e['avatar_url']) as String?,
+            memberCount: (e['member_count'] as num?)?.toInt() ?? 0,
+          ),
+        );
+      }
+      return results;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Shows an inline preview bottom sheet for a discoverable public group,
+  /// matching the UX from [DiscoverGroupsScreen]. Handles the join POST itself
+  /// so the overlay stays open while the sheet is up.
+  void _showPublicGroupPreview(_PublicGroupResult group) {
+    showEchoBottomSheet<void>(
+      context,
+      dragHandle: true,
+      builder: (sheetCtx) {
+        return _PublicGroupPreviewSheet(
+          group: group,
+          joiningIds: _joiningIds,
+          onJoin: () => _joinPublicGroup(group),
+        );
+      },
+    );
+  }
+
+  Future<void> _joinPublicGroup(_PublicGroupResult group) async {
+    if (_joiningIds.contains(group.id)) return;
+    setState(() => _joiningIds.add(group.id));
+
+    final serverUrl = ref.read(serverUrlProvider);
+    final token = ref.read(authProvider).token ?? '';
+    try {
+      final resp = await http
+          .post(
+            Uri.parse('$serverUrl/api/groups/${group.id}/join'),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+          )
+          .timeout(const Duration(seconds: 10));
+      if (!mounted) return;
+      if (resp.statusCode == 200 || resp.statusCode == 201) {
+        // Remove from discoverable list and reload conversations.
+        setState(() {
+          _joiningIds.remove(group.id);
+          final r = _results;
+          if (r != null) {
+            _applyResults(
+              _UniversalResults(
+                messages: r.messages,
+                contacts: r.contacts,
+                groups: r.groups,
+                publicGroups: r.publicGroups
+                    .where((pg) => pg.id != group.id)
+                    .toList(),
+              ),
+            );
+          }
+        });
+        ref.read(conversationsProvider.notifier).loadConversations();
+      } else {
+        setState(() => _joiningIds.remove(group.id));
+        if (mounted) {
+          ToastService.show(
+            context,
+            'Failed to join group (${resp.statusCode})',
+            type: ToastType.error,
+          );
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _joiningIds.remove(group.id));
+        ToastService.show(
+          context,
+          'Failed to join group',
+          type: ToastType.error,
+        );
+      }
     }
   }
 
@@ -273,7 +420,8 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
       _results != null &&
       (_results!.messages.isNotEmpty ||
           _results!.contacts.isNotEmpty ||
-          _results!.groups.isNotEmpty);
+          _results!.groups.isNotEmpty ||
+          _results!.publicGroups.isNotEmpty);
 
   bool get _showEmpty =>
       _results != null &&
@@ -435,6 +583,13 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
       rows.add(_buildSectionHeader('Groups'));
       for (final g in r.groups) {
         rows.add(_buildSelectableRow(globalIndex, _buildGroupTile(g)));
+        globalIndex++;
+      }
+    }
+    if (r.publicGroups.isNotEmpty) {
+      rows.add(_buildSectionHeader('Discoverable groups'));
+      for (final pg in r.publicGroups) {
+        rows.add(_buildSelectableRow(globalIndex, _buildPublicGroupTile(pg)));
         globalIndex++;
       }
     }
@@ -664,6 +819,69 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
       ),
     );
   }
+
+  Widget _buildPublicGroupTile(_PublicGroupResult r) {
+    final isJoining = _joiningIds.contains(r.id);
+    final serverUrl = ref.read(serverUrlProvider);
+    return _RowSemanticsLabel(
+      label: 'discoverable group ${r.title} — tap to preview and join',
+      child: InkWell(
+        onTap: () => _showPublicGroupPreview(r),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              buildAvatar(
+                imageUrl: resolveAvatarUrl(r.iconUrl, serverUrl),
+                name: r.title,
+                radius: 16,
+                bgColor: groupAvatarColor(r.title),
+                fallbackIcon: const Icon(
+                  Icons.group,
+                  size: 16,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            r.title,
+                            style: TextStyle(
+                              color: context.textPrimary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Icon(Icons.public, size: 12, color: context.textMuted),
+                      ],
+                    ),
+                    Text(
+                      '${r.memberCount} member${r.memberCount == 1 ? '' : 's'}',
+                      style: TextStyle(color: context.textMuted, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              _JoinChip(
+                isJoining: isJoining,
+                onJoin: () => _joinPublicGroup(r),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// Selection-aware semantics wrapper. Sits inside the [ValueListenableBuilder]
@@ -698,15 +916,21 @@ class _UniversalResults {
   final List<_MessageResult> messages;
   final List<_ContactResult> contacts;
   final List<_GroupResult> groups;
+  final List<_PublicGroupResult> publicGroups;
 
   const _UniversalResults({
     required this.messages,
     required this.contacts,
     required this.groups,
+    this.publicGroups = const [],
   });
 
-  factory _UniversalResults.empty() =>
-      const _UniversalResults(messages: [], contacts: [], groups: []);
+  factory _UniversalResults.empty() => const _UniversalResults(
+    messages: [],
+    contacts: [],
+    groups: [],
+    publicGroups: [],
+  );
 }
 
 class _MessageResult {
@@ -753,4 +977,213 @@ class _GroupResult {
     required this.description,
     required this.memberCount,
   });
+}
+
+class _PublicGroupResult {
+  final String id;
+  final String title;
+  final String? description;
+  final String? iconUrl;
+  final int memberCount;
+
+  const _PublicGroupResult({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.iconUrl,
+    required this.memberCount,
+  });
+}
+
+/// Inline Join chip shown on the right side of each discoverable group row.
+/// Renders a compact FilledButton or a spinner while the join is in flight.
+class _JoinChip extends StatelessWidget {
+  final bool isJoining;
+  final VoidCallback onJoin;
+
+  const _JoinChip({required this.isJoining, required this.onJoin});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Join group',
+      button: true,
+      child: FilledButton(
+        onPressed: isJoining ? null : onJoin,
+        style: FilledButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+        child: isJoining
+            ? const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : const Text(
+                'Join',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+      ),
+    );
+  }
+}
+
+/// Bottom-sheet preview for a discoverable public group.
+/// Mirrors the preview in [DiscoverGroupsScreen] so the UX is consistent.
+/// Stateless — all mutation happens via [onJoin] in the parent state.
+class _PublicGroupPreviewSheet extends ConsumerWidget {
+  final _PublicGroupResult group;
+  final Set<String> joiningIds;
+  final VoidCallback onJoin;
+
+  const _PublicGroupPreviewSheet({
+    required this.group,
+    required this.joiningIds,
+    required this.onJoin,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final serverUrl = ref.read(serverUrlProvider);
+    final isJoining = joiningIds.contains(group.id);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              buildAvatar(
+                imageUrl: resolveAvatarUrl(group.iconUrl, serverUrl),
+                name: group.title,
+                radius: 28,
+                bgColor: groupAvatarColor(group.title),
+                fallbackIcon: const Icon(
+                  Icons.group,
+                  size: 28,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      group.title,
+                      style: TextStyle(
+                        color: context.textPrimary,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Icon(Icons.public, size: 13, color: context.textMuted),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Public group',
+                          style: TextStyle(
+                            color: context.textMuted,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Icon(
+                          Icons.people_outline,
+                          size: 13,
+                          color: context.textMuted,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${group.memberCount} '
+                          'member${group.memberCount == 1 ? '' : 's'}',
+                          style: TextStyle(
+                            color: context.textMuted,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (group.description != null && group.description!.isNotEmpty) ...[
+            const SizedBox(height: 18),
+            Text(
+              'About',
+              style: TextStyle(
+                color: context.textMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.6,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              group.description!,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: context.textSecondary,
+                fontSize: 14,
+                height: 1.45,
+              ),
+            ),
+          ],
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: Semantics(
+              label: 'Join ${group.title}',
+              button: true,
+              child: FilledButton(
+                onPressed: isJoining
+                    ? null
+                    : () {
+                        Navigator.of(context).pop();
+                        onJoin();
+                      },
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child: isJoining
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text(
+                        'Join group',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

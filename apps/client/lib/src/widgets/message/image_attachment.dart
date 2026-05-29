@@ -137,7 +137,13 @@ class ImageAttachment extends StatelessWidget {
       );
     }
 
-    return cachedImage;
+    // Unknown dimensions: reserve a stable fixed-height box so the message
+    // row does not reflow when the image finishes decoding (#13).
+    return SizedBox(
+      width: kImageBubbleMaxWidth,
+      height: kImageBubbleFallbackHeight,
+      child: cachedImage,
+    );
   }
 
   /// Builds the loading skeleton. When [w] and [h] are known the height is

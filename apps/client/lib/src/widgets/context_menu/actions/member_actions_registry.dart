@@ -89,12 +89,21 @@ ContextMenuSection _contactSection(MemberTarget t) {
 
 bool _hasAdminSection(MemberTarget t) {
   if (t.isSelf || t.targetIsOwner || !t.viewerIsAdminOrOwner) return false;
-  return t.onKick != null || t.onBan != null;
+  return t.onKick != null || t.onBan != null || t.onChangeRole != null;
 }
 
 ContextMenuSection _adminSection(MemberTarget t) {
+  final changeRoleLabel = t.targetIsAdmin ? 'Remove admin' : 'Make admin';
   return ContextMenuSection(
     actions: [
+      if (t.onChangeRole != null)
+        ContextMenuAction(
+          label: changeRoleLabel,
+          icon: t.targetIsAdmin
+              ? Icons.manage_accounts_outlined
+              : Icons.admin_panel_settings_outlined,
+          onTap: t.onChangeRole,
+        ),
       if (t.onKick != null)
         ContextMenuAction(
           label: 'Kick from Group',

@@ -417,6 +417,10 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpNet>) -> Route
         )
         .route("/{id}/members", post(groups::add_member))
         .route("/{id}/members/{user_id}", delete(groups::remove_member))
+        .route(
+            "/{id}/members/{user_id}/role",
+            patch(groups::change_member_role),
+        )
         .route("/{id}/join", post(groups::join_group))
         .route("/{id}/leave", post(groups::leave_group))
         .route("/{id}/ban/{user_id}", post(groups::ban_member))

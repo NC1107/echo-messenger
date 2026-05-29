@@ -237,6 +237,24 @@ class ConversationMember {
     );
   }
 
+  ConversationMember copyWith({
+    String? userId,
+    String? username,
+    String? role,
+    String? avatarUrl,
+    String? statusText,
+    String? presenceStatus,
+  }) {
+    return ConversationMember(
+      userId: userId ?? this.userId,
+      username: username ?? this.username,
+      role: role ?? this.role,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
+      statusText: statusText ?? this.statusText,
+      presenceStatus: presenceStatus ?? this.presenceStatus,
+    );
+  }
+
   @override
   bool operator ==(Object other) {
     return identical(this, other) ||

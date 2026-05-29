@@ -11,6 +11,10 @@ mixin _HomeScreenActionsMixin on ConsumerState<HomeScreen> {
   _HomeScreenState get _self => this as _HomeScreenState;
 
   void _selectConversation(Conversation conv, {String? messageId}) {
+    // Push to history only for user-initiated navigation, not back/forward jumps.
+    if (!_self._navJumping) {
+      _pushNavHistory(conv.id);
+    }
     setState(() {
       _self._selectedConversation = conv;
       _self._pendingMessageId = messageId;
@@ -24,6 +28,68 @@ mixin _HomeScreenActionsMixin on ConsumerState<HomeScreen> {
     });
     // Clear notifications for this conversation now that the user is viewing it.
     NotificationService().cancelConversationNotifications(conv.id);
+  }
+
+  /// Pushes [conversationId] onto the navigation history, truncating any
+  /// forward entries (browser model). Caps the list at [_navHistoryLimit].
+  void _pushNavHistory(String conversationId) {
+    final history = _self._navHistory;
+    final currentIndex = _self._navHistoryIndex;
+
+    // Skip duplicate: re-selecting the current conversation is a no-op.
+    if (currentIndex >= 0 && history[currentIndex] == conversationId) return;
+
+    // Truncate forward history: entries after current index are discarded.
+    if (currentIndex < history.length - 1) {
+      history.removeRange(currentIndex + 1, history.length);
+    }
+
+    history.add(conversationId);
+
+    // Enforce cap — drop the oldest entry.
+    if (history.length > _HomeScreenState._navHistoryLimit) {
+      history.removeAt(0);
+    }
+
+    _self._navHistoryIndex = history.length - 1;
+  }
+
+  /// Navigates back one step in the conversation history, skipping any
+  /// entries whose conversations have since been removed.
+  void _goBackConversation() {
+    _jumpHistory(forward: false);
+  }
+
+  /// Navigates forward one step in the conversation history, skipping any
+  /// entries whose conversations have since been removed.
+  void _goForwardConversation() {
+    _jumpHistory(forward: true);
+  }
+
+  /// Shared back/forward navigator. Moves [_navHistoryIndex] by ±1, finds
+  /// the matching live [Conversation], and selects it without re-pushing.
+  void _jumpHistory({required bool forward}) {
+    final history = _self._navHistory;
+    var idx = _self._navHistoryIndex;
+    final conversations = ref.read(conversationsProvider).conversations;
+
+    // Walk in the requested direction, skipping deleted conversations.
+    while (true) {
+      idx = forward ? idx + 1 : idx - 1;
+      if (idx < 0 || idx >= history.length) return;
+
+      final targetId = history[idx];
+      final conv = conversations.where((c) => c.id == targetId).firstOrNull;
+
+      if (conv != null) {
+        _self._navHistoryIndex = idx;
+        _self._navJumping = true;
+        _selectConversation(conv);
+        _self._navJumping = false;
+        return;
+      }
+      // Entry no longer exists — continue walking past it.
+    }
   }
 
   void _showQuickSwitcher() {
@@ -113,15 +179,17 @@ mixin _HomeScreenActionsMixin on ConsumerState<HomeScreen> {
             ),
             child: SizedBox(
               width: (size.width * 0.4).clamp(360, 520).toDouble(),
+              // The screen manages its own scrolling (ListView) and uses an
+              // Expanded body, so it needs a bounded height — no outer
+              // SingleChildScrollView (that would leave height unbounded).
+              height: (size.height * 0.7).clamp(420, 640).toDouble(),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(EchoRadii.lg),
-                child: SingleChildScrollView(
-                  child: NewMessageScreen(
-                    onStartConversation: (conv) {
-                      Navigator.pop(dialogContext);
-                      _selectConversation(conv);
-                    },
-                  ),
+                child: NewMessageScreen(
+                  onStartConversation: (conv) {
+                    Navigator.pop(dialogContext);
+                    _selectConversation(conv);
+                  },
                 ),
               ),
             ),

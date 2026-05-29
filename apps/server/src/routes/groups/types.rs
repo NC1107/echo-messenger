@@ -110,3 +110,19 @@ pub struct CreateInviteRequest {
     pub expires_in_seconds: Option<i64>,
     pub max_uses: Option<i32>,
 }
+
+/// Body for `PATCH /api/groups/:id/members/:user_id/role`.
+///
+/// Accepted values: `"admin"` or `"member"`. `"owner"` is rejected —
+/// ownership transfer is a separate, higher-ceremony operation.
+#[derive(Debug, Deserialize)]
+pub struct ChangeRoleRequest {
+    pub role: String,
+}
+
+/// Response body for the change-role endpoint.
+#[derive(Debug, Serialize)]
+pub struct ChangeRoleResponse {
+    pub user_id: Uuid,
+    pub role: String,
+}

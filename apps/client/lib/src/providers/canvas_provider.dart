@@ -168,6 +168,9 @@ class CanvasController extends _$CanvasController {
 
   void _logPerfSnapshot() {
     final snap = CanvasPerf.snapshot();
+    // Skip the periodic log when nothing has happened in the window — avoids
+    // emitting "p50=0.00ms ... send/s avg=0.0" noise every 30 s while idle.
+    if (snap.isIdle) return;
     DebugLogService.instance.log(
       LogLevel.fine,
       'CanvasPerf',

@@ -127,12 +127,35 @@ class _AppWindowButtonsState extends State<AppWindowButtons>
 /// drag region; [title] is centered and shows the active conversation name;
 /// window controls are anchored to the right edge.
 ///
+/// Optional [onBack] / [onForward] callbacks add browser-style conversation
+/// history arrows to the left of the title on Linux/Windows. Pass
+/// [canGoBack] / [canGoForward] to enable or grey-out the buttons.
+///
 /// No-op (zero height) on web and mobile.
 class AppTitleBar extends StatelessWidget {
-  const AppTitleBar({super.key, this.title});
+  const AppTitleBar({
+    super.key,
+    this.title,
+    this.onBack,
+    this.onForward,
+    this.canGoBack = false,
+    this.canGoForward = false,
+  });
 
   /// Text centered in the bar — typically the active conversation or group name.
   final String? title;
+
+  /// Called when the user taps the back arrow. Null hides the arrow pair.
+  final VoidCallback? onBack;
+
+  /// Called when the user taps the forward arrow.
+  final VoidCallback? onForward;
+
+  /// Whether the back arrow is interactive (enabled).
+  final bool canGoBack;
+
+  /// Whether the forward arrow is interactive (enabled).
+  final bool canGoForward;
 
   @override
   Widget build(BuildContext context) {
@@ -140,6 +163,11 @@ class AppTitleBar extends StatelessWidget {
     if (!Platform.isLinux && !Platform.isWindows && !Platform.isMacOS) {
       return const SizedBox.shrink();
     }
+
+    // Nav arrows only render on Linux/Windows; macOS traffic-light cluster
+    // occupies the same left region (72 px inset), so we skip them there.
+    final bool showNavArrows = onBack != null && !Platform.isMacOS;
+    final double leftInset = Platform.isMacOS ? 72.0 : 0.0;
 
     // Clamp text scale to 1.2x — 1.5x overflows the 36px title bar into the window controls.
     return MediaQuery.withClampedTextScaling(
@@ -154,10 +182,24 @@ class AppTitleBar extends StatelessWidget {
           children: [
             // Full-width drag area underneath everything.
             const Positioned.fill(child: AppDragArea(child: SizedBox.expand())),
-            // IgnorePointer so clicks fall through to drag; macOS padding avoids the traffic-light cluster.
+            // Back / forward navigation arrows on the left edge (Linux/Windows).
+            if (showNavArrows)
+              Positioned(
+                left: 0,
+                top: 0,
+                bottom: 0,
+                child: _NavArrows(
+                  onBack: onBack!,
+                  onForward: onForward,
+                  canGoBack: canGoBack,
+                  canGoForward: canGoForward,
+                ),
+              ),
+            // IgnorePointer so clicks fall through to drag; inset avoids
+            // nav arrows on Linux/Windows, traffic-light cluster on macOS.
             if (title != null && title!.isNotEmpty)
               Padding(
-                padding: EdgeInsets.only(left: Platform.isMacOS ? 72.0 : 0.0),
+                padding: EdgeInsets.only(left: leftInset),
                 child: Center(
                   child: IgnorePointer(
                     child: Text(
@@ -181,6 +223,99 @@ class AppTitleBar extends StatelessWidget {
               child: AppWindowButtons(),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Back and forward arrow buttons shown in the title bar on Linux/Windows.
+class _NavArrows extends StatelessWidget {
+  const _NavArrows({
+    required this.onBack,
+    this.onForward,
+    required this.canGoBack,
+    required this.canGoForward,
+  });
+
+  final VoidCallback onBack;
+  final VoidCallback? onForward;
+  final bool canGoBack;
+  final bool canGoForward;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _NavArrowButton(
+          icon: Icons.arrow_back,
+          tooltip: 'Back to previous conversation',
+          onTap: canGoBack ? onBack : null,
+        ),
+        _NavArrowButton(
+          icon: Icons.arrow_forward,
+          tooltip: 'Forward',
+          onTap: (canGoForward && onForward != null) ? onForward! : null,
+        ),
+      ],
+    );
+  }
+}
+
+/// Single icon button used by [_NavArrows]. Greyed when [onTap] is null.
+class _NavArrowButton extends StatefulWidget {
+  const _NavArrowButton({
+    required this.icon,
+    required this.tooltip,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+
+  /// Null → disabled (greyed, non-interactive).
+  final VoidCallback? onTap;
+
+  @override
+  State<_NavArrowButton> createState() => _NavArrowButtonState();
+}
+
+class _NavArrowButtonState extends State<_NavArrowButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool enabled = widget.onTap != null;
+    final Color iconColor = Theme.of(
+      context,
+    ).colorScheme.onSurface.withValues(alpha: enabled ? 0.75 : 0.25);
+    final Color hoverBg = Theme.of(
+      context,
+    ).colorScheme.onSurface.withValues(alpha: 0.12);
+
+    return Semantics(
+      label: widget.tooltip,
+      button: true,
+      enabled: enabled,
+      child: Tooltip(
+        message: widget.tooltip,
+        child: MouseRegion(
+          cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+          onEnter: enabled ? (_) => setState(() => _hovered = true) : null,
+          onExit: enabled ? (_) => setState(() => _hovered = false) : null,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: widget.onTap,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 100),
+              width: 32,
+              height: 36,
+              color: (_hovered && enabled) ? hoverBg : Colors.transparent,
+              alignment: Alignment.center,
+              child: Icon(widget.icon, size: 14, color: iconColor),
+            ),
+          ),
         ),
       ),
     );

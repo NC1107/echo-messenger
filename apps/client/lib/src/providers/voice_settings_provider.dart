@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'livekit_voice/stream_quality_preset.dart';
+
 part 'voice_settings_provider.g.dart';
 
 class VoiceSettingsState {
@@ -20,6 +22,9 @@ class VoiceSettingsState {
   final bool autoGainControl;
   final bool confirmBeforeJoinVoice;
 
+  /// Persisted quality preset; [StreamQuality.auto] on first launch.
+  final StreamQuality streamQualityPreset;
+
   const VoiceSettingsState({
     this.inputDeviceId = 'default',
     this.outputDeviceId = 'default',
@@ -35,6 +40,7 @@ class VoiceSettingsState {
     this.echoCancellation = true,
     this.autoGainControl = true,
     this.confirmBeforeJoinVoice = false,
+    this.streamQualityPreset = StreamQuality.auto,
   });
 
   VoiceSettingsState copyWith({
@@ -52,6 +58,7 @@ class VoiceSettingsState {
     bool? echoCancellation,
     bool? autoGainControl,
     bool? confirmBeforeJoinVoice,
+    StreamQuality? streamQualityPreset,
   }) {
     return VoiceSettingsState(
       inputDeviceId: inputDeviceId ?? this.inputDeviceId,
@@ -69,6 +76,7 @@ class VoiceSettingsState {
       autoGainControl: autoGainControl ?? this.autoGainControl,
       confirmBeforeJoinVoice:
           confirmBeforeJoinVoice ?? this.confirmBeforeJoinVoice,
+      streamQualityPreset: streamQualityPreset ?? this.streamQualityPreset,
     );
   }
 }
@@ -95,6 +103,7 @@ class VoiceSettings extends _$VoiceSettings {
   static const _keyEchoCancellation = 'voice_echo_cancellation';
   static const _keyAutoGainControl = 'voice_auto_gain_control';
   static const _keyConfirmBeforeJoin = 'confirm_before_join_voice';
+  static const _keyStreamQualityPreset = 'voice_stream_quality_preset';
 
   Future<void> _load() async {
     try {
@@ -114,6 +123,9 @@ class VoiceSettings extends _$VoiceSettings {
         echoCancellation: prefs.getBool(_keyEchoCancellation) ?? true,
         autoGainControl: prefs.getBool(_keyAutoGainControl) ?? true,
         confirmBeforeJoinVoice: prefs.getBool(_keyConfirmBeforeJoin) ?? false,
+        streamQualityPreset: streamQualityFromString(
+          prefs.getString(_keyStreamQualityPreset) ?? StreamQuality.auto.name,
+        ),
       );
     } catch (e) {
       debugPrint('[VoiceSettings] load failed: $e');
@@ -137,6 +149,10 @@ class VoiceSettings extends _$VoiceSettings {
       await prefs.setBool(_keyEchoCancellation, next.echoCancellation);
       await prefs.setBool(_keyAutoGainControl, next.autoGainControl);
       await prefs.setBool(_keyConfirmBeforeJoin, next.confirmBeforeJoinVoice);
+      await prefs.setString(
+        _keyStreamQualityPreset,
+        next.streamQualityPreset.name,
+      );
     } catch (e) {
       debugPrint('[VoiceSettings] persist failed: $e');
     }
@@ -222,6 +238,12 @@ class VoiceSettings extends _$VoiceSettings {
 
   Future<void> setConfirmBeforeJoinVoice(bool value) async {
     final next = state.copyWith(confirmBeforeJoinVoice: value);
+    state = next;
+    await _persist(next);
+  }
+
+  Future<void> setStreamQualityPreset(StreamQuality preset) async {
+    final next = state.copyWith(streamQualityPreset: preset);
     state = next;
     await _persist(next);
   }

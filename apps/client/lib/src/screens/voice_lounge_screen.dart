@@ -1681,6 +1681,15 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
           // they don't re-enter the canvas with a stale pen active.
           ref.read(canvasProvider.notifier).setTool(CanvasTool.none);
           setState(() => _activeSubmenu = null);
+        } else {
+          // Re-center the canvas on the home pose when switching INTO canvas
+          // mode. The gesture widget mounts on the NEXT frame (it's behind the
+          // _spotlightMode guard), so defer via addPostFrameCallback so that
+          // resetToTransform finds the key populated.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _resetViewport();
+          });
         }
       },
     );

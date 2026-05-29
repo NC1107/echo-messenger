@@ -16,6 +16,17 @@
 // Intentionally NOT integrated with voice_lounge_screen.dart in this
 // PR — the parent agent wires it in after the Round-2 strokes layer
 // lands. The widget compiles standalone.
+//
+// BUG #22 FIX: Added [CanvasDragScope] so avatar and image drag gestures
+// can suppress the Listener's pan logic while they own the pointer.  The
+// root cause was that [LoungeCanvasGestures] uses a raw Listener (not a
+// GestureDetector) that always fires pointer-move events; child
+// GestureDetectors win the arena for their own pan but can't stop the
+// parent Listener from also panning the canvas transform simultaneously.
+// When both fire the net visual displacement is near-zero, making avatars
+// appear unmovable.  [CanvasDragScope] exposes suppress/release callbacks
+// that increment a reference-count; the Listener skips pan updates while
+// any child drag is active.
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -26,6 +37,60 @@ import 'canvas_gesture_state.dart';
 /// Double-tap detection window. Matches Material `kDoubleTapTimeout`
 /// (300 ms) but trimmed slightly for snappier canvas feel.
 const Duration _kDoubleTapTimeout = Duration(milliseconds: 250);
+
+/// Fraction of `min(scaledContent, viewport)` that must remain on-screen on
+/// each axis after any pan, pinch, or scroll gesture. 0.15 keeps a 15% sliver
+/// of the board visible even at the most extreme pan position, which is enough
+/// for the user to grab it and drag it back — without ever feeling glued.
+///
+/// This constant drives [clampAxis], the per-axis helper shared by all
+/// transform-mutating paths so no gesture can bypass the visibility guarantee.
+const double _kPanMarginFraction = 0.15;
+
+// ---------------------------------------------------------------------------
+// CanvasDragScope — inherited suppressor for child-drag-vs-parent-pan (BUG #22)
+// ---------------------------------------------------------------------------
+
+/// Inherited widget placed by [LoungeCanvasGestures] around its child.
+///
+/// Avatar and image drag widgets call [suppress] when their pan gesture
+/// begins and [release] when it ends.  The Listener in
+/// [LoungeCanvasGesturesState] reads [_dragCount] and skips
+/// [_applyPanDelta] while any child drag is active, so canvas panning
+/// and avatar dragging can no longer fight each other simultaneously.
+///
+/// Usage from a descendant widget:
+/// ```dart
+/// CanvasDragScope.of(context)?.suppress();
+/// // ...drag...
+/// CanvasDragScope.of(context)?.release();
+/// ```
+class CanvasDragScope extends InheritedWidget {
+  const CanvasDragScope({
+    super.key,
+    required this.suppress,
+    required this.release,
+    required this.isDragActive,
+    required super.child,
+  });
+
+  /// Call when a child drag gesture begins. Idempotent (reference-counted).
+  final VoidCallback suppress;
+
+  /// Call when a child drag gesture ends or is cancelled. Idempotent.
+  final VoidCallback release;
+
+  /// Returns true when at least one child drag is currently suppressing pan.
+  final bool Function() isDragActive;
+
+  /// Returns the nearest [CanvasDragScope] ancestor, or null if none exists.
+  static CanvasDragScope? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<CanvasDragScope>();
+
+  @override
+  bool updateShouldNotify(CanvasDragScope old) =>
+      suppress != old.suppress || release != old.release;
+}
 
 /// Target zoom level when double-tapping into the canvas. Matches the
 /// behaviour preserved from `voice_lounge_screen.dart`'s
@@ -171,6 +236,22 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
   /// PointerUpEvent without re-reading the state machine output.
   bool _strokeActive = false;
 
+  // BUG #22: reference count of child drags (avatars, images) currently
+  // suppressing the parent Listener's pan logic.  Zero means no child is
+  // dragging; >0 means at least one child owns the pointer and we must
+  // not move the canvas transform at the same time.
+  int _childDragCount = 0;
+
+  void _suppressPan() {
+    _childDragCount++;
+  }
+
+  void _releasePan() {
+    if (_childDragCount > 0) _childDragCount--;
+  }
+
+  bool _isPanSuppressed() => _childDragCount > 0;
+
   @override
   void initState() {
     super.initState();
@@ -206,6 +287,16 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
 
   @visibleForTesting
   int get pointerCount => _pointers.length;
+
+  /// Direct suppress call for widget tests — mirrors what
+  /// [CanvasDragScope.suppress] triggers in a real child drag, without
+  /// needing a nested GestureDetector in the test tree.
+  @visibleForTesting
+  void suppressPanForTest() => _suppressPan();
+
+  /// Direct release call for widget tests.
+  @visibleForTesting
+  void releasePanForTest() => _releasePan();
 
   // --- Imperative controller surface -----------------------------------
 
@@ -397,6 +488,16 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
   // --- Pan / pinch / zoom math -----------------------------------------
 
   void _applyPanDelta(Offset current) {
+    // BUG #22: skip canvas pan while a child drag (avatar / image) is active.
+    // Without this, a Listener-driven pan fires simultaneously with the child
+    // GestureDetector pan, making the two movements cancel out so the avatar
+    // appears stuck. Update _panLastPosition even when suppressed so the
+    // position baseline stays current and the canvas doesn't jump when the
+    // child drag ends.
+    if (_isPanSuppressed()) {
+      _panLastPosition = current;
+      return;
+    }
     final last = _panLastPosition;
     if (last == null) {
       _panLastPosition = current;
@@ -481,10 +582,16 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
     widget.onTransformChanged?.call(Matrix4.copy(_transform));
   }
 
-  /// Clamp the transform so the bounded canvas stays in view: centre it when
-  /// it's smaller than the viewport (gravity toward the middle), and prevent
-  /// empty space at the edges when it's larger. No-op unless both
-  /// [LoungeCanvasGestures.viewportSize] and `canvasSize` are provided.
+  /// Clamp the transform so the bounded board can always be found on screen.
+  ///
+  /// At any zoom level, at least [_kPanMarginFraction] of the
+  /// `min(scaledContent, viewport)` dimension remains visible on every axis.
+  /// This replaces the old force-center-when-smaller / hard-edge-when-larger
+  /// split, which made panning feel glued at low zoom levels (#29) and allowed
+  /// no escape margin on mobile (#30).
+  ///
+  /// No-op unless both [LoungeCanvasGestures.viewportSize] and [canvasSize]
+  /// are provided.
   Matrix4 _clampTransform(Matrix4 m) {
     final vp = widget.viewportSize;
     final cs = widget.canvasSize;
@@ -492,15 +599,9 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
     final s = m.getMaxScaleOnAxis();
     if (s <= 0 || !s.isFinite) return m;
     final t = m.getTranslation();
-    double axis(double tx, double viewport, double content) {
-      final scaled = content * s;
-      if (scaled <= viewport) return (viewport - scaled) / 2; // centre
-      return tx.clamp(viewport - scaled, 0.0);
-    }
-
     return Matrix4.copy(m)..setTranslationRaw(
-      axis(t.x, vp.width, cs.width),
-      axis(t.y, vp.height, cs.height),
+      clampAxis(t.x, s, vp.width, cs.width, _kPanMarginFraction),
+      clampAxis(t.y, s, vp.height, cs.height, _kPanMarginFraction),
       t.z,
     );
   }
@@ -546,6 +647,19 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
     //
     // ClipRect keeps the 100 000-px canvas child from painting outside
     // the lounge body when zoomed in or panned.
+    // Wrap the transformed child in CanvasDragScope so descendant avatars
+    // and images can suppress the Listener's pan logic while they own the
+    // pointer (BUG #22 fix).
+    final transformedChild = Transform(
+      transform: _transform,
+      child: CanvasDragScope(
+        suppress: _suppressPan,
+        release: _releasePan,
+        isDragActive: _isPanSuppressed,
+        child: widget.child,
+      ),
+    );
+
     return ClipRect(
       child: SizedBox.expand(
         child: Listener(
@@ -555,11 +669,54 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
           onPointerUp: _onPointerUp,
           onPointerCancel: _onPointerCancel,
           onPointerSignal: _onPointerSignal,
-          child: Transform(transform: _transform, child: widget.child),
+          child: transformedChild,
         ),
       ),
     );
   }
+}
+
+/// Pure per-axis clamp that keeps the board on screen regardless of zoom.
+///
+/// Given the current translation [tx] on one axis, the uniform [scale], the
+/// [viewport] extent, the [content] (unscaled board) extent, and a
+/// [marginFraction], returns a translation clamped so that at least
+/// `marginFraction * min(content * scale, viewport)` pixels of the board
+/// remain visible on each side of that axis.
+///
+/// The rule is symmetric whether the board is larger or smaller than the
+/// viewport — no separate "force-center when zoomed out" branch:
+///
+///   margin = min(content * scale, viewport) * marginFraction
+///   tx ∈ [margin - content * scale,  viewport - margin]
+///
+/// This means:
+///   - Zoomed in (content*scale > viewport): the board can slide until only
+///     `margin` pixels remain visible at the leading/trailing edge — enough
+///     to grab it back, never fully lost.
+///   - Zoomed out (content*scale ≤ viewport): same formula, but now the
+///     range is wide, so the user can pan freely and position the board
+///     anywhere from almost-flush-left to almost-flush-right.
+///
+/// Exposed `@visibleForTesting` so the pure logic can be unit-tested without
+/// spinning up a widget.
+@visibleForTesting
+double clampAxis(
+  double tx,
+  double scale,
+  double viewport,
+  double content,
+  double marginFraction,
+) {
+  final scaled = content * scale;
+  final margin = scaled < viewport
+      ? scaled * marginFraction
+      : viewport * marginFraction;
+  final lo = margin - scaled;
+  final hi = viewport - margin;
+  // Guard against degenerate input (scale ≈ 0 or content ≈ 0) where lo > hi.
+  if (lo >= hi) return (lo + hi) / 2;
+  return tx.clamp(lo, hi);
 }
 
 /// Returns a new transform that scales [current] to [targetScale] while

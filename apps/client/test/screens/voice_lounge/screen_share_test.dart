@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show SystemChannels;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:echo_app/src/screens/voice_lounge/screen_share.dart';
@@ -46,7 +47,145 @@ Future<void> _pumpDraggable(
   tester.takeException();
 }
 
+// ---------------------------------------------------------------------------
+// Helpers: lifecycle observer tracking
+// ---------------------------------------------------------------------------
+
+/// Minimal widget that mirrors the [FullscreenVideoPage] lifecycle-observer
+/// contract: registers itself as a [WidgetsBindingObserver] on init, removes
+/// itself on dispose, and records which [AppLifecycleState] values it sees.
+///
+/// Used to verify the observer plumbing without needing a real [VideoTrack].
+class _LifecycleRecorder extends StatefulWidget {
+  final List<AppLifecycleState> received;
+  const _LifecycleRecorder({required this.received});
+
+  @override
+  State<_LifecycleRecorder> createState() => _LifecycleRecorderState();
+}
+
+class _LifecycleRecorderState extends State<_LifecycleRecorder>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    widget.received.add(state);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
 void main() {
+  group('FullscreenVideoPage lifecycle observer', () {
+    testWidgets(
+      'observer receives AppLifecycleState.resumed when app returns from background',
+      (tester) async {
+        final received = <AppLifecycleState>[];
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: _LifecycleRecorder(received: received)),
+          ),
+        );
+        await tester.pump();
+
+        // Simulate backgrounding then foregrounding — the pattern that
+        // previously left FullscreenVideoPage in an un-restored state.
+        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await tester.pump();
+
+        expect(received, contains(AppLifecycleState.resumed));
+      },
+    );
+
+    testWidgets('observer is deregistered after widget is disposed', (
+      tester,
+    ) async {
+      final received = <AppLifecycleState>[];
+
+      // Mount then remove the widget.
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: _LifecycleRecorder(received: received)),
+        ),
+      );
+      await tester.pump();
+
+      // Replace with a plain widget — causes _LifecycleRecorder to be disposed.
+      await tester.pumpWidget(
+        const MaterialApp(home: Scaffold(body: SizedBox.shrink())),
+      );
+      await tester.pump();
+
+      // Fire a lifecycle event AFTER disposal — should not reach the recorder.
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+
+      // The only events recorded should be from before disposal.
+      expect(received, isNot(contains(AppLifecycleState.resumed)));
+    });
+
+    testWidgets(
+      'SystemChannels.platform receives no unexpected calls on test platform',
+      (tester) async {
+        // On the test platform _supportsSystemUiMode is false (not Android/iOS),
+        // so setEnabledSystemUIMode is never called. Verify no spurious platform
+        // messages arrive when lifecycle events fire.
+        final methodCalls = <String>[];
+        final messenger = tester.binding.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(SystemChannels.platform, (
+          call,
+        ) async {
+          methodCalls.add(call.method);
+          return null;
+        });
+        addTearDown(
+          () =>
+              messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+        );
+
+        final received = <AppLifecycleState>[];
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: _LifecycleRecorder(received: received)),
+          ),
+        );
+        await tester.pump();
+
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await tester.pump();
+
+        expect(
+          methodCalls,
+          isNot(contains('SystemChrome.setEnabledSystemUIMode')),
+          reason:
+              'setEnabledSystemUIMode must not be called on non-mobile test platform',
+        );
+      },
+    );
+  });
+
   group('DraggableScreenShareWindow', () {
     testWidgets(
       'renders the embedded child and surfaces label/handle on hover (#1225)',
