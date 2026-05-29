@@ -5,7 +5,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:echo_app/src/providers/encrypted_preview_provider.dart';
 import 'package:echo_app/src/providers/theme_provider.dart';
-import 'package:echo_app/src/providers/ui_style_provider.dart';
 import 'package:echo_app/src/screens/settings/appearance_section.dart';
 import 'package:echo_app/src/theme/echo_theme.dart';
 
@@ -109,10 +108,8 @@ void main() {
     ) async {
       await _pumpWide(tester);
       expect(find.text('Default'), findsOneWidget);
-      // 'Discord' and 'Slack' also appear in the UI style row, so use
-      // findsAtLeastNWidgets to avoid fragility from two occurrences.
-      expect(find.text('Discord'), findsAtLeastNWidgets(1));
-      expect(find.text('Slack'), findsAtLeastNWidgets(1));
+      expect(find.text('Discord'), findsOneWidget);
+      expect(find.text('Slack'), findsOneWidget);
     });
 
     testWidgets('renders the three density option labels', (tester) async {
@@ -200,51 +197,6 @@ void main() {
       expect(find.text('Graphite'), findsNothing);
       expect(find.text('Sakura'), findsNothing);
       expect(find.text('High contrast'), findsNothing);
-    });
-
-    testWidgets('ui style row is present in appearance section', (
-      tester,
-    ) async {
-      await _pumpWide(tester);
-
-      expect(find.text('UI style'), findsOneWidget);
-      // "Discord" appears in both the message-layout section and the UI style
-      // row (default), so we check at-least-1 and look for the section header.
-      expect(find.text('Discord'), findsAtLeastNWidgets(1));
-    });
-
-    testWidgets('ui style row reflects stored imessage preference', (
-      tester,
-    ) async {
-      SharedPreferences.setMockInitialValues({'ui_style_v1': 'imessage'});
-      tester.view.physicalSize = const Size(1600, 4000);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-
-      await tester.pumpWidget(
-        ProviderScope(
-          child: MaterialApp(
-            theme: EchoTheme.darkTheme,
-            darkTheme: EchoTheme.darkTheme,
-            themeMode: ThemeMode.dark,
-            home: const Scaffold(body: AppearanceSection()),
-          ),
-        ),
-      );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 100));
-      while (tester.takeException() != null) {}
-      await tester.pump(const Duration(milliseconds: 50));
-      while (tester.takeException() != null) {}
-
-      expect(find.text('iMessage'), findsOneWidget);
-    });
-  });
-
-  group('UiStyle (unit)', () {
-    test('uiStyleProvider alias resolves correctly', () {
-      expect(uiStyleProvider, isNotNull);
     });
   });
 }
