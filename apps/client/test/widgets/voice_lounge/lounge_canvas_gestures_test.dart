@@ -698,8 +698,19 @@ void main() {
       );
     });
 
-    // Beta bounded-canvas: with viewportSize + canvasSize provided, pan is
-    // clamped so the board can't be dragged out of view.
+    // Bounded-canvas: with viewportSize + canvasSize provided, pan is
+    // clamped so the board can't be fully dragged out of view (#29 / #30).
+    //
+    // New rule (overscroll-margin): margin = min(scaled, viewport) * 0.15.
+    // tx ∈ [margin - scaled, viewport - margin].
+    //
+    // At scale 1, canvas=1000, viewport=800x600:
+    //   X: margin = 800*0.15 = 120  → lo = 120-1000 = -880,  hi = 800-120 = 680
+    //   Y: margin = 600*0.15 = 90   → lo = 90-1000 = -910,   hi = 600-90  = 510
+    //
+    // resetToTransform pushes the transform through _clampTransform and is the
+    // canonical way to assert the clamp boundary from tests (avoids pointer hit-
+    // test coordinate limits in the test harness).
     testWidgets('pan is clamped to the bounded canvas', (tester) async {
       final rec = _Recorder();
       const key = ValueKey('clamp');
@@ -714,26 +725,76 @@ void main() {
           ),
         ),
       );
-      // At scale 1 the 1000px board is larger than the 800x600 viewport, so
-      // translation is clamped to [viewport-scaled, 0] = x:[-200,0], y:[-400,0].
-      // Drag up-left (on-screen points): the -600,-400 delta over-shoots the
-      // bounds and clamps to the corner (-200,-400).
+
+      final state = _stateOf(tester, key);
+
+      // Push an extreme lo-bound translation: tx = -5000, -5000.
+      // At scale 1, canvas=1000, viewport=800x600:
+      //   X: margin=120, lo=-880 → clamped to -880
+      //   Y: margin=90,  lo=-910 → clamped to -910
+      state.resetToTransform(
+        Matrix4.identity()..setTranslationRaw(-5000, -5000, 0),
+      );
+      await tester.pump();
+      var t = state.debugTransform.getTranslation();
+      expect(t.x, closeTo(-880, 0.01), reason: 'lo-x clamp (#30 escape)');
+      expect(t.y, closeTo(-910, 0.01), reason: 'lo-y clamp (#30 escape)');
+
+      // Push an extreme hi-bound translation: tx = +5000, +5000.
+      //   X: hi = 800 - 120 = 680
+      //   Y: hi = 600 - 90  = 510
+      state.resetToTransform(
+        Matrix4.identity()..setTranslationRaw(5000, 5000, 0),
+      );
+      await tester.pump();
+      t = state.debugTransform.getTranslation();
+      expect(t.x, closeTo(680, 0.01), reason: 'hi-x clamp (#30 escape)');
+      expect(t.y, closeTo(510, 0.01), reason: 'hi-y clamp (#30 escape)');
+    });
+
+    // When the board is SMALLER than the viewport (zoomed out), the old code
+    // force-centered it so panning was impossible (#29). The new overscroll-
+    // margin rule keeps the board pannable while staying on-screen.
+    testWidgets('zoomed-out board is pannable, not force-centred', (
+      tester,
+    ) async {
+      final rec = _Recorder();
+      const key = ValueKey('clamp-small');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: _harness(
+            rec: rec,
+            isToolSelected: false,
+            key: key,
+            viewportSize: const Size(800, 600),
+            canvasSize: const Size(400, 300), // board smaller than viewport
+          ),
+        ),
+      );
+
+      // Scale=1, canvas=400x300, viewport=800x600.
+      // X: margin = 400*0.15=60, lo=60-400=-340, hi=800-60=740.
+      // Board IS pannable — the centre (200, 150) is valid, and so is (0, 0).
       await _pointerDown(
         tester,
         () => null,
-        at: const Offset(700, 500),
+        at: const Offset(400, 300),
         pointer: 1,
       );
-      await _pointerMove(tester, to: const Offset(100, 100), pointer: 1);
-      var t = _stateOf(tester, key).debugTransform.getTranslation();
-      expect(t.x, closeTo(-200, 0.01));
-      expect(t.y, closeTo(-400, 0.01));
-
-      // Drag back down-right: clamps to the opposite bound (0,0).
-      await _pointerMove(tester, to: const Offset(700, 500), pointer: 1);
-      t = _stateOf(tester, key).debugTransform.getTranslation();
-      expect(t.x, closeTo(0, 0.01));
-      expect(t.y, closeTo(0, 0.01));
+      // Pan left by 100px — should apply freely (tx goes from 0 to -100, within [-340, 740]).
+      await _pointerMove(tester, to: const Offset(300, 240), pointer: 1);
+      final t = _stateOf(tester, key).debugTransform.getTranslation();
+      expect(
+        t.x,
+        closeTo(-100, 1.0),
+        reason: 'zoomed-out board must be pannable left (#29 regression)',
+      );
+      expect(
+        t.y,
+        closeTo(-60, 1.0),
+        reason: 'zoomed-out board must be pannable up (#29 regression)',
+      );
+      await _pointerUp(tester, at: const Offset(300, 240), pointer: 1);
     });
   });
 }
