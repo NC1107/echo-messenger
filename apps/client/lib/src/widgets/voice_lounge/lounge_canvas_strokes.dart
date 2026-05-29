@@ -443,8 +443,17 @@ Path _outlineToPath(List<Offset> outline) {
 }
 
 ui.Color _parseColor(String hex) {
+  // VL-1: this runs inside CustomPainter.paint() on every stroke, including
+  // strokes authored by remote peers. A non-hex colour string (a future
+  // client, a CSS name, corruption) would make int.parse throw *inside*
+  // paint(), corrupting the frame for everyone. tryParse + fallback instead.
   final s = hex.replaceFirst('#', '');
-  if (s.length == 8) return ui.Color(int.parse(s, radix: 16));
-  if (s.length == 6) return ui.Color(0xFF000000 | int.parse(s, radix: 16));
+  if (s.length == 8) {
+    final v = int.tryParse(s, radix: 16);
+    if (v != null) return ui.Color(v);
+  } else if (s.length == 6) {
+    final v = int.tryParse(s, radix: 16);
+    if (v != null) return ui.Color(0xFF000000 | v);
+  }
   return const ui.Color(0xFFFFFFFF);
 }

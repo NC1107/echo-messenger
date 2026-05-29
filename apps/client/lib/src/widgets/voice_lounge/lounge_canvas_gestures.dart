@@ -331,6 +331,13 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
       _panLastPosition = entryPoint;
     }
     if (_phase == CanvasGesturePhase.pinching) {
+      // VL-7: re-seed on EVERY transition that lands in pinching — NOT only
+      // on a phase *change*. A 3rd finger going down or one of the active
+      // pair lifting (leaving 2 pointers) is a no-op transition that keeps
+      // us in pinching but changes which pointer pair drives the gesture.
+      // Re-seeding here resets the spread/midpoint baseline so the zoom
+      // ratio stays 1 across the pair change instead of jumping. Do not
+      // guard this with `wasPhase != _phase`.
       _seedPinch();
     }
 

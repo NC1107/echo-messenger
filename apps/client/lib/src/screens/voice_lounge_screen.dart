@@ -1464,16 +1464,26 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     final colorHex = kind == StrokeKind.eraser
         ? '#00000000'
         : colorToHex(canvas.currentColor);
-    final pt = CanvasPoint(x: canvasPoint.dx, y: canvasPoint.dy);
+    final pt = _clampedCanvasPoint(canvasPoint);
     _activeStroke.start(kind: kind, color: colorHex, width: width, first: pt);
     ref.read(canvasProvider.notifier).startStroke(pt);
   }
 
   void _onStrokeMove(Offset canvasPoint) {
-    final pt = CanvasPoint(x: canvasPoint.dx, y: canvasPoint.dy);
+    final pt = _clampedCanvasPoint(canvasPoint);
     _activeStroke.addPoint(pt);
     ref.read(canvasProvider.notifier).continueStroke(pt);
   }
+
+  /// Clamp a canvas-space point into the fixed [kCanvasWidth] × [kCanvasHeight]
+  /// surface (VL-2). Without this, drawing while panned past the surface edge
+  /// persists negative / >100k coordinates that round-trip through
+  /// `_migrateLegacyCoord` (which rescales any value ≤ 1.0 by 4096) and
+  /// scatter the stroke on reload.
+  CanvasPoint _clampedCanvasPoint(Offset p) => CanvasPoint(
+    x: p.dx.clamp(0.0, kCanvasWidth),
+    y: p.dy.clamp(0.0, kCanvasHeight),
+  );
 
   void _onStrokeEnd() {
     _activeStroke.end();
