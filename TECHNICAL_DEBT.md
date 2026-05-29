@@ -200,3 +200,25 @@ Last updated: 2026-05-29.
 2. **Medium UX BUGs:** #5 selectable message text, #13 image size-reservation (also explains #2/"jumping"), #12 vertical video, #29 canvas pan clamp, #31 Android audio-focus, #GIF focus re-decode.
 3. **Feature gaps (scoped):** #10 staged multi-photo, #9 gallery, #SQ bitrate presets, #17 promote-to-admin, #4 `/gif`, #US public-group search, #18 call history, #NAV nav arrows, #27 canvas image paste.
 4. **Needs repro/verify first:** #2, #32, #11, #22, #23 (screenshare), #TASKBAR, #30.
+
+## Third tranche (N1–N9, audited 2026-05-29)
+
+A follow-on testing batch, same audit method. **N4, N6, N8 are confirmed HIGH-severity bugs** and should jump the queue.
+
+| ID | Area | Verdict | Sev | Effort | Root cause (file:line) |
+|----|------|---------|-----|--------|------------------------|
+| N1 | theme | BUG | med | M | hardcoded `Colors.white` / black shadows break non-default themes — `thread_view_panel.dart:807,916`, `message_item.dart:1811,1834` |
+| N2 | threads | GAP | low | M | thread panel fixed `width:380`, no drag-resize — `thread_view_panel.dart:272` |
+| N3 | chat | GAP | low | S | no persistent jump-to-bottom FAB (only a "new messages" banner) — `chat_panel.dart:152` |
+| N4 | sync | **BUG** | **high** | M | group `new_message` fanout filters out the whole `sender_id`, so the sender's OTHER devices never get the live event — `ws/message_service/fanout.rs:394` |
+| N5 | nav | REPRO? | med | M | channel-column swipe (Android) may lose the gesture arena — `mobile_channel_drawer.dart`; needs repro |
+| N6 | settings | **BUG/CRASH** | **high** | S | mobile Voice&Video settings crash — `enumerateDevices()` called from build without guard — `settings/voice_section.dart:237,357` |
+| N7 | chat | BUG | med | S | swipe-to-reply wraps only the bubble; tiny bubbles = tiny target — `message_item.dart:1748` |
+| N8 | chat | **BUG** | **high** | M | switching text channels doesn't scroll to bottom (only `conversation.id` change triggers it) — `chat_panel.dart:191` |
+| N9 | media | GAP/BUG | med | M | Linux video playback (libmpv codecs / auth headers / relative URL) — `message/video_player.dart:79`; overlaps #11 |
+
+Notes:
+- **N4 is the same bug class as VL-19 and #26** (server excludes by user-id, not device-id). A single "deliver to sender's other devices" fix (mirroring the existing `deliver_self_messages` path with a `new_message` frame) covers the group-sync case; fix alongside VL-19/#26.
+- **N6** is the only crash in this tranche — move `_loadAudioDevices()` to `initState` with a try/catch that sets a loaded flag even on failure.
+- **N8** likely also explains part of #2/"jumping" perception when switching channels.
+- N2/N3 are GAPs (not bugs) but cheap; N3 (jump-to-bottom FAB) directly answers the user's "add a way to jump to latest" ask.
