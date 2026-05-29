@@ -66,6 +66,8 @@ These are tracked in GitHub as `deferred` issues with the open label intact, bec
 - **#681** — Server admin dashboard. Substantial feature with a clear surface. Trigger: self-hoster volume OR operator complaint about server visibility.
 - **#702** — Consolidate 33 migrations into v2 baseline. Risky pre-GA op with explicit step-by-step in the issue body. Trigger: GA cut window.
 - **#769** — Mobile UI/UX gaps vs Echo Mobile.html design. 12-screen design-parity sweep. Trigger: needs to be broken into per-screen sub-issues before any of it is actionable; pickup happens when mobile becomes the primary distribution channel.
+- **#1268** — Encrypt voice-lounge canvas events under GRP2 sender key. Canvas payloads are plaintext on the wire for encrypted groups; short-term mitigation is the one-time notice in `encrypted_canvas_notice.dart` (PR #1269). Pickup trigger: GRP2 message E2E shipped to prod (sender-key infrastructure doesn't exist yet). Related: `docs/voice-lounge/04-encrypted-canvas.md`; the multi-device authority architecture from #1274 is the per-user write-authority model this would build on.
+- **#1277** — Canvas loading indicator during snapshot fetch. The 1–3 s `CanvasController.attach()` window is silent; drawing attempts are silently dropped while `_attachingChannelId != null`. Needs a non-blocking banner and a retry path on fetch failure. Pickup trigger: first tester report of "canvas feels broken on join" OR PR #1279 landing the banner widget.
 
 ## Conventions
 
