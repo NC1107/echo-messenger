@@ -425,9 +425,21 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       _loadedHistoryKey = null;
       _hasNewMessagesBelow = false;
       _newMessagesBelowCount = 0;
+      _unreadBoundaryMessageId = null;
+      _unreadBoundaryCount = 0;
     });
     _loadHistory();
     _markAsRead();
+    // Jump to the bottom of the new channel's messages. Mirror the
+    // conversation-switch path: set _initialScrollPending so that
+    // _listenForInitialHistoryLoad re-fires the scroll once the async
+    // history load finishes, then pre-scroll immediately for channels
+    // whose messages are already cached.
+    _initialScrollPending = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _scrollToBottom(animated: false, settleRetries: 3);
+    });
   }
 
   void _highlightMessage(String messageId) {
