@@ -27,6 +27,15 @@ import 'canvas_gesture_state.dart';
 /// (300 ms) but trimmed slightly for snappier canvas feel.
 const Duration _kDoubleTapTimeout = Duration(milliseconds: 250);
 
+/// Fraction of `min(scaledContent, viewport)` that must remain on-screen on
+/// each axis after any pan, pinch, or scroll gesture. 0.15 keeps a 15% sliver
+/// of the board visible even at the most extreme pan position, which is enough
+/// for the user to grab it and drag it back — without ever feeling glued.
+///
+/// This constant drives [clampAxis], the per-axis helper shared by all
+/// transform-mutating paths so no gesture can bypass the visibility guarantee.
+const double _kPanMarginFraction = 0.15;
+
 /// Target zoom level when double-tapping into the canvas. Matches the
 /// behaviour preserved from `voice_lounge_screen.dart`'s
 /// `_toggleDoubleTapZoom`.
@@ -481,10 +490,16 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
     widget.onTransformChanged?.call(Matrix4.copy(_transform));
   }
 
-  /// Clamp the transform so the bounded canvas stays in view: centre it when
-  /// it's smaller than the viewport (gravity toward the middle), and prevent
-  /// empty space at the edges when it's larger. No-op unless both
-  /// [LoungeCanvasGestures.viewportSize] and `canvasSize` are provided.
+  /// Clamp the transform so the bounded board can always be found on screen.
+  ///
+  /// At any zoom level, at least [_kPanMarginFraction] of the
+  /// `min(scaledContent, viewport)` dimension remains visible on every axis.
+  /// This replaces the old force-center-when-smaller / hard-edge-when-larger
+  /// split, which made panning feel glued at low zoom levels (#29) and allowed
+  /// no escape margin on mobile (#30).
+  ///
+  /// No-op unless both [LoungeCanvasGestures.viewportSize] and [canvasSize]
+  /// are provided.
   Matrix4 _clampTransform(Matrix4 m) {
     final vp = widget.viewportSize;
     final cs = widget.canvasSize;
@@ -492,15 +507,9 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
     final s = m.getMaxScaleOnAxis();
     if (s <= 0 || !s.isFinite) return m;
     final t = m.getTranslation();
-    double axis(double tx, double viewport, double content) {
-      final scaled = content * s;
-      if (scaled <= viewport) return (viewport - scaled) / 2; // centre
-      return tx.clamp(viewport - scaled, 0.0);
-    }
-
     return Matrix4.copy(m)..setTranslationRaw(
-      axis(t.x, vp.width, cs.width),
-      axis(t.y, vp.height, cs.height),
+      clampAxis(t.x, s, vp.width, cs.width, _kPanMarginFraction),
+      clampAxis(t.y, s, vp.height, cs.height, _kPanMarginFraction),
       t.z,
     );
   }
@@ -560,6 +569,49 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
       ),
     );
   }
+}
+
+/// Pure per-axis clamp that keeps the board on screen regardless of zoom.
+///
+/// Given the current translation [tx] on one axis, the uniform [scale], the
+/// [viewport] extent, the [content] (unscaled board) extent, and a
+/// [marginFraction], returns a translation clamped so that at least
+/// `marginFraction * min(content * scale, viewport)` pixels of the board
+/// remain visible on each side of that axis.
+///
+/// The rule is symmetric whether the board is larger or smaller than the
+/// viewport — no separate "force-center when zoomed out" branch:
+///
+///   margin = min(content * scale, viewport) * marginFraction
+///   tx ∈ [margin - content * scale,  viewport - margin]
+///
+/// This means:
+///   - Zoomed in (content*scale > viewport): the board can slide until only
+///     `margin` pixels remain visible at the leading/trailing edge — enough
+///     to grab it back, never fully lost.
+///   - Zoomed out (content*scale ≤ viewport): same formula, but now the
+///     range is wide, so the user can pan freely and position the board
+///     anywhere from almost-flush-left to almost-flush-right.
+///
+/// Exposed `@visibleForTesting` so the pure logic can be unit-tested without
+/// spinning up a widget.
+@visibleForTesting
+double clampAxis(
+  double tx,
+  double scale,
+  double viewport,
+  double content,
+  double marginFraction,
+) {
+  final scaled = content * scale;
+  final margin = scaled < viewport
+      ? scaled * marginFraction
+      : viewport * marginFraction;
+  final lo = margin - scaled;
+  final hi = viewport - margin;
+  // Guard against degenerate input (scale ≈ 0 or content ≈ 0) where lo > hi.
+  if (lo >= hi) return (lo + hi) / 2;
+  return tx.clamp(lo, hi);
 }
 
 /// Returns a new transform that scales [current] to [targetScale] while
