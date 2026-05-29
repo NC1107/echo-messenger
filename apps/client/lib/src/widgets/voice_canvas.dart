@@ -390,9 +390,9 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
     const cy = kCanvasHeight / 2;
     if (total <= 1) return AvatarPosition(userId: userId, x: cx, y: cy);
     final angle = (2 * math.pi * index) / total;
-    // Radius = 30% of the shorter canvas axis so all defaults land well
-    // inside the visible region at minScale.
-    const r = 0.3 * kCanvasWidth;
+    // Tight ring near the centre (shared fraction; see canvas_models) so the
+    // group clusters in the middle and the lounge opens zoomed-in on them.
+    const r = kDefaultAvatarRingFraction * kCanvasWidth;
     return AvatarPosition(
       userId: userId,
       x: cx + r * math.cos(angle),

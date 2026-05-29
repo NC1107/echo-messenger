@@ -23,6 +23,8 @@ LoungeCanvasGestures _harness({
   double minScale = 0.2,
   double maxScale = 5.0,
   Key? key,
+  Size? viewportSize,
+  Size? canvasSize,
 }) {
   return LoungeCanvasGestures(
     key: key,
@@ -30,6 +32,8 @@ LoungeCanvasGestures _harness({
     initialTransform: initial ?? Matrix4.identity(),
     minScale: minScale,
     maxScale: maxScale,
+    viewportSize: viewportSize,
+    canvasSize: canvasSize,
     onStrokeStart: rec.strokeStarts.add,
     onStrokeMove: rec.strokeMoves.add,
     onStrokeEnd: () => rec.strokeEnds++,
@@ -692,6 +696,44 @@ void main() {
         closeTo(after, 0.01),
         reason: 'the rendered transform must reflect the scroll zoom',
       );
+    });
+
+    // Beta bounded-canvas: with viewportSize + canvasSize provided, pan is
+    // clamped so the board can't be dragged out of view.
+    testWidgets('pan is clamped to the bounded canvas', (tester) async {
+      final rec = _Recorder();
+      const key = ValueKey('clamp');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: _harness(
+            rec: rec,
+            isToolSelected: false,
+            key: key,
+            viewportSize: const Size(800, 600),
+            canvasSize: const Size(1000, 1000),
+          ),
+        ),
+      );
+      // At scale 1 the 1000px board is larger than the 800x600 viewport, so
+      // translation is clamped to [viewport-scaled, 0] = x:[-200,0], y:[-400,0].
+      // Drag up-left (on-screen points): the -600,-400 delta over-shoots the
+      // bounds and clamps to the corner (-200,-400).
+      await _pointerDown(
+        tester,
+        () => null,
+        at: const Offset(700, 500),
+        pointer: 1,
+      );
+      await _pointerMove(tester, to: const Offset(100, 100), pointer: 1);
+      var t = _stateOf(tester, key).debugTransform.getTranslation();
+      expect(t.x, closeTo(-200, 0.01));
+      expect(t.y, closeTo(-400, 0.01));
+
+      // Drag back down-right: clamps to the opposite bound (0,0).
+      await _pointerMove(tester, to: const Offset(700, 500), pointer: 1);
+      t = _stateOf(tester, key).debugTransform.getTranslation();
+      expect(t.x, closeTo(0, 0.01));
+      expect(t.y, closeTo(0, 0.01));
     });
   });
 }

@@ -85,6 +85,13 @@ class LoungeCanvasGestures extends StatefulWidget {
   /// Maximum scale. Clamped against pinch + double-tap zoom.
   final double maxScale;
 
+  /// Visible viewport size and the bounded canvas (child) size. When BOTH are
+  /// provided, pan/zoom is clamped so the bounded board can't be dragged out
+  /// of view (and centres when it's smaller than the viewport). Leave null to
+  /// disable clamping (e.g. unit tests / an unbounded surface).
+  final Size? viewportSize;
+  final Size? canvasSize;
+
   const LoungeCanvasGestures({
     super.key,
     required this.child,
@@ -97,6 +104,8 @@ class LoungeCanvasGestures extends StatefulWidget {
     this.onTransformChanged,
     this.minScale = 0.2,
     this.maxScale = 5.0,
+    this.viewportSize,
+    this.canvasSize,
   });
 
   @override
@@ -217,7 +226,7 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
       _strokeActive = false;
       widget.onStrokeCancel();
     }
-    _transform = Matrix4.copy(next);
+    _transform = _clampTransform(Matrix4.copy(next));
     _pinchStartSpread = null;
     _pinchStartMidpoint = null;
     _pinchStartTransform = null;
@@ -312,7 +321,9 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
       widget.maxScale,
     );
     if ((target - currentScale).abs() < 1e-9) return;
-    _transform = _zoomAround(_transform, event.localPosition, target);
+    _transform = _clampTransform(
+      _zoomAround(_transform, event.localPosition, target),
+    );
     _emitTransform();
     if (mounted) setState(() {});
   }
@@ -394,8 +405,10 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
     final delta = current - last;
     _panLastPosition = current;
     final t = _transform.getTranslation();
-    _transform = Matrix4.copy(_transform)
-      ..setTranslationRaw(t.x + delta.dx, t.y + delta.dy, t.z);
+    _transform = _clampTransform(
+      Matrix4.copy(_transform)
+        ..setTranslationRaw(t.x + delta.dx, t.y + delta.dy, t.z),
+    );
     _emitTransform();
     // Rebuild so the Transform in build() re-applies the new matrix to the
     // canvas child. Without this, pan only moved the grid (which re-projects
@@ -456,6 +469,7 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
     // The intermediate `clampedRatio` is referenced so the static
     // analyzer doesn't drop the clamp branch — and it documents intent.
     assert(clampedRatio > 0);
+    _transform = _clampTransform(_transform);
     _emitTransform();
     // Rebuild so the Transform re-applies the new scale/translate to the
     // canvas child (see _applyPanDelta). Without it pinch zoomed only the
@@ -465,6 +479,30 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
 
   void _emitTransform() {
     widget.onTransformChanged?.call(Matrix4.copy(_transform));
+  }
+
+  /// Clamp the transform so the bounded canvas stays in view: centre it when
+  /// it's smaller than the viewport (gravity toward the middle), and prevent
+  /// empty space at the edges when it's larger. No-op unless both
+  /// [LoungeCanvasGestures.viewportSize] and `canvasSize` are provided.
+  Matrix4 _clampTransform(Matrix4 m) {
+    final vp = widget.viewportSize;
+    final cs = widget.canvasSize;
+    if (vp == null || cs == null) return m;
+    final s = m.getMaxScaleOnAxis();
+    if (s <= 0 || !s.isFinite) return m;
+    final t = m.getTranslation();
+    double axis(double tx, double viewport, double content) {
+      final scaled = content * s;
+      if (scaled <= viewport) return (viewport - scaled) / 2; // centre
+      return tx.clamp(viewport - scaled, 0.0);
+    }
+
+    return Matrix4.copy(m)..setTranslationRaw(
+      axis(t.x, vp.width, cs.width),
+      axis(t.y, vp.height, cs.height),
+      t.z,
+    );
   }
 
   Offset _toCanvasPoint(Offset viewportPoint) {
@@ -488,7 +526,9 @@ class LoungeCanvasGesturesState extends State<LoungeCanvasGestures> {
     final atZoomedIn = (currentScale - _kDoubleTapZoomScale).abs() < 0.01;
     final targetScale = atZoomedIn ? 1.0 : _kDoubleTapZoomScale;
     final clampedTarget = targetScale.clamp(widget.minScale, widget.maxScale);
-    _transform = _zoomAround(_transform, tapPoint, clampedTarget);
+    _transform = _clampTransform(
+      _zoomAround(_transform, tapPoint, clampedTarget),
+    );
     _emitTransform();
     if (mounted) setState(() {});
   }
