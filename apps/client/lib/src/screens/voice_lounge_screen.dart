@@ -36,6 +36,7 @@ import '../providers/voice_settings_provider.dart';
 import '../services/debug_log_service.dart';
 import '../services/pip_controller.dart';
 import '../services/toast_service.dart';
+import '../services/web_test_probe.dart';
 import '../theme/echo_theme.dart';
 import '../utils/canvas_utils.dart';
 import '../widgets/confirm_dialog.dart';
@@ -183,11 +184,22 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       if (conv == null) return;
       EncryptedCanvasNotice.maybeShow(context, isEncrypted: conv.isEncrypted);
     });
+    // Web debug-mode test probe: expose minimal canvas state to
+    // window.__echoTestProbe__ so Playwright audit specs can assert
+    // stroke counts and active-stroke metadata without touching internals.
+    // No-op on non-web targets and in release builds.
+    EchoTestProbe.instance.register(
+      committedStrokeCount: () => ref.read(canvasProvider).strokes.length,
+      activeStroke: () => _activeStroke.current,
+      selectedTool: () => ref.read(canvasProvider).selectedTool,
+      currentColor: () => colorToHex(ref.read(canvasProvider).currentColor),
+    );
   }
 
   @override
   void dispose() {
     _activeStroke.dispose();
+    EchoTestProbe.instance.unregister();
     // Clear fullscreen so the user doesn't return to an immersive
     // HomeScreen the next time they open the lounge. Uses the notifier
     // captured at initState — ref is unsafe in dispose().
