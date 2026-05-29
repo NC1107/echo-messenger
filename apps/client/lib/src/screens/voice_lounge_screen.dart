@@ -45,6 +45,7 @@ import '../widgets/confirm_dialog.dart';
 import '../widgets/echo_bottom_sheet.dart';
 import '../widgets/voice_lounge/canvas_debug_overlay.dart';
 import '../widgets/voice_lounge/canvas_loading_banner.dart';
+import '../widgets/voice_lounge/canvas_minimap.dart';
 import '../widgets/voice_lounge/encrypted_canvas_notice.dart';
 import '../widgets/voice_lounge/lounge_canvas_gestures.dart';
 import '../widgets/voice_lounge/lounge_canvas_strokes.dart';
@@ -1588,7 +1589,22 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
         ),
       ),
     );
-    if (!_kDebugCanvas) return gestures;
+    // Minimap overlay (bottom-left, clear of the bottom-centre dock and the
+    // top-right view controls) so the user can see where they are on the
+    // 100k surface and tap/drag to jump there (#4, #5).
+    final minimap = Positioned(
+      left: 12,
+      bottom: 12,
+      child: CanvasMinimap(
+        transform: _canvasTransform,
+        viewportSize: viewportSize,
+        onRecenter: _recenterViewportOn,
+      ),
+    );
+
+    if (!_kDebugCanvas) {
+      return Stack(fit: StackFit.expand, children: [gestures, minimap]);
+    }
     // Dev-only on-canvas debug HUD. The painter + counts sit in
     // viewport coordinate space (outside the Transform) so values stay
     // readable regardless of pan / zoom. Wrapped in IgnorePointer
@@ -1597,6 +1613,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       fit: StackFit.expand,
       children: [
         gestures,
+        minimap,
         CanvasDebugOverlay(
           gesturesKey: _canvasGesturesKey,
           canvas: canvas,
@@ -1605,6 +1622,23 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
         ),
       ],
     );
+  }
+
+  /// Recenter the main canvas viewport on [canvasPoint] (keeping the current
+  /// zoom). Driven by taps/drags on the [CanvasMinimap].
+  void _recenterViewportOn(Offset canvasPoint) {
+    final size = _interactiveViewportSize;
+    if (size == null) return;
+    final scale = _canvasTransform.value.getMaxScaleOnAxis();
+    if (scale <= 0 || !scale.isFinite) return;
+    final next = Matrix4.identity()
+      ..scaleByDouble(scale, scale, scale, 1)
+      ..setTranslationRaw(
+        size.width / 2 - canvasPoint.dx * scale,
+        size.height / 2 - canvasPoint.dy * scale,
+        0,
+      );
+    _canvasGesturesKey.currentState?.resetToTransform(next);
   }
 
   /// Persist the latest LayoutBuilder constraints so the reset-view
