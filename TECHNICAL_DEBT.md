@@ -510,3 +510,146 @@ Compact list — full evidence (file:line + code quote) in `.claude/state/audit-
 - [x] TD-42 refresh-token theft cascade depth-N test — T0→T1→T2→T3 chain, replay T0 invalidates T3
 - [ ] TD-43..TD-67 medium batch (eligible for a single follow-up PR)
 - [ ] TD-68..TD-85 low batch (eligible for a single mechanical cleanup PR)
+
+---
+
+# 2026-05-29 voice-lounge focused audit (VL-1..VL-31)
+
+Focused multi-agent audit of the voice-lounge feature after a string of crash/bug reports, run on `main @ 0c8fb258` (immediately after the canvas rewrite #1278). Scope: the ~9.2k LOC voice-lounge surface (screen, canvas providers, gesture state machine, stroke rendering, livekit provider, server voice/canvas routes + WS events). Five parallel reviewers: lifecycle/crash, gesture/render, state/sync-race, server-side, test-quality. ~31 de-duplicated findings; **1 critical, 6 high, 14 medium, 10 low**. The two crash claims (VL-1, VL-2) were verified by hand against the source.
+
+Convergent theme across reviewers: **untrusted/peer canvas data reaches the client with no input hardening, and server geometry validation ships disabled (`LogOnly`) — so a single malformed frame crashes the whole client.** This is the most likely root cause of the reported crashes. The lifecycle crash class (ref-after-dispose) is largely already defended from prior fixes; the remaining lifecycle gaps are narrow.
+
+## Critical
+
+### VL-1 ★ — A single malformed `canvas_event` WS frame crashes the entire client
+**File:** `apps/client/lib/src/providers/ws_message_handler.dart:15` (no try/catch around the dispatch switch) → `:675` `_handleCanvasEvent` → `canvas_provider.dart:931` `handleCanvasEvent` → `apps/client/lib/src/models/canvas_models.dart:177` `CanvasStroke.fromJson`
+**Severity:** critical (verified)
+**Source:** test-quality + state-sync + gesture reviewers (convergent)
+**What:** `handleServerMessage` has no try/catch. `CanvasStroke.fromJson` does unguarded casts: `json['id'] as String`, `(json['width'] as num).toDouble()`, `(json['points'] as List)`. A `canvas_event` whose payload is missing a field / has `points: null` / `width` as a string throws `TypeError` synchronously, unwinding the whole WS message loop. Because server geometry validation defaults to `LogOnly` (see VL-16), malformed payloads genuinely reach clients. A sibling crash: `_parseColor` (`lounge_canvas_strokes.dart:445`) calls `int.parse(s, radix:16)` with no try/catch — a peer stroke with a non-hex color string throws inside `CustomPainter.paint()`, corrupting the frame for everyone.
+**Fix:** (1) wrap each handler dispatch (or at minimum `_handleCanvasEvent`) in try/catch that logs + drops the frame; (2) make `CanvasStroke.fromJson` / `CanvasPoint.fromJson` / `CanvasImage.fromJson` defensive (validate types, drop bad frames); (3) wrap `_parseColor` to fall back to a default. **This is the recommended first fix.**
+**Effort:** small
+
+## High
+
+### VL-2 ★ — Stroke coordinates committed unclamped → off-canvas persistence + legacy-coord rescale corruption
+**File:** `apps/client/lib/src/screens/voice_lounge_screen.dart:1466` (`_onStrokeStart`/`_onStrokeMove` build `CanvasPoint` with no clamp); interacts with `_migrateLegacyCoord` in `canvas_provider.dart`
+**Severity:** high (verified unclamped)
+**Source:** gesture/render reviewer
+**What:** The new stroke path builds points directly from the inverse-matrix canvas point with no `.clamp(0, kCanvasWidth)`, unlike the now-orphaned `lounge_drawing_canvas.dart:42` which clamped. Panning past the 0..100k surface (pan is also unclamped — VL-21) yields negative / >100k coords that are persisted and broadcast. On reload, `_migrateLegacyCoord` treats any coord ≤ 1.0 as legacy and multiplies by 4096 — so a stroke drawn near the origin edge gets scattered.
+**Fix:** clamp x/y to `[0, kCanvasWidth/Height]` in `_onStrokeStart`/`_onStrokeMove` (restore the old clamp).
+**Effort:** small
+
+### VL-3 — Stale-session sweep evicts live-but-idle voice participants (no `updated_at` heartbeat)
+**File:** `apps/server/src/db/channels.rs:283` (cleanup `WHERE vs.updated_at < now() - interval`); `apps/server/src/ws/handler.rs:39` (WS heartbeat never touches the row)
+**Severity:** high
+**Source:** server reviewer
+**What:** The 60s `cleanup_stale_voice_sessions` (called with 120s max-age) deletes a participant whose `voice_sessions.updated_at` is older than 120s and broadcasts `voice_session_left`. Nothing in the WS receive path bumps `updated_at` except `join`/`update_voice_state` — so a user sitting in a call for >120s without toggling mute/PTT gets ghosted out while their socket is alive, and subsequent canvas writes are then rejected ("Join the voice channel before signaling").
+**Fix:** add a lightweight periodic `voice_heartbeat` that does `UPDATE voice_sessions SET updated_at = now()`, or refresh on the existing WS heartbeat tick. Or raise the threshold well above the idle window and document it.
+**Effort:** medium
+
+### VL-4 — Incoming `stroke` / `image_add` appended with no dedup → duplicates accumulate & diverge
+**File:** `apps/client/lib/src/providers/canvas_provider.dart:1003` (stroke), `:1016` (image)
+**Severity:** high
+**Source:** state-sync reviewer
+**What:** Handlers blind-append without checking whether the id already exists. On reconnect snapshot-replay overlapping live events, or `importSnapshot` re-broadcasting strokes a peer already has, the same stroke lands twice; boards diverge across clients.
+**Fix:** dedup on receive — replace-in-place if id exists, else add. Same for `image_add`.
+**Effort:** small
+
+### VL-5 — Unbounded client stroke/image growth (no cap mirroring the server)
+**File:** `apps/client/lib/src/providers/canvas_provider.dart:487, 1008, 1018`
+**Severity:** high
+**Source:** state-sync reviewer
+**What:** Every committed stroke does a full `List.from(...)..add(...)` and grows `state.strokes` forever; freehand point lists are never decimated; eraser strokes accumulate rather than removing covered strokes. The server caps at 2000 strokes but the client has no cap → long collaborative session OOMs / paint p99 collapses.
+**Fix:** cap `state.strokes` to the server limit and reconcile on overflow; decimate freehand points on commit.
+**Effort:** medium
+
+### VL-6 — `clear` racing with in-flight strokes resurrects cleared content (no board-generation fence)
+**File:** `apps/client/lib/src/providers/canvas_provider.dart:1010` (clear), `:999/1003` (stroke apply)
+**Severity:** high
+**Source:** state-sync reviewer
+**What:** Peer A clears; peer B commits a stroke (or a buffered `stroke_partial` arrives) just after applying the clear → content reappears on everyone. Last-write-wins with no fence means clear is not reliably terminal.
+**Fix:** stamp a monotonic board-generation counter on outbound strokes; drop inbound strokes predating the latest local `clear`; cancel any active local stroke when a remote `clear` is applied.
+**Effort:** medium
+
+### VL-7 — Lifting one finger during a 3-pointer pinch jumps the canvas (stale pinch baseline + wrong pointer pair)
+**File:** `apps/client/lib/src/widgets/voice_lounge/lounge_canvas_gestures.dart:176, 387`
+**Severity:** high
+**Source:** gesture/render reviewer
+**What:** With 3 fingers down (phase stays `pinching`, 3rd tracked in `_pointerOrder`), lifting one leaves `pointerCount == 2` — no transition fires, so the pinch baseline (`_pinchStartSpread`/midpoint, seeded from the original pair) is never re-seeded, but `_applyPinch` now reads a different pointer pair → discontinuous scale snap.
+**Fix:** re-seed the pinch baseline whenever the active pinch pair changes (any pointer up/down while pinching with ≥2 remaining).
+**Effort:** medium
+
+### VL-8 — The two highest-crash-risk units have zero real test coverage
+**File (tested via inline re-implementation, not the real method):** `canvas_provider.dart:931` `handleCanvasEvent`; **untested entirely:** `livekit_voice_provider.dart:296/669` `joinChannel`/`leaveChannel`/`_teardownCurrent`; `voice_lounge_screen.dart` (1884 lines, no direct test)
+**Severity:** high
+**Source:** test-quality reviewer
+**What:** `canvas_provider_test.dart` re-implements the `handleCanvasEvent` switch inline ("simulate what handleCanvasEvent does") — `grep '\.handleCanvasEvent('` over `test/` returns zero hits — so the real unguarded entry point (VL-1) is never exercised. `livekit_voice_provider_test.dart` only tests immutable state objects; the documented rejoin/dispose-during-connect race in `joinChannel` is never executed. The 30-file test suite gives false confidence: the gesture state machine and detach-during-attach race are genuinely well covered, but the crash-prone WS handler, connection lifecycle, and the screen itself are not.
+**Fix:** add real `handleCanvasEvent` malformed-frame tests (drives VL-1); add a Room seam/fake to exercise double-`joinChannel` re-entrancy + channel-switch teardown ordering; add a screen pump-then-dispose-during-join test.
+**Effort:** large
+
+## Medium
+
+### VL-9 — `setCaptureEnabled` / `setDeafened` mutate `state` with no `_disposed` guard
+**File:** `apps/client/lib/src/providers/livekit_voice/livekit_voice_av_controls.dart:24, 50`
+**Severity:** medium — **What:** every sibling method (`toggleVideo`, `switchCamera`, `setScreenShareEnabled`) guards `if (_disposed)`, these two don't. A queued CallKit/notification `VoiceMuteAction` firing after dispose (cancellation is synchronous but can't drain an already-queued event) assigns `state` on a disposed Notifier → `StateError`. **Fix:** add `if (_disposed) return;` at entry and after the await. **Effort:** small
+
+### VL-10 — `floating_dock._handleLeave` has no try/finally → Leave button can wedge permanently
+**File:** `apps/client/lib/src/screens/voice_lounge/floating_dock.dart:82` — **What:** if `channels.leaveVoiceChannel` throws, `_isLeaving` is never reset and the button (`onPressed: _isLeaving ? null : ...`) is permanently disabled — user stuck in the lounge. Also redundantly calls `leaveVoiceChannel` which `livekit.leaveChannel()` already does (`provider.dart:690`). **Fix:** wrap in try/finally resetting `_isLeaving` with a `mounted` guard; drop the redundant call. **Effort:** small
+
+### VL-11 — `RoomDisconnectedEvent` doesn't stop the RTC/audio poll timers
+**File:** `apps/client/lib/src/providers/livekit_voice/livekit_voice_provider.dart:872` — **What:** on an unexpected SFU disconnect, only `_cleanupRoom` (via explicit leave) stops the 2s stats/audio timers; the disconnect handler doesn't, so timers keep reflecting into a dead room until the next join/leave (throw is swallowed → CPU leak, not a hard crash). **Fix:** call `_stopRtcStatsPolling()` + `_stopAudioLevelPolling()` in the disconnect handler. **Effort:** small
+
+### VL-12 — Canvas authority never cleared on `detach()` → stale write-lock locks out next session of the same channel
+**File:** `apps/client/lib/src/providers/canvas_provider.dart:179`; `canvas_authority_provider.dart:29` — **What:** `detach()` resets canvas state but never calls the (keepAlive, channel-keyed) authority notifier's `clear()`. On rejoin of the same channel, the stale authority device id persists; if that device is gone, `_canIWrite()` is false for everyone → nobody can draw until a manual re-claim. **Fix:** call authority `clear()` for the channel in `detach()`. **Effort:** small
+
+### VL-13 — Server stale-session sweep doesn't clear canvas authority (only the disconnect path does)
+**File:** `apps/server/src/main.rs:296`; cf. `apps/server/src/ws/events/voice.rs:158` — **What:** the WS-disconnect path calls `canvas_authority.clear_on_leave`, but the periodic stale sweep (the exact crashed-client/backgrounded case) broadcasts the leave without clearing authority → dead device holds the canvas, no handoff. **Fix:** clear authority for every evicted session in the sweep. **Effort:** small
+
+### VL-14 — LiveKit token grant is uniformly full-publish, 1h expiry, no post-kick eviction
+**File:** `apps/server/src/routes/voice.rs:149` — **What:** every member (including listeners) gets `can_publish: true`; a member removed seconds after minting retains SFU publish for up to an hour (LiveKit validates the JWT independent of the membership table). **Fix:** role-scope grants, shorten exp to ~5-10 min with client refresh, evict via LiveKit server API on removal. **Effort:** medium
+
+### VL-15 — `clear` event ignores `scope:"mine"` and always wipes the whole shared board
+**File:** `apps/server/src/ws/events/canvas.rs:133`; validator accepts `"mine"` at `canvas_validation.rs:285` — **What:** `persist_canvas_state` routes every `clear` to `clear_all` regardless of scope, so any member emitting `clear` (even `scope:"mine"`) destroys everyone's work — a griefing/authz gap and a silently-violated wire contract. **Fix:** branch on scope (delete only author's objects for `"mine"`), or remove `"mine"` from the validator. **Effort:** medium
+
+### VL-16 — Geometry validation defaults to `LogOnly` → non-blocking in production (enables VL-1)
+**File:** `apps/server/src/ws/events/canvas.rs:38, 75` — **What:** `CANVAS_VALIDATION_MODE` defaults to `LogOnly`; in that mode `apply_validation` logs but returns `true`, so the entire PR #1269 geometry suite is non-blocking until ops flips the env. Malformed/huge coordinates and cross-conversation `image_add` URLs still persist + fan out. **Fix:** flip default to `Enforce` if the documented ~2-week soak has elapsed; additionally validate `image_add` URLs reference media owned by this conversation. **Effort:** small
+
+### VL-17 — Live eraser preview is a no-op (`BlendMode.dstOut` can't cross the RepaintBoundary)
+**File:** `apps/client/lib/src/widgets/voice_lounge/lounge_canvas_strokes.dart:251` — **What:** the active stroke lives on L2 (separate layer above committed L1); `dstOut` inside L2's own `saveLayer` only clears L2's empty raster — committed strokes on L1 aren't touched until pointer-up commit. So dragging the eraser shows nothing erasing, contradicting the live-preview contract. **Fix:** preview the eraser against the committed layer, or render it as a translucent stroke. **Effort:** large
+
+### VL-18 — Committed-strokes `shouldRepaint` only diffs the last stroke → missed repaints
+**File:** `apps/client/lib/src/widgets/voice_lounge/lounge_canvas_strokes.dart:224` — **What:** compares only `strokes.length` and the trailing element's id/point-count; an undo/remove returning to the prior length, a remote in-place edit of a middle stroke, or a color/width change to the last stroke renders stale. Contradicts the spec's `strokesRevision`-drives-L1 contract (the painter doesn't use the revision counter at all). **Fix:** compare an incrementing `strokesRevision` int. **Effort:** small
+
+### VL-19 — Server excludes by user-id, not device-id → a user's 2nd device never sees the 1st's strokes
+**File:** `apps/server/src/ws/events/canvas.rs:339` (`broadcast_json(..., Some(sender_id))`) — **What:** canvas strokes are relayed excluding the sender's user UUID, so all of that user's connections are excluded; a read-only second device never receives the authority device's strokes — contradicts the multi-device read-only-viewer intent. Contrast `canvas_authority_changed` which correctly uses `None`. **Fix:** exclude by device/connection id, or use `None` + client-side own-stroke dedup (which needs VL-4). **Effort:** medium
+
+### VL-20 — Local state mutates before the authority gate → ghost strokes on non-authority devices
+**File:** `apps/client/lib/src/providers/canvas_provider.dart:487` (local append) vs `:1088` (`_canIWrite` checked only inside `_sendCanvasEvent`) — **What:** `endStroke` appends locally before the send-time authority gate drops the broadcast; a non-authority device accumulates strokes nobody else has → permanent local divergence until clear. **Fix:** check `_canIWrite()` before mutating local state. **Effort:** medium
+
+### VL-21 — Pan transform never clamped → infinite drift, content lost off-screen
+**File:** `apps/client/lib/src/widgets/voice_lounge/lounge_canvas_gestures.dart:360` — **What:** `_applyPanDelta` adds raw deltas with no clamp against the 100k surface; with `minScale=0.2` the surface can be panned entirely out of view, recoverable only via reset-view. Also the upstream cause of VL-2's off-canvas coordinates. **Fix:** clamp post-pan translation so a margin of content/surface stays in view. **Effort:** medium
+
+### VL-22 — Double-tap with a second finger during a pan desyncs pointer tracking → combined zoom+pan jump
+**File:** `apps/client/lib/src/widgets/voice_lounge/lounge_canvas_gestures.dart:239` — **What:** the double-tap branch runs before checking that exactly one pointer is down; a second finger tapped during an in-progress pan passes the double-tap test, is removed from tracking and `return`s without telling the state machine, leaving `_phase == panning` with two pointers down → zoom fires mid-pan. **Fix:** only treat a pointerDown as double-tap when `_pointers.length == 1` and `_phase == idle`. **Effort:** small
+
+## Low (batch — eligible for a single cleanup PR)
+
+- **VL-23** — `importSnapshot` / `clearMyDrawings` fire a burst of per-stroke WS events; a large import hits the server stroke cap mid-stream and silently truncates peers' boards with no error surfaced. (`canvas_provider.dart:544`) — server atomic "replace board" event or chunk+ack.
+- **VL-24** — Nonce LiveKit identity (PR #1235, otherwise sound) has no per-user participant cap; scripted token requests mint unlimited publishing participants into one room. (`voice.rs:92`) — set room `maxParticipants` / evict prior same-user participants.
+- **VL-25** — `voiceLoungeFullscreenProvider` / `voiceLoungeViewModeProvider` are global `StateProvider`s not reset on lounge *exit* → next join can start in stale fullscreen/canvas mode. (`voice_lounge_fullscreen_provider.dart:7`) — reset on confirmed leave.
+- **VL-26** — Partial-stroke placeholder id keyed on `fromUserId` only collides across a user's concurrent devices / re-creates after the final stroke. (`canvas_provider.dart:975`) — key on `(userId, deviceId)` or a wire-carried partial id.
+- **VL-27** — Server canvas validation runs *before* membership/channel checks → a non-member can probe validation error codes for any channel_id and burn validation CPU. (`canvas.rs:277`) — reorder authz first.
+- **VL-28** — Voice signal relay issues 5 sequential DB round-trips per frame (ICE bursts × group size). (`voice.rs:49-132`) — collapse into one JOINed query; cache static channel/conversation kind.
+- **VL-29** — `update_image` (image_move) rewrites the full client object (≤16 KB) with a whole-array JSONB rewrite per move, no field projection or per-image cap. (`db/canvas.rs:212`) — server-side projection to position/size only.
+- **VL-30** — `get_canvas` returns the entire board (up to ~32 MB) unpaginated on every lounge join. (`routes/canvas.rs:56`) — paginate/chunk or gzip; lower per-stroke point cap.
+- **VL-31** — Single-tap with a shape tool commits an invisible 1-point "shape" that is persisted/broadcast but never renders (`_paintShape` needs ≥2 points). (`lounge_canvas_gestures.dart:164`) — drop shape strokes with <2 distinct points in `endStroke`.
+
+## Recommended fix order
+1. **VL-1** (input hardening — try/catch + defensive `fromJson` + `_parseColor`) — small, kills the likely crash root cause.
+2. **VL-16** (flip validation to Enforce + image-URL ownership) — small, server-side defense-in-depth for VL-1.
+3. **VL-2 + VL-21** (clamp strokes + pan) — small, fixes coordinate corruption.
+4. **VL-3 + VL-13** (voice heartbeat + authority clear on sweep) — fixes phantom-eviction + stuck canvas.
+5. **VL-4 + VL-6 + VL-12** (dedup + clear-generation fence + authority-clear-on-detach) — the divergence trio.
+6. **VL-8** (real tests for the WS handler + connection lifecycle) — locks in the above.
+
+Per-finding evidence (file:line + code quotes) captured in this session's audit run.
