@@ -40,6 +40,7 @@ pub async fn list_public_groups(
             id: g.id,
             title: g.title,
             description: g.description,
+            icon_url: g.icon_url,
             member_count: g.member_count,
             created_at: g.created_at,
             is_member: g.is_member,

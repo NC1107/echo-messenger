@@ -40,6 +40,7 @@ pub struct PublicGroupResponse {
     pub id: Uuid,
     pub title: Option<String>,
     pub description: Option<String>,
+    pub icon_url: Option<String>,
     pub member_count: i64,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub is_member: bool,
