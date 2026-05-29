@@ -10,7 +10,8 @@ import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
-import '../widgets/avatar_utils.dart' show groupAvatarColor;
+import '../widgets/avatar_utils.dart'
+    show buildAvatar, groupAvatarColor, resolveAvatarUrl;
 import '../widgets/echo_bottom_sheet.dart';
 import '../widgets/empty_state.dart';
 
@@ -19,6 +20,7 @@ class _PublicGroup {
   final String id;
   final String name;
   final String? description;
+  final String? iconUrl;
   final int memberCount;
   bool joined;
 
@@ -26,6 +28,7 @@ class _PublicGroup {
     required this.id,
     required this.name,
     this.description,
+    this.iconUrl,
     required this.memberCount,
     this.joined = false,
   });
@@ -35,6 +38,7 @@ class _PublicGroup {
       id: json['id'] as String? ?? json['conversation_id'] as String? ?? '',
       name: (json['title'] ?? json['name']) as String? ?? 'Unnamed',
       description: (json['description'] ?? json['desc']) as String?,
+      iconUrl: (json['icon_url'] ?? json['avatar_url']) as String?,
       memberCount: json['member_count'] as int? ?? 0,
       joined: json['is_member'] as bool? ?? false,
     );
@@ -226,15 +230,15 @@ class _DiscoverGroupsScreenState extends ConsumerState<DiscoverGroupsScreen> {
               // Avatar + name
               Row(
                 children: [
-                  Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      color: groupAvatarColor(group.name),
-                      borderRadius: BorderRadius.circular(28),
+                  buildAvatar(
+                    imageUrl: resolveAvatarUrl(
+                      group.iconUrl,
+                      ref.read(serverUrlProvider),
                     ),
-                    alignment: Alignment.center,
-                    child: const Icon(
+                    name: group.name,
+                    radius: 28,
+                    bgColor: groupAvatarColor(group.name),
+                    fallbackIcon: const Icon(
                       Icons.group,
                       size: 28,
                       color: Colors.white,
@@ -501,6 +505,7 @@ class _DiscoverGroupsScreenState extends ConsumerState<DiscoverGroupsScreen> {
         final group = _groups[index];
         return _GroupDiscoveryItem(
           group: group,
+          serverUrl: ref.read(serverUrlProvider),
           isJoining: _joiningIds.contains(group.id),
           onJoin: () => _joinGroup(group),
           onTap: () => _showGroupPreview(group),
@@ -530,12 +535,14 @@ class _DiscoverGroupsScreenState extends ConsumerState<DiscoverGroupsScreen> {
 
 class _GroupDiscoveryItem extends StatelessWidget {
   final _PublicGroup group;
+  final String serverUrl;
   final bool isJoining;
   final VoidCallback onJoin;
   final VoidCallback? onTap;
 
   const _GroupDiscoveryItem({
     required this.group,
+    required this.serverUrl,
     required this.isJoining,
     required this.onJoin,
     this.onTap,
@@ -631,17 +638,14 @@ class _GroupDiscoveryItem extends StatelessWidget {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Group avatar — bright solid background with white glyph,
-                        // deterministically picked from the group palette.
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: groupAvatarColor(group.name),
-                            borderRadius: BorderRadius.circular(22),
-                          ),
-                          alignment: Alignment.center,
-                          child: const Icon(
+                        // Group avatar — the uploaded icon when set, else a
+                        // solid colored circle with a group glyph.
+                        buildAvatar(
+                          imageUrl: resolveAvatarUrl(group.iconUrl, serverUrl),
+                          name: group.name,
+                          radius: 22,
+                          bgColor: groupAvatarColor(group.name),
+                          fallbackIcon: const Icon(
                             Icons.group,
                             size: 22,
                             color: Colors.white,
