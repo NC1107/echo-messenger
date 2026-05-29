@@ -302,6 +302,52 @@ async fn filter_revoked_devices(
     rdc
 }
 
+// ── Sender sibling-device delivery ───────────────────────────────────────────
+
+/// Deliver `new_message` to the sender's OTHER connected devices when no per-device
+/// self-slice was included in `recipient_device_contents`.
+///
+/// Background: `deliver_self_messages` (in `storage.rs`) only runs when the sender
+/// included their own devices in `recipient_device_contents`. For plaintext groups (and
+/// any encrypted group where the sender omits a self-slice), device B of the sender
+/// never receives the message because the main fanout loop excludes ALL of the sender's
+/// connections (`id != sender_id`). This function covers that gap by delivering the
+/// public `new_message` frame — the same frame every other group member receives —
+/// directly to the sender's sibling devices using device-id exclusion instead of
+/// user-id exclusion.
+///
+/// The originating device (device A) is explicitly excluded so it cannot double-render:
+/// it already has an optimistic local echo and uses `message_id` dedup. The client's
+/// `addMessage` call on `new_message` is idempotent on duplicate IDs, providing a
+/// second safety net.
+///
+/// DMs are unaffected: the DM sender always includes themselves in
+/// `recipient_device_contents` so `deliver_self_messages` handles their sibling
+/// devices, and `per_recipient_json` will contain the sender's user ID in that case.
+pub(in crate::ws::message_service) fn deliver_to_sender_other_devices(
+    hub: &crate::ws::hub::Hub,
+    sender_id: Uuid,
+    sender_device_id: i32,
+    per_recipient_json: Option<&HashMap<Uuid, Vec<(i32, WsMessage)>>>,
+    legacy_msg: Option<&WsMessage>,
+) {
+    // If the sender's own devices are already in per_recipient_json, then
+    // deliver_self_messages already sent per-device ciphertext frames to each of
+    // them. Skip the fallback so we don't double-deliver.
+    if per_recipient_json
+        .map(|m| m.contains_key(&sender_id))
+        .unwrap_or(false)
+    {
+        return;
+    }
+
+    let Some(msg) = legacy_msg else {
+        return;
+    };
+
+    hub.send_to_user_except_device(&sender_id, sender_device_id, msg.clone());
+}
+
 // ── @here suppression ────────────────────────────────────────────────────────
 
 /// Decide whether offline push should be suppressed for this message.
@@ -427,6 +473,18 @@ pub(in crate::ws::message_service) async fn fanout_message(
             "failed to populate per-device delivery ledger on fanout: {e:?}"
         );
     }
+
+    // Deliver new_message to the sender's sibling devices when no per-device self-slice
+    // was provided. Covers plaintext groups and any group send that omits a self-slice
+    // in recipient_device_contents. DMs are handled by deliver_self_messages (storage.rs)
+    // and are skipped here because per_recipient_json will contain the sender's user ID.
+    deliver_to_sender_other_devices(
+        &state.hub,
+        sender_id,
+        sender_device_id,
+        per_recipient_json.as_ref(),
+        legacy_msg.as_ref(),
+    );
 
     if any_delivered {
         send_delivery_confirmation(state, sender_id, sender_device_id, stored_id, conv_id).await;

@@ -164,6 +164,38 @@ impl Hub {
         self.send_to_user(user_id, msg)
     }
 
+    /// Send a message to all connected devices of a user **except** one specific device.
+    /// Returns the device IDs whose outbound queues accepted the message.
+    ///
+    /// Used by the group-fanout path to deliver `new_message` to the sender's sibling
+    /// devices without re-delivering to the originating device (same device-id-vs-user-id
+    /// class as VL-19: exclude by device, not by user).
+    pub fn send_to_user_except_device(
+        &self,
+        user_id: &Uuid,
+        exclude_device_id: i32,
+        msg: WsMessage,
+    ) -> SmallVec<[i32; 4]> {
+        let device_ids: SmallVec<[(i32, WsTx); 4]> = {
+            let Some(devices) = self.inner.connections.get(user_id) else {
+                return SmallVec::new();
+            };
+            devices
+                .iter()
+                .filter(|e| *e.key() != exclude_device_id)
+                .map(|e| (*e.key(), e.value().clone()))
+                .collect()
+        };
+
+        let mut accepted: SmallVec<[i32; 4]> = SmallVec::with_capacity(device_ids.len());
+        for (device_id, tx) in device_ids {
+            if self.try_send_tracked(*user_id, device_id, &tx, msg.clone()) {
+                accepted.push(device_id);
+            }
+        }
+        accepted
+    }
+
     /// Broadcast a JSON event to all members of a conversation, optionally excluding one user.
     ///
     /// The JSON string is converted to a `WsMessage` once. Subsequent sends clone the
