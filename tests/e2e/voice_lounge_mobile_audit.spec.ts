@@ -597,30 +597,53 @@ async function bootAndSignIn(page: Page, user: SeededUser): Promise<void> {
   await page.waitForSelector('flt-glass-pane, flutter-view', { timeout: 60_000 }).catch(() => {});
   await page.waitForTimeout(2500); // CanvasKit text rendering settle
 
-  // Sign in via the public REST endpoint and stash the token in
-  // localStorage under the keys the Flutter client reads on boot. Driving
-  // the username/password form through CanvasKit semantic locators is
-  // brittle across themes; the REST shortcut keeps the audit focused on
-  // the canvas, not on auth.
-  await page.evaluate(
-    ({ token, userId, username }) => {
+  // Force-enable Flutter Web's accessibility tree so `page.getByLabel(...)`
+  // resolves the `Semantics(label:)` strings exported by the canvas tool
+  // icons (commit 58b12d51). Flutter Web lazily enables this when a real
+  // screen reader is detected; Playwright never triggers that, so we have
+  // to flip it manually. Tries the modern bootstrap path first, then falls
+  // back to the engine's legacy global. Either no-ops if missing.
+  await page
+    .evaluate(() => {
+      const w = window as unknown as {
+        flutter?: { app?: { setSemanticsEnabled?: (b: boolean) => void } };
+        _flutter?: { semanticsEnabled?: boolean };
+        $flutterState?: { semanticsEnabled?: boolean };
+      };
       try {
-        // The Flutter client persists auth via shared_preferences which on
-        // web maps to localStorage with keys prefixed `flutter.`.
-        localStorage.setItem('flutter.access_token', JSON.stringify(token));
-        localStorage.setItem('flutter.user_id', JSON.stringify(userId));
-        localStorage.setItem('flutter.username', JSON.stringify(username));
+        w.flutter?.app?.setSemanticsEnabled?.(true);
       } catch {
-        /* private mode / quota -- handled at first auth call */
+        /* ignore */
       }
-    },
-    { token: user.accessToken, userId: user.userId, username: user.username },
-  );
+      if (w._flutter) (w._flutter as { semanticsEnabled?: boolean }).semanticsEnabled = true;
+      if (w.$flutterState) (w.$flutterState as { semanticsEnabled?: boolean }).semanticsEnabled = true;
+    })
+    .catch(() => {});
+  await page.waitForTimeout(250);
 
-  // Soft-reload so the persisted auth gets picked up by the auth provider's
-  // auto-login path.
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(4000);
+  // Sign in by driving the real login form. We previously tried a
+  // localStorage shortcut keyed on `flutter.access_token` etc, but the
+  // actual auth provider reads from secure storage (web: HttpOnly
+  // cookie for refresh) and the shortcut silently no-op'd — leaving
+  // every audit slice running on the login screen instead of the
+  // lounge. Probe verified the login form's aria-labels ARE exposed
+  // (Username / Password / login), so the form-driven flow is reliable.
+  try {
+    await page.getByLabel('Username').first().fill(user.username, { timeout: 10_000 });
+    await page.getByLabel('Password').first().fill(user.password, { timeout: 10_000 });
+    await page.getByLabel('login').first().click({ timeout: 10_000 });
+  } catch (e) {
+    throw new Error(
+      `audit sign-in failed: could not fill+submit login form via aria-label locators. ` +
+        `Confirm the login screen exposes 'Username' / 'Password' / 'login' Semantics labels. ` +
+        `Underlying error: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
+
+  // Wait for the home screen / conversation list to appear. The most
+  // reliable signal is the Username field disappearing (login dismissed).
+  await page.getByLabel('Username').waitFor({ state: 'detached', timeout: 30_000 }).catch(() => {});
+  await page.waitForTimeout(2500);
 }
 
 // ---------------------------------------------------------------------------

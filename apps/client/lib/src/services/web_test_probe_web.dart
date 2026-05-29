@@ -55,7 +55,37 @@ class EchoTestProbe {
     _currentColor = currentColor;
     if (!_installed) {
       _installProbeObject();
+      _forceEnableSemantics();
       _installed = true;
+    }
+  }
+
+  /// Force-enable Flutter Web's accessibility tree so Playwright's
+  /// `getByLabel(...)` can resolve the `Semantics(label:)` strings on
+  /// canvas tool icons. Flutter normally enables this lazily when a
+  /// screen reader is detected; the audit never triggers that path.
+  ///
+  /// Active only in debug+profile builds; never in release.
+  void _forceEnableSemantics() {
+    if (kReleaseMode) return;
+    try {
+      // The semantics-enabled flag lives on Flutter's engine bootstrap
+      // object. Path varies slightly across Flutter versions; we try
+      // each known location and ignore failures.
+      final flutter = web.window.getProperty('flutter'.toJS);
+      if (flutter != null) {
+        final app = (flutter as JSObject).getProperty('app'.toJS);
+        if (app != null) {
+          final setter = (app as JSObject).getProperty(
+            'setSemanticsEnabled'.toJS,
+          );
+          if (setter != null) {
+            (setter as JSFunction).callAsFunction(app, true.toJS);
+          }
+        }
+      }
+    } catch (_) {
+      // Best effort — ignore.
     }
   }
 
