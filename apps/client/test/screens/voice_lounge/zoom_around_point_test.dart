@@ -1,4 +1,4 @@
-import 'package:echo_app/src/screens/voice_lounge_screen.dart';
+import 'package:echo_app/src/widgets/voice_lounge/lounge_canvas_gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -7,19 +7,18 @@ import 'package:flutter_test/flutter_test.dart';
 /// pixel that was under the user's finger stays under their finger
 /// (within sub-pixel tolerance) — and the new transform reports the
 /// requested scale.
+///
+/// Pre-rewrite this exercised a top-level `zoomAroundPoint` in
+/// voice_lounge_screen.dart. That helper was deduplicated against the
+/// identical `zoomAround` inside `lounge_canvas_gestures.dart` (the
+/// only post-integration caller of the math); the test now points at
+/// the surviving copy.
 void main() {
-  group('zoomAroundPoint', () {
+  group('zoomAround (lounge canvas gestures)', () {
     test('keeps the tapped point anchored at identity start', () {
       const tap = Offset(120, 80);
       const target = 2.0;
-      final result = zoomAroundPoint(
-        current: Matrix4.identity(),
-        tapPoint: tap,
-        targetScale: target,
-      );
-      // At identity, canvas coords == viewport coords, so the canvas
-      // pixel under the tap is (120, 80). After zoom, that same
-      // canvas pixel must land back on (120, 80).
+      final result = zoomAround(Matrix4.identity(), tap, target);
       final projected = MatrixUtils.transformPoint(
         result,
         const Offset(120, 80),
@@ -29,25 +28,17 @@ void main() {
     });
 
     test('anchors the tap after a non-trivial existing pan + zoom', () {
-      // Simulate a user already at 1.5× scale with a (40, 20) pan.
       final start = Matrix4.identity()
         ..scaleByDouble(1.5, 1.5, 1.5, 1)
         ..setTranslationRaw(40, 20, 0);
       const tap = Offset(300, 200);
       const target = 3.0;
 
-      // Canvas-space point currently under the tap.
       final invStart = Matrix4.copy(start)..invert();
       final canvasUnderTap = MatrixUtils.transformPoint(invStart, tap);
 
-      final result = zoomAroundPoint(
-        current: start,
-        tapPoint: tap,
-        targetScale: target,
-      );
+      final result = zoomAround(start, tap, target);
 
-      // Same canvas pixel must still project to the tap under the
-      // new transform.
       final projected = MatrixUtils.transformPoint(result, canvasUnderTap);
       expect((projected - tap).distance, lessThan(0.001));
       expect(result.getMaxScaleOnAxis(), closeTo(target, 1e-9));
@@ -57,19 +48,12 @@ void main() {
       final start = Matrix4.identity()
         ..scaleByDouble(0.5, 0.5, 0.5, 1)
         ..setTranslationRaw(-200, -120, 0);
-      final result = zoomAroundPoint(
-        current: start,
-        tapPoint: const Offset(64, 96),
-        targetScale: 2.0,
-      );
-      // Off-diagonal rotation/shear entries must be zero so the
-      // canvas isn't squished or twisted by the zoom.
+      final result = zoomAround(start, const Offset(64, 96), 2.0);
       final s = result.storage;
-      expect(s[1], closeTo(0, 1e-9)); // row1, col0
-      expect(s[2], closeTo(0, 1e-9)); // row2, col0
-      expect(s[4], closeTo(0, 1e-9)); // row0, col1
-      expect(s[6], closeTo(0, 1e-9)); // row2, col1
-      // Translation Z must be zero so depth stays neutral.
+      expect(s[1], closeTo(0, 1e-9));
+      expect(s[2], closeTo(0, 1e-9));
+      expect(s[4], closeTo(0, 1e-9));
+      expect(s[6], closeTo(0, 1e-9));
       expect(result.getTranslation().z, closeTo(0, 1e-9));
     });
 
@@ -81,11 +65,7 @@ void main() {
       const target = 1.5;
       final invStart = Matrix4.copy(start)..invert();
       final canvasUnderTap = MatrixUtils.transformPoint(invStart, tap);
-      final result = zoomAroundPoint(
-        current: start,
-        tapPoint: tap,
-        targetScale: target,
-      );
+      final result = zoomAround(start, tap, target);
       final projected = MatrixUtils.transformPoint(result, canvasUnderTap);
       expect((projected - tap).distance, lessThan(0.001));
       expect(result.getMaxScaleOnAxis(), closeTo(target, 1e-9));
@@ -99,15 +79,10 @@ void main() {
         ..setTranslationRaw(100, 50, 0);
       final invStart = Matrix4.copy(start)..invert();
       final canvasPoint = MatrixUtils.transformPoint(invStart, tap);
-      final result = zoomAroundPoint(
-        current: start,
-        tapPoint: tap,
-        targetScale: target,
-      );
+      final result = zoomAround(start, tap, target);
       final translation = result.getTranslation();
       expect(translation.x, closeTo(tap.dx - canvasPoint.dx * target, 1e-9));
       expect(translation.y, closeTo(tap.dy - canvasPoint.dy * target, 1e-9));
-      // Depth-row stays untouched so 2D math is preserved.
       expect(translation.z, closeTo(0, 1e-9));
     });
   });

@@ -45,6 +45,19 @@ class CanvasController extends _$CanvasController {
   Timer? _strokeThrottle;
   List<CanvasPoint>? _pendingStrokePoints;
 
+  /// Full point list for the currently-in-progress local stroke. Built up
+  /// by [startStroke] / [continueStroke] and consumed by [endStroke] to
+  /// commit the final stroke and broadcast the `stroke` event.
+  ///
+  /// Held here -- not in [CanvasState] -- so per-pointer-move ticks bypass
+  /// Riverpod's `state = state.copyWith(...)` rebuild path. The local
+  /// render reads in-flight points from `ActiveStrokeNotifier` (a
+  /// `ChangeNotifier` mounted by `LoungeCanvasStrokes`); the WS partial
+  /// broadcast continues to read from [_pendingStrokePoints] below. The
+  /// two paths are independent. See
+  /// docs/voice-lounge/05-canvas-rewrite-spec.md §B.2.
+  List<CanvasPoint>? _strokePoints;
+
   /// Periodic breadcrumb timer — logs a [CanvasPerf.snapshot] to the debug
   /// log every 30 s while a lounge is active.  Mirrors the PR E pattern.
   Timer? _perfLogTimer;
@@ -199,11 +212,20 @@ class CanvasController extends _$CanvasController {
       '$serverUrl/api/groups/$conversationId/channels/$channelId/canvas',
     );
 
+    // Guards every state write below: if `detach()` cleared
+    // `_attachingChannelId` while the HTTP fetch was in flight (user
+    // left the lounge mid-load), or a fresh `attach()` superseded us
+    // for a different channel, we must NOT write the stale snapshot
+    // back into state — doing so re-pollutes the cleared canvas and
+    // leaves the lounge in a half-attached state (audit 2026-05-28).
+    bool stillAttaching() => _attachingChannelId == channelId;
+
     try {
       final response = await http.get(
         url,
         headers: {'Authorization': 'Bearer $token'},
       );
+      if (!stillAttaching()) return;
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body) as Map<String, dynamic>;
         final strokes = (json['drawing_data'] as List? ?? [])
@@ -227,6 +249,7 @@ class CanvasController extends _$CanvasController {
         'Canvas',
         'Failed to load canvas for channel $channelId: $e',
       );
+      if (!stillAttaching()) return;
       // Network error: mark as failed so the UI can offer a retry.
       state = state.copyWith(
         isLoaded: false,
@@ -262,29 +285,38 @@ class CanvasController extends _$CanvasController {
     _pendingStrokePoints = null;
     _dragId++;
     _strokeActive = true;
-    state = state.copyWith(activePoints: [point]);
-    _pendingStrokePoints = [point];
+    // The local in-flight preview is driven by ActiveStrokeNotifier (see
+    // `LoungeCanvasStrokes`) — we do NOT write activePoints into the
+    // provider state on the hot path. Keep two off-state accumulators
+    // instead: one for the WS partial broadcast window, and one for the
+    // full commit payload.
+    _pendingStrokePoints = <CanvasPoint>[point];
+    _strokePoints = <CanvasPoint>[point];
   }
 
   void continueStroke(CanvasPoint point) {
     final sw = Stopwatch()..start();
     final tool = state.selectedTool;
-    List<CanvasPoint> pts;
-    if (isShapeKind(strokeKindForTool(tool))) {
+    final isShape = isShapeKind(strokeKindForTool(tool));
+    final pts = _strokePoints ??= <CanvasPoint>[];
+    if (isShape) {
       // Shape tools (line/rect/ellipse) only need first + last point.
-      // Replace the trailing point on every move so the preview rubberbands
-      // without bloating the points list.
-      pts = state.activePoints.isEmpty
-          ? [point]
-          : [state.activePoints.first, point];
+      // Replace the trailing point on every move so the preview
+      // rubberbands without bloating the points list.
+      if (pts.isEmpty) {
+        pts.add(point);
+      } else if (pts.length == 1) {
+        pts.add(point);
+      } else {
+        pts[pts.length - 1] = point;
+      }
     } else {
-      pts = List<CanvasPoint>.from(state.activePoints)..add(point);
+      pts.add(point);
     }
-    state = state.copyWith(activePoints: pts);
 
     // Shapes don't need streaming WS partials — the final stroke at endStroke
     // is enough. Freehand keeps the 30 Hz partial broadcast.
-    if (!isShapeKind(strokeKindForTool(tool))) {
+    if (!isShape) {
       _pendingStrokePoints ??= [];
       _pendingStrokePoints!.add(point);
       _strokeThrottle ??= Timer.periodic(
@@ -404,6 +436,22 @@ class CanvasController extends _$CanvasController {
     return state.strokeWidth;
   }
 
+  /// Cancel the in-flight stroke without committing it. Used by the new
+  /// gesture state machine when a second pointer arrives mid-draw
+  /// (cancel-then-yield-to-pinch per
+  /// docs/voice-lounge/05-canvas-rewrite-spec.md §B.1) and when the user
+  /// taps Esc / right-clicks / switches tools mid-stroke. The local
+  /// in-flight preview is cleared by [ActiveStrokeNotifier.cancel] on the
+  /// gesture-widget side; this method just closes the WS partial broadcast
+  /// window and drops the accumulated points so they aren't committed.
+  void cancelStroke() {
+    _strokeActive = false;
+    _strokeThrottle?.cancel();
+    _strokeThrottle = null;
+    _pendingStrokePoints = null;
+    _strokePoints = null;
+  }
+
   void endStroke() {
     // Always close the drag, even if we have nothing to commit — a gesture
     // cancel from InteractiveViewer reclaiming the pointer mid-stroke
@@ -417,9 +465,11 @@ class CanvasController extends _$CanvasController {
     _strokeThrottle?.cancel();
     _strokeThrottle = null;
     _pendingStrokePoints = null;
+    final committedPoints = _strokePoints;
+    _strokePoints = null;
 
     if (!wasActive) return;
-    if (state.activePoints.isEmpty) return;
+    if (committedPoints == null || committedPoints.isEmpty) return;
     if (_channelId == null) return;
 
     final tool = state.selectedTool;
@@ -429,13 +479,18 @@ class CanvasController extends _$CanvasController {
       id: newCanvasId(),
       color: isEraser ? '#00000000' : colorToHex(state.currentColor),
       width: _effectiveStrokeWidth(kind),
-      points: List.from(state.activePoints),
+      points: List<CanvasPoint>.from(committedPoints),
       kind: kind,
     );
 
     // Append locally.
     final newStrokes = List<CanvasStroke>.from(state.strokes)..add(stroke);
-    state = state.copyWith(strokes: newStrokes, activePoints: []);
+    // `activePoints` is intentionally kept empty here — the field is
+    // deprecated for in-flight rendering (see ActiveStrokeNotifier) but
+    // is still part of the CanvasState shape for backwards-compat with
+    // any external consumer reading it. Pin it to const [] so a stale
+    // reader sees the canonical empty value.
+    state = state.copyWith(strokes: newStrokes, activePoints: const []);
     _myStrokeIds.add(stroke.id);
 
     // Broadcast complete stroke and persist via WebSocket.
@@ -1155,6 +1210,14 @@ class CanvasController extends _$CanvasController {
 
   @visibleForTesting
   int get debugDragId => _dragId;
+
+  /// Read-only view of the in-flight stroke's accumulated points (formerly
+  /// `state.activePoints`). Exposed for tests that assert mid-drag
+  /// state — production code reads in-flight points from
+  /// `ActiveStrokeNotifier` instead.
+  @visibleForTesting
+  List<CanvasPoint> get debugStrokePoints =>
+      _strokePoints == null ? const [] : List.unmodifiable(_strokePoints!);
 
   // ---------------------------------------------------------------------------
   // Dev-mode budget guard
