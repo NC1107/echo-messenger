@@ -58,7 +58,7 @@ try:
 except ImportError:
     sys.exit("Missing deps. Run:  pip install requests websockets")
 
-CANVAS_CENTER = 50000.0
+CANVAS_CENTER = 3000.0  # centre of the bounded 6000×6000 beta board
 
 
 # --------------------------------------------------------------------------- #
@@ -109,14 +109,14 @@ def build_strokes():
         return p
 
     strokes = [
-        stroke("#3DDC97", 18.0, _circle(31000)),            # outer ring (Echo green)
-        stroke("#FF3DAE", 10.0, _rose(5, 24000)),           # magenta 10-petal rose
-        stroke("#38E1FF", 8.0, _rose(4, 17000, phase=0.4)), # cyan rose
-        stroke("#FFD93B", 6.0, _rose(7, 11000)),            # gold rose
-        stroke("#B388FF", 5.0, _rose(2, 6000)),             # violet inner loop
+        stroke("#3DDC97", 14.0, _circle(2500)),            # outer ring (Echo green)
+        stroke("#FF3DAE", 9.0, _rose(5, 2000)),            # magenta 10-petal rose
+        stroke("#38E1FF", 7.0, _rose(4, 1500, phase=0.4)), # cyan rose
+        stroke("#FFD93B", 5.0, _rose(7, 1000)),            # gold rose
+        stroke("#B388FF", 4.0, _rose(2, 550)),             # violet inner loop
         # A text label (kind="text": single anchor point + text field).
-        stroke("#FFFFFF", 1400.0,
-               [{"x": CANVAS_CENTER - 16000, "y": CANVAS_CENTER + 34000}],
+        stroke("#FFFFFF", 220.0,
+               [{"x": CANVAS_CENTER - 1300, "y": CANVAS_CENTER + 2750}],
                kind="text", text="ECHO canvas demo ✨"),
     ]
     return strokes
@@ -277,8 +277,8 @@ async def run_ws(ws_url, channel_id, user_id, strokes, once, clear):
                   f"{len(sp['points'])} pts, {sp['color']})")
 
         avatar = {"user_id": user_id, "x": CANVAS_CENTER, "y": CANVAS_CENTER, "scale": 1.6}
-        share = {"window_id": "demo-share", "x": CANVAS_CENTER + 22000,
-                 "y": CANVAS_CENTER - 18000, "width": 9000.0, "height": 5200.0}
+        share = {"window_id": "demo-share", "x": CANVAS_CENTER + 1700,
+                 "y": CANVAS_CENTER - 1400, "width": 1200.0, "height": 700.0}
         await send("avatar_move", avatar)
         await send("screenshare_move", share)
         print("  -> placed avatar + screen-share window")

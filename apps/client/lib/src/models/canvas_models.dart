@@ -4,25 +4,30 @@ import 'dart:ui' show Color;
 // Canvas geometry helpers
 // ---------------------------------------------------------------------------
 
-/// Virtual canvas size. 100k×100k is large enough to feel infinite for any
-/// realistic call (at default 1× zoom you'd have to drag your finger across
-/// the screen ~250 times to cross it) while staying inside the range where
-/// Flutter's transformation math and floating-point precision behave well.
-/// Treat the lounge as a Figma-style pannable surface where the user lands
-/// in a default region (origin, or the bbox of existing content on
-/// rejoin) and can zoom out repeatedly to see more.
+/// Virtual canvas size. For beta this is a *bounded* 6000×6000 board (≈ 3×3
+/// desktop screens at 1× zoom) rather than a near-infinite surface: the
+/// gesture layer clamps pan/zoom to these bounds, so the whole board is
+/// always reachable and you can't get lost in empty space. Avatars cluster
+/// in the centre (the default ring radius is a fraction of this) and the
+/// lounge opens framing the whole board.
 ///
-/// Old call-sites of `kCanvasWidth` from the 4096-era still work as a
-/// "clamp coords to the canvas" guard, but the value is now so large the
-/// clamp is effectively a no-op for any realistic input.
-const double kCanvasWidth = 100000;
-const double kCanvasHeight = 100000;
+/// Going "infinite" later is just raising this constant and dropping the
+/// clamp — everything else (the ring, image spawn, the initial pose, the
+/// coord clamps) is defined relative to it.
+const double kCanvasWidth = 6000;
+const double kCanvasHeight = 6000;
 
-/// Legacy 4096-px canvas size, used by [_migrateLegacyCoord] so old
-/// persisted strokes land where they were drawn (in the top-left 4% of
-/// the new 100k space) instead of being rescaled to fill the new range.
-/// Auto-fit-to-content on join zooms the user to that region naturally,
-/// so users never notice the canvas got bigger underneath them.
+/// Default avatar-ring radius as a fraction of the canvas. Un-dragged
+/// participants sit on a circle of `kDefaultAvatarRingFraction * kCanvasWidth`
+/// around the centre. Kept small so people cluster near the middle and the
+/// lounge can open zoomed-in on the group. Shared by the avatar layout
+/// (`voice_canvas.dart`) and the initial pose (`voice_lounge_screen.dart`).
+const double kDefaultAvatarRingFraction = 0.15;
+
+/// Legacy normalised-coordinate scale, used by [_migrateLegacyCoord] to map
+/// very old strokes persisted as 0..1 fractions into absolute pixels. Kept at
+/// 4096 (the pre-bounded canvas size) for backwards-compatibility; auto-fit
+/// on join frames whatever content exists regardless.
 const double _kLegacyNormalisedScale = 4096;
 
 /// Running count of how many times [_migrateLegacyCoord] has applied the

@@ -20,6 +20,7 @@ import '../models/canvas_models.dart'
         StrokeKind,
         kCanvasHeight,
         kCanvasWidth,
+        kDefaultAvatarRingFraction,
         strokeKindForTool;
 import '../providers/auth_provider.dart';
 import '../providers/canvas_authority_provider.dart';
@@ -70,18 +71,11 @@ const double _kAvatarTileRadius = 24.0;
 /// Minimum canvas zoom. ~0.02 lets the whole 100k×100k surface fit a typical
 /// viewport (viewport / kCanvasWidth) so the user can zoom all the way out to
 /// see everything and find content that drifted far away (#4).
-const double _kCanvasMinScale = 0.02;
-
-/// Canvas-space radius of the default avatar ring used by
-/// `voice_canvas.dart`'s `_defaultAvatarPos` when no one has dragged
-/// their puck yet. Default positions sit on a circle of this radius
-/// around the canvas centre; the initial-pose fallback zooms out far
-/// enough to frame that entire ring so a fresh joiner sees every
-/// participant (including their own avatar) without panning across
-/// 50 000 canvas-pixels first. Mirrors the `0.3 * kCanvasWidth`
-/// magic number in `_defaultAvatarPos`; kept in sync with that
-/// helper by the `voice_canvas` widget tests.
-const double _kDefaultAvatarRingRadius = 0.3 * kCanvasWidth;
+/// Canvas-space radius of the default avatar ring (shared fraction lives in
+/// `canvas_models.dart`). The initial pose frames this ring so a fresh joiner
+/// lands zoomed-in on the centre cluster.
+const double _kDefaultAvatarRingRadius =
+    kDefaultAvatarRingFraction * kCanvasWidth;
 
 /// On-canvas debug overlay flag. Flip to `true` only when locally
 /// debugging the lounge canvas — it paints a dashed border around the
@@ -289,96 +283,26 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     _canvasGesturesKey.currentState?.resetToTransform(next);
   }
 
-  /// Compute the matrix that frames the existing canvas content inside
-  /// [viewport]. Auto-fit semantics:
-  ///   - Bounding box of every stroke point + image rect + avatar tile.
-  ///   - +10% padding so content doesn't touch the edges.
-  ///   - Empty canvas (no strokes / images / avatars) → centre on the
-  ///     middle of the canvas at a zoom that frames the default avatar
-  ///     ring so a fresh joiner sees every participant without first
-  ///     panning across the 100k×100k surface (#1265).
-  ///
-  /// Avatars ARE included so a fresh joiner with no drawings still
-  /// frames participants in view; the per-audio-tick avatar jitter
-  /// can't pull the fit pose around because the listener-driven
-  /// helpers only recompute on viewport-transform changes, not on
-  /// canvas-state updates.
-  Matrix4 _computeInitialPose(CanvasState canvas, Size viewport) {
-    final bbox = _contentBbox(canvas);
-    if (bbox == null) {
-      return _centeredPose(viewport);
-    }
-    final contentW = bbox.width;
-    final contentH = bbox.height;
-    // 10% padding around the bbox so strokes don't kiss the edges.
-    final pad = math.max(contentW, contentH) * 0.1;
-    final paddedW = contentW + pad * 2;
-    final paddedH = contentH + pad * 2;
-    final fit = math.min(viewport.width / paddedW, viewport.height / paddedH);
-    // Anchor: bbox top-left lands at (-pad, -pad) of the visible region
-    // so the padding shows on every side.
-    return Matrix4.identity()
-      ..scaleByDouble(fit, fit, fit, 1)
-      ..setTranslationRaw(-(bbox.left - pad) * fit, -(bbox.top - pad) * fit, 0);
-  }
+  /// The lounge always opens at the SAME centred, zoomed-in "home" pose —
+  /// the middle of the bounded board, framed around the default avatar
+  /// cluster with drawing room around it. Deliberately NOT fit-to-content:
+  /// landing in the same place every join is the point (it keeps everyone in
+  /// the centre and nudges drawing toward the middle). "Reset zoom" returns
+  /// here after panning/zooming away.
+  Matrix4 _computeInitialPose(CanvasState canvas, Size viewport) =>
+      _centeredPose(viewport);
 
-  /// Returns the bounding rectangle of every stroke point, image rect,
-  /// and stored avatar position, or null when the canvas has no content
-  /// to fit around. Avatars are inflated by [_kAvatarTileRadius] so the
-  /// tile (not just its centre) fits inside the frame.
-  Rect? _contentBbox(CanvasState canvas) {
-    double minX = double.infinity, minY = double.infinity;
-    double maxX = double.negativeInfinity, maxY = double.negativeInfinity;
-    for (final s in canvas.strokes) {
-      for (final p in s.points) {
-        if (p.x < minX) minX = p.x;
-        if (p.y < minY) minY = p.y;
-        if (p.x > maxX) maxX = p.x;
-        if (p.y > maxY) maxY = p.y;
-      }
-    }
-    for (final img in canvas.images) {
-      if (img.x < minX) minX = img.x;
-      if (img.y < minY) minY = img.y;
-      if (img.x + img.width > maxX) maxX = img.x + img.width;
-      if (img.y + img.height > maxY) maxY = img.y + img.height;
-    }
-    for (final pos in canvas.avatarPositions.values) {
-      final half = _kAvatarTileRadius * pos.scale;
-      if (pos.x - half < minX) minX = pos.x - half;
-      if (pos.y - half < minY) minY = pos.y - half;
-      if (pos.x + half > maxX) maxX = pos.x + half;
-      if (pos.y + half > maxY) maxY = pos.y + half;
-    }
-    // Screen-share windows count as content too — otherwise "fit view" could
-    // never frame a shared screen and the user couldn't find it (#5).
-    for (final win in canvas.screenSharePositions.values) {
-      if (win.x < minX) minX = win.x;
-      if (win.y < minY) minY = win.y;
-      if (win.x + win.width > maxX) maxX = win.x + win.width;
-      if (win.y + win.height > maxY) maxY = win.y + win.height;
-    }
-    if (minX == double.infinity || maxX <= minX || maxY <= minY) {
-      return null;
-    }
-    return Rect.fromLTRB(minX, minY, maxX, maxY);
-  }
-
-  /// Pose used when the canvas is completely empty (no strokes, no
-  /// images, no persisted avatar drags). Centres on the canvas middle
-  /// and zooms OUT just far enough to frame the default avatar ring
-  /// `voice_canvas.dart` lays out for un-dragged participants — so a
-  /// fresh joiner sees every avatar (their own included) without
-  /// hunting across the 100k×100k surface (#1265). A 10% margin keeps
-  /// pucks off the very edge of the viewport.
+  /// The lounge's "home" pose: centre on the middle of the board, zoomed in
+  /// to frame the default avatar cluster with ~30% drawing room around it.
+  /// Everyone lands here on join so the group stays clustered in the centre
+  /// and drawing naturally happens in the middle.
   Matrix4 _centeredPose(Size viewport) {
     const cx = kCanvasWidth / 2;
     const cy = kCanvasHeight / 2;
-    // Frame the full default avatar ring + half an avatar tile so the
-    // outermost puck lands inside the visible region, then a 10%
-    // padding band on top.
+    // Frame the avatar ring + half a tile, with a 30% padding band so there's
+    // room to draw around the group without the pucks hugging the edge.
     const ringExtent = _kDefaultAvatarRingRadius + _kAvatarTileRadius;
-    const framed = ringExtent * 2 * 1.1;
+    const framed = ringExtent * 2 * 1.3;
     final fit = math.min(viewport.width, viewport.height) / framed;
     return Matrix4.identity()
       ..scaleByDouble(fit, fit, fit, 1)
@@ -1545,6 +1469,17 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
         canvas.selectedTool != CanvasTool.none &&
         canvas.selectedTool != CanvasTool.text;
 
+    // Zoom-out floor = "fit the whole board with ~10% margin". You can pull
+    // back to see the entire bounded canvas but no further into empty space;
+    // the gesture layer also clamps pan/zoom to the board (see canvasSize).
+    const canvasSize = Size(kCanvasWidth, kCanvasHeight);
+    final fitWhole =
+        math.min(
+          viewportSize.width / kCanvasWidth,
+          viewportSize.height / kCanvasHeight,
+        ) /
+        1.1;
+
     final gestures = GestureDetector(
       key: const Key('canvas-tap-to-claim'),
       behavior: HitTestBehavior.translucent,
@@ -1553,11 +1488,9 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
         key: _canvasGesturesKey,
         isToolSelected: isToolSelected,
         initialTransform: initialTransform,
-        // Allow zooming out far enough to frame the whole 100k surface
-        // (viewport / 100k ≈ 0.02) so users can see the entire canvas /
-        // find content that drifted far away (#4). The minimap gives
-        // orientation at that zoom.
-        minScale: _kCanvasMinScale,
+        minScale: fitWhole,
+        viewportSize: viewportSize,
+        canvasSize: canvasSize,
         onStrokeStart: _onStrokeStart,
         onStrokeMove: _onStrokeMove,
         onStrokeEnd: _onStrokeEnd,

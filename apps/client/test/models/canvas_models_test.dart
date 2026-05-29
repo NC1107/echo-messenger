@@ -8,13 +8,13 @@ void main() {
   setUp(resetLegacyMigrationCount);
 
   group('CanvasPoint', () {
-    test('canvas dimensions are the 100k-px figma-style surface', () {
-      // The 100k value is the "feels infinite" virtual canvas; in 2026-05
-      // we bumped from the original 4096 to give users true Figma-style
-      // pan/zoom. The auto-fit-on-join logic frames the bbox of existing
-      // content so users never have to find the corner.
-      expect(kCanvasWidth, 100000);
-      expect(kCanvasHeight, 100000);
+    test('canvas is a bounded 6000-px board for beta', () {
+      // Beta uses a bounded board (pan/zoom clamped to it) rather than a
+      // near-infinite surface, so the whole canvas is always reachable and
+      // the group clusters in the centre. Going "infinite" later is just
+      // raising this constant + dropping the clamp.
+      expect(kCanvasWidth, 6000);
+      expect(kCanvasHeight, 6000);
     });
 
     test('round-trips through JSON in canvas-space pixels', () {

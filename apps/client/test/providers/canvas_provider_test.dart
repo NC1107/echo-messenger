@@ -214,8 +214,8 @@ void main() {
       const fromUserId = 'user-a';
       const payload = <String, dynamic>{
         'user_id': 'user-b',
-        'x': 40000.0,
-        'y': 60000.0,
+        'x': 4000.0,
+        'y': 5000.0,
         'scale': 1.5,
       };
 
@@ -235,8 +235,8 @@ void main() {
       );
       state = state.copyWith(avatarPositions: updated);
 
-      expect(state.avatarPositions['user-b']?.x, closeTo(40000.0, 1e-10));
-      expect(state.avatarPositions['user-b']?.y, closeTo(60000.0, 1e-10));
+      expect(state.avatarPositions['user-b']?.x, closeTo(4000.0, 1e-10));
+      expect(state.avatarPositions['user-b']?.y, closeTo(5000.0, 1e-10));
       expect(state.avatarPositions['user-b']?.scale, 1.5);
       expect(
         state.avatarPositions.containsKey('user-a'),
