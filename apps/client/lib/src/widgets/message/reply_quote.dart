@@ -91,12 +91,16 @@ class ReplyQuote extends StatelessWidget {
 
   (Color, Color, Color) _buildColorOverlays(BuildContext context) {
     final mineFg = context.onSentBubble;
-    final mineFgIsDark = mineFg.computeLuminance() < 0.3;
+    // Base the overlay/border alpha on whether the sent-bubble BACKGROUND is
+    // dark (not the foreground). This keeps Ember (amber bubble, high
+    // luminance) from using higher-alpha overlays designed for dark bubbles
+    // and ensures the reply quote tint is readable on all themes (#ember-reply).
+    final bubbleBgIsDark = context.sentBubble.computeLuminance() < 0.3;
     final tint = context.sentBubbleTint;
-    final mineOverlay = mineFgIsDark
+    final mineOverlay = bubbleBgIsDark
         ? tint.withValues(alpha: 0.18)
         : tint.withValues(alpha: 0.12);
-    final mineBorder = mineFgIsDark
+    final mineBorder = bubbleBgIsDark
         ? tint.withValues(alpha: 0.55)
         : tint.withValues(alpha: 0.5);
     return (mineOverlay, mineBorder, mineFg);

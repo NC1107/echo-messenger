@@ -4,6 +4,7 @@ import 'package:network_image_mock/network_image_mock.dart';
 
 import 'package:echo_app/src/models/chat_message.dart';
 import 'package:echo_app/src/models/reaction.dart';
+import 'package:echo_app/src/widgets/message/link_preview_card.dart';
 import 'package:echo_app/src/widgets/message/reaction_bar.dart';
 import 'package:echo_app/src/widgets/message_item.dart';
 
@@ -911,6 +912,74 @@ void main() {
         // System event renders as its pill, not hidden or lock-icon.
         expect(find.byIcon(Icons.lock_outline), findsNothing);
       });
+    });
+
+    group('link-preview deduplication', () {
+      // Regression for: message body = URL only → URL text + preview card = doubled.
+
+      testWidgets(
+        'URL-only message: raw URL text is suppressed, LinkPreviewCard is present',
+        (tester) async {
+          await mockNetworkImagesFor(() async {
+            const url = 'https://example.com/some-article';
+            final msg = _makeMessage(content: url);
+            await tester.pumpApp(
+              MessageItem(
+                message: msg,
+                showHeader: false,
+                isLastInGroup: true,
+                myUserId: 'test-user-id',
+                serverUrl: 'http://localhost:8080',
+              ),
+            );
+            await tester.pump();
+
+            // The raw URL should NOT appear as visible text in a text widget —
+            // only the preview card replaces it.
+            expect(find.text(url), findsNothing);
+            // The preview card widget must be present in the tree.
+            expect(find.byType(LinkPreviewCard), findsOneWidget);
+          });
+        },
+      );
+
+      testWidgets(
+        'text+URL message: caption text IS shown alongside LinkPreviewCard',
+        (tester) async {
+          await mockNetworkImagesFor(() async {
+            const url = 'https://example.com/some-article';
+            const content = 'Check this out: $url';
+            final msg = _makeMessage(content: content);
+            await tester.pumpApp(
+              MessageItem(
+                message: msg,
+                showHeader: false,
+                isLastInGroup: true,
+                myUserId: 'test-user-id',
+                serverUrl: 'http://localhost:8080',
+              ),
+            );
+            await tester.pump();
+
+            // The text widget (RichText) containing the caption should still
+            // render because the body is not just a bare URL. Use a predicate
+            // to match RichText whose plain-text includes the caption prefix.
+            final richTexts = tester.widgetList<RichText>(
+              find.byType(RichText),
+            );
+            final hasCaption = richTexts.any(
+              (rt) => rt.text.toPlainText().contains('Check this out'),
+            );
+            expect(
+              hasCaption,
+              isTrue,
+              reason: 'Caption text should be visible',
+            );
+            // The preview card is also present.
+            expect(find.byType(LinkPreviewCard), findsOneWidget);
+          });
+        },
+      );
     });
   });
 }
