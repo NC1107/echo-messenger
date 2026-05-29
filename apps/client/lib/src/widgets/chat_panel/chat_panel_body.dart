@@ -20,6 +20,7 @@ import 'chat_message_list.dart';
 import 'drop_overlay.dart';
 import 'floating_date_pill.dart';
 import 'new_messages_pill.dart';
+import 'scroll_to_bottom_button.dart';
 
 /// Build the inner `chatContentBox` Stack for `ChatPanel.build` — the
 /// header bar, channel bar, banners, message list, floating pills, input
@@ -50,6 +51,7 @@ class ChatPanelBodyParams {
     required this.floatingDateVisible,
     required this.hasNewMessagesBelow,
     required this.newMessagesBannerText,
+    required this.scrollFarFromBottom,
     required this.liveRegionAnnouncement,
     required this.hideVoiceDock,
     required this.typingUsers,
@@ -105,6 +107,11 @@ class ChatPanelBodyParams {
   final bool floatingDateVisible;
   final bool hasNewMessagesBelow;
   final String newMessagesBannerText;
+
+  /// True when the user has scrolled far enough up that the button should
+  /// appear. Driven by the scroll listener in [ChatPanel].
+  final bool scrollFarFromBottom;
+
   final String liveRegionAnnouncement;
   final bool hideVoiceDock;
   final List<String> typingUsers;
@@ -364,6 +371,12 @@ Widget _buildMessageListStack(
           text: p.newMessagesBannerText,
           onTap: p.onScrollToBottom,
         ),
+      // Always keep the widget in the tree so its AnimationController
+      // can drive the fade/scale transition smoothly (#3/N3).
+      ScrollToBottomButton(
+        visible: p.scrollFarFromBottom && !p.hasNewMessagesBelow,
+        onTap: p.onScrollToBottom,
+      ),
       // Live region moved to the outer Stack so its index
       // in the tree is stable across pill toggles (#630).
     ],

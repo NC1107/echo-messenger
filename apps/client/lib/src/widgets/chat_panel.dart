@@ -23,6 +23,7 @@ import 'chat_input_bar.dart';
 import 'chat_panel_controller.dart';
 import 'chat_panel/chat_panel_body.dart';
 import 'chat_panel/deleted_for_me_storage.dart';
+import 'chat_panel/scroll_to_bottom_button.dart' show kScrollToBottomThreshold;
 import 'chat_panel/drop_handler.dart';
 import 'chat_panel/history_loaders.dart' as history;
 import 'chat_panel/message_actions.dart' as actions;
@@ -151,6 +152,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   set _hasNewMessagesBelow(bool v) => _controller.hasNewMessagesBelow = v;
   int get _newMessagesBelowCount => _controller.newMessagesBelowCount;
   set _newMessagesBelowCount(int v) => _controller.newMessagesBelowCount = v;
+
+  /// True when the user has scrolled far enough up to show the jump-to-bottom
+  /// button — i.e. more than [kScrollToBottomThreshold] pixels from the end.
+  bool _scrollFarFromBottom = false;
   // Hidden Semantics live-region label (#495). Cleared ~3s after each
   // announcement so a window-focus event doesn't replay the stale label.
   String _liveRegionAnnouncement = '';
@@ -223,6 +228,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     _pendingInitialMessageId = widget.initialMessageId;
     _hasNewMessagesBelow = false;
     _newMessagesBelowCount = 0;
+    _scrollFarFromBottom = false;
     _unreadBoundaryMessageId = null;
     _unreadBoundaryCount = 0;
     _initialScrollPending = false;
@@ -303,7 +309,19 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         });
       }
     }
+    // Show jump-to-bottom button when scrolled far up (#3/N3).
+    _updateScrollFarFromBottom();
     _updateFloatingDate();
+  }
+
+  void _updateScrollFarFromBottom() {
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    final distFromBottom = pos.maxScrollExtent - pos.pixels;
+    final farFromBottom = distFromBottom > kScrollToBottomThreshold;
+    if (farFromBottom != _scrollFarFromBottom) {
+      setState(() => _scrollFarFromBottom = farFromBottom);
+    }
   }
 
   void _updateFloatingDate() {
@@ -964,6 +982,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         floatingDateVisible: _floatingDateVisible,
         hasNewMessagesBelow: _hasNewMessagesBelow,
         newMessagesBannerText: _newMessagesBannerText(),
+        scrollFarFromBottom: _scrollFarFromBottom,
         liveRegionAnnouncement: _liveRegionAnnouncement,
         hideVoiceDock: widget.hideVoiceDock,
         typingUsers: input.typingUsers,
