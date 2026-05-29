@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart'
+    show debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -458,5 +460,80 @@ void main() {
       // Empty-state placeholder should NOT appear while loading
       expect(find.textContaining('Start your conversation'), findsNothing);
     });
+
+    // FIX A — message text selectable on desktop/web via SelectionArea.
+    testWidgets(
+      'SelectionArea wraps the message list when platform is linux (desktop)',
+      (tester) async {
+        // flutter_test host reports android; override to linux to assert the
+        // SelectionArea branch that fires on desktop platforms.
+        debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+
+        // Provide one message so the list branch is taken (not empty/skeleton).
+        const msg = ChatMessage(
+          id: 'msg-sel-1',
+          fromUserId: 'user-alice',
+          fromUsername: 'alice',
+          conversationId: 'conv-dm',
+          content: 'Hello selectable world',
+          timestamp: '2026-01-15T10:00:00Z',
+          isMine: false,
+        );
+        const chatState = ChatState(
+          messagesByConversation: {
+            'conv-dm': [msg],
+          },
+        );
+
+        try {
+          await tester.pumpApp(
+            const ChatPanel(conversation: _dmConversation),
+            overrides: _chatPanelOverrides(chatState: chatState),
+          );
+          await tester.pump();
+
+          // SelectionArea must wrap the list on linux (desktop).
+          expect(find.byType(SelectionArea), findsOneWidget);
+          // Verify the message still renders inside the area.
+          expect(
+            find.textContaining('Hello selectable world', findRichText: true),
+            findsOneWidget,
+          );
+        } finally {
+          // Must reset before the framework's invariant check runs.
+          debugDefaultTargetPlatformOverride = null;
+        }
+      },
+    );
+
+    testWidgets(
+      'SelectionArea is absent on mobile (android) — no swipe conflicts',
+      (tester) async {
+        // flutter_test host reports android by default; no override needed.
+        const msg = ChatMessage(
+          id: 'msg-sel-2',
+          fromUserId: 'user-alice',
+          fromUsername: 'alice',
+          conversationId: 'conv-dm',
+          content: 'Mobile message',
+          timestamp: '2026-01-15T10:00:00Z',
+          isMine: false,
+        );
+        const chatState = ChatState(
+          messagesByConversation: {
+            'conv-dm': [msg],
+          },
+        );
+
+        await tester.pumpApp(
+          const ChatPanel(conversation: _dmConversation),
+          overrides: _chatPanelOverrides(chatState: chatState),
+        );
+        await tester.pump();
+
+        // Android: no SelectionArea — prevents arena race with swipe-to-reply.
+        expect(find.byType(SelectionArea), findsNothing);
+      },
+    );
   });
 }

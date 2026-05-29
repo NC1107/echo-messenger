@@ -1329,12 +1329,15 @@ class _MessageItemState extends State<MessageItem>
           defaultTargetPlatform == TargetPlatform.iOS);
 
   /// Wrap [messageWidget] with swipe-to-reply gesture handlers on mobile.
+  ///
+  /// The outermost widget is always full-row width so that even a narrow
+  /// bubble (e.g. a one-word message) has a full-row horizontal drag target.
   Widget _buildSwipeToReplyWrapper({
     required bool canSwipe,
     required ChatMessage msg,
     required Widget messageWidget,
   }) {
-    return Stack(
+    final stack = Stack(
       children: [
         if (canSwipe && _swipeDx > 0)
           Positioned(
@@ -1364,6 +1367,11 @@ class _MessageItemState extends State<MessageItem>
         Transform.translate(offset: Offset(_swipeDx, 0), child: messageWidget),
       ],
     );
+    // Expand to full row width when swipe is active so a narrow bubble
+    // (e.g. one-word message) still registers the horizontal drag anywhere
+    // along the row, matching the visual hover-tint area.
+    if (!canSwipe) return stack;
+    return SizedBox(width: double.infinity, child: stack);
   }
 
   /// Handle long-press: open the centralised context menu on mobile,
@@ -1806,11 +1814,11 @@ class _HoverStyleSpec {
           background: context.surface.withValues(alpha: 0.98),
           borderColor: context.border,
           iconColor: context.textPrimary,
-          shadow: const [
+          shadow: [
             BoxShadow(
-              color: Color(0x3D000000),
+              color: context.textPrimary.withValues(alpha: 0.24),
               blurRadius: 14,
-              offset: Offset(0, 4),
+              offset: const Offset(0, 4),
             ),
           ],
           borderWidth: 1,
@@ -1829,11 +1837,11 @@ class _HoverStyleSpec {
           background: context.surface.withValues(alpha: 0.76),
           borderColor: context.accent.withValues(alpha: 0.28),
           iconColor: context.textPrimary,
-          shadow: const [
+          shadow: [
             BoxShadow(
-              color: Color(0x29000000),
+              color: context.textPrimary.withValues(alpha: 0.16),
               blurRadius: 8,
-              offset: Offset(0, 2),
+              offset: const Offset(0, 2),
             ),
           ],
           borderWidth: 1,
