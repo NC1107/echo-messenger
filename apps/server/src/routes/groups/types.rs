@@ -89,7 +89,7 @@ mod update_group_request_lockdown {
     /// If a future contributor adds the field to the struct this test will
     /// stop short-circuiting (it'll start parsing the value into the new
     /// field) and the matching production write path will need to be
-    /// security-reviewed. See TD-7 in TECHNICAL_DEBT.md.
+    /// security-reviewed. See docs/TECH_DEBT.md.
     #[test]
     fn is_encrypted_is_silently_dropped() {
         // Unknown `is_encrypted` MUST be silently dropped (not propagated).

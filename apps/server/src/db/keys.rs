@@ -685,7 +685,7 @@ pub async fn count_one_time_prekeys(
 /// device AND has unused one-time prekeys available. Used by encrypted-
 /// group create to refuse `is_encrypted = true` for clients that haven't
 /// completed the X3DH key upload yet — otherwise the group lands in a
-/// wedged state with no recoverable key (TD-2 in TECHNICAL_DEBT.md).
+/// wedged state with no recoverable key (see docs/TECH_DEBT.md).
 pub async fn has_publishable_keys(pool: &PgPool, user_id: Uuid) -> Result<bool, sqlx::Error> {
     let row: (bool,) = sqlx::query_as(
         "SELECT EXISTS ( \

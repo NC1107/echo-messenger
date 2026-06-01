@@ -350,7 +350,7 @@ test.describe('Group messaging UI', () => {
   // -----------------------------------------------------------------------
   // TD-83: these flows were temporarily disabled while the group UI was being
   // overhauled; the assertions still target stale selectors. Tracked as a
-  // post-beta polish item — see TECHNICAL_DEBT.md TD-83.
+  // post-beta polish item — see docs/TECH_DEBT.md.
   test.fixme('alice sends message in group, bob receives', async ({ browser }) => {
     test.setTimeout(180000);
     console.log('\n--- Test: send/receive in group ---');
@@ -391,7 +391,7 @@ test.describe('Group messaging UI', () => {
   // -----------------------------------------------------------------------
   // TD-83: these flows were temporarily disabled while the group UI was being
   // overhauled; the assertions still target stale selectors. Tracked as a
-  // post-beta polish item — see TECHNICAL_DEBT.md TD-83.
+  // post-beta polish item — see docs/TECH_DEBT.md.
   test.fixme('reaction on group message', async ({ browser }) => {
     test.setTimeout(180000);
     console.log('\n--- Test: reaction on group message ---');
@@ -447,7 +447,7 @@ test.describe('Group messaging UI', () => {
   // -----------------------------------------------------------------------
   // TD-83: these flows were temporarily disabled while the group UI was being
   // overhauled; the assertions still target stale selectors. Tracked as a
-  // post-beta polish item — see TECHNICAL_DEBT.md TD-83.
+  // post-beta polish item — see docs/TECH_DEBT.md.
   test.fixme('pin message in group', async ({ browser }) => {
     test.setTimeout(180000);
     console.log('\n--- Test: pin message in group ---');
@@ -508,7 +508,7 @@ test.describe('Group messaging UI', () => {
   // -----------------------------------------------------------------------
   // TD-83: these flows were temporarily disabled while the group UI was being
   // overhauled; the assertions still target stale selectors. Tracked as a
-  // post-beta polish item — see TECHNICAL_DEBT.md TD-83.
+  // post-beta polish item — see docs/TECH_DEBT.md.
   test.fixme('owner sees Delete Group button, non-owner does not', async ({
     browser,
   }) => {
@@ -608,7 +608,7 @@ test.describe('Group messaging UI', () => {
   // -----------------------------------------------------------------------
   // TD-83: these flows were temporarily disabled while the group UI was being
   // overhauled; the assertions still target stale selectors. Tracked as a
-  // post-beta polish item — see TECHNICAL_DEBT.md TD-83.
+  // post-beta polish item — see docs/TECH_DEBT.md.
   test.fixme('owner can kick member', async ({ browser }) => {
     test.setTimeout(180000);
     console.log('\n--- Test: owner kicks member ---');
