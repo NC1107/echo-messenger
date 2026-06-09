@@ -69,6 +69,33 @@ mixin _HomeScreenLifecycleMixin
 
     // 7. Show first-login server notice
     await _showServerNoticeIfNeeded();
+
+    // 8. Offer the server's welcome group on first arrival (once per device).
+    await _showWelcomeGroupIfNeeded();
+  }
+
+  /// One-shot offer to join the server's configured welcome group, shown the
+  /// first time a user reaches the home screen. Gated by a SharedPreferences
+  /// flag so it never reappears — whether they joined or dismissed. No-ops
+  /// silently when the server has no welcome group configured, when the user
+  /// is already a member, or when the fetch fails (it's a nicety, not a gate).
+  Future<void> _showWelcomeGroupIfNeeded() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('welcome_group_offered') ?? false) return;
+    if (!mounted) return;
+
+    final group = await ref.read(featuredGroupProvider.future);
+    if (group == null || group.isMember || !mounted) {
+      // Still mark as offered when there's nothing to show, so we don't
+      // re-hit the endpoint on every launch. (If the server adds a welcome
+      // group later, existing users won't be re-prompted — acceptable: the
+      // offer targets genuinely new users.)
+      await prefs.setBool('welcome_group_offered', true);
+      return;
+    }
+
+    await showWelcomeGroupSheet(context, group);
+    await prefs.setBool('welcome_group_offered', true);
   }
 
   /// Handler wired into the desktop system-tray "Check for updates" menu
