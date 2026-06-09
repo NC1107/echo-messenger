@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/admin_realtime_provider.dart';
 import '../../providers/admin_stats_provider.dart';
+import '../../services/toast_service.dart';
+import '../../widgets/confirm_dialog.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/skeleton_loader.dart';
 
@@ -347,12 +349,12 @@ class _StatCardText extends StatelessWidget {
   }
 }
 
-class _FeedbackTile extends StatelessWidget {
+class _FeedbackTile extends ConsumerWidget {
   final FeedbackItem item;
   const _FeedbackTile(this.item);
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final who = (item.username?.isNotEmpty ?? false)
         ? item.username!
@@ -383,6 +385,22 @@ class _FeedbackTile extends StatelessWidget {
                     color: scheme.onSurfaceVariant,
                   ),
                 ),
+                const SizedBox(width: 4),
+                IconButton(
+                  tooltip: 'Delete feedback',
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 18,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
+                  onPressed: () => _confirmDelete(context, ref),
+                  icon: Icon(
+                    Icons.delete_outline,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
               ],
             ),
             if (item.title.isNotEmpty) ...[
@@ -406,6 +424,33 @@ class _FeedbackTile extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// Confirm, then hard-delete this report. Optimistic removal lives in the
+  /// notifier; we only surface a toast on failure so the operator knows the
+  /// row is still there.
+  Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showEchoConfirmDialog(
+      context,
+      title: 'Delete feedback?',
+      content:
+          'This permanently removes the report. This action cannot be undone.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    );
+    if (!confirmed) return;
+
+    try {
+      await ref.read(adminDashboardProvider.notifier).deleteFeedback(item.id);
+    } catch (e) {
+      if (context.mounted) {
+        ToastService.show(
+          context,
+          'Failed to delete feedback',
+          type: ToastType.error,
+        );
+      }
+    }
   }
 
   /// Render the row's `created_at` as a short UTC string. We intentionally
