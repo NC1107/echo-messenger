@@ -136,8 +136,9 @@ class _FakeChannels extends Channels {
   Future<bool> createChannel(
     String conversationId,
     String name,
-    String kind,
-  ) async {
+    String kind, {
+    int? position,
+  }) async {
     createCallCount++;
     lastCreatedName = name;
     lastCreatedKind = kind;
@@ -424,14 +425,14 @@ void main() {
       expect(find.byTooltip('Add channel'), findsNothing);
     });
 
-    testWidgets('tapping add-channel opens the Add Channel dialog', (
+    testWidgets('tapping add-channel opens the Add channel dialog', (
       tester,
     ) async {
       await _pump(tester, conv: _ownerGroup);
       await tester.tap(find.byTooltip('Add channel'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Add Channel'), findsOneWidget);
+      expect(find.text('Add channel'), findsOneWidget);
       expect(find.widgetWithText(TextField, ''), findsOneWidget);
       expect(find.text('Create'), findsOneWidget);
       expect(find.text('Cancel'), findsOneWidget);

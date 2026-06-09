@@ -217,14 +217,17 @@ class Channels extends _$Channels {
   Future<bool> createChannel(
     String conversationId,
     String name,
-    String kind,
-  ) async {
+    String kind, {
+    int? position,
+  }) async {
     try {
+      final body = <String, dynamic>{'name': name, 'kind': kind};
+      if (position != null) body['position'] = position;
       final response = await _authenticatedRequest(
         (token) => http.post(
           Uri.parse('$_serverUrl/api/groups/$conversationId/channels'),
           headers: _headersWithToken(token),
-          body: jsonEncode({'name': name, 'kind': kind}),
+          body: jsonEncode(body),
         ),
       );
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -234,6 +237,34 @@ class Channels extends _$Channels {
       return false;
     } catch (e) {
       debugPrint('[Channels] createChannel failed: $e');
+      return false;
+    }
+  }
+
+  /// Rename a channel via `PUT /api/groups/:id/channels/:channel_id`.
+  /// Admin/owner only (server-enforced); returns false on any non-2xx.
+  Future<bool> renameChannel(
+    String conversationId,
+    String channelId,
+    String newName,
+  ) async {
+    try {
+      final response = await _authenticatedRequest(
+        (token) => http.put(
+          Uri.parse(
+            '$_serverUrl/api/groups/$conversationId/channels/$channelId',
+          ),
+          headers: _headersWithToken(token),
+          body: jsonEncode({'name': newName}),
+        ),
+      );
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        await loadChannels(conversationId);
+        return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('[Channels] renameChannel failed: $e');
       return false;
     }
   }

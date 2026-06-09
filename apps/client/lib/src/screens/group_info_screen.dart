@@ -23,6 +23,7 @@ import '../utils/fuzzy_score.dart';
 import '../utils/presence.dart';
 import '../widgets/avatar_crop_dialog.dart';
 import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
+import '../widgets/channel_editor_dialog.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/member_role.dart';
 import '../widgets/user_avatar.dart';

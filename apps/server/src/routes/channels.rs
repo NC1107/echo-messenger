@@ -181,7 +181,7 @@ pub async fn create_channel(
     let kind = body.kind.trim().to_lowercase();
     if !is_valid_channel_kind(&kind) {
         return Err(AppError::bad_request(
-            "Channel kind must be 'text' or 'voice'",
+            "Channel kind must be 'text', 'voice', or 'divider'",
         ));
     }
 

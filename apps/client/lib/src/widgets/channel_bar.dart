@@ -7,13 +7,17 @@ import 'package:livekit_client/livekit_client.dart' as lk;
 import '../models/channel.dart';
 import '../providers/auth_provider.dart';
 import '../providers/channels_provider.dart';
+import '../providers/conversations_provider.dart';
 import '../providers/livekit_voice/livekit_voice_provider.dart';
 import '../providers/theme_provider.dart' show UIDensity, uiDensityProvider;
 import '../providers/voice_settings_provider.dart';
 import '../services/debug_log_service.dart';
+import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
+import 'channel_editor_dialog.dart';
 import 'confirm_dialog.dart';
+import 'context_menu/echo_context_menu.dart';
 import 'user_avatar.dart';
 
 class ChannelBar extends ConsumerStatefulWidget {
@@ -153,21 +157,30 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     });
 
     final channels = channelsState.channelsFor(widget.conversationId);
-    final textChannels = channels.where((c) => c.isText).toList();
+    // Left group = text channels + dividers, in stored position order
+    // (created_at breaks ties so a freshly-inserted divider lands next to
+    // the channel it was created from). Voice channels keep their own group.
+    final leftChannels = channels.where((c) => c.isText || c.isDivider).toList()
+      ..sort((a, b) {
+        final byPos = a.position.compareTo(b.position);
+        return byPos != 0 ? byPos : a.createdAt.compareTo(b.createdAt);
+      });
     final voiceChannels = channels.where((c) => c.isVoice).toList();
     final activeVoice = widget.activeVoiceChannelId;
+    final canManage = _canManageChannels(myUserId);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         _buildInlineGroupChannels(
           channels,
-          textChannels,
+          leftChannels,
           voiceChannels,
           channelsState,
           voiceSettings,
           activeVoice,
           density,
+          canManage,
         ),
         if (activeVoice != null && voiceRtc.isActive) _buildVideoGrid(voiceRtc),
         if (activeVoice != null && !widget.hideVoiceDock)
@@ -414,12 +427,13 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
 
   Widget _buildInlineGroupChannels(
     List<GroupChannel> channels,
-    List<GroupChannel> textChannels,
+    List<GroupChannel> leftChannels,
     List<GroupChannel> voiceChannels,
     ChannelsState channelsState,
     VoiceSettingsState voiceSettings,
     String? activeVoiceChannelId,
     UIDensity density,
+    bool canManage,
   ) {
     return Container(
       width: double.infinity,
@@ -440,22 +454,32 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
-                  for (final channel in textChannels) ...[
-                    _buildTextChannelChip(channel, density),
+                  for (final channel in leftChannels) ...[
+                    _wrapWithChannelMenu(
+                      channel.isDivider
+                          ? _buildUserDivider(channel)
+                          : _buildTextChannelChip(channel, density),
+                      channel,
+                      canManage,
+                    ),
                     SizedBox(width: _chipMetrics(density).gap),
                   ],
-                  if (textChannels.isNotEmpty && voiceChannels.isNotEmpty)
+                  if (leftChannels.isNotEmpty && voiceChannels.isNotEmpty)
                     const SizedBox(
                       height: 24,
                       child: VerticalDivider(width: 16, thickness: 1),
                     ),
                   for (final channel in voiceChannels) ...[
-                    _buildVoiceChannelChip(
+                    _wrapWithChannelMenu(
+                      _buildVoiceChannelChip(
+                        channel,
+                        channelsState.voiceSessionsFor(channel.id),
+                        voiceSettings,
+                        activeVoiceChannelId,
+                        density,
+                      ),
                       channel,
-                      channelsState.voiceSessionsFor(channel.id),
-                      voiceSettings,
-                      activeVoiceChannelId,
-                      density,
+                      canManage,
                     ),
                     SizedBox(width: _chipMetrics(density).gap),
                   ],
@@ -463,6 +487,185 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
               ),
             ),
     );
+  }
+
+  /// A user-created divider rendered as a short vertical line. Distinct from
+  /// the fixed text↔voice separator; this one is a real `divider`-kind
+  /// channel an admin inserted via the context menu.
+  Widget _buildUserDivider(GroupChannel channel) {
+    return SizedBox(
+      key: ValueKey('divider-${channel.id}'),
+      height: 24,
+      child: VerticalDivider(width: 8, thickness: 2, color: context.border),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Channel management context menu (admin/owner only)
+  // ---------------------------------------------------------------------------
+
+  /// Whether the current user may rename/delete/create channels in this
+  /// group. Mirrors the server's `ensure_group_admin` gate so the menu only
+  /// appears for callers whose actions would actually succeed.
+  bool _canManageChannels(String myUserId) {
+    final conv = ref
+        .watch(conversationsProvider)
+        .conversations
+        .where((c) => c.id == widget.conversationId)
+        .firstOrNull;
+    final role = conv?.members
+        .where((m) => m.userId == myUserId)
+        .firstOrNull
+        ?.role;
+    return role == 'owner' || role == 'admin';
+  }
+
+  /// Wrap a channel chip with right-click (desktop) + long-press (mobile)
+  /// handlers that open the management menu. Non-admins get the bare child.
+  Widget _wrapWithChannelMenu(
+    Widget child,
+    GroupChannel channel,
+    bool canManage,
+  ) {
+    if (!canManage) return child;
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onSecondaryTapDown: (d) => _showChannelMenu(channel, d.globalPosition),
+      onLongPressStart: (d) => _showChannelMenu(channel, d.globalPosition),
+      child: child,
+    );
+  }
+
+  void _showChannelMenu(GroupChannel channel, Offset anchor) {
+    final primary = channel.isDivider
+        ? [
+            ContextMenuAction(
+              label: 'Delete divider',
+              icon: Icons.delete_outline,
+              isDanger: true,
+              onTap: () => _deleteChannel(channel),
+            ),
+          ]
+        : [
+            ContextMenuAction(
+              label: 'Rename',
+              icon: Icons.edit_outlined,
+              onTap: () => _renameChannel(channel),
+            ),
+            ContextMenuAction(
+              label: 'Delete channel',
+              icon: Icons.delete_outline,
+              isDanger: true,
+              onTap: () => _deleteChannel(channel),
+            ),
+          ];
+
+    EchoContextMenu.open(
+      context: context,
+      target: ChannelTarget(channelId: channel.id, kind: channel.kind),
+      anchor: anchor,
+      model: ContextMenuModel(
+        title: channel.isDivider ? 'Divider' : channel.name,
+        sections: [
+          ContextMenuSection(actions: primary),
+          ContextMenuSection(
+            actions: [
+              ContextMenuAction(
+                label: 'Create channel',
+                icon: Icons.add,
+                onTap: _createChannelFlow,
+              ),
+              ContextMenuAction(
+                label: 'Create divider',
+                icon: Icons.more_vert,
+                onTap: () => _createDivider(channel),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _renameChannel(GroupChannel channel) async {
+    final newName = await showRenameChannelDialog(
+      context,
+      currentName: channel.name,
+    );
+    if (newName == null || !mounted) return;
+    final ok = await ref
+        .read(channelsProvider.notifier)
+        .renameChannel(widget.conversationId, channel.id, newName);
+    if (mounted) {
+      ToastService.show(
+        context,
+        ok ? 'Channel renamed' : 'Failed to rename channel',
+        type: ok ? ToastType.success : ToastType.error,
+      );
+    }
+  }
+
+  Future<void> _deleteChannel(GroupChannel channel) async {
+    final isDivider = channel.isDivider;
+    final confirmed = await showEchoConfirmDialog(
+      context,
+      title: isDivider ? 'Delete divider' : 'Delete channel',
+      content: isDivider
+          ? 'Remove this divider?'
+          : 'Delete "${channel.name}"? This cannot be undone.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    );
+    if (!confirmed || !mounted) return;
+    final ok = await ref
+        .read(channelsProvider.notifier)
+        .deleteChannel(widget.conversationId, channel.id);
+    if (mounted) {
+      ToastService.show(
+        context,
+        ok
+            ? (isDivider ? 'Divider deleted' : 'Channel deleted')
+            : 'Failed to delete',
+        type: ok ? ToastType.success : ToastType.error,
+      );
+    }
+  }
+
+  Future<void> _createChannelFlow() async {
+    final result = await showCreateChannelDialog(context);
+    if (result == null || !mounted) return;
+    final ok = await ref
+        .read(channelsProvider.notifier)
+        .createChannel(widget.conversationId, result.name, result.kind);
+    if (mounted) {
+      ToastService.show(
+        context,
+        ok ? 'Channel created' : 'Failed to create channel',
+        type: ok ? ToastType.success : ToastType.error,
+      );
+    }
+  }
+
+  /// Insert a divider at the position of [near] so it lands beside the
+  /// channel the menu was opened from. Dividers carry a hidden unique name
+  /// (the channel-name unique index forbids duplicates) and are never shown.
+  Future<void> _createDivider(GroupChannel near) async {
+    final uniqueName = 'divider-${DateTime.now().millisecondsSinceEpoch}';
+    final ok = await ref
+        .read(channelsProvider.notifier)
+        .createChannel(
+          widget.conversationId,
+          uniqueName,
+          'divider',
+          position: near.position,
+        );
+    if (mounted) {
+      ToastService.show(
+        context,
+        ok ? 'Divider added' : 'Failed to add divider',
+        type: ok ? ToastType.success : ToastType.error,
+      );
+    }
   }
 
   // ---------------------------------------------------------------------------
