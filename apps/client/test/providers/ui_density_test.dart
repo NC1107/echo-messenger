@@ -10,27 +10,24 @@ Future<void> _flushLoad() =>
 
 void main() {
   group('UIDensityNotifier', () {
-    test(
-      'build returns compact synchronously (today\'s effective default)',
-      () {
-        SharedPreferences.setMockInitialValues({});
-        final container = ProviderContainer();
-        addTearDown(container.dispose);
-        // Read before _load completes — the synchronous build() return value
-        // must match today's effective default so brand-new users see no
-        // behavior change while prefs are loading.
-        final initial = container.read(uiDensityProvider);
-        expect(initial, UIDensity.compact);
-      },
-    );
+    test('build returns normal synchronously (new-user default)', () {
+      SharedPreferences.setMockInitialValues({});
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      // Read before _load completes — the synchronous build() return value
+      // is the new-user default (normal density, paired with the Discord
+      // message layout), shown while prefs load.
+      final initial = container.read(uiDensityProvider);
+      expect(initial, UIDensity.normal);
+    });
 
-    test('loads compact when no prefs are set (no regression)', () async {
+    test('loads normal when no prefs are set (new-user default)', () async {
       SharedPreferences.setMockInitialValues({});
       final container = ProviderContainer();
       addTearDown(container.dispose);
       container.read(uiDensityProvider);
       await _flushLoad();
-      expect(container.read(uiDensityProvider), UIDensity.compact);
+      expect(container.read(uiDensityProvider), UIDensity.normal);
     });
 
     test(
