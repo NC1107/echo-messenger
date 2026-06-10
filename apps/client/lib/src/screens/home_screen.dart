@@ -13,6 +13,7 @@ import '../providers/conversations_provider.dart';
 import '../providers/crypto_provider.dart';
 import '../providers/featured_group_provider.dart';
 import '../providers/auth_provider.dart';
+import '../router/routes.dart';
 import '../services/toast_service.dart';
 import '../providers/chat_provider.dart';
 import '../providers/privacy_provider.dart';

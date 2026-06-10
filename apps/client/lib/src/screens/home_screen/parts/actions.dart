@@ -143,7 +143,7 @@ mixin _HomeScreenActionsMixin on ConsumerState<HomeScreen> {
     if (_self._isDesktop) {
       _showContactsDialog();
     } else {
-      context.push('/contacts');
+      context.push(routeContacts);
     }
   }
 
@@ -215,7 +215,7 @@ mixin _HomeScreenActionsMixin on ConsumerState<HomeScreen> {
     if (_self._isDesktop) {
       _showCreateGroupDialog();
     } else {
-      context.push('/create-group');
+      context.push(routeCreateGroup);
     }
   }
 
@@ -223,7 +223,7 @@ mixin _HomeScreenActionsMixin on ConsumerState<HomeScreen> {
     if (_self._isDesktop) {
       _showDiscoverGroupsDialog();
     } else {
-      context.push('/discover-groups');
+      context.push(routeDiscoverGroups);
     }
   }
 
@@ -340,7 +340,7 @@ mixin _HomeScreenActionsMixin on ConsumerState<HomeScreen> {
   void _openSavedMessages() {
     final isMobile = MediaQuery.sizeOf(context).width < 600;
     if (isMobile) {
-      context.push('/saved');
+      context.push(routeSaved);
       return;
     }
     showDialog(
@@ -386,7 +386,7 @@ mixin _HomeScreenActionsMixin on ConsumerState<HomeScreen> {
         _self._settingsSection = SettingsSection.profile;
       });
     } else {
-      context.push('/settings');
+      context.push(routeSettings);
     }
   }
 

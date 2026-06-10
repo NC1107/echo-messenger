@@ -14,6 +14,7 @@ import '../providers/crypto_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/update_provider.dart';
 import '../providers/websocket_provider.dart';
+import '../router/routes.dart';
 import '../services/message_cache.dart';
 import '../services/push_token_service.dart';
 import '../services/update_service.dart' as update_svc;
@@ -234,7 +235,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       await prefs.setBool(kOnboardingCompletedKey, true);
     }
     if (!mounted) return;
-    context.go('/home');
+    context.go(routeHome);
 
     final cryptoState = ref.read(cryptoProvider);
     // Only warn about regenerated keys when prior messages exist; fresh logins shouldn't see it.

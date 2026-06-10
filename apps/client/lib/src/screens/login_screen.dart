@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/server_url_provider.dart';
+import '../router/routes.dart';
 import '../theme/echo_theme.dart';
 import '../utils/version_utils.dart';
 import '../widgets/auth/auth_layout.dart';
@@ -173,7 +174,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                             button: true,
                             label: 'forgot-password',
                             child: TextButton(
-                              onPressed: () => context.go('/forgot-password'),
+                              onPressed: () => context.go(routeForgotPassword),
                               style: TextButton.styleFrom(
                                 foregroundColor: context.textSecondary,
                               ),
@@ -187,7 +188,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           // selectors (`getByRole('button', { name: /create
                           // an account/i })` resolves to 2).
                           TextButton(
-                            onPressed: () => context.go('/register'),
+                            onPressed: () => context.go(routeRegister),
                             style: TextButton.styleFrom(
                               foregroundColor: context.textSecondary,
                             ),

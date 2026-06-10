@@ -14,6 +14,7 @@ import '../../providers/crypto_provider.dart';
 import '../../providers/privacy_provider.dart';
 import '../../providers/server_url_provider.dart';
 import '../../providers/websocket_provider.dart';
+import '../../router/routes.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
 import '../../widgets/confirm_dialog.dart';
@@ -902,7 +903,7 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
             'Account deleted successfully.',
             type: ToastType.success,
           );
-          context.go('/login');
+          context.go(routeLogin);
         }
       } else {
         String errorMsg = 'Failed to delete account';

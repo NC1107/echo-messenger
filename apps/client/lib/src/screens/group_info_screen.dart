@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/conversation.dart';
+import '../router/routes.dart';
 import '../services/clipboard_service.dart';
 import '../services/toast_service.dart';
 import '../services/upload_client.dart';

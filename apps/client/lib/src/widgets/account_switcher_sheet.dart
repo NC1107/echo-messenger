@@ -20,6 +20,7 @@ import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/crypto_provider.dart';
 import '../providers/websocket_provider.dart';
+import '../router/routes.dart';
 import '../services/accounts_storage.dart';
 import '../theme/echo_theme.dart';
 import 'account_list_row.dart';
@@ -139,11 +140,11 @@ class _AccountSwitcherSheetState extends ConsumerState<AccountSwitcherSheet> {
     Navigator.of(context).maybePop();
 
     if (ok) {
-      context.go('/home');
+      context.go(routeHome);
       return;
     }
     _showExpiredSnackbar();
-    context.go('/login');
+    context.go(routeLogin);
   }
 
   void _showExpiredSnackbar() {
@@ -161,7 +162,7 @@ class _AccountSwitcherSheetState extends ConsumerState<AccountSwitcherSheet> {
     // Fire-and-forget; resetState awaits internally on next switch.
     ref.read(cryptoProvider.notifier).resetState();
     ref.read(authProvider.notifier).logout(forgetAccount: false);
-    context.go('/login');
+    context.go(routeLogin);
   }
 }
 

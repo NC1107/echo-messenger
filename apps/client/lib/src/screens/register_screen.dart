@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/server_url_provider.dart';
+import '../router/routes.dart';
 import '../theme/echo_theme.dart';
 import '../utils/version_utils.dart';
 import '../widgets/auth/auth_layout.dart';
@@ -113,7 +114,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
     // After successful registration, redirect to onboarding wizard
     if (mounted && ref.read(authProvider).isLoggedIn) {
-      context.go('/onboarding');
+      context.go(routeOnboarding);
     }
   }
 
@@ -205,7 +206,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         _buildSubmitButton(authState),
                         const SizedBox(height: 12),
                         TextButton(
-                          onPressed: () => context.go('/login'),
+                          onPressed: () => context.go(routeLogin),
                           style: TextButton.styleFrom(
                             foregroundColor: context.textSecondary,
                           ),

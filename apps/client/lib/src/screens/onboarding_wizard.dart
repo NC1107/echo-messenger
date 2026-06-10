@@ -11,6 +11,7 @@ import '../providers/accessibility_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/theme_provider.dart';
+import '../router/routes.dart';
 import '../services/media_cache_service.dart';
 import '../services/notification_service.dart';
 import '../services/sound_service.dart';
@@ -179,7 +180,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
-    if (mounted) context.go('/home');
+    if (mounted) context.go(routeHome);
   }
 
   // ---------------------------------------------------------------------------

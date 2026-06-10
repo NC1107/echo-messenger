@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../router/routes.dart';
 import '../../theme/echo_theme.dart';
 
 class NoConversationPlaceholder extends StatelessWidget {
@@ -42,7 +43,7 @@ class NoConversationPlaceholder extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 FilledButton.icon(
-                  onPressed: () => context.push('/contacts'),
+                  onPressed: () => context.push(routeContacts),
                   icon: const Icon(Icons.person_add_outlined, size: 18),
                   label: const Text('Add Contact'),
                   style: FilledButton.styleFrom(
@@ -59,7 +60,7 @@ class NoConversationPlaceholder extends StatelessWidget {
                 ),
                 const SizedBox(width: EchoSpacing.md),
                 OutlinedButton.icon(
-                  onPressed: () => context.push('/discover-groups'),
+                  onPressed: () => context.push(routeDiscoverGroups),
                   icon: const Icon(Icons.explore_outlined, size: 18),
                   label: const Text('Browse Groups'),
                   style: OutlinedButton.styleFrom(

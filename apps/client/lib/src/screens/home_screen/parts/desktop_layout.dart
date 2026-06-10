@@ -23,7 +23,7 @@ mixin _HomeScreenDesktopLayoutMixin
       onNewGroup: _openCreateGroup,
       onDiscover: _openDiscoverGroups,
       onSavedMessages: _openSavedMessages,
-      onThreads: () => context.push('/threads'),
+      onThreads: () => context.push(routeThreads),
       onCollapseSidebar: onCollapseSidebar,
       onSettings: _openSettings,
       onShowContacts: _openContacts,
