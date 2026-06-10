@@ -16,6 +16,7 @@ import '../providers/websocket_provider.dart';
 import '../screens/user_profile_screen.dart';
 import '../theme/echo_theme.dart';
 import '../utils/presence.dart';
+import 'loading_indicator.dart';
 import 'member_role.dart';
 import 'user_avatar.dart';
 
@@ -185,7 +186,7 @@ class _GroupMembersSheetState extends ConsumerState<GroupMembersSheet> {
               // Member list
               Expanded(
                 child: members.isEmpty
-                    ? const Center(child: CircularProgressIndicator())
+                    ? const CenteredLoadingIndicator()
                     : ListView.builder(
                         controller: scrollController,
                         padding: const EdgeInsets.symmetric(vertical: 8),

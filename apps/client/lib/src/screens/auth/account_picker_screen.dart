@@ -24,6 +24,7 @@ import '../../theme/echo_theme.dart';
 import '../../utils/time_utils.dart';
 import '../../widgets/account_list_row.dart';
 import '../../widgets/echo_logo_icon.dart';
+import '../../widgets/loading_indicator.dart';
 
 const String _kRouteLogin = '/login';
 const String _kRouteHome = '/home';
@@ -66,7 +67,7 @@ class _AccountPickerScreenState extends ConsumerState<AccountPickerScreen> {
           future: _snapshotFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
+              return const CenteredLoadingIndicator();
             }
             final data =
                 snapshot.data ??

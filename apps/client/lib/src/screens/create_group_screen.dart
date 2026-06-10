@@ -16,6 +16,7 @@ import '../theme/echo_theme.dart';
 import '../widgets/avatar_crop_dialog.dart';
 import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
 import '../widgets/empty_state.dart';
+import '../widgets/loading_indicator.dart';
 
 class CreateGroupScreen extends ConsumerStatefulWidget {
   const CreateGroupScreen({super.key});
@@ -375,7 +376,7 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
 
   Widget _buildContactsList(ContactsState contactsState) {
     if (contactsState.isLoading && contactsState.contacts.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return const CenteredLoadingIndicator();
     }
     if (contactsState.contacts.isEmpty) {
       return const EmptyState(

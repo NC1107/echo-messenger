@@ -25,6 +25,7 @@ import '../widgets/avatar_crop_dialog.dart';
 import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
 import '../widgets/channel_editor_dialog.dart';
 import '../widgets/confirm_dialog.dart';
+import '../widgets/loading_indicator.dart';
 import '../widgets/member_role.dart';
 import '../widgets/user_avatar.dart';
 import '../widgets/context_menu/actions/member_actions_registry.dart';
@@ -153,7 +154,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         title: const Text(_kGroupInfoTitle),
         leading: _backButton(context),
       ),
-      body: const Center(child: CircularProgressIndicator()),
+      body: const CenteredLoadingIndicator(),
     );
   }
 

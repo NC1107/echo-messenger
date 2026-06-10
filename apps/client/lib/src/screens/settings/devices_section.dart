@@ -16,6 +16,7 @@ import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
 import '../../utils/time_utils.dart';
 import '../../widgets/confirm_dialog.dart';
+import '../../widgets/loading_indicator.dart';
 import '../../widgets/settings_panel_scaffold.dart';
 
 class DevicesSection extends ConsumerStatefulWidget {
@@ -343,7 +344,7 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
     if (_loading) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 48),
-        child: Center(child: CircularProgressIndicator()),
+        child: CenteredLoadingIndicator(),
       );
     }
     if (_error != null) {

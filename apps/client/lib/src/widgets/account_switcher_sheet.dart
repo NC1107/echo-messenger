@@ -24,6 +24,7 @@ import '../services/accounts_storage.dart';
 import '../theme/echo_theme.dart';
 import 'account_list_row.dart';
 import 'echo_bottom_sheet.dart';
+import 'loading_indicator.dart';
 
 const String _kSwitchAccountTitle = 'Switch account';
 const String _kAddAccountLabel = 'Add another account';
@@ -81,7 +82,7 @@ class _AccountSwitcherSheetState extends ConsumerState<AccountSwitcherSheet> {
   Widget _buildLoading() {
     return const Padding(
       padding: EdgeInsets.symmetric(vertical: 32),
-      child: Center(child: CircularProgressIndicator()),
+      child: CenteredLoadingIndicator(),
     );
   }
 

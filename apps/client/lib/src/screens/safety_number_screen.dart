@@ -21,6 +21,7 @@ import '../services/secure_key_store.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/time_utils.dart';
+import '../widgets/loading_indicator.dart';
 
 /// Displays and manages safety number verification for a DM conversation.
 ///
@@ -243,7 +244,7 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
 
   Widget _buildBody(BuildContext context, bool isDialog) {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return const CenteredLoadingIndicator();
     }
 
     if (_error != null) {

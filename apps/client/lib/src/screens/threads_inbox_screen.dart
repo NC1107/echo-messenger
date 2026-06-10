@@ -13,6 +13,7 @@ import '../models/thread_inbox_entry.dart';
 import '../providers/threads_inbox_provider.dart';
 import '../theme/echo_theme.dart';
 import '../utils/time_utils.dart';
+import '../widgets/loading_indicator.dart';
 import '../widgets/window_chrome.dart';
 
 class ThreadsInboxScreen extends ConsumerStatefulWidget {
@@ -79,7 +80,7 @@ class _ThreadsInboxScreenState extends ConsumerState<ThreadsInboxScreen> {
 
   Widget _buildBody(BuildContext context, ThreadsInboxState inbox) {
     if (inbox.loading && inbox.entries.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return const CenteredLoadingIndicator();
     }
     if (inbox.error != null && inbox.entries.isEmpty) {
       return _buildErrorState(context, inbox.error!);
