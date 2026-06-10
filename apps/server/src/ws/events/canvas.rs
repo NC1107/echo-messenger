@@ -157,6 +157,14 @@ async fn persist_canvas_state(
             true
         }
         "image_add" => {
+            // VL-16: the validator only confirms the url is shaped like
+            // `/api/media/<uuid>`. Confirm the sender can actually access
+            // that media before persisting/broadcasting, so a member can't
+            // pin someone else's private upload onto the shared board by
+            // guessing/replaying its id (#1332).
+            if !verify_image_media_access(state, sender_id, payload).await {
+                return false;
+            }
             match db::canvas::add_image(&state.pool, channel_id, sender_id, payload.clone()).await {
                 Ok(()) => true,
                 Err(db::canvas::CanvasCapError::CapReached) => {
@@ -193,6 +201,36 @@ async fn persist_canvas_state(
         // Ephemeral relays — relayed but never written to the DB.
         // Covers "avatar_move", "stroke_partial", "screenshare_move".
         _ => true,
+    }
+}
+
+/// Verify the sender can access the media referenced by an `image_add`
+/// payload. Returns `false` (and sends a user-facing error) when the url is
+/// not a parseable `/api/media/<uuid>` reference or the sender lacks access.
+async fn verify_image_media_access(
+    state: &AppState,
+    sender_id: Uuid,
+    payload: &serde_json::Value,
+) -> bool {
+    let Some(media_id) = canvas_validation::media_id_from_image_add(payload) else {
+        send_error(
+            state,
+            sender_id,
+            "image_add url is not a valid media reference",
+        );
+        return false;
+    };
+    match db::media::can_user_access_media(&state.pool, media_id, sender_id).await {
+        Ok(true) => true,
+        Ok(false) => {
+            send_error(state, sender_id, "You do not have access to that media");
+            false
+        }
+        Err(e) => {
+            tracing::error!("canvas: media access check failed for {media_id}: {e:?}");
+            send_error(state, sender_id, "Database error");
+            false
+        }
     }
 }
 
