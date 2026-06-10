@@ -48,39 +48,49 @@ jobs:
         id: api
         run: |
           set +e
-          RESPONSE=$(curl -sS -f -m 10 https://us-east.echo-messenger.us/api/health 2>&1)
+          # Capture the HTTP status code explicitly (body → file, code → stdout)
+          # so a failure logs WHAT happened (e.g. a 403 challenge page) instead
+          # of a bare "curl exit 22". The previous `-f` hid the status entirely.
+          HTTP_CODE=$(curl -sS -m 10 -o /tmp/api_body -w '%{http_code}' \
+            https://us-east.echo-messenger.us/api/health)
           CURL_EXIT=$?
-          echo "exit_code=$CURL_EXIT" >> "$GITHUB_OUTPUT"
+          RESPONSE=$(cat /tmp/api_body 2>/dev/null)
+          echo "API: HTTP $HTTP_CODE (curl exit $CURL_EXIT)"
+          echo "Body (first 200 chars): ${RESPONSE:0:200}"
+          OK=0
+          if [ "$CURL_EXIT" = "0" ] && [ "$HTTP_CODE" = "200" ]; then
+            STATUS=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null)
+            if [ "$STATUS" = "ok" ]; then OK=1; else echo "200 but status='$STATUS'"; fi
+          fi
+          [ "$OK" = "1" ] && echo "API health OK" || echo "API health FAILED"
+          echo "exit_code=$([ "$OK" = "1" ] && echo 0 || echo 1)" >> "$GITHUB_OUTPUT"
           echo "response<<BODY_EOF" >> "$GITHUB_OUTPUT"
-          echo "$RESPONSE" >> "$GITHUB_OUTPUT"
+          echo "HTTP $HTTP_CODE (curl $CURL_EXIT): ${RESPONSE:0:300}" >> "$GITHUB_OUTPUT"
           echo "BODY_EOF" >> "$GITHUB_OUTPUT"
-          if [ "$CURL_EXIT" -ne 0 ]; then
-            echo "API health check FAILED (curl exit $CURL_EXIT)"
-            exit 0   # don't fail the step — let verdict aggregate
-          fi
-          # Validate JSON contains "status":"ok"
-          STATUS=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))" 2>/dev/null)
-          if [ "$STATUS" != "ok" ]; then
-            echo "API returned unexpected status: $STATUS"
-            echo "exit_code=1" >> "$GITHUB_OUTPUT"
-          else
-            echo "API health check OK (status=$STATUS)"
-          fi
 
       - name: Check LiveKit
         id: livekit
         run: |
           set +e
-          RESPONSE=$(curl -sS -f -m 10 https://livekit.echo-messenger.us/ 2>&1)
+          HTTP_CODE=$(curl -sS -m 10 -o /tmp/lk_body -w '%{http_code}' \
+            https://livekit.echo-messenger.us/)
           CURL_EXIT=$?
-          echo "exit_code=$CURL_EXIT" >> "$GITHUB_OUTPUT"
-          echo "response<<BODY_EOF" >> "$GITHUB_OUTPUT"
-          echo "$RESPONSE" >> "$GITHUB_OUTPUT"
-          echo "BODY_EOF" >> "$GITHUB_OUTPUT"
-          if [ "$CURL_EXIT" -ne 0 ]; then
-            echo "LiveKit check FAILED (curl exit $CURL_EXIT)"
+          RESPONSE=$(cat /tmp/lk_body 2>/dev/null)
+          echo "LiveKit: HTTP $HTTP_CODE (curl exit $CURL_EXIT)"
+          echo "Body (first 200 chars): ${RESPONSE:0:200}"
+          # LiveKit's root returns 200 "OK" when healthy.
+          if [ "$CURL_EXIT" = "0" ] && [ "$HTTP_CODE" = "200" ]; then
+            echo "exit_code=0" >> "$GITHUB_OUTPUT"
           else
+            echo "exit_code=1" >> "$GITHUB_OUTPUT"
+          fi
+          echo "response<<BODY_EOF" >> "$GITHUB_OUTPUT"
+          echo "HTTP $HTTP_CODE (curl $CURL_EXIT): ${RESPONSE:0:300}" >> "$GITHUB_OUTPUT"
+          echo "BODY_EOF" >> "$GITHUB_OUTPUT"
+          if [ "$HTTP_CODE" = "200" ]; then
             echo "LiveKit check OK"
+          else
+            echo "LiveKit check FAILED"
           fi
 
       - name: Compute verdict
