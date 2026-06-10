@@ -22,4 +22,26 @@ void main() {
       expect(parseHexColor('#4F46E5FF'), isNull); // too long
     });
   });
+
+  group('parseHexColorLenient', () {
+    test('parses RRGGBB with or without a leading #', () {
+      expect(parseHexColorLenient('#4F46E5'), const Color(0xFF4F46E5));
+      expect(parseHexColorLenient('4F46E5'), const Color(0xFF4F46E5));
+    });
+
+    test('parses AARRGGBB preserving alpha', () {
+      expect(parseHexColorLenient('804F46E5'), const Color(0x804F46E5));
+      expect(parseHexColorLenient('#FF000000'), const Color(0xFF000000));
+    });
+
+    test('returns the fallback (not throwing) for malformed input', () {
+      expect(parseHexColorLenient('nope'), const Color(0xFFFFFFFF));
+      expect(parseHexColorLenient('#FFF'), const Color(0xFFFFFFFF));
+      expect(parseHexColorLenient('#GGGGGG'), const Color(0xFFFFFFFF));
+      expect(
+        parseHexColorLenient('bad', fallback: const Color(0xFF123456)),
+        const Color(0xFF123456),
+      );
+    });
+  });
 }

@@ -5,6 +5,7 @@ import 'package:perfect_freehand/perfect_freehand.dart';
 
 import '../../models/canvas_models.dart';
 import '../../services/canvas_perf.dart';
+import '../../utils/color_utils.dart';
 
 // ---------------------------------------------------------------------------
 // Active stroke snapshot
@@ -483,18 +484,7 @@ Path _outlineToPath(List<Offset> outline) {
   return path;
 }
 
-ui.Color _parseColor(String hex) {
-  // VL-1: this runs inside CustomPainter.paint() on every stroke, including
-  // strokes authored by remote peers. A non-hex colour string (a future
-  // client, a CSS name, corruption) would make int.parse throw *inside*
-  // paint(), corrupting the frame for everyone. tryParse + fallback instead.
-  final s = hex.replaceFirst('#', '');
-  if (s.length == 8) {
-    final v = int.tryParse(s, radix: 16);
-    if (v != null) return ui.Color(v);
-  } else if (s.length == 6) {
-    final v = int.tryParse(s, radix: 16);
-    if (v != null) return ui.Color(0xFF000000 | v);
-  }
-  return const ui.Color(0xFFFFFFFF);
-}
+// VL-1: runs inside CustomPainter.paint() on every stroke (incl. remote peers'),
+// so it must never throw on a malformed colour. Delegates to the shared lenient
+// parser, which tryParses + falls back instead of crashing the frame.
+ui.Color _parseColor(String hex) => parseHexColorLenient(hex);
