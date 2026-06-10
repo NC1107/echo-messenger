@@ -29,14 +29,11 @@ const UNRECOGNIZED_BYTES: &[u8] = &[0xAA, 0xBB, 0xCC];
 // Local helpers
 // ---------------------------------------------------------------------------
 
-/// Test-only password used to register the temporary users this suite spins
-/// up against an ephemeral DB.  Never used outside `#[cfg(test)]`.
-const TEST_PASSWORD: &str = "password123";
-
 async fn register_and_login(client: &Client, base: &str, prefix: &str) -> (String, String) {
     let username = common::unique_username(prefix);
-    common::register(client, base, &username, TEST_PASSWORD).await;
-    common::login(client, base, &username, TEST_PASSWORD).await
+    let password = common::unique_password();
+    common::register(client, base, &username, &password).await;
+    common::login(client, base, &username, &password).await
 }
 
 async fn create_group(client: &Client, base: &str, token: &str, name: &str) -> String {

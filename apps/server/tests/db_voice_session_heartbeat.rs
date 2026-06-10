@@ -52,8 +52,9 @@ async fn touch_keeps_connected_idle_session_alive_through_sweep() {
 
     // Fresh user + group so we're isolated from any parallel test.
     let name = common::unique_username("vl3");
-    common::register(&client, &base, &name, "password123").await;
-    let (token, user_id_str) = common::login(&client, &base, &name, "password123").await;
+    let password = common::unique_password();
+    common::register(&client, &base, &name, &password).await;
+    let (token, user_id_str) = common::login(&client, &base, &name, &password).await;
     let user_id = Uuid::parse_str(&user_id_str).unwrap();
     let group_id = common::create_group(&client, &base, &token, "vl3-group").await;
     let conv_id = Uuid::parse_str(&group_id).unwrap();
