@@ -5,8 +5,12 @@ name: Prod Uptime
 # closes the issue automatically once all checks pass again.
 #
 # Checks:
-#   1. GET https://echo-messenger.us/api/health  -- must be 200 + {"status":"ok"}
-#   2. GET https://livekit.echo-messenger.us/    -- must be 200
+#   1. GET https://us-east.echo-messenger.us/api/health  -- must be 200 + {"status":"ok"}
+#   2. GET https://livekit.echo-messenger.us/            -- must be 200
+#
+# NOTE: the API lives on the us-east regional host after the domain migration
+# (#1063). The apex (echo-messenger.us) now serves the marketing/web bundle and
+# returns HTML for /api/health, so checking it produced false outage alerts.
 
 on:
   schedule:
@@ -34,13 +38,17 @@ jobs:
       # "ok" or "fail"
       result: ${{ steps.verdict.outputs.result }}
       summary: ${{ steps.verdict.outputs.summary }}
+      # Per-check exit codes ("0" = ok) so the issue table reflects which
+      # specific check failed instead of marking every row failed.
+      api: ${{ steps.api.outputs.exit_code }}
+      livekit: ${{ steps.livekit.outputs.exit_code }}
 
     steps:
       - name: Check API health
         id: api
         run: |
           set +e
-          RESPONSE=$(curl -sS -f -m 10 https://echo-messenger.us/api/health 2>&1)
+          RESPONSE=$(curl -sS -f -m 10 https://us-east.echo-messenger.us/api/health 2>&1)
           CURL_EXIT=$?
           echo "exit_code=$CURL_EXIT" >> "$GITHUB_OUTPUT"
           echo "response<<BODY_EOF" >> "$GITHUB_OUTPUT"
@@ -115,8 +123,8 @@ jobs:
 
           | Check | Endpoint | Result |
           |-------|----------|--------|
-          | API health | \`https://echo-messenger.us/api/health\` | ${{ needs.check.outputs.result == 'fail' && '❌ see details below' || '✅ ok' }} |
-          | LiveKit | \`https://livekit.echo-messenger.us/\` | ${{ needs.check.outputs.result == 'fail' && '❌ see details below' || '✅ ok' }} |
+          | API health | \`https://us-east.echo-messenger.us/api/health\` | ${{ needs.check.outputs.api == '0' && '✅ ok' || '❌ failing' }} |
+          | LiveKit | \`https://livekit.echo-messenger.us/\` | ${{ needs.check.outputs.livekit == '0' && '✅ ok' || '❌ failing' }} |
 
           **Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
@@ -127,7 +135,7 @@ jobs:
           ### Manual verification
 
           \`\`\`bash
-          curl -sS https://echo-messenger.us/api/health
+          curl -sS https://us-east.echo-messenger.us/api/health
           curl -sS -I https://livekit.echo-messenger.us/
           \`\`\`
 
