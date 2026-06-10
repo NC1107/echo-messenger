@@ -100,39 +100,11 @@ mixin _HomeScreenDesktopLayoutMixin
                             child: Stack(
                               children: [
                                 Center(
-                                  child: Builder(
-                                    builder: (_) {
-                                      final String? avatarUrl;
-                                      if (conv.isGroup) {
-                                        avatarUrl = resolveAvatarUrl(
-                                          conv.iconUrl,
-                                          serverUrl,
-                                        );
-                                      } else {
-                                        final peer = conv.members
-                                            .where((m) => m.userId != myUserId)
-                                            .firstOrNull;
-                                        avatarUrl = resolveAvatarUrl(
-                                          peer?.avatarUrl,
-                                          serverUrl,
-                                        );
-                                      }
-                                      return buildAvatar(
-                                        name: displayName,
-                                        radius: 18,
-                                        imageUrl: avatarUrl,
-                                        bgColor: conv.isGroup
-                                            ? groupAvatarColor(displayName)
-                                            : null,
-                                        fallbackIcon: conv.isGroup
-                                            ? const Icon(
-                                                Icons.group,
-                                                size: 16,
-                                                color: Colors.white,
-                                              )
-                                            : null,
-                                      );
-                                    },
+                                  child: _buildRailAvatar(
+                                    conv,
+                                    displayName,
+                                    myUserId,
+                                    serverUrl,
                                   ),
                                 ),
                                 if (isSelected)
@@ -167,26 +139,7 @@ mixin _HomeScreenDesktopLayoutMixin
           // shown above the settings icon when a call is in progress.
           // Without this the dock vanishes the moment the user collapses
           // the sidebar (image #41).
-          Builder(
-            builder: (context) {
-              final voiceLk = ref.watch(livekitVoiceProvider);
-              if (!voiceLk.isActive || voiceLk.channelId == null) {
-                return const SizedBox.shrink();
-              }
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Center(
-                  child: VoiceDock(
-                    collapsed: true,
-                    onNavigateToLounge: () => setState(() {
-                      _self._showingLounge = true;
-                      _self._userDismissedLounge = false;
-                    }),
-                  ),
-                ),
-              );
-            },
-          ),
+          _buildCollapsedVoiceDock(),
           // Settings icon at bottom
           Container(
             height: 60,
@@ -231,6 +184,54 @@ mixin _HomeScreenDesktopLayoutMixin
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Avatar for one collapsed-rail conversation: group icon or DM peer avatar.
+  /// Extracted from [_buildCollapsedSidebar] to keep it within the
+  /// cognitive-complexity budget (S3776).
+  Widget _buildRailAvatar(
+    Conversation conv,
+    String displayName,
+    String myUserId,
+    String serverUrl,
+  ) {
+    final String? avatarUrl;
+    if (conv.isGroup) {
+      avatarUrl = resolveAvatarUrl(conv.iconUrl, serverUrl);
+    } else {
+      final peer = conv.members.where((m) => m.userId != myUserId).firstOrNull;
+      avatarUrl = resolveAvatarUrl(peer?.avatarUrl, serverUrl);
+    }
+    return buildAvatar(
+      name: displayName,
+      radius: 18,
+      imageUrl: avatarUrl,
+      bgColor: conv.isGroup ? groupAvatarColor(displayName) : null,
+      fallbackIcon: conv.isGroup
+          ? const Icon(Icons.group, size: 16, color: Colors.white)
+          : null,
+    );
+  }
+
+  /// Vertical voice-dock strip shown in the collapsed rail during a call;
+  /// empty when no call is active.
+  Widget _buildCollapsedVoiceDock() {
+    final voiceLk = ref.watch(livekitVoiceProvider);
+    if (!voiceLk.isActive || voiceLk.channelId == null) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Center(
+        child: VoiceDock(
+          collapsed: true,
+          onNavigateToLounge: () => setState(() {
+            _self._showingLounge = true;
+            _self._userDismissedLounge = false;
+          }),
+        ),
       ),
     );
   }

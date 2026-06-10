@@ -73,6 +73,17 @@ extension _MembersSection on _GroupInfoScreenState {
     );
     if (!confirmed) return;
 
+    await _applyRoleChange(member, newRole, isPromoting: isPromoting);
+  }
+
+  /// PATCH the member's role and surface the result. Extracted from
+  /// [_changeRole] (which keeps the confirm flow) to stay within the
+  /// cognitive-complexity budget (S3776).
+  Future<void> _applyRoleChange(
+    ConversationMember member,
+    String newRole, {
+    required bool isPromoting,
+  }) async {
     final token = ref.read(authProvider).token;
     if (token == null) return;
     final serverUrl = ref.read(serverUrlProvider);
