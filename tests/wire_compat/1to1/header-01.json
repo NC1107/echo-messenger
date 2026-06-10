@@ -1,0 +1,9 @@
+{
+  "name": "header-01-zero-counters",
+  "kind": "message_header",
+  "description": "sequential ratchet pubkey, zero counters",
+  "ratchet_public_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+  "prev_chain_length": 0,
+  "message_number": 0,
+  "expected_header_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8AAAAAAAAAAA=="
+}

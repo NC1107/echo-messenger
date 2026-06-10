@@ -1,0 +1,9 @@
+{
+  "name": "header-03-max-counters",
+  "kind": "message_header",
+  "description": "max u32 counters exercise full 4-byte LE",
+  "ratchet_public_key_b64": "//////////////////////////////////////////8=",
+  "prev_chain_length": 4294967295,
+  "message_number": 4294967294,
+  "expected_header_b64": "/////////////////////////////////////////////////v///w=="
+}
