@@ -2,14 +2,23 @@ import 'package:flutter/material.dart';
 
 import '../theme/echo_theme.dart';
 
+/// Visual treatment for [EmptyState]. [neutral] is the default accent-tinted
+/// look; [error] swaps the badge + icon to a danger tint for "couldn't load X"
+/// failure states (with a Retry CTA supplied via [EmptyState.ctaLabel]).
+enum EmptyStateVariant { neutral, error }
+
 /// Illustrated empty-state placeholder used across screens.
 ///
-/// Renders a 64px circular accent-tinted badge containing [icon], the [title]
+/// Renders a 64px circular tinted badge containing [icon], the [title]
 /// in `titleMedium` bold, then [body] in `bodySmall` constrained to 320px, all
 /// centered. If [ctaLabel] is provided, an additional [FilledButton.tonal]
 /// is shown that invokes [onCta] on press. An optional [secondaryCtaLabel]
 /// renders a lower-emphasis [TextButton] beside the primary CTA for cases
 /// that genuinely need two next steps (e.g. "Add contact" + "Browse groups").
+///
+/// Pass [variant] = [EmptyStateVariant.error] for failure states so the badge
+/// reads as a danger tint instead of the accent — this is the shared home for
+/// the "icon + title + message + Retry" boxes screens used to hand-roll.
 class EmptyState extends StatelessWidget {
   /// Material icon glyph rendered inside the tinted badge at ~32px.
   final IconData icon;
@@ -41,6 +50,10 @@ class EmptyState extends StatelessWidget {
   /// (e.g. keyboard-shortcut tip) without competing with the primary CTA.
   final Widget? footer;
 
+  /// Neutral (accent) by default; [EmptyStateVariant.error] tints the badge +
+  /// icon danger for failure states.
+  final EmptyStateVariant variant;
+
   const EmptyState({
     super.key,
     required this.icon,
@@ -51,26 +64,32 @@ class EmptyState extends StatelessWidget {
     this.secondaryCtaLabel,
     this.onSecondaryCta,
     this.footer,
+    this.variant = EmptyStateVariant.neutral,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isError = variant == EmptyStateVariant.error;
+    final badgeColor = isError
+        ? EchoTheme.danger.withValues(alpha: 0.12)
+        : context.accentLight;
+    final iconColor = isError ? EchoTheme.danger : context.accent;
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // 64px circular badge with light accent fill and accent-colored icon.
+            // 64px circular badge: accent tint normally, danger tint on error.
             Container(
               width: 64,
               height: 64,
               decoration: BoxDecoration(
-                color: context.accentLight,
+                color: badgeColor,
                 shape: BoxShape.circle,
               ),
-              child: Center(child: Icon(icon, size: 32, color: context.accent)),
+              child: Center(child: Icon(icon, size: 32, color: iconColor)),
             ),
             const SizedBox(height: 16),
             Text(
