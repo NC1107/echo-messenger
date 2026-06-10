@@ -250,6 +250,32 @@ pub async fn users_in_voice_channel(
     Ok(rows.into_iter().map(|(user_id,)| user_id).collect())
 }
 
+/// Remove a user's voice sessions within a single conversation (called when a
+/// member is kicked/banned/leaves so a removed participant's server-side voice
+/// presence is dropped immediately — VL-24). Returns the affected channel ids
+/// so the caller can broadcast leave events to remaining members. Scoped to one
+/// conversation so an unrelated call elsewhere is untouched.
+pub async fn leave_conversation_voice_sessions(
+    pool: &PgPool,
+    conversation_id: Uuid,
+    user_id: Uuid,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    let rows: Vec<(Uuid,)> = sqlx::query_as(
+        "DELETE FROM voice_sessions vs
+         USING channels c
+         WHERE vs.channel_id = c.id
+           AND c.conversation_id = $1
+           AND vs.user_id = $2
+         RETURNING c.id",
+    )
+    .bind(conversation_id)
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows.into_iter().map(|(id,)| id).collect())
+}
+
 /// Remove all voice sessions for a user (called on WS disconnect to clean up
 /// stale sessions from crashed clients). Returns (channel_id, conversation_id)
 /// pairs so the caller can broadcast leave events.

@@ -552,6 +552,13 @@ async fn after_member_loss(
     target_user_id: Uuid,
     action: &str,
 ) {
+    // VL-24: drop the removed member's voice presence in this conversation so a
+    // kicked/banned user no longer shows up in the lounge and the server stops
+    // counting them. Their already-minted LiveKit token still works until it
+    // expires (short TTL — see routes::voice::TOKEN_TTL_SECS); actively booting
+    // them off the SFU needs a management client (evict_from_voice_deferred).
+    crate::ws::events::voice::evict_member_voice_sessions(state, group_id, target_user_id).await;
+
     let remaining = db::groups::get_conversation_member_ids(&state.pool, group_id)
         .await
         .map_err(|e| tracing::error!("Failed to get member IDs for broadcast: {e:?}"))

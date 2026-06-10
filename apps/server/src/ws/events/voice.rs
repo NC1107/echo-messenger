@@ -139,21 +139,60 @@ pub(in crate::ws) async fn cleanup_user_voice_sessions(state: &AppState, user_id
         };
 
     for (channel_id, conversation_id) in removed_sessions {
-        // Clear per-lounge canvas authority so the next device to draw
-        // reclaims fresh. See docs/voice-lounge/03-multi-device.md.
-        state.canvas_authority.clear_on_leave(user_id, channel_id);
+        broadcast_voice_leave(state, user_id, conversation_id, channel_id).await;
+    }
+}
 
-        let member_ids = typing_service::get_member_ids_cached(&state.pool, conversation_id).await;
-        if let Ok(member_ids) = member_ids {
-            let event = serde_json::json!({
-                "type": "voice_session_left",
-                "group_id": conversation_id,
-                "channel_id": channel_id,
-                "user_id": user_id,
-            });
-            if let Ok(json) = serde_json::to_string(&event) {
-                state.hub.broadcast_json(&member_ids, &json, None);
-            }
+/// Drop a (now-removed) member's voice presence within a single conversation
+/// and broadcast the leave to remaining members (VL-24).
+///
+/// Called from the kick / ban / leave-group path so a removed participant no
+/// longer shows up in the lounge and the server stops counting them, without
+/// waiting for the 60s stale-session sweep. This is the server-side half of
+/// the eviction story; actively booting them off the LiveKit SFU still needs a
+/// management client (see `routes::voice::evict_from_voice_deferred`).
+pub async fn evict_member_voice_sessions(state: &AppState, conversation_id: Uuid, user_id: Uuid) {
+    let removed = match db::channels::leave_conversation_voice_sessions(
+        &state.pool,
+        conversation_id,
+        user_id,
+    )
+    .await
+    {
+        Ok(channels) => channels,
+        Err(e) => {
+            tracing::warn!("Failed to clear voice sessions for evicted member: {e:?}");
+            return;
+        }
+    };
+
+    for channel_id in removed {
+        broadcast_voice_leave(state, user_id, conversation_id, channel_id).await;
+    }
+}
+
+/// Clear canvas authority and tell remaining members a user left a voice
+/// channel. Shared by the disconnect sweep and the kick/ban path.
+async fn broadcast_voice_leave(
+    state: &AppState,
+    user_id: Uuid,
+    conversation_id: Uuid,
+    channel_id: Uuid,
+) {
+    // Clear per-lounge canvas authority so the next device to draw
+    // reclaims fresh. See docs/voice-lounge/03-multi-device.md.
+    state.canvas_authority.clear_on_leave(user_id, channel_id);
+
+    let member_ids = typing_service::get_member_ids_cached(&state.pool, conversation_id).await;
+    if let Ok(member_ids) = member_ids {
+        let event = serde_json::json!({
+            "type": "voice_session_left",
+            "group_id": conversation_id,
+            "channel_id": channel_id,
+            "user_id": user_id,
+        });
+        if let Ok(json) = serde_json::to_string(&event) {
+            state.hub.broadcast_json(&member_ids, &json, None);
         }
     }
 }
