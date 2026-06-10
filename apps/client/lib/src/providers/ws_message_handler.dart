@@ -41,6 +41,9 @@ part 'ws_handlers/presence_handlers.dart';
 part 'ws_handlers/voice_handlers.dart';
 part 'ws_handlers/crypto_handlers.dart';
 
+/// Debug-log tag for this subsystem (one place, not a repeated literal — S1192).
+const _kLogTag = 'WebSocket';
+
 /// Placeholder content rendered when an inbound GRP2 group message fails
 /// sender signature verification (or the sender's verify key cannot be
 /// fetched). Distinct from "[Could not decrypt…]" because this is a
@@ -240,9 +243,9 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
         // Defence in depth: drop cross-account envelopes silently.
         DebugLogService.instance.log(
           LogLevel.warning,
-          'WebSocket',
+          _kLogTag,
           'Dropped pending decrypt entry owned by '
-              '${entry.ownerUserId} (current user $myUserId)',
+          '${entry.ownerUserId} (current user $myUserId)',
         );
         continue;
       }
@@ -346,7 +349,7 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
       default:
         DebugLogService.instance.log(
           LogLevel.warning,
-          'WebSocket',
+          _kLogTag,
           'Unknown message type: $type',
         );
     }
@@ -536,8 +539,8 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
         if (messageId == null || messageId.isEmpty) {
           debugLog(
             'GRP2 wire missing message_id (conv=$conversationId, '
-                'from=$fromUserId)',
-            'WebSocket',
+            'from=$fromUserId)',
+            _kLogTag,
           );
           return _kCouldNotVerifySender;
         }
@@ -548,8 +551,8 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
         if (senderVerifyKey == null) {
           debugLog(
             'GRP2 sender verify key not found for '
-                '$fromUserId:$fromDeviceId',
-            'WebSocket',
+            '$fromUserId:$fromDeviceId',
+            _kLogTag,
           );
           return _kCouldNotVerifySender;
         }
@@ -565,7 +568,7 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
           // Distinct placeholder lets chat UI stripe in a danger color.
           debugLog(
             'GRP2 signature failed for $conversationId msg=$messageId: $e',
-            'WebSocket',
+            _kLogTag,
           );
           return _kCouldNotVerifySender;
         }
@@ -575,8 +578,8 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
       if (minWireVersion >= 2) {
         debugLog(
           'GRP1 wire refused at min_wire_version=$minWireVersion '
-              '(conv=$conversationId)',
-          'WebSocket',
+          '(conv=$conversationId)',
+          _kLogTag,
         );
         return _kCouldNotVerifySender;
       }
@@ -585,7 +588,7 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
         keyBase64,
       );
     } catch (e) {
-      debugLog('Group decrypt failed for $conversationId: $e', 'WebSocket');
+      debugLog('Group decrypt failed for $conversationId: $e', _kLogTag);
       return '[Could not decrypt group message]';
     }
   }
@@ -607,8 +610,8 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
     } catch (e) {
       debugLog(
         'Decryption failed for message in $conversationId '
-            'from $fromUserId: $e',
-        'WebSocket',
+        'from $fromUserId: $e',
+        _kLogTag,
       );
       return '[Could not decrypt - encryption keys may be out of sync]';
     }

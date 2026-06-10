@@ -24,6 +24,9 @@ import 'rtc_stats_poll.dart';
 part 'livekit_voice_provider.g.dart';
 part 'livekit_voice_av_controls.dart';
 
+/// Debug-log tag for this subsystem (one place, not a repeated literal — S1192).
+const _kLogTag = 'LiveKitVoice';
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -312,7 +315,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     if (_isJoining) {
       DebugLogService.instance.log(
         LogLevel.warning,
-        'LiveKitVoice',
+        _kLogTag,
         'joinChannel: ignored — join already in progress for $channelId',
       );
       return false;
@@ -348,9 +351,9 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
         // join isn't blocked by a transient leave failure.
         DebugLogService.instance.log(
           LogLevel.warning,
-          'LiveKitVoice',
+          _kLogTag,
           'leaveVoiceChannel($prevConvId/$prevChanId) before switch threw '
-              '(ignored): $e',
+          '(ignored): $e',
         );
       }
     }
@@ -390,7 +393,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
 
       DebugLogService.instance.log(
         LogLevel.info,
-        'LiveKitVoice',
+        _kLogTag,
         'joinChannel: successfully joined channel $channelId',
       );
       return true;
@@ -400,7 +403,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       debugPrint('[LiveKitVoice] join failed at $tried: $e');
       DebugLogService.instance.log(
         LogLevel.error,
-        'LiveKitVoice',
+        _kLogTag,
         'joinChannel: failed at $tried: $e',
       );
       await _cleanupRoom();
@@ -430,7 +433,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     if (!micPermitted) {
       DebugLogService.instance.log(
         LogLevel.error,
-        'LiveKitVoice',
+        _kLogTag,
         'joinChannel: microphone permission denied — aborting',
       );
       state = state.copyWith(
@@ -448,7 +451,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     } catch (e) {
       DebugLogService.instance.log(
         LogLevel.error,
-        'LiveKitVoice',
+        _kLogTag,
         'joinChannel: token fetch threw: $e',
       );
       rethrow;
@@ -457,7 +460,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     if (tokenResult == null) {
       DebugLogService.instance.log(
         LogLevel.error,
-        'LiveKitVoice',
+        _kLogTag,
         'joinChannel: token fetch returned null — aborting',
       );
       state = state.copyWith(
@@ -501,7 +504,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     } catch (e) {
       DebugLogService.instance.log(
         LogLevel.error,
-        'LiveKitVoice',
+        _kLogTag,
         'joinChannel: Room() constructor threw: $e',
       );
       rethrow;
@@ -515,7 +518,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     } catch (e) {
       DebugLogService.instance.log(
         LogLevel.error,
-        'LiveKitVoice',
+        _kLogTag,
         'joinChannel: room.connect threw: $e',
       );
       rethrow;
@@ -530,7 +533,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       } catch (e) {
         DebugLogService.instance.log(
           LogLevel.warning,
-          'LiveKitVoice',
+          _kLogTag,
           'joinChannel: setName failed (non-fatal): $e',
         );
       }
@@ -543,7 +546,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     } catch (e) {
       DebugLogService.instance.log(
         LogLevel.error,
-        'LiveKitVoice',
+        _kLogTag,
         'joinChannel: setMicrophoneEnabled threw: $e',
       );
       rethrow;
@@ -587,7 +590,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     final resolvedChannelName = _resolveChannelName(conversationId, channelId);
     DebugLogService.instance.log(
       LogLevel.info,
-      'LiveKitVoice',
+      _kLogTag,
       'joinChannel: starting background service / CallKit for "$resolvedChannelName"',
     );
     // Foreground service (Android) + CallKit (iOS) keep mic/audio alive when
@@ -654,7 +657,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       );
       DebugLogService.instance.log(
         LogLevel.warning,
-        'LiveKitVoice',
+        _kLogTag,
         'PlatformException during teardown (ignored): $e',
       );
     } catch (e) {
@@ -662,7 +665,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       debugPrint('[LiveKitVoice] cleanup error during teardown: $e');
       DebugLogService.instance.log(
         LogLevel.warning,
-        'LiveKitVoice',
+        _kLogTag,
         'Cleanup error during teardown (ignored): $e',
       );
     }
@@ -681,7 +684,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
     if (_isLeaving) {
       DebugLogService.instance.log(
         LogLevel.warning,
-        'LiveKitVoice',
+        _kLogTag,
         'leaveChannel: ignored — leave already in progress',
       );
       return;
@@ -703,7 +706,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
         } catch (e) {
           DebugLogService.instance.log(
             LogLevel.warning,
-            'LiveKitVoice',
+            _kLogTag,
             'leaveVoiceChannel($convId/$chanId) on leave threw (ignored): $e',
           );
         }
@@ -751,7 +754,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       if (!granted) {
         DebugLogService.instance.log(
           LogLevel.error,
-          'LiveKitVoice',
+          _kLogTag,
           'Microphone permission denied — cannot join voice channel',
         );
       }
@@ -760,7 +763,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       // Proceed optimistically: don't lock out users when the check itself fails.
       DebugLogService.instance.log(
         LogLevel.warning,
-        'LiveKitVoice',
+        _kLogTag,
         'Microphone permission check threw (proceeding optimistically): $e',
       );
       return true;
@@ -811,14 +814,14 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       );
       DebugLogService.instance.log(
         LogLevel.error,
-        'LiveKitVoice',
+        _kLogTag,
         'Token request failed: ${resp.statusCode}',
       );
     } catch (e) {
       debugPrint('[LiveKitVoice] token fetch error: $e');
       DebugLogService.instance.log(
         LogLevel.error,
-        'LiveKitVoice',
+        _kLogTag,
         'Token fetch error: $e',
       );
     }
@@ -839,7 +842,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
         SoundService().playVoiceJoin();
         DebugLogService.instance.log(
           LogLevel.info,
-          'LiveKitVoice',
+          _kLogTag,
           'Participant joined: ${event.participant.identity}',
         );
       })
@@ -848,7 +851,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
         SoundService().playVoiceLeave();
         DebugLogService.instance.log(
           LogLevel.info,
-          'LiveKitVoice',
+          _kLogTag,
           'Participant left: ${event.participant.identity}',
         );
       })
@@ -882,7 +885,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       ..on<RoomDisconnectedEvent>((_) {
         DebugLogService.instance.log(
           LogLevel.warning,
-          'LiveKitVoice',
+          _kLogTag,
           'Room disconnected',
         );
         // VL-11: a terminal disconnect (e.g. network drop) doesn't go through
@@ -903,7 +906,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       ..on<RoomReconnectedEvent>((_) {
         DebugLogService.instance.log(
           LogLevel.info,
-          'LiveKitVoice',
+          _kLogTag,
           'Room reconnected',
         );
         _syncPeerState();
@@ -911,7 +914,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       ..on<RoomReconnectingEvent>((_) {
         DebugLogService.instance.log(
           LogLevel.warning,
-          'LiveKitVoice',
+          _kLogTag,
           'Room reconnecting...',
         );
       });
@@ -1100,7 +1103,7 @@ class LiveKitVoiceNotifier extends _$LiveKitVoiceNotifier
       } catch (e) {
         DebugLogService.instance.log(
           LogLevel.warning,
-          'LiveKitVoice',
+          _kLogTag,
           'Volume restore failed during cleanup (ignored): $e',
         );
       }
