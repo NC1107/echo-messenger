@@ -3,7 +3,6 @@ library;
 
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
-import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,6 +13,7 @@ import '../../providers/canvas_provider.dart';
 import '../../providers/livekit_voice/livekit_voice_provider.dart';
 import '../../providers/screen_share_provider.dart';
 import '../../theme/echo_theme.dart';
+import '../../widgets/voice_lounge/draggable_canvas_item.dart';
 import 'screen_share_actions.dart' show toggleScreenShare;
 
 // ---------------------------------------------------------------------------
@@ -303,7 +303,6 @@ class _DraggableScreenShareWindowState
   double _width = 320;
   double _height = 180;
   bool _positioned = false;
-  bool _hovered = false;
 
   /// Owned by this widget; lives for the State's lifetime. Fed into the
   /// [ScreenShareChildBuilder] so the child (an [AspectAwareVideoTrack])
@@ -428,140 +427,112 @@ class _DraggableScreenShareWindowState
               Positioned(
                 left: _left,
                 top: _top,
-                child: MouseRegion(
-                  onEnter: (_) => setState(() => _hovered = true),
-                  onExit: (_) => setState(() => _hovered = false),
-                  child: GestureDetector(
-                    // Win the arena on pointer-down so InteractiveViewer's
-                    // pan recognizer can't steal a fast drag mid-gesture.
-                    dragStartBehavior: DragStartBehavior.down,
-                    onPanUpdate: (d) {
+                child: DraggableCanvasItem(
+                  gestures: CanvasItemGestures(
+                    onMove: (dx, dy) {
                       setState(() {
-                        _left += d.delta.dx;
-                        _top += d.delta.dy;
+                        _left += dx;
+                        _top += dy;
                       });
                       _broadcastMove();
                     },
-                    onPanEnd: (_) => _commitMove(),
-                    onPanCancel: _commitMove,
+                    onMoveEnd: _commitMove,
+                    onMoveCancel: _commitMove,
+                    // Resize is locked to _aspectRatio so the underlying screen
+                    // content never deforms — only the bounding window scales
+                    // proportionally. Drive width from dx, derive height.
+                    onResize: (dx, dy) {
+                      setState(() {
+                        final nextW = (_width + dx).clamp(
+                          _minWidth,
+                          constraints.maxWidth - _left,
+                        );
+                        final aspectH = nextW / _aspectRatio;
+                        final nextH = aspectH.clamp(
+                          _minHeight,
+                          constraints.maxHeight - _top,
+                        );
+                        _width = nextH * _aspectRatio;
+                        _height = nextH;
+                      });
+                      _broadcastMove();
+                    },
+                    onResizeEnd: _commitMove,
+                    onResizeCancel: _commitMove,
+                  ),
+                  // Label badge — hover-only. Showing it only on hover keeps the
+                  // screen view clean and avoids the chip colliding with the
+                  // window's rounded corner.
+                  hoverOverlayBuilder: (context) => Positioned(
+                    top: 8,
+                    left: 8,
                     child: Container(
-                      width: _width,
-                      height: _height,
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.85),
-                        borderRadius: BorderRadius.circular(12),
-                        // Softer accent ring (alpha .25, hairline) so the
-                        // window sits in the canvas without reading as a
-                        // hard frame the user mistakes for the canvas
-                        // boundary.
-                        border: Border.all(
-                          color:
-                              (widget.isLocal
-                                      ? EchoTheme.danger
-                                      : context.accent)
-                                  .withValues(alpha: 0.25),
-                          width: 0.5,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.5),
-                            blurRadius: 16,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 3,
                       ),
-                      clipBehavior: Clip.antiAlias,
-                      child: Stack(
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.6),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Positioned.fill(
-                            child:
-                                widget.child ??
-                                widget.childBuilder!(context, _sourceAspect),
+                          const Icon(
+                            Icons.screen_share,
+                            size: 11,
+                            color: Colors.white70,
                           ),
-                          // Label badge — hover-only. The rounded chip used
-                          // to overhang the (rounded) window corner; only
-                          // showing it on hover keeps the screen view clean
-                          // and avoids the corner-collision visual.
-                          if (_hovered)
-                            Positioned(
-                              top: 8,
-                              left: 8,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.6),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(
-                                      Icons.screen_share,
-                                      size: 11,
-                                      color: Colors.white70,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      widget.label,
-                                      style: const TextStyle(
-                                        color: Colors.white70,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                          const SizedBox(width: 4),
+                          Text(
+                            widget.label,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
                             ),
-                          // Resize handle (bottom-right corner). Locked to
-                          // _aspectRatio so the underlying screen content
-                          // never deforms — only the bounding window
-                          // scales proportionally.
-                          if (_hovered)
-                            Positioned(
-                              right: 0,
-                              bottom: 0,
-                              child: GestureDetector(
-                                dragStartBehavior: DragStartBehavior.down,
-                                onPanUpdate: (d) {
-                                  setState(() {
-                                    // Use the larger of dx/dy so the gesture
-                                    // feels uniform; derive height from the
-                                    // locked aspect ratio.
-                                    final nextW = (_width + d.delta.dx).clamp(
-                                      _minWidth,
-                                      constraints.maxWidth - _left,
-                                    );
-                                    final aspectH = nextW / _aspectRatio;
-                                    final nextH = aspectH.clamp(
-                                      _minHeight,
-                                      constraints.maxHeight - _top,
-                                    );
-                                    _width = nextH * _aspectRatio;
-                                    _height = nextH;
-                                  });
-                                  _broadcastMove();
-                                },
-                                onPanEnd: (_) => _commitMove(),
-                                onPanCancel: _commitMove,
-                                child: Container(
-                                  width: 20,
-                                  height: 20,
-                                  alignment: Alignment.bottomRight,
-                                  child: Icon(
-                                    Icons.open_in_full,
-                                    size: 12,
-                                    color: Colors.white.withValues(alpha: 0.4),
-                                  ),
-                                ),
-                              ),
-                            ),
+                          ),
                         ],
                       ),
                     ),
+                  ),
+                  resizeHandle: Container(
+                    width: 20,
+                    height: 20,
+                    alignment: Alignment.bottomRight,
+                    child: Icon(
+                      Icons.open_in_full,
+                      size: 12,
+                      color: Colors.white.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Container(
+                    width: _width,
+                    height: _height,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.85),
+                      borderRadius: BorderRadius.circular(12),
+                      // Softer accent ring (alpha .25, hairline) so the window
+                      // sits in the canvas without reading as a hard frame the
+                      // user mistakes for the canvas boundary.
+                      border: Border.all(
+                        color:
+                            (widget.isLocal ? EchoTheme.danger : context.accent)
+                                .withValues(alpha: 0.25),
+                        width: 0.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.5),
+                          blurRadius: 16,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child:
+                        widget.child ??
+                        widget.childBuilder!(context, _sourceAspect),
                   ),
                 ),
               ),
