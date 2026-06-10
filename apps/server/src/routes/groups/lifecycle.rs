@@ -107,7 +107,7 @@ pub async fn delete_group(
         .await
         .db_ctx("delete_group")?;
     if !deleted {
-        return Err(AppError::unauthorized(
+        return Err(AppError::forbidden(
             "Only the group owner can delete this group",
         ));
     }

@@ -87,7 +87,7 @@ pub async fn list_invites(
 
     let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
     if !caller_role_enum.is_admin_or_above() {
-        return Err(AppError::unauthorized(
+        return Err(AppError::forbidden(
             "Only owners and admins can view invite links",
         ));
     }
@@ -301,7 +301,7 @@ pub async fn revoke_invite(
 
     let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
     if !caller_role_enum.is_admin_or_above() {
-        return Err(AppError::unauthorized(
+        return Err(AppError::forbidden(
             "Only owners and admins can revoke invite links",
         ));
     }

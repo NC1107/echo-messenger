@@ -63,7 +63,7 @@ async fn list_channels_returns_default_channels() {
 }
 
 #[tokio::test]
-async fn list_channels_non_member_returns_401() {
+async fn list_channels_non_member_returns_403() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let (group_id, _) = setup_group(&client, &base, "ListChanPriv").await;
@@ -76,7 +76,7 @@ async fn list_channels_non_member_returns_401() {
         .await
         .unwrap();
 
-    assert_eq!(resp.status().as_u16(), 401);
+    assert_eq!(resp.status().as_u16(), 403);
 }
 
 // ---------------------------------------------------------------------------
@@ -181,7 +181,7 @@ async fn regular_member_cannot_create_channel() {
         .await
         .unwrap();
 
-    assert_eq!(resp.status().as_u16(), 401);
+    assert_eq!(resp.status().as_u16(), 403);
 }
 
 #[tokio::test]

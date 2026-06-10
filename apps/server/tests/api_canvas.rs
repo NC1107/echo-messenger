@@ -165,7 +165,7 @@ async fn get_canvas_nonexistent_channel_returns_400() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn get_canvas_non_member_returns_401() {
+async fn get_canvas_non_member_returns_403() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let (group_id, channel_id, _) = setup_group_with_lounge(&client, &base).await;
@@ -181,11 +181,11 @@ async fn get_canvas_non_member_returns_401() {
         .await
         .unwrap();
 
-    assert_eq!(resp.status().as_u16(), 401);
+    assert_eq!(resp.status().as_u16(), 403);
 }
 
 #[tokio::test]
-async fn clear_canvas_non_member_returns_401() {
+async fn clear_canvas_non_member_returns_403() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let (group_id, channel_id, _) = setup_group_with_lounge(&client, &base).await;
@@ -202,7 +202,7 @@ async fn clear_canvas_non_member_returns_401() {
         .await
         .unwrap();
 
-    assert_eq!(resp.status().as_u16(), 401);
+    assert_eq!(resp.status().as_u16(), 403);
 }
 
 // ---------------------------------------------------------------------------

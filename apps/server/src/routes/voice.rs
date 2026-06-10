@@ -120,7 +120,7 @@ pub async fn generate_token(
         .await
         .db_ctx("checking voice token membership")?;
     if !is_member {
-        return Err(AppError::bad_request("Not a member of this conversation"));
+        return Err(AppError::forbidden("Not a member of this conversation"));
     }
 
     // Use the conversation UUID (canonical, hyphenated) as the LiveKit room
