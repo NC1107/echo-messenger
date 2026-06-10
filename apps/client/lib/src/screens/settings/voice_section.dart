@@ -12,6 +12,7 @@ import '../../services/debug_log_service.dart';
 import '../../services/sound_service.dart';
 import '../../theme/echo_theme.dart';
 import '../../utils/audio_level_analyzer.dart';
+import '../../widgets/echo_dropdown.dart';
 import '../../widgets/settings_panel_scaffold.dart';
 
 /// Voice & Video settings.
@@ -383,11 +384,9 @@ class _VoiceVideoSectionState extends ConsumerState<VoiceVideoSection> {
     required String currentId,
     required ValueChanged<String> onChanged,
   }) {
-    return DropdownButtonFormField<String>(
-      initialValue: devices.any((d) => d['id'] == currentId)
-          ? currentId
-          : 'default',
-      decoration: InputDecoration(labelText: label),
+    return EchoDropdown<String>(
+      value: devices.any((d) => d['id'] == currentId) ? currentId : 'default',
+      labelText: label,
       items: devices
           .map(
             (device) => DropdownMenuItem(

@@ -20,6 +20,7 @@ import '../services/upload_client.dart';
 import '../theme/echo_theme.dart';
 import '../utils/friendly_error.dart';
 import '../widgets/avatar_crop_dialog.dart';
+import '../widgets/echo_dropdown.dart';
 import '../widgets/echo_logo_icon.dart';
 import '../widgets/loading_indicator.dart';
 import '../widgets/theme_thumbnail.dart';
@@ -632,40 +633,18 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   ];
 
   Widget _buildPronounsDropdown(BuildContext context) {
-    return InputDecorator(
-      decoration: InputDecoration(
-        labelText: 'Pronouns (optional)',
-        labelStyle: TextStyle(color: context.textSecondary),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: context.border),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: context.accent),
-        ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          isDense: true,
-          isExpanded: true,
-          hint: Text(
-            'Select pronouns',
-            style: TextStyle(color: context.textMuted, fontSize: 14),
-          ),
-          value: _selectedPronouns,
-          style: TextStyle(color: context.textPrimary, fontSize: 14),
-          onChanged: (v) => setState(() {
-            _selectedPronouns = v;
-            if (v != 'custom') _customPronounsController.clear();
-          }),
-          items: [
-            for (final opt in _pronounsOptions)
-              DropdownMenuItem(value: opt.value, child: Text(opt.label)),
-          ],
-        ),
-      ),
+    return EchoDropdown<String>(
+      value: _selectedPronouns,
+      labelText: 'Pronouns (optional)',
+      hintText: 'Select pronouns',
+      onChanged: (v) => setState(() {
+        _selectedPronouns = v;
+        if (v != 'custom') _customPronounsController.clear();
+      }),
+      items: [
+        for (final opt in _pronounsOptions)
+          DropdownMenuItem(value: opt.value, child: Text(opt.label)),
+      ],
     );
   }
 
@@ -709,35 +688,15 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
       ..._commonTimezones,
     ];
 
-    return InputDecorator(
-      decoration: InputDecoration(
-        labelText: 'Timezone',
-        labelStyle: TextStyle(color: context.textSecondary),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: context.border),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: context.accent),
-        ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          isDense: true,
-          isExpanded: true,
-          value: _selectedTimezone,
-          style: TextStyle(color: context.textPrimary, fontSize: 14),
-          onChanged: (v) {
-            if (v != null) setState(() => _selectedTimezone = v);
-          },
-          items: [
-            for (final tz in tzList)
-              DropdownMenuItem(value: tz, child: Text(tz)),
-          ],
-        ),
-      ),
+    return EchoDropdown<String>(
+      value: _selectedTimezone,
+      labelText: 'Timezone',
+      onChanged: (v) {
+        if (v != null) setState(() => _selectedTimezone = v);
+      },
+      items: [
+        for (final tz in tzList) DropdownMenuItem(value: tz, child: Text(tz)),
+      ],
     );
   }
 

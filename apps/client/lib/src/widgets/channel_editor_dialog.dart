@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'echo_dropdown.dart';
+
 /// Shared create/rename dialogs for group channels, so the group-info screen
 /// and the channel-bar context menu render the same thing. Componentized per
 /// the project's "don't paste a widget tree twice" rule — extend these rather
@@ -69,9 +71,9 @@ class _CreateChannelDialogState extends State<_CreateChannelDialog> {
             onSubmitted: (_) => _submit(),
           ),
           const SizedBox(height: 16),
-          DropdownButtonFormField<String>(
-            initialValue: _kind,
-            decoration: const InputDecoration(labelText: 'Type'),
+          EchoDropdown<String>(
+            value: _kind,
+            labelText: 'Type',
             items: const [
               DropdownMenuItem(value: 'text', child: Text('Text')),
               DropdownMenuItem(value: 'voice', child: Text('Voice')),

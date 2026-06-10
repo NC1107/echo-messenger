@@ -18,6 +18,7 @@ import '../../utils/color_utils.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/avatar_crop_dialog.dart';
 import '../../widgets/avatar_utils.dart' show resolveAvatarUrl;
+import '../../widgets/echo_dropdown.dart';
 import '../../widgets/loading_indicator.dart';
 import '../../widgets/settings_panel_scaffold.dart';
 
@@ -853,26 +854,9 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        DropdownButtonFormField<String>(
-          initialValue: dropdownInitial,
-          decoration: InputDecoration(
-            labelText: 'Pronouns',
-            labelStyle: TextStyle(color: context.textSecondary),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: context.border),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: context.accent),
-            ),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 10,
-            ),
-          ),
-          dropdownColor: context.surface,
-          style: TextStyle(color: context.textPrimary, fontSize: 14),
+        EchoDropdown<String>(
+          value: dropdownInitial,
+          labelText: 'Pronouns',
           items: [
             ..._pronounOptions.map(
               (p) => DropdownMenuItem(
@@ -1060,29 +1044,10 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     final current = _timezoneController.text;
     final isInList = _timezones.contains(current);
 
-    return DropdownButtonFormField<String>(
-      initialValue: isInList ? current : null,
-      decoration: InputDecoration(
-        labelText: 'Timezone',
-        hintText: current.isNotEmpty && !isInList ? current : 'Select timezone',
-        hintStyle: TextStyle(color: context.textMuted),
-        labelStyle: TextStyle(color: context.textSecondary),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: context.border),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: context.accent),
-        ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 10,
-        ),
-      ),
-      dropdownColor: context.surface,
-      style: TextStyle(color: context.textPrimary, fontSize: 14),
-      isExpanded: true,
+    return EchoDropdown<String>(
+      value: isInList ? current : null,
+      labelText: 'Timezone',
+      hintText: current.isNotEmpty && !isInList ? current : 'Select timezone',
       menuMaxHeight: 300,
       items: _timezones
           .map(
@@ -1140,27 +1105,10 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
           children: [
             SizedBox(
               width: 110,
-              child: DropdownButtonFormField<_CountryCode>(
-                initialValue: _selectedCountry,
-                decoration: InputDecoration(
-                  labelText: 'Country code',
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 10,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: context.border),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: context.accent),
-                  ),
-                ),
-                dropdownColor: context.surface,
-                isExpanded: true,
+              child: EchoDropdown<_CountryCode>(
+                value: _selectedCountry,
+                labelText: 'Country code',
                 menuMaxHeight: 300,
-                style: TextStyle(color: context.textPrimary, fontSize: 13),
                 items: _countries
                     .map(
                       (c) => DropdownMenuItem<_CountryCode>(
