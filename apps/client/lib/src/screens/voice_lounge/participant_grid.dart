@@ -15,6 +15,7 @@ import '../../services/clipboard_service.dart';
 import '../../theme/echo_theme.dart';
 import '../../theme/motion_tokens.dart';
 import '../../utils/canvas_utils.dart';
+import '../../widgets/avatar_utils.dart';
 import '../../widgets/context_menu/echo_context_menu.dart';
 import '../../widgets/voice/participant_attention.dart';
 import '../../widgets/voice_speaking_ring.dart';
@@ -625,47 +626,19 @@ class AvatarCircle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
-
-    // Generate a stable color from the name
+    // Stable per-name background, kept identical to the prior voice-tile look
+    // (buildAvatar's own palette is lighter); pass it as bgColor so only the
+    // image-loading + initial-fallback logic is shared, not the colour.
     final hue = (name.hashCode % 360).abs().toDouble();
-    final avatarColor = HSLColor.fromAHSL(1.0, hue, 0.5, 0.35).toColor();
+    final bg = HSLColor.fromAHSL(1.0, hue, 0.5, 0.35).toColor();
 
     const double avatarSize = 80;
-
-    final circle = Container(
-      width: avatarSize,
-      height: avatarSize,
-      decoration: BoxDecoration(shape: BoxShape.circle, color: avatarColor),
-      clipBehavior: Clip.antiAlias,
-      child: avatarUrl != null
-          ? Image.network(
-              avatarUrl!,
-              headers: _getAuthHeaders(authToken),
-              fit: BoxFit.cover,
-              width: avatarSize,
-              height: avatarSize,
-              errorBuilder: (_, _, _) => Center(
-                child: Text(
-                  initial,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            )
-          : Center(
-              child: Text(
-                initial,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 28,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
+    final circle = buildAvatar(
+      name: name,
+      radius: avatarSize / 2,
+      imageUrl: avatarUrl,
+      bgColor: bg,
+      authToken: authToken,
     );
 
     return Center(
@@ -774,10 +747,6 @@ class _LocalScreenShareTrackState extends State<LocalScreenShareTrack> {
     }
     return lk.VideoTrackRenderer(_track!, fit: lk.VideoViewFit.contain);
   }
-}
-
-Map<String, String>? _getAuthHeaders(String? authToken) {
-  return authToken != null ? {'Authorization': 'Bearer $authToken'} : null;
 }
 
 /// BackdropFilter wrapper that skips the blur on web. The 12×12 Gaussian
