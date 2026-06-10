@@ -338,9 +338,11 @@ pub(in crate::ws) async fn handle_canvas_event(
         payload,
     };
     if let Ok(json) = serde_json::to_string(&event) {
+        // VL-19: exclude only the originating device so the sender's other
+        // devices still render the stroke/image they just produced.
         state
             .hub
-            .broadcast_json(&member_ids, &json, Some(sender_id));
+            .broadcast_json_except_device(&member_ids, &json, sender_id, sender_device_id);
     }
 }
 

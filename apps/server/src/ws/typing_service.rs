@@ -249,13 +249,21 @@ pub(super) async fn handle_typing(
         from_username: sender_username.to_string(),
     };
     if let Ok(json) = serde_json::to_string(&event) {
+        // Typing intentionally excludes the *whole* sender (all devices): a
+        // "you are typing" indicator is for other people, not an echo to your
+        // own other device. (Unlike read receipts / canvas — see VL-19.)
         state
             .hub
             .broadcast_json(&member_ids, &json, Some(sender_id));
     }
 }
 
-pub(super) async fn handle_read_receipt(state: &AppState, sender_id: Uuid, conversation_id: Uuid) {
+pub(super) async fn handle_read_receipt(
+    state: &AppState,
+    sender_id: Uuid,
+    sender_device_id: i32,
+    conversation_id: Uuid,
+) {
     if !check_membership_cached(&state.pool, conversation_id, sender_id).await {
         return;
     }
@@ -283,9 +291,11 @@ pub(super) async fn handle_read_receipt(state: &AppState, sender_id: Uuid, conve
         user_id: sender_id,
     };
     if let Ok(json) = serde_json::to_string(&event) {
+        // Deliver to the sender's other devices so read state syncs across
+        // them; only the originating device is excluded (VL-19 class).
         state
             .hub
-            .broadcast_json(&member_ids, &json, Some(sender_id));
+            .broadcast_json_except_device(&member_ids, &json, sender_id, sender_device_id);
     }
 }
 

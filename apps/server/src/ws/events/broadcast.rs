@@ -1,7 +1,8 @@
 //! Generic handler for simple broadcast-to-conversation events.
 //!
 //! Used by `key_reset`, `call_started`, and other events that just need a
-//! membership check followed by a fanout to every member except the sender.
+//! membership check followed by a fanout to every member — and to the sender's
+//! sibling devices — except the originating device.
 
 use uuid::Uuid;
 
@@ -10,10 +11,13 @@ use crate::ws::protocol::ServerMessage;
 use crate::ws::typing_service;
 
 /// Verifies membership, then broadcasts `build_event(...)` to all conversation
-/// members except the sender.
+/// members. The sender's *other* devices still receive it (so a call-started /
+/// key-reset from device A reaches device B); only the originating device is
+/// excluded (VL-19 device-id-vs-user-id class).
 pub(in crate::ws) async fn handle_broadcast_event<F>(
     state: &AppState,
     sender_id: Uuid,
+    sender_device_id: i32,
     sender_username: &str,
     conversation_id: Uuid,
     build_event: F,
@@ -34,6 +38,6 @@ pub(in crate::ws) async fn handle_broadcast_event<F>(
     if let Ok(json) = serde_json::to_string(&event) {
         state
             .hub
-            .broadcast_json(&member_ids, &json, Some(sender_id));
+            .broadcast_json_except_device(&member_ids, &json, sender_id, sender_device_id);
     }
 }
