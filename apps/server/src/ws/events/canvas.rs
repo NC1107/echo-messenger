@@ -110,18 +110,23 @@ async fn persist_canvas_state(
     payload: &serde_json::Value,
 ) -> bool {
     match kind {
-        "stroke" => match db::canvas::append_stroke(&state.pool, channel_id, payload.clone()).await
-        {
-            Ok(()) => true,
-            Err(db::canvas::CanvasCapError::CapReached) => {
-                send_error(state, sender_id, "Canvas stroke limit reached");
-                false
+        "stroke" => {
+            match db::canvas::append_stroke(&state.pool, channel_id, sender_id, payload.clone())
+                .await
+            {
+                Ok(()) => true,
+                Err(db::canvas::CanvasCapError::CapReached) => {
+                    send_error(state, sender_id, "Canvas stroke limit reached");
+                    false
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "canvas: failed to persist stroke for channel {channel_id}: {e:?}"
+                    );
+                    true
+                }
             }
-            Err(e) => {
-                tracing::error!("canvas: failed to persist stroke for channel {channel_id}: {e:?}");
-                true
-            }
-        },
+        }
         "clear" => {
             // The client's "Clear board" wipes both drawings AND images
             // locally and broadcasts a single `clear` event. Server used
@@ -130,13 +135,37 @@ async fn persist_canvas_state(
             // the live participants had already cleared. Route to
             // clear_all to keep persisted state aligned with live state
             // (audit Finding 3, 2026-05-28).
-            if let Err(e) = db::canvas::clear_all(&state.pool, channel_id).await {
-                tracing::error!("canvas: failed to clear-all for channel {channel_id}: {e:?}");
+            //
+            // VL-15: honor the `scope`. A missing scope defaults to "all"
+            // (the historical behavior). `scope: "mine"` wipes only the
+            // sender's own strokes/images so one member can clear their
+            // contribution without nuking the whole board.
+            let scope = payload
+                .get("scope")
+                .and_then(|v| v.as_str())
+                .unwrap_or("all");
+            let result = if scope == "mine" {
+                db::canvas::clear_user_drawings(&state.pool, channel_id, sender_id).await
+            } else {
+                db::canvas::clear_all(&state.pool, channel_id).await
+            };
+            if let Err(e) = result {
+                tracing::error!(
+                    "canvas: failed to clear (scope={scope}) for channel {channel_id}: {e:?}"
+                );
             }
             true
         }
         "image_add" => {
-            match db::canvas::add_image(&state.pool, channel_id, payload.clone()).await {
+            // VL-16: the validator only confirms the url is shaped like
+            // `/api/media/<uuid>`. Confirm the sender can actually access
+            // that media before persisting/broadcasting, so a member can't
+            // pin someone else's private upload onto the shared board by
+            // guessing/replaying its id (#1332).
+            if !verify_image_media_access(state, sender_id, payload).await {
+                return false;
+            }
+            match db::canvas::add_image(&state.pool, channel_id, sender_id, payload.clone()).await {
                 Ok(()) => true,
                 Err(db::canvas::CanvasCapError::CapReached) => {
                     send_error(state, sender_id, "Canvas image limit reached");
@@ -172,6 +201,36 @@ async fn persist_canvas_state(
         // Ephemeral relays — relayed but never written to the DB.
         // Covers "avatar_move", "stroke_partial", "screenshare_move".
         _ => true,
+    }
+}
+
+/// Verify the sender can access the media referenced by an `image_add`
+/// payload. Returns `false` (and sends a user-facing error) when the url is
+/// not a parseable `/api/media/<uuid>` reference or the sender lacks access.
+async fn verify_image_media_access(
+    state: &AppState,
+    sender_id: Uuid,
+    payload: &serde_json::Value,
+) -> bool {
+    let Some(media_id) = canvas_validation::media_id_from_image_add(payload) else {
+        send_error(
+            state,
+            sender_id,
+            "image_add url is not a valid media reference",
+        );
+        return false;
+    };
+    match db::media::can_user_access_media(&state.pool, media_id, sender_id).await {
+        Ok(true) => true,
+        Ok(false) => {
+            send_error(state, sender_id, "You do not have access to that media");
+            false
+        }
+        Err(e) => {
+            tracing::error!("canvas: media access check failed for {media_id}: {e:?}");
+            send_error(state, sender_id, "Database error");
+            false
+        }
     }
 }
 

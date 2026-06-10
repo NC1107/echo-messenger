@@ -274,9 +274,29 @@ async fn late_joiner_sees_persisted_strokes_and_images() {
     let client = Client::new();
 
     // Alice creates the group and the lounge.
-    let (alice_token, _, _) = common::register_and_login(&client, &base, "cvs_late_alice").await;
+    let (alice_token, alice_id, _) =
+        common::register_and_login(&client, &base, "cvs_late_alice").await;
     let group_id =
         common::create_group(&client, &base, &alice_token, "LateJoinerCanvasGroup").await;
+
+    // Pre-seed a media row Alice owns so the `image_add` ownership gate
+    // (#1332) accepts the pinned image. The url must be `/api/media/<uuid>`.
+    let media_id = uuid::Uuid::new_v4();
+    let pool = common::test_pool().await;
+    echo_server::db::media::create_media(
+        &pool,
+        media_id,
+        uuid::Uuid::parse_str(&alice_id).unwrap(),
+        "photo.png",
+        "image/png",
+        1024,
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let media_url = format!("/api/media/{media_id}");
 
     let resp = client
         .get(format!("{base}/api/groups/{group_id}/channels"))
@@ -389,7 +409,7 @@ async fn late_joiner_sees_persisted_strokes_and_images() {
         "image_add",
         serde_json::json!({
             "id": "img-late-1",
-            "url": "https://example.com/photo.png",
+            "url": media_url,
             "x": 0.3,
             "y": 0.4,
             "width": 0.2,
@@ -481,7 +501,7 @@ async fn late_joiner_sees_persisted_strokes_and_images() {
     let images = body["images_data"].as_array().expect("images_data array");
     assert_eq!(images.len(), 1, "image must be persisted for late joiners");
     assert_eq!(images[0]["id"], "img-late-1");
-    assert_eq!(images[0]["url"], "https://example.com/photo.png");
+    assert_eq!(images[0]["url"], media_url);
 }
 
 /// Sending a canvas event to a text channel (not a voice channel) returns an
