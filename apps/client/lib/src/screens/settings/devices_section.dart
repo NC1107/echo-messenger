@@ -29,6 +29,11 @@ class DevicesSection extends ConsumerStatefulWidget {
 /// Editable device names accept 1..=40 chars (matches server validation).
 const int _kDeviceNameMaxLength = 40;
 
+// Repeated string literals hoisted to satisfy S1192 (no literal 3+ times).
+const _kContentTypeHeader = 'Content-Type';
+const _kJsonContentType = 'application/json';
+const _kNetworkErrorMsg = 'Network error';
+
 /// Visible-for-testing: client-side mirror of the server's `validate_device_name`.
 /// Returns null on success or a human-readable error message; the UI surfaces
 /// the message inline below the rename field.
@@ -106,7 +111,7 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
               Uri.parse('$serverUrl/api/keys/devices/$userId'),
               headers: {
                 'Authorization': 'Bearer $token',
-                'Content-Type': 'application/json',
+                _kContentTypeHeader: _kJsonContentType,
               },
             ),
           );
@@ -196,7 +201,7 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
       }
     } catch (e) {
       if (mounted) {
-        ToastService.show(context, 'Network error', type: ToastType.error);
+        ToastService.show(context, _kNetworkErrorMsg, type: ToastType.error);
       }
     }
   }
@@ -222,7 +227,7 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
               Uri.parse('$serverUrl/api/keys/devices/revoke-others'),
               headers: {
                 'Authorization': 'Bearer $token',
-                'Content-Type': 'application/json',
+                _kContentTypeHeader: _kJsonContentType,
               },
               body: jsonEncode({'current_device_id': currentDeviceId}),
             ),
@@ -251,7 +256,7 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
       }
     } catch (e) {
       if (mounted) {
-        ToastService.show(context, 'Network error', type: ToastType.error);
+        ToastService.show(context, _kNetworkErrorMsg, type: ToastType.error);
       }
     }
   }
@@ -294,7 +299,7 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
               Uri.parse('$serverUrl/api/keys/device/${device.deviceId}'),
               headers: {
                 'Authorization': 'Bearer $token',
-                'Content-Type': 'application/json',
+                _kContentTypeHeader: _kJsonContentType,
               },
               body: jsonEncode({'device_name': normalized}),
             ),
@@ -319,7 +324,7 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
     } catch (_) {
       _revertRename(device.deviceId, previousName);
       if (mounted) {
-        ToastService.show(context, 'Network error', type: ToastType.error);
+        ToastService.show(context, _kNetworkErrorMsg, type: ToastType.error);
       }
     }
   }
