@@ -50,10 +50,11 @@ async fn kicking_member_drops_their_voice_session() {
 
     let owner_name = common::unique_username("evict_owner");
     let member_name = common::unique_username("evict_member");
-    common::register(&client, &base, &owner_name, "password123").await;
-    common::register(&client, &base, &member_name, "password123").await;
-    let (owner_token, _) = common::login(&client, &base, &owner_name, "password123").await;
-    let (_, member_id_str) = common::login(&client, &base, &member_name, "password123").await;
+    let password = common::unique_password();
+    common::register(&client, &base, &owner_name, &password).await;
+    common::register(&client, &base, &member_name, &password).await;
+    let (owner_token, _) = common::login(&client, &base, &owner_name, &password).await;
+    let (_, member_id_str) = common::login(&client, &base, &member_name, &password).await;
     let member_id = Uuid::parse_str(&member_id_str).unwrap();
 
     let group_id = common::create_group(&client, &base, &owner_token, "evict-group").await;
@@ -98,11 +99,12 @@ async fn leaving_group_drops_own_voice_session() {
 
     let owner_name = common::unique_username("leave_owner");
     let member_name = common::unique_username("leave_member");
-    common::register(&client, &base, &owner_name, "password123").await;
-    common::register(&client, &base, &member_name, "password123").await;
-    let (owner_token, _) = common::login(&client, &base, &owner_name, "password123").await;
+    let password = common::unique_password();
+    common::register(&client, &base, &owner_name, &password).await;
+    common::register(&client, &base, &member_name, &password).await;
+    let (owner_token, _) = common::login(&client, &base, &owner_name, &password).await;
     let (member_token, member_id_str) =
-        common::login(&client, &base, &member_name, "password123").await;
+        common::login(&client, &base, &member_name, &password).await;
     let member_id = Uuid::parse_str(&member_id_str).unwrap();
 
     let group_id = common::create_group(&client, &base, &owner_token, "leave-group").await;

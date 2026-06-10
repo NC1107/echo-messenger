@@ -9,8 +9,9 @@ use serde_json::Value;
 /// and return `(group_id, lounge_channel_id, token)`.
 async fn setup_group_with_lounge(client: &Client, base: &str) -> (String, String, String) {
     let username = common::unique_username("canvas");
-    common::register(client, base, &username, "password123").await;
-    let (token, _) = common::login(client, base, &username, "password123").await;
+    let password = common::unique_password();
+    common::register(client, base, &username, &password).await;
+    let (token, _) = common::login(client, base, &username, &password).await;
 
     let group_id = common::create_group(client, base, &token, "CanvasTestGroup").await;
 

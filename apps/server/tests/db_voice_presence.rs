@@ -43,8 +43,9 @@ async fn users_in_voice_channel_reports_only_present_users() {
     // just a UUID with no voice session — the query is satisfied purely by the
     // voice_sessions table, so it needn't be a registered account.
     let name = common::unique_username("vpowner");
-    common::register(&client, &base, &name, "password123").await;
-    let (token, owner_id_str) = common::login(&client, &base, &name, "password123").await;
+    let password = common::unique_password();
+    common::register(&client, &base, &name, &password).await;
+    let (token, owner_id_str) = common::login(&client, &base, &name, &password).await;
     let owner_id = Uuid::parse_str(&owner_id_str).unwrap();
     let group_id = common::create_group(&client, &base, &token, "voice-presence-group").await;
     let conv_id = Uuid::parse_str(&group_id).unwrap();

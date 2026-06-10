@@ -12,10 +12,11 @@ use serde_json::Value;
 async fn setup_voice_test(client: &Client, base: &str) -> (String, String, String) {
     let name_a = common::unique_username("voice");
     let name_b = common::unique_username("voice");
-    common::register(client, base, &name_a, "password123").await;
-    common::register(client, base, &name_b, "password123").await;
-    let (token_a, user_a_id) = common::login(client, base, &name_a, "password123").await;
-    let (token_b, _) = common::login(client, base, &name_b, "password123").await;
+    let password = common::unique_password();
+    common::register(client, base, &name_a, &password).await;
+    common::register(client, base, &name_b, &password).await;
+    let (token_a, user_a_id) = common::login(client, base, &name_a, &password).await;
+    let (token_b, _) = common::login(client, base, &name_b, &password).await;
 
     // Make them contacts
     let resp = client
@@ -39,7 +40,7 @@ async fn setup_voice_test(client: &Client, base: &str) -> (String, String, Strin
     assert_eq!(resp.status().as_u16(), 200);
 
     // Create DM conversation
-    let peer_id = common::login(client, base, &name_b, "password123").await.1;
+    let peer_id = common::login(client, base, &name_b, &password).await.1;
     let dm_resp = client
         .post(format!("{base}/api/conversations/dm"))
         .header("Authorization", format!("Bearer {token_a}"))
@@ -116,8 +117,9 @@ async fn voice_token_wrong_identity_rejected() {
     let client = Client::new();
 
     let name = common::unique_username("voice");
-    common::register(&client, &base, &name, "password123").await;
-    let (token, _) = common::login(&client, &base, &name, "password123").await;
+    let password = common::unique_password();
+    common::register(&client, &base, &name, &password).await;
+    let (token, _) = common::login(&client, &base, &name, &password).await;
 
     let resp = client
         .post(format!("{base}/api/voice/token"))
@@ -144,8 +146,9 @@ async fn voice_token_without_conversation_id_rejected() {
     let client = Client::new();
 
     let name = common::unique_username("voice");
-    common::register(&client, &base, &name, "password123").await;
-    let (token, _) = common::login(&client, &base, &name, "password123").await;
+    let password = common::unique_password();
+    common::register(&client, &base, &name, &password).await;
+    let (token, _) = common::login(&client, &base, &name, &password).await;
 
     let resp = client
         .post(format!("{base}/api/voice/token"))
@@ -177,8 +180,9 @@ async fn voice_token_empty_body_rejected() {
     let client = Client::new();
 
     let name = common::unique_username("voice");
-    common::register(&client, &base, &name, "password123").await;
-    let (token, _) = common::login(&client, &base, &name, "password123").await;
+    let password = common::unique_password();
+    common::register(&client, &base, &name, &password).await;
+    let (token, _) = common::login(&client, &base, &name, &password).await;
 
     let resp = client
         .post(format!("{base}/api/voice/token"))

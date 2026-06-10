@@ -19,8 +19,9 @@ use uuid::Uuid;
 /// Create a fresh group and return its default lounge voice channel id.
 async fn fresh_lounge_channel(client: &Client, base: &str) -> Uuid {
     let username = common::unique_username("clrscope");
-    common::register(client, base, &username, common::TEST_USER_PASSWORD).await;
-    let (token, _) = common::login(client, base, &username, common::TEST_USER_PASSWORD).await;
+    let password = common::unique_password();
+    common::register(client, base, &username, &password).await;
+    let (token, _) = common::login(client, base, &username, &password).await;
     let group_id = common::create_group(client, base, &token, "ClearScopeGroup").await;
 
     let resp = client
