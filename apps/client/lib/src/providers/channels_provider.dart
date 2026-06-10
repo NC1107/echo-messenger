@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../models/channel.dart';
-import 'auth_provider.dart';
+import 'authed_http.dart';
 import 'server_url_provider.dart';
 
 part 'channels_provider.g.dart';
@@ -53,32 +53,21 @@ class ChannelsState {
 }
 
 @Riverpod(keepAlive: true)
-class Channels extends _$Channels {
+class Channels extends _$Channels with AuthedHttp<ChannelsState> {
   @override
   ChannelsState build() => const ChannelsState();
 
   String get _serverUrl => ref.read(serverUrlProvider);
-
-  Map<String, String> _headersWithToken(String token) => {
-    'Content-Type': 'application/json',
-    'Authorization': 'Bearer $token',
-  };
-
-  Future<http.Response> _authenticatedRequest(
-    Future<http.Response> Function(String token) requestFn,
-  ) {
-    return ref.read(authProvider.notifier).authenticatedRequest(requestFn);
-  }
 
   Future<void> loadChannels(String conversationId) async {
     final loading = {...state.loadingConversations, conversationId};
     state = state.copyWith(loadingConversations: loading, error: null);
 
     try {
-      final response = await _authenticatedRequest(
+      final response = await authenticatedRequest(
         (token) => http.get(
           Uri.parse('$_serverUrl/api/groups/$conversationId/channels'),
-          headers: _headersWithToken(token),
+          headers: headersWithToken(token),
         ),
       );
 
@@ -133,12 +122,12 @@ class Channels extends _$Channels {
     String channelId,
   ) async {
     try {
-      final response = await _authenticatedRequest(
+      final response = await authenticatedRequest(
         (token) => http.get(
           Uri.parse(
             '$_serverUrl/api/groups/$conversationId/channels/$channelId/voice',
           ),
-          headers: _headersWithToken(token),
+          headers: headersWithToken(token),
         ),
       );
 
@@ -161,12 +150,12 @@ class Channels extends _$Channels {
 
   Future<bool> joinVoiceChannel(String conversationId, String channelId) async {
     try {
-      final response = await _authenticatedRequest(
+      final response = await authenticatedRequest(
         (token) => http.post(
           Uri.parse(
             '$_serverUrl/api/groups/$conversationId/channels/$channelId/voice/join',
           ),
-          headers: _headersWithToken(token),
+          headers: headersWithToken(token),
         ),
       );
       if (response.statusCode != 200) {
@@ -185,12 +174,12 @@ class Channels extends _$Channels {
     String channelId,
   ) async {
     try {
-      final response = await _authenticatedRequest(
+      final response = await authenticatedRequest(
         (token) => http.post(
           Uri.parse(
             '$_serverUrl/api/groups/$conversationId/channels/$channelId/voice/leave',
           ),
-          headers: _headersWithToken(token),
+          headers: headersWithToken(token),
         ),
       );
       if (response.statusCode == 200) {
@@ -223,10 +212,10 @@ class Channels extends _$Channels {
     try {
       final body = <String, dynamic>{'name': name, 'kind': kind};
       if (position != null) body['position'] = position;
-      final response = await _authenticatedRequest(
+      final response = await authenticatedRequest(
         (token) => http.post(
           Uri.parse('$_serverUrl/api/groups/$conversationId/channels'),
-          headers: _headersWithToken(token),
+          headers: headersWithToken(token),
           body: jsonEncode(body),
         ),
       );
@@ -249,12 +238,12 @@ class Channels extends _$Channels {
     String newName,
   ) async {
     try {
-      final response = await _authenticatedRequest(
+      final response = await authenticatedRequest(
         (token) => http.put(
           Uri.parse(
             '$_serverUrl/api/groups/$conversationId/channels/$channelId',
           ),
-          headers: _headersWithToken(token),
+          headers: headersWithToken(token),
           body: jsonEncode({'name': newName}),
         ),
       );
@@ -271,12 +260,12 @@ class Channels extends _$Channels {
 
   Future<bool> deleteChannel(String conversationId, String channelId) async {
     try {
-      final response = await _authenticatedRequest(
+      final response = await authenticatedRequest(
         (token) => http.delete(
           Uri.parse(
             '$_serverUrl/api/groups/$conversationId/channels/$channelId',
           ),
-          headers: _headersWithToken(token),
+          headers: headersWithToken(token),
         ),
       );
       if (response.statusCode == 200 || response.statusCode == 204) {
@@ -298,12 +287,12 @@ class Channels extends _$Channels {
     required bool pushToTalk,
   }) async {
     try {
-      final response = await _authenticatedRequest(
+      final response = await authenticatedRequest(
         (token) => http.put(
           Uri.parse(
             '$_serverUrl/api/groups/$conversationId/channels/$channelId/voice/state',
           ),
-          headers: _headersWithToken(token),
+          headers: headersWithToken(token),
           body: jsonEncode({
             'is_muted': isMuted,
             'is_deafened': isDeafened,
