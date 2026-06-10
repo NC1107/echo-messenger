@@ -110,18 +110,23 @@ async fn persist_canvas_state(
     payload: &serde_json::Value,
 ) -> bool {
     match kind {
-        "stroke" => match db::canvas::append_stroke(&state.pool, channel_id, payload.clone()).await
-        {
-            Ok(()) => true,
-            Err(db::canvas::CanvasCapError::CapReached) => {
-                send_error(state, sender_id, "Canvas stroke limit reached");
-                false
+        "stroke" => {
+            match db::canvas::append_stroke(&state.pool, channel_id, sender_id, payload.clone())
+                .await
+            {
+                Ok(()) => true,
+                Err(db::canvas::CanvasCapError::CapReached) => {
+                    send_error(state, sender_id, "Canvas stroke limit reached");
+                    false
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "canvas: failed to persist stroke for channel {channel_id}: {e:?}"
+                    );
+                    true
+                }
             }
-            Err(e) => {
-                tracing::error!("canvas: failed to persist stroke for channel {channel_id}: {e:?}");
-                true
-            }
-        },
+        }
         "clear" => {
             // The client's "Clear board" wipes both drawings AND images
             // locally and broadcasts a single `clear` event. Server used
@@ -130,13 +135,29 @@ async fn persist_canvas_state(
             // the live participants had already cleared. Route to
             // clear_all to keep persisted state aligned with live state
             // (audit Finding 3, 2026-05-28).
-            if let Err(e) = db::canvas::clear_all(&state.pool, channel_id).await {
-                tracing::error!("canvas: failed to clear-all for channel {channel_id}: {e:?}");
+            //
+            // VL-15: honor the `scope`. A missing scope defaults to "all"
+            // (the historical behavior). `scope: "mine"` wipes only the
+            // sender's own strokes/images so one member can clear their
+            // contribution without nuking the whole board.
+            let scope = payload
+                .get("scope")
+                .and_then(|v| v.as_str())
+                .unwrap_or("all");
+            let result = if scope == "mine" {
+                db::canvas::clear_user_drawings(&state.pool, channel_id, sender_id).await
+            } else {
+                db::canvas::clear_all(&state.pool, channel_id).await
+            };
+            if let Err(e) = result {
+                tracing::error!(
+                    "canvas: failed to clear (scope={scope}) for channel {channel_id}: {e:?}"
+                );
             }
             true
         }
         "image_add" => {
-            match db::canvas::add_image(&state.pool, channel_id, payload.clone()).await {
+            match db::canvas::add_image(&state.pool, channel_id, sender_id, payload.clone()).await {
                 Ok(()) => true,
                 Err(db::canvas::CanvasCapError::CapReached) => {
                     send_error(state, sender_id, "Canvas image limit reached");

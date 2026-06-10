@@ -45,6 +45,23 @@ pub const MAX_STROKES: i64 = 2_000;
 /// Maximum number of images stored per canvas channel.
 pub const MAX_IMAGES: i64 = 2_000;
 
+/// JSON key under which a stroke/image's authoring user id is persisted.
+/// Used by [`clear_user_drawings`] to scope a `clear` to one member.
+const AUTHOR_KEY: &str = "from_user_id";
+
+/// Stamp the authoring user id into a stroke/image JSON object so a later
+/// per-user clear can target it. No-op if the payload isn't a JSON object
+/// (the validator already guarantees object shape for persisted kinds, but
+/// we stay defensive rather than panic).
+fn stamp_author(payload: &mut serde_json::Value, author_id: Uuid) {
+    if let Some(map) = payload.as_object_mut() {
+        map.insert(
+            AUTHOR_KEY.to_string(),
+            serde_json::Value::String(author_id.to_string()),
+        );
+    }
+}
+
 /// Append a drawing stroke to the channel canvas.
 ///
 /// The stroke must be a JSON object with at least `{ "id": "...", ... }`.
@@ -56,8 +73,13 @@ pub const MAX_IMAGES: i64 = 2_000;
 pub async fn append_stroke(
     pool: &PgPool,
     channel_id: Uuid,
-    stroke: serde_json::Value,
+    author_id: Uuid,
+    mut stroke: serde_json::Value,
 ) -> Result<(), CanvasCapError> {
+    // Stamp authorship so a later `scope: "mine"` clear can target only this
+    // user's strokes. The receiving client's `CanvasStroke.fromJson` ignores
+    // unknown keys, so the extra field is invisible to live participants.
+    stamp_author(&mut stroke, author_id);
     // Check current stroke count before appending to bound cumulative growth.
     //
     // NOTE: `jsonb_array_length` returns SQL INT4 (i32), not INT8 — decoding
@@ -142,6 +164,42 @@ pub async fn clear_drawing(pool: &PgPool, channel_id: Uuid) -> Result<(), sqlx::
     Ok(())
 }
 
+/// Erase only the strokes and images authored by `user_id`, leaving every
+/// other member's drawings intact.
+///
+/// Authorship is stamped into each persisted stroke/image object under the
+/// `from_user_id` key at write time (see [`append_stroke`] / [`add_image`]).
+/// Entries written before authorship stamping landed have no `from_user_id`
+/// and are therefore treated as un-owned: a `scope: "mine"` clear leaves them
+/// in place rather than wiping another member's history on a guess.
+pub async fn clear_user_drawings(
+    pool: &PgPool,
+    channel_id: Uuid,
+    user_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE channel_canvas
+         SET drawing_data = (
+               SELECT COALESCE(jsonb_agg(s), '[]'::jsonb)
+               FROM jsonb_array_elements(drawing_data) s
+               WHERE s->>'from_user_id' IS DISTINCT FROM $2
+             ),
+             images_data = (
+               SELECT COALESCE(jsonb_agg(img), '[]'::jsonb)
+               FROM jsonb_array_elements(images_data) img
+               WHERE img->>'from_user_id' IS DISTINCT FROM $2
+             ),
+             updated_at = now()
+         WHERE channel_id = $1",
+    )
+    .bind(channel_id)
+    .bind(user_id.to_string())
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
 /// Erase all canvas data for a channel (drawings and images).
 pub async fn clear_all(pool: &PgPool, channel_id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query(
@@ -166,8 +224,12 @@ pub async fn clear_all(pool: &PgPool, channel_id: Uuid) -> Result<(), sqlx::Erro
 pub async fn add_image(
     pool: &PgPool,
     channel_id: Uuid,
-    image: serde_json::Value,
+    author_id: Uuid,
+    mut image: serde_json::Value,
 ) -> Result<(), CanvasCapError> {
+    // Stamp authorship so a later `scope: "mine"` clear can target only this
+    // user's images. `CanvasImage.fromJson` ignores the extra key.
+    stamp_author(&mut image, author_id);
     // Check current image count before appending to bound cumulative growth.
     // See `append_stroke` for the i64-vs-i32 cap-decode bug context — same
     // root cause was wiping every image past the first.
