@@ -162,9 +162,9 @@ async fn add_member_happy_path() {
     let _ = new_username;
 }
 
-/// Non-admin regular member cannot add to a private group → 401.
+/// Non-admin regular member cannot add to a private group → 403.
 #[tokio::test]
-async fn add_member_non_admin_private_group_returns_401() {
+async fn add_member_non_admin_private_group_returns_403() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let (owner_token, _, _) = common::register_and_login(&client, &base, "amna_own").await;
@@ -182,7 +182,7 @@ async fn add_member_non_admin_private_group_returns_401() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status().as_u16(), 401);
+    assert_eq!(resp.status().as_u16(), 403);
 }
 
 /// Target user does not exist → 404. TD-34.
@@ -290,9 +290,9 @@ async fn remove_member_happy_path() {
     assert_eq!(count, 1, "expected one member_removed system message");
 }
 
-/// Non-admin cannot kick another member → 401.
+/// Non-admin cannot kick another member → 403.
 #[tokio::test]
-async fn remove_member_non_admin_returns_401() {
+async fn remove_member_non_admin_returns_403() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let (owner_token, _, _) = common::register_and_login(&client, &base, "rmna_own").await;
@@ -310,7 +310,7 @@ async fn remove_member_non_admin_returns_401() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status().as_u16(), 401);
+    assert_eq!(resp.status().as_u16(), 403);
 }
 
 /// A member can remove themselves (self-removal == leave via remove endpoint).
@@ -480,9 +480,9 @@ async fn ban_member_happy_path() {
     assert_eq!(count, 1, "expected one member_banned system message");
 }
 
-/// Non-admin cannot ban → 401.
+/// Non-admin cannot ban → 403.
 #[tokio::test]
-async fn ban_member_non_admin_returns_401() {
+async fn ban_member_non_admin_returns_403() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let (owner_token, _, _) = common::register_and_login(&client, &base, "banna_own").await;
@@ -500,7 +500,7 @@ async fn ban_member_non_admin_returns_401() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status().as_u16(), 401);
+    assert_eq!(resp.status().as_u16(), 403);
 }
 
 /// Banned user cannot rejoin: add_member returns 400 after ban.
@@ -648,9 +648,9 @@ async fn unban_member_happy_path() {
     );
 }
 
-/// Non-admin cannot unban → 401.
+/// Non-admin cannot unban → 403.
 #[tokio::test]
-async fn unban_member_non_admin_returns_401() {
+async fn unban_member_non_admin_returns_403() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let (owner_token, _, _) = common::register_and_login(&client, &base, "ubna_own").await;
@@ -677,7 +677,7 @@ async fn unban_member_non_admin_returns_401() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status().as_u16(), 401);
+    assert_eq!(resp.status().as_u16(), 403);
 }
 
 /// Unbanning a user that was never banned → 400.
