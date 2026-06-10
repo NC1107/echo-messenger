@@ -56,6 +56,10 @@ pub async fn leave_group(
 
     invalidate_member_cache(group_id);
 
+    // VL-24: drop the leaver's voice presence in this conversation so they
+    // disappear from the lounge immediately even if their socket stays open.
+    crate::ws::events::voice::evict_member_voice_sessions(&state, group_id, auth.user_id).await;
+
     // Auto-delete group if no members remain
     let remaining = db::groups::get_conversation_member_ids(&state.pool, group_id)
         .await

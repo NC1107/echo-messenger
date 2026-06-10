@@ -5,4 +5,4 @@ pub(super) mod canvas;
 pub(crate) mod canvas_authority;
 pub(super) mod canvas_validation;
 pub(super) mod dispatch;
-pub(super) mod voice;
+pub(crate) mod voice;
