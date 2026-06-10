@@ -18,11 +18,27 @@ Client apps and server binaries are on the [Releases page](https://github.com/NC
 | Platform | Download |
 |----------|----------|
 | Windows | [Echo-Setup-x64.exe](https://github.com/NC1107/echo-messenger/releases/latest/download/Echo-Setup-x64.exe) (installer -- see [SmartScreen workaround](docs/SMARTSCREEN_WORKAROUND.md)) |
-| Linux | [Echo-x86_64.AppImage](https://github.com/NC1107/echo-messenger/releases/latest/download/Echo-x86_64.AppImage) (single file) |
+| Linux | [Echo-x86_64.AppImage](https://github.com/NC1107/echo-messenger/releases/latest/download/Echo-x86_64.AppImage) (single file), or `.deb` / `.rpm` from the [Releases page](https://github.com/NC1107/echo-messenger/releases/latest) (see below) |
 | macOS | [echo-macos-x64.tar.gz](https://github.com/NC1107/echo-messenger/releases/latest/download/echo-macos-x64.tar.gz) (extract and run `Echo.app`) |
 | Web | [echo-messenger.us](https://echo-messenger.us) (hosted) or [echo-web.tar.gz](https://github.com/NC1107/echo-messenger/releases/latest/download/echo-web.tar.gz) (self-host static files) |
 | iOS | Available via TestFlight — see [ios-testflight-setup.md](docs/ios-testflight-setup.md) |
 | Android | APK on the [Releases page](https://github.com/NC1107/echo-messenger/releases) (sideload) |
+
+**Linux packages (`.deb` / `.rpm`)**
+
+Install through your package manager so Echo updates and uninstalls like any
+other app (runtime libraries are pulled in as dependencies). Download the file
+for your distro from the [latest release](https://github.com/NC1107/echo-messenger/releases/latest), then:
+
+```bash
+# Fedora / RHEL / openSUSE
+sudo dnf install ./echo-messenger-*.x86_64.rpm
+
+# Debian / Ubuntu
+sudo apt install ./echo-messenger_*_amd64.deb
+```
+
+Launch it as **Echo Messenger** from your app menu, or run `echo-messenger` from a terminal.
 
 **Self-hosting the server**
 
