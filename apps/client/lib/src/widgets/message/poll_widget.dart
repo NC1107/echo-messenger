@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../../models/poll.dart';
 import '../../theme/echo_theme.dart';
+import '../loading_indicator.dart';
 
 /// Renders a poll inside a message bubble.
 ///
@@ -142,13 +143,7 @@ class _PollWidgetState extends State<PollWidget> {
         context,
         child: const Padding(
           padding: EdgeInsets.all(16),
-          child: Center(
-            child: SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          ),
+          child: Center(child: InlineLoadingSpinner(size: 20)),
         ),
       );
     }

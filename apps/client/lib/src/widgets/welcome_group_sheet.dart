@@ -10,6 +10,7 @@ import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import 'avatar_utils.dart';
 import 'echo_bottom_sheet.dart';
+import 'loading_indicator.dart';
 
 /// One-shot "Join the community" offer shown on a user's first visit to the
 /// home screen. Presents the server's configured welcome group with a single
@@ -170,11 +171,7 @@ class _WelcomeGroupBodyState extends ConsumerState<_WelcomeGroupBody> {
               minimumSize: const Size.fromHeight(48),
             ),
             child: _joining
-                ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
+                ? const InlineLoadingSpinner(size: 20)
                 : const Text('Join group'),
           ),
           const SizedBox(height: 8),

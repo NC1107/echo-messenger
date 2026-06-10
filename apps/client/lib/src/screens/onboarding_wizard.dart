@@ -20,6 +20,7 @@ import '../theme/echo_theme.dart';
 import '../utils/friendly_error.dart';
 import '../widgets/avatar_crop_dialog.dart';
 import '../widgets/echo_logo_icon.dart';
+import '../widgets/loading_indicator.dart';
 import '../widgets/theme_thumbnail.dart';
 import '../widgets/window_chrome.dart';
 
@@ -1129,11 +1130,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
                         ? null
                         : _grantNotificationPermission,
                     child: _requestingPermission
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
+                        ? const InlineLoadingSpinner(size: 14)
                         : const Text('Grant'),
                   ),
               ],

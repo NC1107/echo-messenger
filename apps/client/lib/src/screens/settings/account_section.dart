@@ -18,6 +18,7 @@ import '../../utils/color_utils.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/avatar_crop_dialog.dart';
 import '../../widgets/avatar_utils.dart' show resolveAvatarUrl;
+import '../../widgets/loading_indicator.dart';
 import '../../widgets/settings_panel_scaffold.dart';
 
 class _CountryCode {
@@ -765,11 +766,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
           child: OutlinedButton(
             onPressed: _changingPassword ? null : _changePassword,
             child: _changingPassword
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
+                ? const InlineLoadingSpinner(size: 18)
                 : const Text('Change Password'),
           ),
         ),

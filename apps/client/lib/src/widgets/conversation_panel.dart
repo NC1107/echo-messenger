@@ -36,6 +36,7 @@ import 'user_status_menu.dart';
 import 'echo_logo_icon.dart';
 import 'empty_state.dart';
 import 'feedback_dialog.dart';
+import 'loading_indicator.dart';
 import 'skeleton_loader.dart';
 import 'voice_dock.dart';
 import 'voice_footer.dart';

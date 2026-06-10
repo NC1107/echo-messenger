@@ -16,6 +16,7 @@ import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../theme/motion_tokens.dart';
 import '../theme/responsive.dart';
+import 'loading_indicator.dart';
 import 'message/media_content.dart';
 import 'message/reply_quote.dart';
 import 'message/rich_text_content.dart';
@@ -484,13 +485,7 @@ class _ThreadReplyList extends StatelessWidget {
   }
 
   Widget _buildLoading() {
-    return const Center(
-      child: SizedBox(
-        width: 20,
-        height: 20,
-        child: CircularProgressIndicator(strokeWidth: 2),
-      ),
-    );
+    return const Center(child: InlineLoadingSpinner(size: 20));
   }
 
   Widget _buildError(BuildContext context) {

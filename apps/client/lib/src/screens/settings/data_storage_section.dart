@@ -11,6 +11,7 @@ import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
 import '../../utils/byte_format.dart';
 import '../../widgets/confirm_dialog.dart';
+import '../../widgets/loading_indicator.dart';
 import '../../widgets/settings/settings_list_tile.dart';
 import '../../widgets/settings_panel_scaffold.dart';
 
@@ -183,11 +184,7 @@ class _DataStorageSectionState extends ConsumerState<DataStorageSection> {
             OutlinedButton.icon(
               onPressed: _isExporting ? null : _exportChats,
               icon: _isExporting
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
+                  ? const InlineLoadingSpinner(size: 14)
                   : const Icon(Icons.download_outlined, size: 16),
               label: Text(
                 _isExporting ? 'Exporting...' : 'Export chats (JSON)',

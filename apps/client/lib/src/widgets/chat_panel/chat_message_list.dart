@@ -8,6 +8,7 @@ import '../../models/conversation.dart';
 import '../../providers/accessibility_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../theme/echo_theme.dart';
+import '../loading_indicator.dart';
 import '../message_item.dart';
 import '../skeleton_loader.dart';
 import 'date_divider.dart';
@@ -264,13 +265,7 @@ class ChatMessageList extends ConsumerWidget {
               return SizedBox(
                 height: 48,
                 child: isLoadingHistory
-                    ? const Center(
-                        child: SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      )
+                    ? const Center(child: InlineLoadingSpinner(size: 16))
                     : const SizedBox.shrink(),
               );
             }

@@ -20,6 +20,7 @@ import '../utils/color_utils.dart';
 import '../utils/presence.dart';
 import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
 import '../widgets/confirm_dialog.dart';
+import '../widgets/loading_indicator.dart';
 import '../widgets/profile_sheets.dart';
 import 'safety_number_screen.dart';
 
@@ -632,11 +633,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
                 child: FilledButton.icon(
                   onPressed: _isStartingDm ? null : _messageDm,
                   icon: _isStartingDm
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
+                      ? const InlineLoadingSpinner(size: 16)
                       : const Icon(Icons.chat_bubble_outline, size: 18),
                   label: const Text('Message'),
                   style: FilledButton.styleFrom(

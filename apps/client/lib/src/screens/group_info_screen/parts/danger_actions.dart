@@ -100,11 +100,7 @@ extension _DangerActions on _GroupInfoScreenState {
         child: OutlinedButton.icon(
           onPressed: _isGeneratingInvite ? null : _generateAndCopyInviteLink,
           icon: _isGeneratingInvite
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+              ? const InlineLoadingSpinner(size: 16)
               : const Icon(Icons.link_outlined),
           label: const Text('Copy Invite Link'),
         ),

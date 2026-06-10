@@ -420,11 +420,7 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
               ? null
               : _confirm,
           child: _processing
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+              ? const InlineLoadingSpinner(size: 16)
               : const Text('Use Photo'),
         ),
       ],

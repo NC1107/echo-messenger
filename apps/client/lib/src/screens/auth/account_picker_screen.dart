@@ -143,11 +143,7 @@ class _AccountPickerScreenState extends ConsumerState<AccountPickerScreen> {
 
   Widget? _trailingFor(StoredAccount account) {
     if (_busyAccountId != account.id) return null;
-    return const SizedBox(
-      width: 20,
-      height: 20,
-      child: CircularProgressIndicator(strokeWidth: 2),
-    );
+    return const InlineLoadingSpinner(size: 20);
   }
 
   String _subtitleFor(StoredAccount account) {

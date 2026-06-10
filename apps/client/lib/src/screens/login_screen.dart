@@ -13,6 +13,7 @@ import '../widgets/auth/auth_scaffold_chrome.dart';
 import '../widgets/auth/beta_banner.dart';
 import '../widgets/auth/server_subtitle.dart';
 import '../widgets/echo_logo_icon.dart';
+import '../widgets/loading_indicator.dart';
 import '../widgets/window_chrome.dart';
 
 /// Pre-fill the username from the [knownServersProvider] entry that
@@ -312,11 +313,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         child: FilledButton(
           onPressed: authState.isLoading ? null : _login,
           child: authState.isLoading
-              ? const SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+              ? const InlineLoadingSpinner(size: 20)
               : const Text('Log in'),
         ),
       ),

@@ -113,11 +113,7 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
           TextButton(
             onPressed: _isCreating ? null : _createGroup,
             child: _isCreating
-                ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
+                ? const InlineLoadingSpinner(size: 20)
                 : const Text('Create'),
           ),
         ],

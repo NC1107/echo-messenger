@@ -12,6 +12,7 @@ import '../widgets/auth/auth_layout.dart';
 import '../widgets/auth/auth_scaffold_chrome.dart';
 import '../widgets/auth/server_subtitle.dart';
 import '../widgets/echo_logo_icon.dart';
+import '../widgets/loading_indicator.dart';
 import '../widgets/window_chrome.dart';
 
 /// Larger bottom padding in debug builds leaves room for the multi-line
@@ -394,11 +395,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         child: FilledButton(
           onPressed: authState.isLoading ? null : _register,
           child: authState.isLoading
-              ? const SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+              ? const InlineLoadingSpinner(size: 20)
               : const Text('Create account'),
         ),
       ),
