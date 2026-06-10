@@ -80,27 +80,30 @@ pub async fn append_stroke(
     // user's strokes. The receiving client's `CanvasStroke.fromJson` ignores
     // unknown keys, so the extra field is invisible to live participants.
     stamp_author(&mut stroke, author_id);
-    // Check current stroke count before appending to bound cumulative growth.
+    // Serialize concurrent appends on this channel's canvas row so the cap is
+    // enforced atomically: read the length under a row lock (`FOR UPDATE`) and
+    // append in the SAME transaction. The previous count-then-insert was a
+    // TOCTOU race — two appends near the cap could both pass the `< MAX_STROKES`
+    // check and both insert, pushing the array past the cap.
     //
     // NOTE: `jsonb_array_length` returns SQL INT4 (i32), not INT8 — decoding
-    // as `i64` was a latent bug that fired the moment a row actually
-    // existed: sqlx errored with "mismatched types ... INT8 vs INT4", the
-    // cap check returned `CanvasCapError::Db`, and `persist_canvas_state`
-    // silently logged + fell through to broadcast WITHOUT writing.  The
-    // visible symptom was "every stroke after the first one vanishes for
-    // late joiners" (user report 2026-05-27).  Decode as the actual SQL
-    // type and widen at the comparison site.
+    // as `i64` was a latent bug that fired the moment a row actually existed
+    // ("mismatched types INT8 vs INT4" → cap check returned `Db` → the write
+    // was silently skipped, so every stroke after the first vanished for late
+    // joiners, user report 2026-05-27). Decode as INT4, widen at the compare.
+    let mut tx = pool.begin().await?;
     let current_len: Option<i32> = sqlx::query_scalar(
         "SELECT jsonb_array_length(drawing_data)
          FROM channel_canvas
-         WHERE channel_id = $1",
+         WHERE channel_id = $1
+         FOR UPDATE",
     )
     .bind(channel_id)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *tx)
     .await?;
 
     if i64::from(current_len.unwrap_or(0)) >= MAX_STROKES {
-        return Err(CanvasCapError::CapReached);
+        return Err(CanvasCapError::CapReached); // tx rolls back on drop
     }
 
     sqlx::query(
@@ -118,9 +121,10 @@ pub async fn append_stroke(
     )
     .bind(channel_id)
     .bind(&stroke)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
+    tx.commit().await?;
     Ok(())
 }
 
@@ -230,20 +234,24 @@ pub async fn add_image(
     // Stamp authorship so a later `scope: "mine"` clear can target only this
     // user's images. `CanvasImage.fromJson` ignores the extra key.
     stamp_author(&mut image, author_id);
-    // Check current image count before appending to bound cumulative growth.
-    // See `append_stroke` for the i64-vs-i32 cap-decode bug context — same
-    // root cause was wiping every image past the first.
+    // Same atomic cap enforcement as `append_stroke`: read the image count
+    // under a row lock and append in one transaction so two concurrent adds
+    // near the cap can't both pass the check and overshoot MAX_IMAGES. See
+    // `append_stroke` for the i64-vs-i32 cap-decode bug context — same root
+    // cause was wiping every image past the first.
+    let mut tx = pool.begin().await?;
     let current_len: Option<i32> = sqlx::query_scalar(
         "SELECT jsonb_array_length(images_data)
          FROM channel_canvas
-         WHERE channel_id = $1",
+         WHERE channel_id = $1
+         FOR UPDATE",
     )
     .bind(channel_id)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *tx)
     .await?;
 
     if i64::from(current_len.unwrap_or(0)) >= MAX_IMAGES {
-        return Err(CanvasCapError::CapReached);
+        return Err(CanvasCapError::CapReached); // tx rolls back on drop
     }
 
     sqlx::query(
@@ -261,9 +269,10 @@ pub async fn add_image(
     )
     .bind(channel_id)
     .bind(&image)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
+    tx.commit().await?;
     Ok(())
 }
 
