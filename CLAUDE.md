@@ -167,6 +167,9 @@ If you find yourself copy-pasting a widget tree (an avatar + presence dot, a con
 - Per-user presence lookup → `userPresenceProvider(userId)`.
 - Copy text + toast → `copyToClipboard(context, text, successMessage: ...)`.
 - Empty state with illustration → `EmptyState` in `widgets/empty_state.dart`.
+- Labelled/bordered dropdowns → `EchoDropdown<T>` in `widgets/echo_dropdown.dart`.
+- Channel-bar dividers → `ChannelDivider` in `widgets/channel_divider.dart`.
+- Authenticated HTTP from a Riverpod notifier → `mixin AuthedHttp<S>` in `providers/authed_http.dart` (provides `headersWithToken` + `authenticatedRequest`).
 
 If your use case doesn't fit an existing helper, **extend the helper rather than fork it**. New options or `destructive: true`-style flags belong in the shared widget so the next user picks them up automatically.
 
