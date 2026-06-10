@@ -12,6 +12,7 @@ import 'package:go_router/go_router.dart';
 import '../models/thread_inbox_entry.dart';
 import '../providers/threads_inbox_provider.dart';
 import '../theme/echo_theme.dart';
+import '../utils/time_utils.dart';
 import '../widgets/window_chrome.dart';
 
 class ThreadsInboxScreen extends ConsumerStatefulWidget {
@@ -293,12 +294,5 @@ class _ThreadInboxRow extends StatelessWidget {
     );
   }
 
-  static String _formatAgo(DateTime when) {
-    final delta = DateTime.now().toUtc().difference(when.toUtc());
-    if (delta.inSeconds < 60) return 'just now';
-    if (delta.inMinutes < 60) return '${delta.inMinutes}m ago';
-    if (delta.inHours < 24) return '${delta.inHours}h ago';
-    if (delta.inDays < 7) return '${delta.inDays}d ago';
-    return '${(delta.inDays / 7).floor()}w ago';
-  }
+  static String _formatAgo(DateTime when) => formatRelativeTimeShort(when);
 }

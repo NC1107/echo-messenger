@@ -14,6 +14,7 @@ import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
 import '../utils/fuzzy_score.dart';
+import '../utils/time_utils.dart';
 import 'avatar_utils.dart' show buildAvatar, groupAvatarColor, resolveAvatarUrl;
 import 'echo_bottom_sheet.dart';
 import 'user_avatar.dart';
@@ -644,20 +645,8 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
         ? '${r.content.substring(0, 120)}...'
         : r.content;
 
-    String timeLabel = '';
     final dt = DateTime.tryParse(r.timestamp);
-    if (dt != null) {
-      final diff = DateTime.now().difference(dt);
-      if (diff.inDays > 0) {
-        timeLabel = '${diff.inDays}d ago';
-      } else if (diff.inHours > 0) {
-        timeLabel = '${diff.inHours}h ago';
-      } else if (diff.inMinutes > 0) {
-        timeLabel = '${diff.inMinutes}m ago';
-      } else {
-        timeLabel = 'just now';
-      }
-    }
+    final timeLabel = dt == null ? '' : formatRelativeTimeShort(dt);
 
     return _RowSemanticsLabel(
       label: 'message from ${r.senderUsername} in ${r.conversationName}',

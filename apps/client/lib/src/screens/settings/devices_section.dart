@@ -14,6 +14,7 @@ import '../../providers/server_url_provider.dart';
 import '../../providers/websocket_provider.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
+import '../../utils/time_utils.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/settings_panel_scaffold.dart';
 
@@ -634,19 +635,7 @@ class _Device {
 String _formatLastSeen(String? isoString) {
   if (isoString == null) return 'Never';
   try {
-    final dt = DateTime.parse(isoString).toLocal();
-    final diff = DateTime.now().difference(dt);
-    if (diff.inMinutes < 2) return 'just now';
-    if (diff.inMinutes < 60) {
-      final m = diff.inMinutes;
-      return '$m ${m == 1 ? 'minute' : 'minutes'} ago';
-    }
-    if (diff.inHours < 24) {
-      final h = diff.inHours;
-      return '$h ${h == 1 ? 'hour' : 'hours'} ago';
-    }
-    final d = diff.inDays;
-    return '$d ${d == 1 ? 'day' : 'days'} ago';
+    return formatRelativeTimeLong(DateTime.parse(isoString).toLocal());
   } catch (_) {
     return isoString;
   }

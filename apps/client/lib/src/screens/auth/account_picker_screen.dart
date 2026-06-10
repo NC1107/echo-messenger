@@ -21,6 +21,7 @@ import '../../providers/crypto_provider.dart';
 import '../../providers/websocket_provider.dart';
 import '../../services/accounts_storage.dart';
 import '../../theme/echo_theme.dart';
+import '../../utils/time_utils.dart';
 import '../../widgets/account_list_row.dart';
 import '../../widgets/echo_logo_icon.dart';
 
@@ -206,27 +207,7 @@ class _AccountPickerScreenState extends ConsumerState<AccountPickerScreen> {
   /// `lastUsed` field shipped).
   String? _formatLastUsed(DateTime when) {
     if (when.millisecondsSinceEpoch <= 0) return null;
-    final diff = DateTime.now().difference(when);
-    if (diff.isNegative) return 'just now';
-    if (diff.inMinutes < 1) return 'just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    if (diff.inDays < 7) return '${diff.inDays}d ago';
-    final months = const [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${months[when.month - 1]} ${when.day}';
+    return formatRelativeTimeShort(when, older: formatShortDate);
   }
 }
 
