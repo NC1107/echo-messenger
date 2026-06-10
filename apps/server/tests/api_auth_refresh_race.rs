@@ -13,15 +13,15 @@ async fn concurrent_refresh_with_same_token_only_one_wins() {
     let client = Client::new();
 
     let username = common::unique_username("race");
-    let password = "password123";
-    common::register(&client, &base, &username, password).await;
+    let password = common::unique_password();
+    common::register(&client, &base, &username, &password).await;
 
     // Login to obtain a fresh refresh token.
     let resp = client
         .post(format!("{base}/api/auth/login"))
         .json(&serde_json::json!({
             "username": username,
-            "password": password,
+            "password": password.clone(),
         }))
         .send()
         .await

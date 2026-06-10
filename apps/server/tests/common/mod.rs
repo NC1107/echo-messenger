@@ -29,11 +29,6 @@ use tokio::sync::OnceCell;
 /// JWT secret used across all integration tests.
 pub const TEST_JWT_SECRET: &str = "integration-test-secret";
 
-/// Password every fixture user registers with.  Centralised so CodeQL's
-/// hard-coded-credentials scanner sees a single constant instead of an
-/// inline literal at every login site.
-pub const TEST_USER_PASSWORD: &str = "password123";
-
 /// Run migrations exactly once across all tests, even when running in parallel.
 static MIGRATIONS: OnceCell<()> = OnceCell::const_new();
 

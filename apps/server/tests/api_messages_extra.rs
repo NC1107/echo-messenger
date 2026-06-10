@@ -15,14 +15,15 @@ async fn setup_dm_with_message(
     base: &str,
 ) -> (Client, String, String, String, String, String, String) {
     let client = Client::new();
+    let password = common::unique_password();
     let alice_name = common::unique_username("msg_alice");
     let bob_name = common::unique_username("msg_bob");
 
-    common::register(&client, base, &alice_name, "password123").await;
-    common::register(&client, base, &bob_name, "password123").await;
+    common::register(&client, base, &alice_name, &password).await;
+    common::register(&client, base, &bob_name, &password).await;
 
-    let (alice_token, alice_id) = common::login(&client, base, &alice_name, "password123").await;
-    let (bob_token, bob_id) = common::login(&client, base, &bob_name, "password123").await;
+    let (alice_token, alice_id) = common::login(&client, base, &alice_name, &password).await;
+    let (bob_token, bob_id) = common::login(&client, base, &bob_name, &password).await;
 
     // Make contacts
     let resp = client
@@ -259,9 +260,10 @@ async fn edit_message_on_unencrypted_group_succeeds() {
 async fn edit_nonexistent_message_returns_404() {
     let base = common::spawn_server().await;
     let client = Client::new();
+    let password = common::unique_password();
     let username = common::unique_username("editunk");
-    common::register(&client, &base, &username, "password123").await;
-    let (token, _) = common::login(&client, &base, &username, "password123").await;
+    common::register(&client, &base, &username, &password).await;
+    let (token, _) = common::login(&client, &base, &username, &password).await;
 
     let fake_id = uuid::Uuid::new_v4();
     let resp = client
@@ -314,9 +316,10 @@ async fn delete_someone_elses_message_returns_404() {
 async fn delete_nonexistent_message_returns_404() {
     let base = common::spawn_server().await;
     let client = Client::new();
+    let password = common::unique_password();
     let username = common::unique_username("delunk");
-    common::register(&client, &base, &username, "password123").await;
-    let (token, _) = common::login(&client, &base, &username, "password123").await;
+    common::register(&client, &base, &username, &password).await;
+    let (token, _) = common::login(&client, &base, &username, &password).await;
 
     let fake_id = uuid::Uuid::new_v4();
     let resp = client
@@ -401,9 +404,10 @@ async fn get_messages_non_member_returns_403() {
     let base = common::spawn_server().await;
     let (client, _, _, _, _, conv_id, _) = setup_dm_with_message(&base).await;
 
+    let password = common::unique_password();
     let stranger_name = common::unique_username("msgstranger");
-    common::register(&client, &base, &stranger_name, "password123").await;
-    let (stranger_token, _) = common::login(&client, &base, &stranger_name, "password123").await;
+    common::register(&client, &base, &stranger_name, &password).await;
+    let (stranger_token, _) = common::login(&client, &base, &stranger_name, &password).await;
 
     let resp = client
         .get(format!("{base}/api/messages/{conv_id}"))
@@ -541,9 +545,10 @@ async fn search_messages_non_member_returns_403() {
     let base = common::spawn_server().await;
     let (client, _, _, _, _, conv_id, _) = setup_dm_with_message(&base).await;
 
+    let password = common::unique_password();
     let stranger_name = common::unique_username("srchstranger");
-    common::register(&client, &base, &stranger_name, "password123").await;
-    let (stranger_token, _) = common::login(&client, &base, &stranger_name, "password123").await;
+    common::register(&client, &base, &stranger_name, &password).await;
+    let (stranger_token, _) = common::login(&client, &base, &stranger_name, &password).await;
 
     let resp = client
         .get(format!(
@@ -1084,14 +1089,15 @@ mod offline_replay_557 {
 async fn create_dm_with_non_contact_returns_400() {
     let base = common::spawn_server().await;
     let client = Client::new();
+    let password = common::unique_password();
     let alice_name = common::unique_username("dmnc_alice");
     let bob_name = common::unique_username("dmnc_bob");
 
-    common::register(&client, &base, &alice_name, "password123").await;
-    common::register(&client, &base, &bob_name, "password123").await;
+    common::register(&client, &base, &alice_name, &password).await;
+    common::register(&client, &base, &bob_name, &password).await;
 
-    let (alice_token, _) = common::login(&client, &base, &alice_name, "password123").await;
-    let (_, bob_id) = common::login(&client, &base, &bob_name, "password123").await;
+    let (alice_token, _) = common::login(&client, &base, &alice_name, &password).await;
+    let (_, bob_id) = common::login(&client, &base, &bob_name, &password).await;
 
     // Alice and Bob are NOT contacts
     let resp = client

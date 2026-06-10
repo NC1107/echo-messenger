@@ -9,8 +9,9 @@ async fn register_returns_201() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let username = common::unique_username("reg201");
+    let password = common::unique_password();
 
-    let resp = common::register_raw(&client, &base, &username, "password123").await;
+    let resp = common::register_raw(&client, &base, &username, &password).await;
     assert_eq!(resp.status().as_u16(), 201);
 }
 
@@ -19,11 +20,12 @@ async fn register_duplicate_returns_409() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let username = common::unique_username("regdup");
+    let password = common::unique_password();
 
-    let first = common::register_raw(&client, &base, &username, "password123").await;
+    let first = common::register_raw(&client, &base, &username, &password).await;
     assert_eq!(first.status().as_u16(), 201);
 
-    let second = common::register_raw(&client, &base, &username, "password123").await;
+    let second = common::register_raw(&client, &base, &username, &password).await;
     assert_eq!(second.status().as_u16(), 409);
 }
 
@@ -32,10 +34,11 @@ async fn login_returns_tokens() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let username = common::unique_username("logintok");
+    let password = common::unique_password();
 
-    common::register(&client, &base, &username, "password123").await;
+    common::register(&client, &base, &username, &password).await;
 
-    let resp = common::login_raw(&client, &base, &username, "password123").await;
+    let resp = common::login_raw(&client, &base, &username, &password).await;
     assert_eq!(resp.status().as_u16(), 200);
 
     let body: serde_json::Value = resp.json().await.unwrap();
@@ -49,9 +52,11 @@ async fn login_wrong_password_returns_401() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let username = common::unique_username("loginbad");
+    let password = common::unique_password();
 
-    common::register(&client, &base, &username, "password123").await;
+    common::register(&client, &base, &username, &password).await;
 
+    // "wrong_password" is intentionally a different literal — testing 401 on bad creds.
     let resp = common::login_raw(&client, &base, &username, "wrong_password").await;
     assert_eq!(resp.status().as_u16(), 401);
 }
@@ -75,11 +80,12 @@ async fn refresh_token_returns_new_tokens() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let username = common::unique_username("refresh");
+    let password = common::unique_password();
 
-    common::register(&client, &base, &username, "password123").await;
+    common::register(&client, &base, &username, &password).await;
     let login_body: serde_json::Value = client
         .post(format!("{base}/api/auth/login"))
-        .json(&serde_json::json!({ "username": username, "password": "password123" }))
+        .json(&serde_json::json!({ "username": username, "password": password }))
         .send()
         .await
         .unwrap()
@@ -107,11 +113,12 @@ async fn refresh_token_revoked_returns_401() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let username = common::unique_username("revoked");
+    let password = common::unique_password();
 
-    common::register(&client, &base, &username, "password123").await;
+    common::register(&client, &base, &username, &password).await;
     let login_body: serde_json::Value = client
         .post(format!("{base}/api/auth/login"))
-        .json(&serde_json::json!({ "username": username, "password": "password123" }))
+        .json(&serde_json::json!({ "username": username, "password": password }))
         .send()
         .await
         .unwrap()
@@ -154,11 +161,12 @@ async fn refresh_replay_revokes_entire_family_chain() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let username = common::unique_username("theftchain");
+    let password = common::unique_password();
 
-    common::register(&client, &base, &username, "password123").await;
+    common::register(&client, &base, &username, &password).await;
     let login_body: serde_json::Value = client
         .post(format!("{base}/api/auth/login"))
-        .json(&serde_json::json!({ "username": username, "password": "password123" }))
+        .json(&serde_json::json!({ "username": username, "password": password }))
         .send()
         .await
         .unwrap()
@@ -280,9 +288,10 @@ async fn login_sets_refresh_cookie() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let username = common::unique_username("cookielogin");
+    let password = common::unique_password();
 
-    common::register(&client, &base, &username, "password123").await;
-    let resp = common::login_raw(&client, &base, &username, "password123").await;
+    common::register(&client, &base, &username, &password).await;
+    let resp = common::login_raw(&client, &base, &username, &password).await;
     assert_eq!(resp.status().as_u16(), 200);
 
     let set_cookie =
@@ -295,8 +304,9 @@ async fn register_sets_refresh_cookie() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let username = common::unique_username("cookiereg");
+    let password = common::unique_password();
 
-    let resp = common::register_raw(&client, &base, &username, "password123").await;
+    let resp = common::register_raw(&client, &base, &username, &password).await;
     assert_eq!(resp.status().as_u16(), 201);
 
     let set_cookie =
@@ -309,9 +319,10 @@ async fn logout_clears_refresh_cookie() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let username = common::unique_username("cookielogout");
+    let password = common::unique_password();
 
-    common::register(&client, &base, &username, "password123").await;
-    let (token, _user_id) = common::login(&client, &base, &username, "password123").await;
+    common::register(&client, &base, &username, &password).await;
+    let (token, _user_id) = common::login(&client, &base, &username, &password).await;
 
     let resp = client
         .post(format!("{base}/api/auth/logout"))
@@ -335,8 +346,9 @@ async fn refresh_via_cookie_only() {
     let client = Client::new();
 
     let username = common::unique_username("refcookie");
-    common::register(&client, &base, &username, "password123").await;
-    let login_resp = common::login_raw(&client, &base, &username, "password123").await;
+    let password = common::unique_password();
+    common::register(&client, &base, &username, &password).await;
+    let login_resp = common::login_raw(&client, &base, &username, &password).await;
     assert_eq!(login_resp.status().as_u16(), 200);
 
     let raw_cookie = find_set_cookie(&login_resp, "echo_refresh")
@@ -374,11 +386,12 @@ async fn refresh_via_body_still_works() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let username = common::unique_username("refbody");
+    let password = common::unique_password();
 
-    common::register(&client, &base, &username, "password123").await;
+    common::register(&client, &base, &username, &password).await;
     let login_body: serde_json::Value = client
         .post(format!("{base}/api/auth/login"))
-        .json(&serde_json::json!({ "username": username, "password": "password123" }))
+        .json(&serde_json::json!({ "username": username, "password": password }))
         .send()
         .await
         .unwrap()
@@ -407,9 +420,10 @@ async fn refresh_cookie_takes_precedence() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let username = common::unique_username("refprec");
+    let password = common::unique_password();
 
-    common::register(&client, &base, &username, "password123").await;
-    let login_resp = common::login_raw(&client, &base, &username, "password123").await;
+    common::register(&client, &base, &username, &password).await;
+    let login_resp = common::login_raw(&client, &base, &username, &password).await;
     assert_eq!(login_resp.status().as_u16(), 200);
 
     let raw_cookie = find_set_cookie(&login_resp, "echo_refresh")
@@ -470,9 +484,10 @@ async fn refresh_with_logged_out_cookie_returns_401() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let username = common::unique_username("logoutreplay");
+    let password = common::unique_password();
 
-    common::register(&client, &base, &username, "password123").await;
-    let login_resp = common::login_raw(&client, &base, &username, "password123").await;
+    common::register(&client, &base, &username, &password).await;
+    let login_resp = common::login_raw(&client, &base, &username, &password).await;
     assert_eq!(login_resp.status().as_u16(), 200);
 
     let raw_cookie = find_set_cookie(&login_resp, "echo_refresh")
@@ -522,11 +537,12 @@ async fn refresh_empty_cookie_falls_through_to_body() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let username = common::unique_username("emptycookie");
+    let password = common::unique_password();
 
-    common::register(&client, &base, &username, "password123").await;
+    common::register(&client, &base, &username, &password).await;
     let login_body: serde_json::Value = client
         .post(format!("{base}/api/auth/login"))
-        .json(&serde_json::json!({ "username": username, "password": "password123" }))
+        .json(&serde_json::json!({ "username": username, "password": password }))
         .send()
         .await
         .expect("login failed")
@@ -562,9 +578,10 @@ async fn refresh_cookie_rotation_invalidates_prior_body_token() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let username = common::unique_username("mixedmode");
+    let password = common::unique_password();
 
-    common::register(&client, &base, &username, "password123").await;
-    let login_resp = common::login_raw(&client, &base, &username, "password123").await;
+    common::register(&client, &base, &username, &password).await;
+    let login_resp = common::login_raw(&client, &base, &username, &password).await;
     assert_eq!(login_resp.status().as_u16(), 200);
 
     let raw_cookie = find_set_cookie(&login_resp, "echo_refresh")
@@ -618,9 +635,11 @@ async fn login_wrong_password_returns_wrong_password_code() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let username = common::unique_username("ecode_login");
+    let password = common::unique_password();
 
-    common::register(&client, &base, &username, "password123").await;
+    common::register(&client, &base, &username, &password).await;
 
+    // "wrong_password" is intentionally a different literal — testing 401 on bad creds.
     let resp = common::login_raw(&client, &base, &username, "wrong_password").await;
     assert_eq!(resp.status().as_u16(), 401);
     let body: serde_json::Value = resp.json().await.unwrap();
@@ -642,9 +661,10 @@ async fn register_duplicate_returns_username_taken_code() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let username = common::unique_username("ecode_dup");
+    let password = common::unique_password();
 
-    common::register(&client, &base, &username, "password123").await;
-    let resp = common::register_raw(&client, &base, &username, "password123").await;
+    common::register(&client, &base, &username, &password).await;
+    let resp = common::register_raw(&client, &base, &username, &password).await;
     assert_eq!(resp.status().as_u16(), 409);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(
@@ -660,11 +680,12 @@ async fn refresh_replay_returns_token_revoked_code() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let username = common::unique_username("ecode_tok");
+    let password = common::unique_password();
 
-    common::register(&client, &base, &username, "password123").await;
+    common::register(&client, &base, &username, &password).await;
     let login_body: serde_json::Value = client
         .post(format!("{base}/api/auth/login"))
-        .json(&serde_json::json!({ "username": username, "password": "password123" }))
+        .json(&serde_json::json!({ "username": username, "password": password }))
         .send()
         .await
         .unwrap()
