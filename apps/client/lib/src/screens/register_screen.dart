@@ -173,6 +173,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   tagline: 'Sign up. Talk privately.',
                   formTitle: 'Create your account',
                   compactHeader: _buildHeader(context),
+                  // Wide layout drops compactHeader, so pass the server picker
+                  // separately or desktop users can't pick a server (#1063).
+                  serverControl: ServerSubtitle(serverUrl: serverUrl),
                   narrowPadding: const EdgeInsets.fromLTRB(
                     EchoSpacing.xl,
                     EchoSpacing.xl,

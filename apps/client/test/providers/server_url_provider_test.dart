@@ -41,6 +41,39 @@ void main() {
       expect(c.read(serverUrlProvider), defaultServerUrl);
     });
 
+    test(
+      'load repoints the dead apex to the regional alias + persists',
+      () async {
+        SharedPreferences.setMockInitialValues({
+          'echo_server_url': 'https://echo-messenger.us',
+        });
+        final c = makeBareContainer();
+        await c.read(serverUrlProvider.notifier).load();
+        expect(c.read(serverUrlProvider), defaultServerUrl);
+        final prefs = await SharedPreferences.getInstance();
+        expect(prefs.getString('echo_server_url'), defaultServerUrl);
+      },
+    );
+
+    test('load repoints an apex known-server entry to the alias', () async {
+      SharedPreferences.setMockInitialValues({
+        'echo_server_url': 'https://echo-messenger.us',
+        'echo_known_servers':
+            '[{"url":"https://echo-messenger.us","last_username":"npc",'
+            '"last_seen":"2026-06-09T11:03:30.000","server_id":null}]',
+      });
+      final c = makeBareContainer();
+      await c.read(serverUrlProvider.notifier).load();
+      final servers = c.read(knownServersProvider);
+      expect(
+        servers.any((s) => s.url == 'https://echo-messenger.us'),
+        isFalse,
+        reason: 'the dead apex tile should be gone',
+      );
+      final alias = servers.firstWhere((s) => s.url == defaultServerUrl);
+      expect(alias.lastUsername, 'npc', reason: 'username carried over');
+    });
+
     test('setUrl updates state and persists', () async {
       final c = makeBareContainer();
       await c.read(serverUrlProvider.notifier).setUrl('http://localhost:3000');

@@ -141,6 +141,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                   tagline: 'Welcome back.',
                   formTitle: 'Log in to Echo',
                   compactHeader: _buildHeader(serverUrl),
+                  // Wide layout drops compactHeader (brand panel replaces it),
+                  // so the server picker must be passed separately or desktop
+                  // users can't switch servers (#1063).
+                  serverControl: ServerSubtitle(serverUrl: serverUrl),
                   narrowPadding: const EdgeInsets.fromLTRB(
                     EchoSpacing.xl,
                     EchoSpacing.xl,
