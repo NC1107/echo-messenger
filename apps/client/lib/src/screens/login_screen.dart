@@ -107,6 +107,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         _maybePrefillUsername();
       }
     });
+    // This screen is kept alive (wantKeepAlive), so its controllers survive
+    // navigation away on login. When the user later logs out, the username
+    // controller would still hold the previous account's value -- the prefill
+    // guard (text.isNotEmpty) then leaves it untouched, the field can render
+    // blank, and typing a new name *appends* to it (e.g.
+    // "echoqa_bobechoqa_alice"), which fails to authenticate. Reset both
+    // fields on the logged-in -> logged-out transition so account switching
+    // starts clean, then re-apply the last-username prefill.
+    ref.listen<AuthState>(authProvider, (prev, next) {
+      if ((prev?.isLoggedIn ?? false) && !next.isLoggedIn) {
+        _usernameController.clear();
+        _passwordController.clear();
+        _maybePrefillUsername();
+      }
+    });
     _maybePrefillUsername();
 
     _versionFuture ??= fetchVersionInfo(serverUrl);
