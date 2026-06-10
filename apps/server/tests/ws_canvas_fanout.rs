@@ -260,6 +260,152 @@ async fn canvas_avatar_move_relayed_but_not_persisted() {
     let _ = bob_ws.close(None).await;
 }
 
+/// #1339: a drag emits throttled `image_move` frames tagged `commit: false`;
+/// those must be RELAYED but NOT persisted (each `update_image` rewrites the
+/// whole images JSONB array). Only the pointer-up `commit: true` frame persists.
+#[tokio::test]
+async fn image_move_persists_only_on_commit() {
+    use futures_util::SinkExt;
+
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (alice_token, alice_id, _) =
+        common::register_and_login(&client, &base, "cvs_commit_alice").await;
+    let group_id = common::create_group(&client, &base, &alice_token, "CommitCanvasGroup").await;
+
+    // Seed a media row Alice owns so image_add's ownership gate (#1332) accepts.
+    let media_id = uuid::Uuid::new_v4();
+    let pool = common::test_pool().await;
+    echo_server::db::media::create_media(
+        &pool,
+        media_id,
+        uuid::Uuid::parse_str(&alice_id).unwrap(),
+        "photo.png",
+        "image/png",
+        1024,
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let media_url = format!("/api/media/{media_id}");
+
+    let resp = client
+        .get(format!("{base}/api/groups/{group_id}/channels"))
+        .header("Authorization", format!("Bearer {alice_token}"))
+        .send()
+        .await
+        .unwrap();
+    let channels: Vec<Value> = resp.json().await.unwrap();
+    let channel_id = channels
+        .iter()
+        .find(|c| c["name"] == "lounge")
+        .expect("lounge channel")["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
+    let mut ws = connect_ws(&base, &ticket).await;
+    common::drain_pending(&mut ws).await;
+
+    async fn send(ws: &mut WsStream, channel_id: &str, kind: &str, payload: Value) {
+        ws.send(Message::Text(
+            serde_json::json!({
+                "type": "canvas_event",
+                "channel_id": channel_id,
+                "kind": kind,
+                "payload": payload,
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .unwrap();
+        ws.flush().await.unwrap();
+    }
+
+    // image at x=100, then a full-payload move helper (mirrors the client,
+    // which sends the whole image so update_image doesn't drop url/size).
+    let img = |x: f64, commit: Option<bool>| {
+        let mut p = serde_json::json!({
+            "id": "img-commit-1", "url": media_url,
+            "x": x, "y": 100.0, "width": 200.0, "height": 200.0,
+        });
+        if let Some(c) = commit {
+            p["commit"] = Value::Bool(c);
+        }
+        p
+    };
+
+    send(&mut ws, &channel_id, "image_add", img(100.0, None)).await;
+
+    async fn persisted_x(
+        client: &Client,
+        base: &str,
+        group_id: &str,
+        channel_id: &str,
+        tok: &str,
+    ) -> Option<f64> {
+        let canvas: Value = client
+            .get(format!(
+                "{base}/api/groups/{group_id}/channels/{channel_id}/canvas"
+            ))
+            .header("Authorization", format!("Bearer {tok}"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        canvas["images_data"]
+            .as_array()?
+            .iter()
+            .find(|i| i["id"] == "img-commit-1")
+            .and_then(|i| i["x"].as_f64())
+    }
+
+    // Wait for the image_add to land.
+    let mut added = None;
+    for _ in 0..40 {
+        added = persisted_x(&client, &base, &group_id, &channel_id, &alice_token).await;
+        if added == Some(100.0) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert_eq!(added, Some(100.0), "image_add should persist at x=100");
+
+    // Intermediate drag frame (commit:false) → must NOT persist.
+    send(&mut ws, &channel_id, "image_move", img(900.0, Some(false))).await;
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert_eq!(
+        persisted_x(&client, &base, &group_id, &channel_id, &alice_token).await,
+        Some(100.0),
+        "commit:false image_move must be relay-only, not persisted (#1339)",
+    );
+
+    // Pointer-up (commit:true) → persists the final spot.
+    send(&mut ws, &channel_id, "image_move", img(700.0, Some(true))).await;
+    let mut committed = None;
+    for _ in 0..40 {
+        committed = persisted_x(&client, &base, &group_id, &channel_id, &alice_token).await;
+        if committed == Some(700.0) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert_eq!(
+        committed,
+        Some(700.0),
+        "commit:true image_move must persist"
+    );
+
+    let _ = ws.close(None).await;
+}
+
 /// A late joiner — connecting AFTER strokes have been drawn — can fetch the
 /// persisted canvas via the REST endpoint and see every prior stroke and
 /// image. This is the primary "voice canvas is global / one source of truth"

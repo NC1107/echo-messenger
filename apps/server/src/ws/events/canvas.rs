@@ -180,7 +180,22 @@ async fn persist_canvas_state(
             }
         }
         "image_move" => {
-            if let Err(e) = db::canvas::update_image(&state.pool, channel_id, payload.clone()).await
+            // #1339: a drag emits a throttled `image_move` ~10×/sec, and each
+            // `update_image` rewrites the WHOLE images_data JSONB array. Persist
+            // only the pointer-up commit; intermediate frames are relay-only so
+            // peers still see live movement without the write storm.
+            //
+            // Backward-compatible: new clients send `commit: false` on drag
+            // frames and `commit: true` on release. Old clients send no
+            // `commit` field at all — treat that as a commit (persist) so their
+            // final position still sticks, exactly as before.
+            let persist = payload
+                .get("commit")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            if persist
+                && let Err(e) =
+                    db::canvas::update_image(&state.pool, channel_id, payload.clone()).await
             {
                 tracing::error!("canvas: failed to update image for channel {channel_id}: {e:?}");
             }

@@ -619,7 +619,10 @@ class CanvasController extends _$CanvasController {
       return;
     }
     _pendingImageMove = null;
-    _sendCanvasEvent('image_move', pending);
+    // Intermediate drag frame: relay-only. The server skips the DB write for
+    // `commit: false` so a drag doesn't rewrite the whole images JSONB array
+    // ~10×/sec (#1339); the pointer-up commit below persists the final spot.
+    _sendCanvasEvent('image_move', {...pending, 'commit': false});
   }
 
   /// Called when image drag ends -- flush immediately.
@@ -634,7 +637,8 @@ class CanvasController extends _$CanvasController {
     final updated = state.images[idx].copyWith(x: x, y: y);
     final newImages = List<CanvasImage>.from(state.images)..[idx] = updated;
     state = state.copyWith(images: newImages);
-    _sendCanvasEvent('image_move', updated.toJson());
+    // Pointer-up: `commit: true` tells the server to persist the final spot.
+    _sendCanvasEvent('image_move', {...updated.toJson(), 'commit': true});
   }
 
   void removeImage(String imageId) {
@@ -678,7 +682,11 @@ class CanvasController extends _$CanvasController {
     if (_channelId == null) return;
     final idx = state.images.indexWhere((img) => img.id == imageId);
     if (idx == -1) return;
-    _sendCanvasEvent('image_move', state.images[idx].toJson());
+    // Pointer-up commit (see commitImageMove) — persists the final size.
+    _sendCanvasEvent('image_move', {
+      ...state.images[idx].toJson(),
+      'commit': true,
+    });
   }
 
   // -------------------------------------------------------------------------
