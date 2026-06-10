@@ -35,6 +35,15 @@ static MEMBER_IDS_CACHE: LazyLock<DashMap<Uuid, (Vec<Uuid>, Instant)>> =
 /// typing indicator for the same conversation.
 static CONV_KIND_CACHE: LazyLock<DashMap<Uuid, (String, Instant)>> = LazyLock::new(DashMap::new);
 
+/// A cached channel-metadata entry: ((conversation_id, kind), fetched_at).
+type ChannelMetaEntry = ((Uuid, String), Instant);
+
+/// Cached channel metadata: (conversation_id, kind), keyed by channel_id.
+/// Both fields are immutable for a given channel id, so a stale entry is
+/// harmless — a deleted channel still fails the downstream voice-presence
+/// check. Avoids a DB hit per WebRTC signaling frame (#1338 / VL-28).
+static CHANNEL_META_CACHE: LazyLock<DashMap<Uuid, ChannelMetaEntry>> = LazyLock::new(DashMap::new);
+
 /// Check conversation membership using the in-memory cache.
 /// Returns true if the user is a verified member. Cache entries expire
 /// after `MEMBERSHIP_CACHE_TTL` (60 seconds).
@@ -116,6 +125,27 @@ pub(super) async fn get_conversation_kind_cached(
     Some(kind)
 }
 
+/// Fetch a channel's (conversation_id, kind) with a 60-second in-memory cache.
+/// Used by the voice-signaling path to avoid a per-frame channel lookup.
+pub(super) async fn get_channel_meta_cached(
+    pool: &sqlx::PgPool,
+    channel_id: Uuid,
+) -> Option<(Uuid, String)> {
+    if let Some(entry) = CHANNEL_META_CACHE.get(&channel_id)
+        && entry.value().1.elapsed() < MEMBERSHIP_CACHE_TTL
+    {
+        return Some(entry.value().0.clone());
+    }
+
+    let channel = db::channels::get_channel(pool, channel_id).await.ok()??;
+    if CHANNEL_META_CACHE.len() >= MAX_CACHE_ENTRIES {
+        sweep_expired_caches();
+    }
+    let meta = (channel.conversation_id, channel.kind);
+    CHANNEL_META_CACHE.insert(channel_id, (meta.clone(), Instant::now()));
+    Some(meta)
+}
+
 /// Invalidate the member-ID and membership caches for a conversation.
 /// Call this when members are added, removed, or banned so revoked members
 /// cannot continue to use cached positive membership entries.
@@ -153,11 +183,24 @@ pub fn sweep_expired_caches() {
         }
         keep
     });
-    if membership_evicted > 0 || member_ids_evicted > 0 || kind_evicted > 0 {
+    let mut channel_meta_evicted = 0usize;
+    CHANNEL_META_CACHE.retain(|_, (_, fetched_at)| {
+        let keep = fetched_at.elapsed() < cutoff;
+        if !keep {
+            channel_meta_evicted += 1;
+        }
+        keep
+    });
+    if membership_evicted > 0
+        || member_ids_evicted > 0
+        || kind_evicted > 0
+        || channel_meta_evicted > 0
+    {
         tracing::debug!(
             membership_evicted,
             member_ids_evicted,
             kind_evicted,
+            channel_meta_evicted,
             "ws cache sweep"
         );
     }

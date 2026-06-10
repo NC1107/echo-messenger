@@ -46,30 +46,23 @@ pub(in crate::ws) async fn handle_voice_signal(
         }
     }
 
-    let is_member = match db::groups::is_member(&state.pool, conversation_id, sender_id).await {
-        Ok(m) => m,
-        Err(_) => {
-            send_error(state, sender_id, "Database error");
-            return;
-        }
-    };
-    if !is_member {
+    // Membership, conversation kind, and channel metadata are served from the
+    // shared 60s WS caches (same as the typing path) so the WebRTC signaling
+    // hot path — which fires dozens of frames/sec per peer-pair during ICE
+    // negotiation — does not hit the DB for these on every frame (#1338 / VL-28).
+    if !typing_service::check_membership_cached(&state.pool, conversation_id, sender_id).await {
         send_error(state, sender_id, "Not a member of this conversation");
         return;
     }
 
-    let kind = match db::groups::get_conversation_kind(&state.pool, conversation_id).await {
-        Ok(Some(k)) => k,
-        Ok(None) => {
-            send_error(state, sender_id, "Conversation not found");
-            return;
-        }
-        Err(_) => {
-            send_error(state, sender_id, "Database error");
-            return;
-        }
-    };
-
+    let kind =
+        match typing_service::get_conversation_kind_cached(&state.pool, conversation_id).await {
+            Some(k) => k,
+            None => {
+                send_error(state, sender_id, "Conversation not found");
+                return;
+            }
+        };
     if ConversationKind::from_str_opt(&kind) != Some(ConversationKind::Group) {
         send_error(
             state,
@@ -79,24 +72,19 @@ pub(in crate::ws) async fn handle_voice_signal(
         return;
     }
 
-    let channel = match db::channels::get_channel(&state.pool, channel_id).await {
-        Ok(Some(c)) => c,
-        Ok(None) => {
-            send_error(state, sender_id, "Channel not found");
-            return;
-        }
-        Err(_) => {
-            send_error(state, sender_id, "Database error");
-            return;
-        }
-    };
-
-    if channel.conversation_id != conversation_id {
+    let (channel_conversation_id, channel_kind) =
+        match typing_service::get_channel_meta_cached(&state.pool, channel_id).await {
+            Some(meta) => meta,
+            None => {
+                send_error(state, sender_id, "Channel not found");
+                return;
+            }
+        };
+    if channel_conversation_id != conversation_id {
         send_error(state, sender_id, "Channel is not part of this conversation");
         return;
     }
-
-    if channel.kind != "voice" {
+    if channel_kind != "voice" {
         send_error(
             state,
             sender_id,
@@ -105,28 +93,26 @@ pub(in crate::ws) async fn handle_voice_signal(
         return;
     }
 
-    let sender_in_channel =
-        match db::channels::is_user_in_voice_channel(&state.pool, channel_id, sender_id).await {
-            Ok(v) => v,
-            Err(_) => {
-                send_error(state, sender_id, "Database error");
-                return;
-            }
-        };
-    if !sender_in_channel {
+    // Live voice presence is volatile, so it is NOT cached — but both checks
+    // (sender + target) collapse into a single round-trip.
+    let present = match db::channels::users_in_voice_channel(
+        &state.pool,
+        channel_id,
+        &[sender_id, to_user_id],
+    )
+    .await
+    {
+        Ok(set) => set,
+        Err(_) => {
+            send_error(state, sender_id, "Database error");
+            return;
+        }
+    };
+    if !present.contains(&sender_id) {
         send_error(state, sender_id, "Join the voice channel before signaling");
         return;
     }
-
-    let target_in_channel =
-        match db::channels::is_user_in_voice_channel(&state.pool, channel_id, to_user_id).await {
-            Ok(v) => v,
-            Err(_) => {
-                send_error(state, sender_id, "Database error");
-                return;
-            }
-        };
-    if !target_in_channel {
+    if !present.contains(&to_user_id) {
         send_error(state, sender_id, "Target user is not in this voice channel");
         return;
     }

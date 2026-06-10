@@ -229,23 +229,25 @@ pub async fn list_voice_sessions(
     .await
 }
 
-pub async fn is_user_in_voice_channel(
+/// Return the subset of `user_ids` currently present in the voice channel, in
+/// a single round-trip. Used on the WebRTC signaling hot path to validate both
+/// the sender and the target with one query instead of one `EXISTS` per user
+/// (#1338 / VL-28).
+pub async fn users_in_voice_channel(
     pool: &PgPool,
     channel_id: Uuid,
-    user_id: Uuid,
-) -> Result<bool, sqlx::Error> {
-    let row: (bool,) = sqlx::query_as(
-        "SELECT EXISTS(
-            SELECT 1 FROM voice_sessions
-            WHERE channel_id = $1 AND user_id = $2
-        )",
+    user_ids: &[Uuid],
+) -> Result<std::collections::HashSet<Uuid>, sqlx::Error> {
+    let rows: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT user_id FROM voice_sessions
+         WHERE channel_id = $1 AND user_id = ANY($2)",
     )
     .bind(channel_id)
-    .bind(user_id)
-    .fetch_one(pool)
+    .bind(user_ids)
+    .fetch_all(pool)
     .await?;
 
-    Ok(row.0)
+    Ok(rows.into_iter().map(|(user_id,)| user_id).collect())
 }
 
 /// Remove all voice sessions for a user (called on WS disconnect to clean up
