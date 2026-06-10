@@ -445,33 +445,7 @@ async fn cleanup_expired_messages(pool: &PgPool, hub: &ws::hub::Hub) {
         let batch_len = expired.len();
         total += batch_len;
 
-        // Group by conversation_id so each member-list fetch happens once
-        // per conversation per batch.
-        let mut by_conv: std::collections::HashMap<uuid::Uuid, Vec<uuid::Uuid>> =
-            std::collections::HashMap::new();
-        for (message_id, conversation_id) in expired {
-            by_conv.entry(conversation_id).or_default().push(message_id);
-        }
-
-        for (conversation_id, message_ids) in by_conv {
-            let member_ids =
-                match db::groups::get_conversation_member_ids(pool, conversation_id).await {
-                    Ok(ids) => ids,
-                    Err(_) => continue,
-                };
-            for message_id in message_ids {
-                let event = ServerMessage::MessageExpired {
-                    message_id,
-                    conversation_id,
-                };
-                if let Ok(json) = serde_json::to_string(&event) {
-                    let msg = WsMessage::Text(json.as_str().into());
-                    for member_id in &member_ids {
-                        hub.send_to(member_id, msg.clone());
-                    }
-                }
-            }
-        }
+        broadcast_expired_batch(pool, hub, expired).await;
 
         // Smaller backlogs finish in one batch; bail out of the loop early
         // so we don't busy-poll an empty query right after.
@@ -482,6 +456,43 @@ async fn cleanup_expired_messages(pool: &PgPool, hub: &ws::hub::Hub) {
 
     if total > 0 {
         tracing::info!("Cleaned {total} expired messages");
+    }
+}
+
+/// Fan out `MessageExpired` events for one cleanup batch. Groups by
+/// conversation so each member-list fetch happens once per conversation, then
+/// notifies every member of each expired message. Extracted from
+/// [`cleanup_expired_messages`] to keep that loop's cognitive complexity in
+/// budget (S3776).
+async fn broadcast_expired_batch(
+    pool: &PgPool,
+    hub: &ws::hub::Hub,
+    expired: Vec<(uuid::Uuid, uuid::Uuid)>,
+) {
+    let mut by_conv: std::collections::HashMap<uuid::Uuid, Vec<uuid::Uuid>> =
+        std::collections::HashMap::new();
+    for (message_id, conversation_id) in expired {
+        by_conv.entry(conversation_id).or_default().push(message_id);
+    }
+
+    for (conversation_id, message_ids) in by_conv {
+        let member_ids = match db::groups::get_conversation_member_ids(pool, conversation_id).await
+        {
+            Ok(ids) => ids,
+            Err(_) => continue,
+        };
+        for message_id in message_ids {
+            let event = ServerMessage::MessageExpired {
+                message_id,
+                conversation_id,
+            };
+            if let Ok(json) = serde_json::to_string(&event) {
+                let msg = WsMessage::Text(json.as_str().into());
+                for member_id in &member_ids {
+                    hub.send_to(member_id, msg.clone());
+                }
+            }
+        }
     }
 }
 
