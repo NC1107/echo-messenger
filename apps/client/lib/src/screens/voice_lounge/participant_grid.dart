@@ -7,12 +7,11 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
 
 import '../../providers/livekit_voice/livekit_voice_provider.dart';
-import '../../services/toast_service.dart';
+import '../../services/clipboard_service.dart';
 import '../../theme/echo_theme.dart';
 import '../../theme/motion_tokens.dart';
 import '../../utils/canvas_utils.dart';
@@ -580,17 +579,14 @@ class _ParticipantTileState extends ConsumerState<ParticipantTile> {
               ContextMenuAction(
                 label: 'Mention',
                 icon: Icons.alternate_email,
-                onTap: () {
-                  // Mention is wired by the chat composer; until that hook
-                  // lands here, copy a "@name" handle to the clipboard so
-                  // the user can paste it.
-                  Clipboard.setData(ClipboardData(text: '@${widget.name}'));
-                  ToastService.show(
-                    context,
-                    'Copied @${widget.name} to clipboard',
-                    type: ToastType.info,
-                  );
-                },
+                // Mention is wired by the chat composer; until that hook
+                // lands here, copy a "@name" handle to the clipboard so
+                // the user can paste it.
+                onTap: () => copyToClipboard(
+                  context,
+                  '@${widget.name}',
+                  successMessage: 'Copied @${widget.name} to clipboard',
+                ),
               ),
             ],
           ),

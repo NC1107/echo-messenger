@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/conversations_provider.dart';
 import '../../providers/server_url_provider.dart';
+import '../../services/clipboard_service.dart';
 import '../../services/export_service.dart';
 import '../../services/message_cache.dart';
 import '../../services/toast_service.dart';
@@ -78,11 +78,11 @@ class _DataStorageSectionState extends ConsumerState<DataStorageSection> {
       'Server: $serverUrl',
     ];
 
-    await Clipboard.setData(ClipboardData(text: lines.join('\n')));
-
-    if (mounted) {
-      ToastService.show(context, 'Account info copied to clipboard');
-    }
+    await copyToClipboard(
+      context,
+      lines.join('\n'),
+      successMessage: 'Account info copied to clipboard',
+    );
   }
 
   Future<void> _exportChats() async {
