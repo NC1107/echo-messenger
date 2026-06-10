@@ -16,6 +16,7 @@ import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../theme/motion_tokens.dart';
 import '../theme/responsive.dart';
+import 'face_circle_avatar.dart';
 import 'loading_indicator.dart';
 import 'message/media_content.dart';
 import 'message/reply_quote.dart';
@@ -882,40 +883,9 @@ class _ReplierFaceStack extends StatelessWidget {
           for (var i = 0; i < faces.length; i++)
             Positioned(
               left: i * (faceSize - overlap),
-              child: _SmallInitialCircle(name: faces[i], size: faceSize),
+              child: FaceCircleAvatar(name: faces[i], size: faceSize),
             ),
         ],
-      ),
-    );
-  }
-}
-
-class _SmallInitialCircle extends StatelessWidget {
-  const _SmallInitialCircle({required this.name, required this.size});
-  final String name;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
-    final hue = (name.hashCode % 360).abs().toDouble();
-    final bg = HSLColor.fromAHSL(1.0, hue, 0.55, 0.45).toColor();
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: bg,
-        shape: BoxShape.circle,
-        border: Border.all(color: context.surface, width: 1.5),
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        initial,
-        style: TextStyle(
-          color: context.onAccent,
-          fontSize: size * 0.55,
-          fontWeight: FontWeight.w700,
-        ),
       ),
     );
   }
