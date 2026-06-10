@@ -15,6 +15,7 @@ import '../services/debug_log_service.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
+import 'channel_divider.dart';
 import 'channel_editor_dialog.dart';
 import 'confirm_dialog.dart';
 import 'context_menu/echo_context_menu.dart';
@@ -465,10 +466,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
                     SizedBox(width: _chipMetrics(density).gap),
                   ],
                   if (leftChannels.isNotEmpty && voiceChannels.isNotEmpty)
-                    const SizedBox(
-                      height: 24,
-                      child: VerticalDivider(width: 16, thickness: 1),
-                    ),
+                    const ChannelDivider(),
                   for (final channel in voiceChannels) ...[
                     _wrapWithChannelMenu(
                       _buildVoiceChannelChip(
@@ -493,11 +491,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
   /// the fixed text↔voice separator; this one is a real `divider`-kind
   /// channel an admin inserted via the context menu.
   Widget _buildUserDivider(GroupChannel channel) {
-    return SizedBox(
-      key: ValueKey('divider-${channel.id}'),
-      height: 24,
-      child: VerticalDivider(width: 8, thickness: 2, color: context.border),
-    );
+    return ChannelDivider(key: ValueKey('divider-${channel.id}'));
   }
 
   // ---------------------------------------------------------------------------
