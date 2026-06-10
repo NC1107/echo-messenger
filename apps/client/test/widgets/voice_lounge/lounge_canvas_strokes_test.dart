@@ -137,6 +137,100 @@ void main() {
     });
   });
 
+  group('committedStrokePath memoisation (VL-1d)', () {
+    const penStroke = CanvasStroke(
+      id: 'cache1',
+      color: '#FFFFFF',
+      width: 4.0,
+      kind: StrokeKind.pen,
+      points: <CanvasPoint>[
+        CanvasPoint(x: 10, y: 10),
+        CanvasPoint(x: 20, y: 20),
+        CanvasPoint(x: 30, y: 30),
+        CanvasPoint(x: 40, y: 40),
+      ],
+    );
+
+    test('returns the identical Path instance for the same stroke object', () {
+      final first = committedStrokePath(penStroke);
+      final second = committedStrokePath(penStroke);
+      expect(first, isNotNull);
+      // Same stroke instance => warm cache hit => no re-tessellation. This is
+      // the core of the fix: a remote partial ticking on an unrelated stroke
+      // must not force every committed stroke through getStroke() again.
+      expect(identical(first, second), isTrue);
+    });
+
+    test('recomputes (different Path) when the stroke instance changes', () {
+      final original = committedStrokePath(penStroke);
+      // A remote partial append produces a fresh CanvasStroke via copyWith;
+      // a new instance is a cold miss and recomputes.
+      final mutated = penStroke.copyWith(
+        points: <CanvasPoint>[
+          ...penStroke.points,
+          const CanvasPoint(x: 50, y: 50),
+        ],
+      );
+      final recomputed = committedStrokePath(mutated);
+      expect(recomputed, isNotNull);
+      expect(identical(original, recomputed), isFalse);
+    });
+
+    test('returns a stable result across calls for a degenerate stroke', () {
+      const tiny = CanvasStroke(
+        id: 'cache-tiny',
+        color: '#FFFFFF',
+        width: 2.0,
+        kind: StrokeKind.pen,
+        points: <CanvasPoint>[CanvasPoint(x: 0, y: 0), CanvasPoint(x: 0, y: 0)],
+      );
+      final a = committedStrokePath(tiny);
+      final b = committedStrokePath(tiny);
+      // Whether the outline is empty (null) or not, the second call must reuse
+      // the memoised slot rather than re-running getStroke().
+      expect(identical(a, b), isTrue);
+    });
+
+    test('static stroke keeps its cached Path while a remote partial mutates '
+        'each tick', () {
+      const stable = CanvasStroke(
+        id: 'stable',
+        color: '#00FF00',
+        width: 3.0,
+        kind: StrokeKind.pen,
+        points: <CanvasPoint>[
+          CanvasPoint(x: 100, y: 100),
+          CanvasPoint(x: 120, y: 130),
+          CanvasPoint(x: 140, y: 110),
+        ],
+      );
+      final stablePathBefore = committedStrokePath(stable);
+
+      // Simulate a remote peer drawing: the partial stroke is replaced by a
+      // fresh CanvasStroke (copyWith) on every WS tick, mirroring
+      // canvas_provider's stroke_partial handling.
+      var partial = const CanvasStroke(
+        id: 'partial_remote_in_progress',
+        color: '#FF0000',
+        width: 3.0,
+        kind: StrokeKind.pen,
+        points: <CanvasPoint>[CanvasPoint(x: 200, y: 200)],
+      );
+      for (var tick = 0; tick < 5; tick++) {
+        partial = partial.copyWith(
+          points: <CanvasPoint>[
+            ...partial.points,
+            CanvasPoint(x: 200 + tick * 10.0, y: 200 + tick * 5.0),
+          ],
+        );
+        committedStrokePath(partial);
+      }
+
+      final stablePathAfter = committedStrokePath(stable);
+      expect(identical(stablePathBefore, stablePathAfter), isTrue);
+    });
+  });
+
   group('paintActiveStroke', () {
     test('uses isComplete=false branch but renders the same shape', () {
       final c = _RecorderCanvas();
