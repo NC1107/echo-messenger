@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -91,20 +91,32 @@ class _AuthNotifierListenable extends ChangeNotifier {
 }
 
 /// Redirect logic for auth state.
-String? _authRedirect(Ref ref, GoRouterState state) {
+String? _authRedirect(Ref ref, GoRouterState state) =>
+    authGateRedirect(ref, state.matchedLocation, state.uri);
+
+/// Pure auth-gate decision, factored out of [_authRedirect] so it can be
+/// unit-tested without mounting a [GoRouter] (whose [GoRouterState] carries a
+/// private configuration that is awkward to fabricate in tests).
+///
+/// Reads `authProvider` for the login + onboarding flags and mutates the
+/// pending-deep-link state via [pendingDeepLinkProvider]. Behaviour is
+/// identical to the previous inline closure; only the input surface changed
+/// from a [GoRouterState] to its `matchedLocation` + `uri`.
+@visibleForTesting
+String? authGateRedirect(Ref ref, String matchedLocation, Uri uri) {
   final isLoggedIn = ref.read(authProvider).isLoggedIn;
-  final isSplash = state.matchedLocation == _routeSplash;
+  final isSplash = matchedLocation == _routeSplash;
   final isAuthRoute =
-      state.matchedLocation == _routeLogin ||
-      state.matchedLocation == '/register' ||
-      state.matchedLocation == '/forgot-password' ||
-      state.matchedLocation == '/reset-password' ||
-      state.matchedLocation == _routeAccountPicker;
-  final isOnboarding = state.matchedLocation == '/onboarding';
+      matchedLocation == _routeLogin ||
+      matchedLocation == '/register' ||
+      matchedLocation == '/forgot-password' ||
+      matchedLocation == '/reset-password' ||
+      matchedLocation == _routeAccountPicker;
+  final isOnboarding = matchedLocation == '/onboarding';
   final isJoinRoute =
-      state.matchedLocation.startsWith('/join') ||
-      state.matchedLocation.startsWith('/invite') ||
-      state.matchedLocation.startsWith('/u/');
+      matchedLocation.startsWith('/join') ||
+      matchedLocation.startsWith('/invite') ||
+      matchedLocation.startsWith('/u/');
 
   if (isSplash) return null;
 
@@ -114,9 +126,9 @@ String? _authRedirect(Ref ref, GoRouterState state) {
   if (isLoggedIn && isOnboarding && onboardingCompleted) return _routeHome;
 
   if (!isLoggedIn && !isAuthRoute && !isOnboarding && !isJoinRoute) {
-    final intended = state.matchedLocation;
+    final intended = matchedLocation;
     if (intended != _routeHome && intended != _routeLogin) {
-      ref.read(_pendingDeepLinkProvider.notifier).set(state.uri.toString());
+      ref.read(_pendingDeepLinkProvider.notifier).set(uri.toString());
     }
     return _routeLogin;
   }
