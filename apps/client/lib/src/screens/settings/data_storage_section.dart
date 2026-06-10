@@ -9,6 +9,7 @@ import '../../services/export_service.dart';
 import '../../services/message_cache.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
+import '../../utils/byte_format.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/settings/settings_list_tile.dart';
 import '../../widgets/settings_panel_scaffold.dart';
@@ -37,18 +38,12 @@ class _DataStorageSectionState extends ConsumerState<DataStorageSection> {
       final totalBytes = count * 512;
       if (mounted) {
         setState(
-          () => _cacheSize = '$count entries (~${_formatBytes(totalBytes)})',
+          () => _cacheSize = '$count entries (~${formatBytes(totalBytes)})',
         );
       }
     } catch (_) {
       if (mounted) setState(() => _cacheSize = 'Unknown');
     }
-  }
-
-  String _formatBytes(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
   Future<void> _clearMessageCache() async {

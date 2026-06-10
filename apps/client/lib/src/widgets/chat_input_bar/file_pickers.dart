@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../../services/toast_service.dart';
+import '../../utils/byte_format.dart';
 import 'upload_helpers.dart';
 
 typedef StageAttachmentFn =

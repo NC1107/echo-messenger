@@ -45,15 +45,5 @@ String genericFilename(String original) {
   return 'media.$ext';
 }
 
-/// Format a byte count as a human-readable string (1024-based, 1 decimal).
-String formatBytes(int bytes) {
-  if (bytes < 1024) return '$bytes B';
-  const units = ['KB', 'MB', 'GB'];
-  var v = bytes / 1024.0;
-  var i = 0;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return '${v.toStringAsFixed(1)} ${units[i]}';
-}
+// `formatBytes` now lives in utils/byte_format.dart (shared with settings +
+// the attachments strip). Importers should pull it from there directly.

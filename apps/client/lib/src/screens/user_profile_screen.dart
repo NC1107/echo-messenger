@@ -16,6 +16,7 @@ import '../providers/user_presence_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
+import '../utils/color_utils.dart';
 import '../utils/presence.dart';
 import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
 import '../widgets/confirm_dialog.dart';
@@ -313,7 +314,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
     // the profile sheet that the avatar overlaps. Uses the user's
     // background_color when set (validated server-side as #RRGGBB);
     // otherwise reads as transparent and looks like a normal sheet.
-    final bannerColor = _parseHexColor(_backgroundColor);
+    final bannerColor = parseHexColor(_backgroundColor);
 
     return SingleChildScrollView(
       padding: EdgeInsets.zero,
@@ -367,12 +368,6 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
 
   /// Parse a #RRGGBB hex string into a Color, returning null on any
   /// parse failure so a bad backend value can't crash the sheet.
-  Color? _parseHexColor(String? hex) {
-    if (hex == null || hex.length != 7 || !hex.startsWith('#')) return null;
-    final v = int.tryParse(hex.substring(1), radix: 16);
-    return v == null ? null : Color(0xFF000000 | v);
-  }
-
   /// Display name + username + pronouns header section.
   Widget _buildNameSection() {
     return Column(

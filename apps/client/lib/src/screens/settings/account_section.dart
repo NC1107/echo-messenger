@@ -14,6 +14,7 @@ import '../../services/media_cache_service.dart';
 import '../../services/toast_service.dart';
 import '../../services/upload_client.dart';
 import '../../theme/echo_theme.dart';
+import '../../utils/color_utils.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/avatar_crop_dialog.dart';
 import '../../widgets/avatar_utils.dart' show resolveAvatarUrl;
@@ -1269,8 +1270,7 @@ class _BgSwatch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final value = int.tryParse(hex.substring(1), radix: 16);
-    final color = value == null ? Colors.grey : Color(0xFF000000 | value);
+    final color = parseHexColor(hex) ?? Colors.grey;
     return Semantics(
       label: '$label background${selected ? " (selected)" : ""}',
       button: true,
