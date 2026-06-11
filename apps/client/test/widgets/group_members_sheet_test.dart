@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:echo_app/src/models/conversation.dart';
 import 'package:echo_app/src/widgets/group_members_sheet.dart';
+import 'package:echo_app/src/widgets/member_role.dart';
 
 import '../helpers/mock_providers.dart';
 import '../helpers/pump_app.dart';
@@ -50,32 +51,20 @@ void main() {
       expect(find.text('Members'), findsOneWidget);
     });
 
-    testWidgets('shows owner role icon for owner member', (tester) async {
+    testWidgets('marks roles with pills, not leading icons (mobile sheet)', (
+      tester,
+    ) async {
       await tester.pumpApp(
         const GroupMembersSheet(conversation: groupConversation),
         overrides: standardOverrides(),
       );
       await tester.pumpAndSettle();
 
-      // The owner has a star icon; admin has a shield icon.
-      expect(
-        find.byWidgetPredicate(
-          (w) =>
-              w is Icon &&
-              w.icon == Icons.star_rounded &&
-              w.semanticLabel == 'owner',
-        ),
-        findsOneWidget,
-      );
-      expect(
-        find.byWidgetPredicate(
-          (w) =>
-              w is Icon &&
-              w.icon == Icons.shield_rounded &&
-              w.semanticLabel == 'admin',
-        ),
-        findsOneWidget,
-      );
+      // The comfortable-density mobile sheet marks roles with the Owner/Admin
+      // pill only; the star/shield leading icon is reserved for the compact
+      // desktop rail (see MemberListRow). The "Owner and Admin badge chips"
+      // test below covers the pills themselves.
+      expect(find.byType(MemberRoleIcon), findsNothing);
     });
 
     testWidgets('shows Owner and Admin badge chips', (tester) async {

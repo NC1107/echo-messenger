@@ -17,8 +17,7 @@ import '../screens/user_profile_screen.dart';
 import '../theme/echo_theme.dart';
 import '../utils/presence.dart';
 import 'loading_indicator.dart';
-import 'member_role.dart';
-import 'user_avatar.dart';
+import 'member_list_row.dart';
 
 /// Shows the [GroupMembersSheet] as a modal bottom sheet.
 ///
@@ -216,67 +215,15 @@ class _MobilesMemberRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Semantics(
-      label: 'member: ${member.username}',
-      button: true,
-      child: InkWell(
-        onTap: () {
-          Navigator.of(context).pop();
-          UserProfileScreen.show(context, ref, member.userId);
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-          child: Row(
-            children: [
-              // Outer InkWell already pops + opens profile, so the avatar
-              // itself shouldn't fight that tap target.
-              UserAvatar(
-                userId: member.userId,
-                username: member.username,
-                avatarUrl: member.avatarUrl,
-                radius: 18,
-                showPresence: true,
-                openProfileOnTap: false,
-              ),
-              const SizedBox(width: 14),
-              // Name + role badge
-              Expanded(
-                child: Row(
-                  children: [
-                    if (member.role == 'owner' || member.role == 'admin') ...[
-                      MemberRoleIcon(role: member.role),
-                      const SizedBox(width: 4),
-                    ],
-                    Flexible(
-                      child: Text(
-                        member.username,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.inter(
-                          color: context.textPrimary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    if (isMe) ...[
-                      const SizedBox(width: 6),
-                      Text(
-                        '(you)',
-                        style: GoogleFonts.inter(
-                          color: context.textMuted,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              // Role badge chip
-              MemberRoleBadge(role: member.role),
-            ],
-          ),
-        ),
-      ),
+    return MemberListRow(
+      member: member,
+      isMe: isMe,
+      density: MemberRowDensity.comfortable,
+      showSecondaryLine: false,
+      onTap: () {
+        Navigator.of(context).pop();
+        UserProfileScreen.show(context, ref, member.userId);
+      },
     );
   }
 }
