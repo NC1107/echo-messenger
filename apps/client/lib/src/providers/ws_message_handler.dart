@@ -34,6 +34,7 @@ import 'crypto_provider.dart';
 import 'encrypted_preview_provider.dart';
 import 'server_url_provider.dart';
 import 'websocket_provider.dart';
+import 'ws_message_types.dart';
 
 part 'ws_handlers/message_handlers.dart';
 part 'ws_handlers/typing_reaction_handlers.dart';
@@ -347,6 +348,14 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
       case 'member_role_changed':
         _handleMemberRoleChanged(json);
       default:
+        // Drift guard: a type listed in the contract set must have a case
+        // above. If this trips, kHandledServerMessageTypes and this switch
+        // have diverged (see ws_message_types.dart).
+        assert(
+          !kHandledServerMessageTypes.contains(type),
+          'WS type "$type" is in kHandledServerMessageTypes but has no case in '
+          'handleServerMessage — the contract set and the switch have drifted.',
+        );
         DebugLogService.instance.log(
           LogLevel.warning,
           _kLogTag,
