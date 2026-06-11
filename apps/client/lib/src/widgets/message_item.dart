@@ -27,6 +27,7 @@ import '../services/media_cache_service.dart';
 import 'message/hover_action_button.dart';
 import 'message/link_preview_card.dart';
 import 'message/media_content.dart';
+import 'message/message_actions.dart';
 import 'message/message_status_icon.dart';
 import 'message/message_indicators.dart';
 import 'message/reaction_bar.dart';
@@ -59,34 +60,10 @@ class MessageItem extends StatefulWidget {
   final bool showHeader;
   final bool isLastInGroup;
   final String myUserId;
-  final void Function(ChatMessage message, Offset globalPosition)?
-  onReactionTap;
-  final void Function(ChatMessage message, String emoji)? onReactionSelect;
 
-  /// Called when user taps "More emojis…" in the mobile action sheet
-  /// to open the full Unicode emoji picker.
-  final void Function(ChatMessage message)? onMoreReactions;
-  final void Function(ChatMessage message)? onDelete;
-  final void Function(ChatMessage message)? onEdit;
-  final void Function(ChatMessage message)? onReply;
-
-  /// Distinct from [onReply]: stamps the reply with the thread root so
-  /// the message vanishes from the main timeline and only shows in the
-  /// thread panel (Slack-style "Reply in thread").
-  final void Function(ChatMessage message)? onReplyInThread;
-  final void Function(ChatMessage message)? onViewThread;
-  final void Function(String userId)? onAvatarTap;
-  final void Function(ChatMessage message)? onPin;
-  final void Function(ChatMessage message)? onUnpin;
-  final void Function(ChatMessage message)? onRetry;
-  final void Function(ChatMessage message)? onSave;
-  final void Function(ChatMessage message)? onUnsave;
-  final void Function(ChatMessage message)? onForward;
-  final void Function(String replyToId)? onTapReplyQuote;
-
-  /// Called when the tiny lock icon on a received message is tapped.
-  /// When null, the lock icon is non-interactive.
-  final void Function(ChatMessage message)? onVerifyIdentity;
+  /// Grouped action + navigation callbacks (reply, delete, react, pin,
+  /// avatar/image tap, …). See [MessageActions].
+  final MessageActions actions;
 
   /// Whether this message is currently bookmarked.
   final bool isSaved;
@@ -135,34 +112,13 @@ class MessageItem extends StatefulWidget {
   /// `chat.hide_undecryptable_messages` SharedPreferences key.
   final bool hideUndecryptable;
 
-  /// Called when an image in this message is tapped, with the resolved URL.
-  /// When provided, the gallery viewer in the parent is opened instead of the
-  /// single-image dialog inside [MediaContent] / [_showImageViewer].
-  final void Function(String resolvedUrl)? onImageTap;
-
   const MessageItem({
     super.key,
     required this.message,
     required this.showHeader,
     required this.isLastInGroup,
     required this.myUserId,
-    this.onReactionTap,
-    this.onReactionSelect,
-    this.onMoreReactions,
-    this.onDelete,
-    this.onEdit,
-    this.onReply,
-    this.onReplyInThread,
-    this.onViewThread,
-    this.onAvatarTap,
-    this.onPin,
-    this.onUnpin,
-    this.onRetry,
-    this.onSave,
-    this.onUnsave,
-    this.onForward,
-    this.onTapReplyQuote,
-    this.onVerifyIdentity,
+    this.actions = const MessageActions(),
     this.isSaved = false,
     this.serverUrl,
     this.authToken,
@@ -172,7 +128,6 @@ class MessageItem extends StatefulWidget {
     this.density = UIDensity.normal,
     this.avatarShape = AvatarShape.circle,
     this.hideUndecryptable = false,
-    this.onImageTap,
   });
 
   @override
@@ -533,7 +488,7 @@ class _MessageItemState extends State<MessageItem>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (widget.onReply != null)
+          if (widget.actions.onReply != null)
             Semantics(
               label: 'Reply to message',
               button: true,
@@ -544,10 +499,10 @@ class _MessageItemState extends State<MessageItem>
                 iconOpacity: style.iconOpacity,
                 iconColor: style.iconColor,
                 cornerRadius: style.buttonRadius,
-                onPressed: () => widget.onReply?.call(msg),
+                onPressed: () => widget.actions.onReply?.call(msg),
               ),
             ),
-          if (widget.onForward != null)
+          if (widget.actions.onForward != null)
             Semantics(
               label: 'Forward message',
               button: true,
@@ -558,7 +513,7 @@ class _MessageItemState extends State<MessageItem>
                 iconOpacity: style.iconOpacity,
                 iconColor: style.iconColor,
                 cornerRadius: style.buttonRadius,
-                onPressed: () => widget.onForward?.call(msg),
+                onPressed: () => widget.actions.onForward?.call(msg),
               ),
             ),
           // Overflow menu: copy, pin, edit, delete
@@ -719,8 +674,8 @@ class _MessageItemState extends State<MessageItem>
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: GestureDetector(
-        onTap: () => widget.onImageTap != null
-            ? widget.onImageTap!(imgUrl)
+        onTap: () => widget.actions.onImageTap != null
+            ? widget.actions.onImageTap!(imgUrl)
             : _showImageViewer(imageUrl: imgUrl),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 400, maxHeight: 320),
@@ -812,7 +767,7 @@ class _MessageItemState extends State<MessageItem>
       serverUrl: widget.serverUrl,
       authToken: widget.authToken,
       mediaTicket: widget.mediaTicket,
-      onImageTap: widget.onImageTap,
+      onImageTap: widget.actions.onImageTap,
     );
     final caption = extractMediaCaption(mediaContent);
     if (caption == null) return mediaWidget;
@@ -841,8 +796,12 @@ class _MessageItemState extends State<MessageItem>
     if (isMine && (msg.failedContent ?? '').isNotEmpty) {
       return OwnDecryptFailedBubble(
         originalText: msg.failedContent!,
-        onResend: widget.onRetry == null ? null : () => widget.onRetry!(msg),
-        onDelete: widget.onDelete == null ? null : () => widget.onDelete!(msg),
+        onResend: widget.actions.onRetry == null
+            ? null
+            : () => widget.actions.onRetry!(msg),
+        onDelete: widget.actions.onDelete == null
+            ? null
+            : () => widget.actions.onDelete!(msg),
       );
     }
     return const DecryptFailurePill();
@@ -948,8 +907,8 @@ class _MessageItemState extends State<MessageItem>
           replyToUsername: msg.replyToUsername,
           replyToContent: msg.replyToContent!,
           isMine: isMine,
-          onTap: msg.replyToId != null && widget.onTapReplyQuote != null
-              ? () => widget.onTapReplyQuote!(msg.replyToId!)
+          onTap: msg.replyToId != null && widget.actions.onTapReplyQuote != null
+              ? () => widget.actions.onTapReplyQuote!(msg.replyToId!)
               : null,
         ),
       if (msg.content.startsWith(_forwardedPrefix))
@@ -1091,8 +1050,8 @@ class _MessageItemState extends State<MessageItem>
       label: 'View profile of ${msg.fromUsername}',
       button: true,
       child: GestureDetector(
-        onTap: widget.onAvatarTap != null
-            ? () => widget.onAvatarTap!(msg.fromUserId)
+        onTap: widget.actions.onAvatarTap != null
+            ? () => widget.actions.onAvatarTap!(msg.fromUserId)
             : null,
         child: SizedBox(
           // Slice 5: bump compact avatar to 32px (closer to Discord's 40)
@@ -1142,7 +1101,7 @@ class _MessageItemState extends State<MessageItem>
             LockIcon(
               message: msg,
               isMine: isMine,
-              onVerifyIdentity: widget.onVerifyIdentity,
+              onVerifyIdentity: widget.actions.onVerifyIdentity,
             ),
           if (msg.pinnedAt != null)
             Padding(
@@ -1403,7 +1362,7 @@ class _MessageItemState extends State<MessageItem>
       HapticFeedback.mediumImpact();
       _openContextMenu(details.globalPosition, msg, isMine, mediaUrl);
     } else if (!hasReactions) {
-      widget.onReactionTap?.call(msg, details.globalPosition);
+      widget.actions.onReactionTap?.call(msg, details.globalPosition);
     }
   }
 
@@ -1428,9 +1387,9 @@ class _MessageItemState extends State<MessageItem>
       isEncryptedUnreadable: unreadable,
       mediaUrl: mediaUrl,
       isImageMedia: isImage,
-      onReply: _wrapMsgCallback(widget.onReply, msg),
-      onReplyInThread: _wrapMsgCallback(widget.onReplyInThread, msg),
-      onForward: _wrapMsgCallback(widget.onForward, msg),
+      onReply: _wrapMsgCallback(widget.actions.onReply, msg),
+      onReplyInThread: _wrapMsgCallback(widget.actions.onReplyInThread, msg),
+      onForward: _wrapMsgCallback(widget.actions.onForward, msg),
       onRetry: _resolveRetryCallback(msg),
       onCopyText: () => _copyMessageText(msg, mediaUrl),
       // `isImage` only true when `mediaUrl` is non-null (the predicate
@@ -1438,16 +1397,16 @@ class _MessageItemState extends State<MessageItem>
       onViewGallery: isImage ? () => _handleImageAction(mediaUrl) : null,
       onPin: _resolvePinCallback(msg),
       onUnpin: _resolveUnpinCallback(msg),
-      onSave: _wrapMsgCallback(widget.onSave, msg),
-      onUnsave: _wrapMsgCallback(widget.onUnsave, msg),
-      onEdit: _wrapMsgCallback(widget.onEdit, msg),
-      onDelete: _wrapMsgCallback(widget.onDelete, msg),
+      onSave: _wrapMsgCallback(widget.actions.onSave, msg),
+      onUnsave: _wrapMsgCallback(widget.actions.onUnsave, msg),
+      onEdit: _wrapMsgCallback(widget.actions.onEdit, msg),
+      onDelete: _wrapMsgCallback(widget.actions.onDelete, msg),
       onCopyId: () => _copyMessageId(msg),
       // Registry decides visibility based on isEncryptedUnreadable; we still wire callbacks.
-      onPickReaction: widget.onReactionSelect == null
+      onPickReaction: widget.actions.onReactionSelect == null
           ? null
-          : (emoji) => widget.onReactionSelect!(msg, emoji),
-      onOpenFullPicker: _wrapMsgCallback(widget.onMoreReactions, msg),
+          : (emoji) => widget.actions.onReactionSelect!(msg, emoji),
+      onOpenFullPicker: _wrapMsgCallback(widget.actions.onMoreReactions, msg),
       recentReactions: reactionEmojis.take(4).toList(),
     );
 
@@ -1468,20 +1427,20 @@ class _MessageItemState extends State<MessageItem>
   }
 
   VoidCallback? _resolveRetryCallback(ChatMessage msg) {
-    if (msg.status != MessageStatus.failed || widget.onRetry == null) {
+    if (msg.status != MessageStatus.failed || widget.actions.onRetry == null) {
       return null;
     }
-    return () => widget.onRetry!(msg);
+    return () => widget.actions.onRetry!(msg);
   }
 
   VoidCallback? _resolvePinCallback(ChatMessage msg) {
-    if (msg.pinnedAt != null || widget.onPin == null) return null;
-    return () => widget.onPin!(msg);
+    if (msg.pinnedAt != null || widget.actions.onPin == null) return null;
+    return () => widget.actions.onPin!(msg);
   }
 
   VoidCallback? _resolveUnpinCallback(ChatMessage msg) {
-    if (msg.pinnedAt == null || widget.onUnpin == null) return null;
-    return () => widget.onUnpin!(msg);
+    if (msg.pinnedAt == null || widget.actions.onUnpin == null) return null;
+    return () => widget.actions.onUnpin!(msg);
   }
 
   void _copyMessageText(ChatMessage msg, String? mediaUrl) {
@@ -1598,7 +1557,7 @@ class _MessageItemState extends State<MessageItem>
               ReplyCountBadge(
                 message: msg,
                 isMine: isMine,
-                onTap: widget.onViewThread,
+                onTap: widget.actions.onViewThread,
                 inlineStyle: widget._isPlain,
               ),
             if (msg.replyCount > 0 &&
@@ -1620,8 +1579,8 @@ class _MessageItemState extends State<MessageItem>
             if (isFailed && isMine)
               RetryRow(
                 message: msg,
-                onRetry: widget.onRetry,
-                onDelete: widget.onDelete,
+                onRetry: widget.actions.onRetry,
+                onDelete: widget.actions.onDelete,
               ),
           ],
         ),
@@ -1661,7 +1620,7 @@ class _MessageItemState extends State<MessageItem>
           : null,
       onHorizontalDragEnd: canSwipeToReply
           ? (_) {
-              if (_swipeTriggered) widget.onReply?.call(msg);
+              if (_swipeTriggered) widget.actions.onReply?.call(msg);
               _swipeTriggered = false;
               _startSpringBack();
             }
@@ -1703,7 +1662,7 @@ class _MessageItemState extends State<MessageItem>
       currentUserId: widget.myUserId,
       isMine: isMine,
       chatBgColor: context.chatBg,
-      onTap: (pos) => widget.onReactionTap?.call(msg, pos),
+      onTap: (pos) => widget.actions.onReactionTap?.call(msg, pos),
       density: widget.density,
     );
 
@@ -1723,7 +1682,7 @@ class _MessageItemState extends State<MessageItem>
 
     final isAlignedEnd = isMine && !widget.compactLayout;
     final canSwipeToReply =
-        _isMobileTouch && widget.onReply != null && !msg.isSystemEvent;
+        _isMobileTouch && widget.actions.onReply != null && !msg.isSystemEvent;
     final topPad = _buildTopPad();
     final hoverSpec = _hoverStyle;
 

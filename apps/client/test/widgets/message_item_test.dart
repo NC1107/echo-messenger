@@ -5,6 +5,7 @@ import 'package:network_image_mock/network_image_mock.dart';
 import 'package:echo_app/src/models/chat_message.dart';
 import 'package:echo_app/src/models/reaction.dart';
 import 'package:echo_app/src/widgets/message/link_preview_card.dart';
+import 'package:echo_app/src/widgets/message/message_actions.dart';
 import 'package:echo_app/src/widgets/message/reaction_bar.dart';
 import 'package:echo_app/src/widgets/message_item.dart';
 
@@ -407,7 +408,7 @@ void main() {
             showHeader: false,
             isLastInGroup: false,
             myUserId: 'test-user-id',
-            onReactionTap: (m, _) => tappedMessage = m,
+            actions: MessageActions(onReactionTap: (m, _) => tappedMessage = m),
           ),
         );
         await tester.pump();
@@ -629,15 +630,15 @@ void main() {
           showHeader: true,
           isLastInGroup: true,
           myUserId: 'test-user-id',
-          onMoreReactions: (m) => captured = m,
+          actions: MessageActions(onMoreReactions: (m) => captured = m),
         );
 
         await tester.pumpApp(item);
         await tester.pump();
 
-        expect(item.onMoreReactions, isNotNull);
+        expect(item.actions.onMoreReactions, isNotNull);
         // Invoke directly to confirm the callback contract.
-        item.onMoreReactions!(msg);
+        item.actions.onMoreReactions!(msg);
         expect(captured, same(msg));
       });
     });
@@ -685,8 +686,7 @@ void main() {
               showHeader: false,
               isLastInGroup: true,
               myUserId: 'test-user-id',
-              onEdit: (_) {},
-              onDelete: (_) {},
+              actions: MessageActions(onEdit: (_) {}, onDelete: (_) {}),
             ),
           );
           await tester.pump();
@@ -728,8 +728,7 @@ void main() {
               // (#582). The action sheet must hide the Edit entry to
               // prevent user-initiated edits that the server would reject
               // with 409 -- and that, pre-fix, would have leaked plaintext.
-              onEdit: null,
-              onDelete: (_) {},
+              actions: MessageActions(onEdit: null, onDelete: (_) {}),
             ),
           );
           await tester.pump();
@@ -802,7 +801,7 @@ void main() {
             showHeader: false,
             isLastInGroup: true,
             myUserId: 'test-user-id',
-            onReply: (_) => replyCalled = true,
+            actions: MessageActions(onReply: (_) => replyCalled = true),
           ),
         );
         await tester.pump();
@@ -997,7 +996,7 @@ void main() {
               showHeader: false,
               isLastInGroup: true,
               myUserId: 'test-user-id',
-              onReply: (_) {},
+              actions: MessageActions(onReply: (_) {}),
             ),
           );
           await tester.pump();
