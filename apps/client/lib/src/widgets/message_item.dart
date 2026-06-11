@@ -24,6 +24,7 @@ import '../utils/semantics_preview.dart';
 import '../utils/time_utils.dart';
 import 'avatar_utils.dart' show avatarColor, buildAvatar, senderLabelColor;
 import '../services/media_cache_service.dart';
+import 'message/edited_badge.dart';
 import 'message/hover_action_button.dart';
 import 'message/image_viewer_dialog.dart';
 import 'message/link_preview_card.dart';
@@ -844,17 +845,7 @@ class _MessageItemState extends State<MessageItem>
         hasMedia: hasMedia,
       ),
       if (msg.editedAt != null && !widget.isLastInGroup)
-        Padding(
-          padding: const EdgeInsets.only(top: 2),
-          child: Text(
-            '(edited)',
-            style: GoogleFonts.inter(
-              fontSize: 11,
-              fontStyle: FontStyle.italic,
-              color: context.textMuted,
-            ),
-          ),
-        ),
+        const EditedBadge(inline: true),
     ];
   }
 
@@ -1032,29 +1023,7 @@ class _MessageItemState extends State<MessageItem>
               padding: const EdgeInsets.only(left: 4),
               child: Icon(Icons.push_pin, size: 10, color: context.accent),
             ),
-          if (msg.editedAt != null)
-            Padding(
-              padding: const EdgeInsets.only(left: 6),
-              // Slack-style edited pill: distinct token in the metadata
-              // row rather than inline italic text. Reads as a label, not
-              // part of the timestamp.
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                decoration: BoxDecoration(
-                  color: context.surfaceHover,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  'edited',
-                  style: GoogleFonts.inter(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w500,
-                    color: context.textMuted,
-                    letterSpacing: 0.2,
-                  ),
-                ),
-              ),
-            ),
+          if (msg.editedAt != null) const EditedBadge(),
           if (msg.expiresAt != null)
             Padding(
               padding: const EdgeInsets.only(left: 4),
