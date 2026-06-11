@@ -69,7 +69,8 @@ pub struct GroupKeyResponse {
     pub conversation_id: Uuid,
     pub key_version: i32,
     pub encrypted_key: String,
-    pub created_by: Uuid,
+    /// Null when the creating user has been deleted (FK SET NULL).
+    pub created_by: Option<Uuid>,
     pub created_at: String,
 }
 

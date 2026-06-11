@@ -737,7 +737,9 @@ pub struct GroupKeyRow {
     pub conversation_id: Uuid,
     pub key_version: i32,
     pub encrypted_key: String,
-    pub created_by: Uuid,
+    /// Nullable: SET NULL on creator deletion (the key survives, attribution
+    /// is dropped — see migration 20260610000000).
+    pub created_by: Option<Uuid>,
     pub created_at: DateTime<Utc>,
 }
 
