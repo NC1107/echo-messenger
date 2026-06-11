@@ -395,7 +395,7 @@ void main() {
       });
     });
 
-    testWidgets('onReactionSelect callback fires on long press', (
+    testWidgets('desktop long-press does NOT open the reaction picker', (
       tester,
     ) async {
       await mockNetworkImagesFor(() async {
@@ -413,12 +413,13 @@ void main() {
         );
         await tester.pump();
 
-        // Long press to trigger reaction tap
+        // On desktop (the default ~800px test viewport), click-and-hold is a
+        // deliberate no-op — reactions are reached via right-click
+        // (onSecondaryTapDown → context menu). The floating picker must not pop.
         await tester.longPress(find.text('Hello world'));
         await tester.pump();
 
-        expect(tappedMessage, isNotNull);
-        expect(tappedMessage!.id, 'msg-1');
+        expect(tappedMessage, isNull);
       });
     });
 

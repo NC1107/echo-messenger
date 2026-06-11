@@ -1346,24 +1346,20 @@ class _MessageItemState extends State<MessageItem>
     return SizedBox(width: double.infinity, child: stack);
   }
 
-  /// Handle long-press: open the centralised context menu on mobile,
-  /// or fall through to the desktop reaction picker on non-mobile
-  /// when no reactions are present yet (matches pre-migration
-  /// behaviour where long-press without reactions seeded the
-  /// floating picker).
+  /// Handle long-press: a mobile-only affordance that opens the centralised
+  /// context menu. On desktop, click-and-hold deliberately does nothing —
+  /// reactions and actions are reached via right-click (`onSecondaryTapDown`
+  /// → [_openContextMenu]) or the hover bar, so we don't pop a second floating
+  /// reaction surface on hold.
   void _handleLongPress(
     LongPressStartDetails details,
     ChatMessage msg,
     bool isMine,
     String? mediaUrl,
-    bool hasReactions,
   ) {
-    if (Responsive.isMobile(context)) {
-      HapticFeedback.mediumImpact();
-      _openContextMenu(details.globalPosition, msg, isMine, mediaUrl);
-    } else if (!hasReactions) {
-      widget.actions.onReactionTap?.call(msg, details.globalPosition);
-    }
+    if (!Responsive.isMobile(context)) return;
+    HapticFeedback.mediumImpact();
+    _openContextMenu(details.globalPosition, msg, isMine, mediaUrl);
   }
 
   /// Open the centralised Echo context menu for [msg]. Single
@@ -1596,13 +1592,12 @@ class _MessageItemState extends State<MessageItem>
     required ChatMessage msg,
     required bool isMine,
     required bool canSwipeToReply,
-    required bool hasReactions,
     required String? mediaUrl,
     required Widget child,
   }) {
     return GestureDetector(
       onLongPressStart: (details) =>
-          _handleLongPress(details, msg, isMine, mediaUrl, hasReactions),
+          _handleLongPress(details, msg, isMine, mediaUrl),
       // Right-click routes through _openContextMenu like the hover-bar overflow.
       onSecondaryTapDown: (details) =>
           _openContextMenu(details.globalPosition, msg, isMine, mediaUrl),
@@ -1723,13 +1718,11 @@ class _MessageItemState extends State<MessageItem>
             msg,
             isMine,
             mediaUrl,
-            hasReactions,
           ),
           child: _buildGestureDetector(
             msg: msg,
             isMine: isMine,
             canSwipeToReply: canSwipeToReply,
-            hasReactions: hasReactions,
             mediaUrl: mediaUrl,
             child: _buildSwipeToReplyWrapper(
               canSwipe: canSwipeToReply,
