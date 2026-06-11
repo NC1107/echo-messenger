@@ -25,6 +25,7 @@ import '../utils/time_utils.dart';
 import 'avatar_utils.dart' show avatarColor, buildAvatar, senderLabelColor;
 import '../services/media_cache_service.dart';
 import 'message/hover_action_button.dart';
+import 'message/image_viewer_dialog.dart';
 import 'message/link_preview_card.dart';
 import 'message/media_content.dart';
 import 'message/message_actions.dart';
@@ -387,88 +388,11 @@ class _MessageItemState extends State<MessageItem>
   }
 
   void _showImageViewer({required String imageUrl}) {
-    final headers = _mediaHeaders();
-    showDialog<void>(
-      context: context,
-      barrierDismissible: true,
-      barrierColor: Theme.of(context).shadowColor.withValues(alpha: 0.9),
-      builder: (dialogContext) {
-        return Stack(
-          children: [
-            Positioned.fill(
-              child: GestureDetector(
-                onTap: () => Navigator.of(dialogContext).pop(),
-                behavior: HitTestBehavior.opaque,
-                child: const SizedBox.expand(),
-              ),
-            ),
-            // Image content — centered, constrained, does NOT fill screen
-            Center(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: MediaQuery.of(dialogContext).size.width * 0.85,
-                  maxHeight: MediaQuery.of(dialogContext).size.height * 0.85,
-                ),
-                child: InteractiveViewer(
-                  minScale: 0.8,
-                  maxScale: 4,
-                  child: GestureDetector(
-                    onTap: () => Navigator.of(dialogContext).pop(),
-                    behavior: HitTestBehavior.opaque,
-                    child: CachedNetworkImage(
-                      imageUrl: imageUrl,
-                      cacheKey: stableMediaCacheKey(imageUrl),
-                      httpHeaders: headers,
-                      cacheManager: chatMediaCacheManager,
-                      fit: BoxFit.contain,
-                      placeholder: (_, _) => SizedBox(
-                        width: 320,
-                        height: 240,
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            color: Theme.of(context).colorScheme.onPrimary,
-                          ),
-                        ),
-                      ),
-                      errorWidget: (_, _, _) => Center(
-                        child: Icon(
-                          Icons.broken_image_outlined,
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onPrimary.withValues(alpha: 0.54),
-                          size: 48,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            // Action buttons
-            Positioned(
-              top: 16,
-              right: 16,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.download_outlined),
-                    color: Theme.of(context).colorScheme.onPrimary,
-                    tooltip: 'Download',
-                    onPressed: () => _downloadMedia(imageUrl),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    color: Theme.of(context).colorScheme.onPrimary,
-                    tooltip: 'Close',
-                    onPressed: () => Navigator.of(dialogContext).pop(),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        );
-      },
+    ImageViewerDialog.show(
+      context,
+      imageUrl: imageUrl,
+      headers: _mediaHeaders(),
+      onDownload: () => _downloadMedia(imageUrl),
     );
   }
 
