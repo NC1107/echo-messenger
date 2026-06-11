@@ -170,6 +170,7 @@ If you find yourself copy-pasting a widget tree (an avatar + presence dot, a con
 - Labelled/bordered dropdowns → `EchoDropdown<T>` in `widgets/echo_dropdown.dart`.
 - Channel-bar dividers → `ChannelDivider` in `widgets/channel_divider.dart`.
 - Authenticated HTTP from a Riverpod notifier → `mixin AuthedHttp<S>` in `providers/authed_http.dart` (provides `headersWithToken` + `authenticatedRequest`).
+- Group member roster row (sidebar rail / members sheet / group-info) → `MemberListRow` in `widgets/member_list_row.dart` (`MemberRowDensity.compact` for the rail, `comfortable` elsewhere; inject actions via the `trailing`/`hoverTrailing` slots).
 
 If your use case doesn't fit an existing helper, **extend the helper rather than fork it**. New options or `destructive: true`-style flags belong in the shared widget so the next user picks them up automatically.
 
