@@ -166,6 +166,29 @@ pub async fn notify_offline_users(
         return;
     }
 
+    // Notification snooze: drop recipients whose
+    // `users.notifications_snoozed_until` is still in the future. The same
+    // helper lazily clears expired snoozes, so the column self-cleans
+    // without a cron job. Fail open on DB error — over-notify > drop.
+    let snoozed = match db::users::snoozed_user_ids(pool, &unmuted).await {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("Failed to filter snoozed users: {e}");
+            Vec::new()
+        }
+    };
+    let unsnoozed: Vec<Uuid> = unmuted
+        .into_iter()
+        .filter(|uid| !snoozed.contains(uid))
+        .collect();
+    for uid in &snoozed {
+        tracing::debug!(user_id = %uid, "push skipped: snoozed");
+    }
+    if unsnoozed.is_empty() {
+        return;
+    }
+    let unmuted = unsnoozed;
+
     let tokens = match db::push_tokens::get_tokens_for_users(pool, &unmuted).await {
         Ok(t) => t,
         Err(e) => {

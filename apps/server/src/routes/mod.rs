@@ -445,7 +445,8 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpNet>) -> Route
         .route("/{token}/accept", post(groups::accept_invite));
 
     let user_routes = Router::new()
-        .route("/me", delete(users::delete_account))
+        .route("/me", get(users::get_me).delete(users::delete_account))
+        .route("/me/notifications/snooze", patch(users::update_snooze))
         .route("/me/profile", patch(users::update_profile))
         .route("/me/password", patch(users::change_password))
         .route(

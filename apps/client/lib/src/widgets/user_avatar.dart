@@ -67,6 +67,11 @@ class UserAvatar extends ConsumerWidget {
   /// Override the initial-letter fallback (e.g. show a group icon).
   final Widget? fallbackIcon;
 
+  /// When non-null AND in the future, overlay a small bell-with-slash glyph
+  /// on the avatar to signal "notifications snoozed until X". Tooltip
+  /// renders the locale-formatted [snoozedUntil].
+  final DateTime? snoozedUntil;
+
   const UserAvatar({
     super.key,
     required this.userId,
@@ -79,6 +84,7 @@ class UserAvatar extends ConsumerWidget {
     this.onLongPress,
     this.bgColor,
     this.fallbackIcon,
+    this.snoozedUntil,
   });
 
   @override
@@ -123,6 +129,14 @@ class UserAvatar extends ConsumerWidget {
       );
     }
 
+    final snoozedUntilUtc = snoozedUntil?.toUtc();
+    final isSnoozeActive =
+        snoozedUntilUtc != null &&
+        snoozedUntilUtc.isAfter(DateTime.now().toUtc());
+    if (isSnoozeActive) {
+      avatar = _SnoozeOverlay(snoozedUntil: snoozedUntilUtc, child: avatar);
+    }
+
     final effectiveTap =
         onTap ?? (openProfileOnTap ? () => _openProfile(context, ref) : null);
 
@@ -144,4 +158,54 @@ class UserAvatar extends ConsumerWidget {
   void _openProfile(BuildContext context, WidgetRef ref) {
     UserProfileScreen.show(context, ref, userId);
   }
+}
+
+/// Bell-with-slash badge stacked on the top-left of an avatar; used when
+/// `UserAvatar.snoozedUntil` is in the future. Kept private — every
+/// caller goes through [UserAvatar] so the badge stays consistent.
+class _SnoozeOverlay extends StatelessWidget {
+  const _SnoozeOverlay({required this.snoozedUntil, required this.child});
+
+  final DateTime snoozedUntil;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final tooltip =
+        'Notifications snoozed until ${_formatSnoozeTooltip(context, snoozedUntil)}';
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        child,
+        Positioned(
+          left: -2,
+          top: -2,
+          child: Tooltip(
+            message: tooltip,
+            child: Semantics(
+              label: tooltip,
+              child: Container(
+                padding: const EdgeInsets.all(2),
+                decoration: const BoxDecoration(
+                  color: EchoTheme.sidebarBg,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.notifications_off,
+                  size: 10,
+                  color: Colors.white70,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+String _formatSnoozeTooltip(BuildContext context, DateTime utc) {
+  final local = utc.toLocal();
+  final t = TimeOfDay.fromDateTime(local).format(context);
+  return t;
 }

@@ -18,6 +18,7 @@ import '../providers/privacy_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/update_provider.dart';
 import '../providers/livekit_voice/livekit_voice_provider.dart';
+import '../providers/notifications_snooze_provider.dart';
 import '../providers/release_notes_provider.dart';
 import '../providers/voice_lounge_fullscreen_provider.dart';
 import '../providers/websocket_provider.dart';

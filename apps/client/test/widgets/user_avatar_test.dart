@@ -55,5 +55,44 @@ void main() {
       await tester.pump();
       expect(taps, 1);
     });
+
+    testWidgets('renders bell-slash badge when snoozedUntil is in the future', (
+      tester,
+    ) async {
+      final future = DateTime.now().toUtc().add(const Duration(hours: 2));
+      await tester.pumpApp(
+        UserAvatar(
+          userId: 'u1',
+          username: 'jane',
+          radius: 18,
+          snoozedUntil: future,
+        ),
+      );
+      expect(find.byIcon(Icons.notifications_off), findsOneWidget);
+    });
+
+    testWidgets('omits bell-slash badge when snoozedUntil is in the past', (
+      tester,
+    ) async {
+      final past = DateTime.now().toUtc().subtract(const Duration(minutes: 5));
+      await tester.pumpApp(
+        UserAvatar(
+          userId: 'u1',
+          username: 'jane',
+          radius: 18,
+          snoozedUntil: past,
+        ),
+      );
+      expect(find.byIcon(Icons.notifications_off), findsNothing);
+    });
+
+    testWidgets('omits bell-slash badge when snoozedUntil is null', (
+      tester,
+    ) async {
+      await tester.pumpApp(
+        const UserAvatar(userId: 'u1', username: 'jane', radius: 18),
+      );
+      expect(find.byIcon(Icons.notifications_off), findsNothing);
+    });
   });
 }

@@ -564,3 +564,70 @@ pub async fn get_pinned_conversations(
             .await?;
     Ok(rows.into_iter().map(|(id,)| id).collect())
 }
+
+// ---------------------------------------------------------------------------
+// Notification snooze (apps/server/migrations/20260528000000_notification_snooze.sql)
+// ---------------------------------------------------------------------------
+
+/// Fetch the current snooze-until timestamp for a user (NULL = not snoozed).
+pub async fn get_notifications_snoozed_until(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Option<DateTime<Utc>>, sqlx::Error> {
+    let row: Option<(Option<DateTime<Utc>>,)> =
+        sqlx::query_as("SELECT notifications_snoozed_until FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
+    Ok(row.and_then(|(t,)| t))
+}
+
+/// Set or clear (when `until = None`) the snooze-until timestamp for a user.
+/// Returns the new stored value so the handler can echo it back.
+pub async fn set_notifications_snoozed_until(
+    pool: &PgPool,
+    user_id: Uuid,
+    until: Option<DateTime<Utc>>,
+) -> Result<Option<DateTime<Utc>>, sqlx::Error> {
+    let row: Option<(Option<DateTime<Utc>>,)> = sqlx::query_as(
+        "UPDATE users SET notifications_snoozed_until = $1 WHERE id = $2 \
+         RETURNING notifications_snoozed_until",
+    )
+    .bind(until)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.and_then(|(t,)| t))
+}
+
+/// Return the subset of `user_ids` whose snooze is currently active
+/// (`notifications_snoozed_until > now()`).  Used by the push fan-out path
+/// to skip APNs delivery for snoozed recipients.
+///
+/// As a free side-effect this also lazily clears any expired snoozes so the
+/// `users.notifications_snoozed_until` column self-cleans without a cron.
+pub async fn snoozed_user_ids(pool: &PgPool, user_ids: &[Uuid]) -> Result<Vec<Uuid>, sqlx::Error> {
+    if user_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    // First, lazily clear any expired snoozes for the requested set.
+    // Bounded to the input list so we never touch unrelated rows.
+    sqlx::query(
+        "UPDATE users SET notifications_snoozed_until = NULL \
+         WHERE id = ANY($1) AND notifications_snoozed_until IS NOT NULL \
+           AND notifications_snoozed_until <= now()",
+    )
+    .bind(user_ids)
+    .execute(pool)
+    .await?;
+
+    let rows: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT id FROM users \
+         WHERE id = ANY($1) AND notifications_snoozed_until IS NOT NULL \
+           AND notifications_snoozed_until > now()",
+    )
+    .bind(user_ids)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(id,)| id).collect())
+}
