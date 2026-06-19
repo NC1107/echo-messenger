@@ -1,0 +1,197 @@
+name: Canvas Deep Audit
+
+on:
+  pull_request:
+    paths:
+      - 'apps/client/lib/src/screens/voice_lounge/**'
+      - 'apps/client/lib/src/widgets/voice_lounge/**'
+      - 'apps/client/lib/src/widgets/voice_canvas.dart'
+      - 'apps/client/lib/src/widgets/lounge_drawing_canvas.dart'
+      - 'apps/client/lib/src/providers/canvas_provider.dart'
+      - 'apps/client/lib/src/providers/canvas_authority_provider.dart'
+      - 'apps/server/src/ws/events/canvas*.rs'
+      - 'tests/e2e/voice_lounge_mobile_audit.spec.ts'
+      - 'tests/e2e/harness/**'
+      - 'tests/e2e/playwright.audit.config.ts'
+      - '.github/workflows/canvas-audit.yml'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deep-audit:
+    name: Mobile Canvas Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: echo_test
+          POSTGRES_USER: echo
+          POSTGRES_PASSWORD: test_password
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U echo -d echo_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # -- Java (required by Flutter tooling) --
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # -- Flutter --
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version-file: .flutter-version
+          channel: stable
+          cache: true
+
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            apps/client/.dart_tool
+          key: pub-${{ hashFiles('apps/client/pubspec.lock') }}
+          restore-keys: pub-
+
+      # -- Rust server --
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          shared-key: canvas-audit
+
+      - name: Build server
+        run: cargo build --release --package echo-server
+
+      # -- Start server --
+      - name: Start server
+        run: |
+          ./target/release/echo-server &
+          curl --retry 15 --retry-delay 3 --retry-connrefused -sf \
+            http://localhost:8080/api/health
+        env:
+          DATABASE_URL: postgres://echo:test_password@localhost:5433/echo_test
+          JWT_SECRET: ci_audit_secret_at_least_32_chars_long
+          RUST_LOG: echo_server=info
+          SERVER_HOST: 0.0.0.0
+          SERVER_PORT: 8080
+          CORS_ORIGINS: http://localhost:8081
+
+      # -- Flutter web build (profile mode keeps the test probe alive) --
+      - name: Build web client (profile)
+        working-directory: apps/client
+        run: |
+          flutter pub get
+          flutter build web --profile --pwa-strategy=none \
+            --dart-define=APP_VERSION=ci-audit-${{ github.sha }}
+
+      # -- Serve web build on :8081 --
+      - name: Serve web client
+        run: |
+          python3 -m http.server 8081 \
+            --directory apps/client/build/web &
+          curl --retry 10 --retry-delay 2 --retry-connrefused -sf \
+            http://localhost:8081/ > /dev/null
+
+      # -- Node + Playwright --
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install Playwright dependencies
+        working-directory: tests/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      # -- Run audit --
+      - name: Run deep mobile-canvas audit
+        id: audit
+        working-directory: tests/e2e
+        run: |
+          set +e
+          SKIP_SEED=1 \
+          ECHO_SERVER=http://localhost:8080 \
+          ECHO_URL=http://localhost:8081 \
+          npx playwright test voice_lounge_mobile_audit.spec.ts \
+            --config=playwright.audit.config.ts
+          echo "playwright_exit=$?" >> "$GITHUB_OUTPUT"
+        env:
+          DATABASE_URL: postgres://echo:test_password@localhost:5433/echo_test
+          JWT_SECRET: ci_audit_secret_at_least_32_chars_long
+
+      # -- Upload artifacts (always, including on failure) --
+      - name: Upload audit artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: canvas-audit-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            tests/e2e/output/mobile-audit-report.md
+            tests/e2e/output/screenshots/
+            tests/e2e/output/videos/
+            tests/e2e/output/html-report/
+          retention-days: 14
+
+      # -- Post report summary as PR comment (only on failure) --
+      - name: Comment audit report on PR
+        if: >
+          always() &&
+          github.event_name == 'pull_request' &&
+          steps.audit.outputs.playwright_exit != '0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const reportPath = 'tests/e2e/output/mobile-audit-report.md';
+
+            let body = '## Canvas Deep Audit — Failures Detected\n\n';
+
+            if (fs.existsSync(reportPath)) {
+              const raw = fs.readFileSync(reportPath, 'utf8');
+              // Extract the Summary and Findings sections (up to ~100 lines)
+              const lines = raw.split('\n');
+              const summaryStart = lines.findIndex(l => /^#+\s*(Summary|Findings)/i.test(l));
+              const excerpt = summaryStart >= 0
+                ? lines.slice(summaryStart, summaryStart + 100).join('\n')
+                : lines.slice(0, 100).join('\n');
+              body += excerpt + '\n\n';
+            } else {
+              body += '_No report file was produced — the audit spec may have crashed before any test ran._\n\n';
+            }
+
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            body += `---\nFull report, screenshots, and videos: [CI run ${context.runId}](${runUrl})`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
+      # -- Fail the check if Playwright exited non-zero --
+      - name: Enforce audit result
+        if: always()
+        run: |
+          exit_code="${{ steps.audit.outputs.playwright_exit }}"
+          if [ "${exit_code}" != "0" ]; then
+            echo "::error::Canvas deep audit failed (Playwright exit ${exit_code}). Check uploaded artifacts for the full report."
+            exit 1
+          fi
+          echo "Canvas deep audit passed."
