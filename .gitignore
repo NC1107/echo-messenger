@@ -119,3 +119,5 @@ apps/client/.idea/
 
 
 .claude/worktrees/*
+# Local-only dev backlog / audit ledger (migrated from GitHub issues 2026-06-09)
+TECHNICAL_DEBT.md

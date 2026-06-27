@@ -132,9 +132,9 @@ async fn demote_admin_to_member_succeeds() {
 // Authorization guards
 // ---------------------------------------------------------------------------
 
-/// A regular member (non-admin) cannot change any role → 401.
+/// A regular member (non-admin) cannot change any role → 403.
 #[tokio::test]
-async fn regular_member_cannot_change_role_returns_401() {
+async fn regular_member_cannot_change_role_returns_403() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let (owner_token, _, _) = common::register_and_login(&client, &base, "cr_noauth_own").await;
@@ -155,14 +155,14 @@ async fn regular_member_cannot_change_role_returns_401() {
         .unwrap();
     assert_eq!(
         resp.status().as_u16(),
-        401,
+        403,
         "regular member must not change roles"
     );
 }
 
-/// An admin (non-owner) cannot change roles → 401.
+/// An admin (non-owner) cannot change roles → 403.
 #[tokio::test]
-async fn admin_cannot_change_role_returns_401() {
+async fn admin_cannot_change_role_returns_403() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let (owner_token, _, _) = common::register_and_login(&client, &base, "cr_adm_own").await;
@@ -194,7 +194,7 @@ async fn admin_cannot_change_role_returns_401() {
         .unwrap();
     assert_eq!(
         resp.status().as_u16(),
-        401,
+        403,
         "admin must not promote other members"
     );
 }

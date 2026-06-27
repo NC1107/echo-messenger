@@ -22,6 +22,9 @@ class GroupChannel {
   bool get isText => kind == 'text';
   bool get isVoice => kind == 'voice';
 
+  /// Pure visual separator in the channel bar — no messages, no voice.
+  bool get isDivider => kind == 'divider';
+
   factory GroupChannel.fromJson(Map<String, dynamic> json) {
     final kind = (json['kind'] ?? 'text').toString();
     final defaultCategory = kind == 'voice'

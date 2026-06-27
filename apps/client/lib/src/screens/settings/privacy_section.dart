@@ -14,9 +14,11 @@ import '../../providers/crypto_provider.dart';
 import '../../providers/privacy_provider.dart';
 import '../../providers/server_url_provider.dart';
 import '../../providers/websocket_provider.dart';
+import '../../router/routes.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
 import '../../widgets/confirm_dialog.dart';
+import '../../widgets/loading_indicator.dart';
 import '../../widgets/settings_panel_scaffold.dart';
 import '../../widgets/user_avatar.dart';
 
@@ -569,13 +571,7 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
       if (contacts.isBlockedLoading)
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 8),
-          child: Center(
-            child: SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          ),
+          child: Center(child: InlineLoadingSpinner(size: 24)),
         )
       else if (contacts.blockedUsers.isEmpty)
         Padding(
@@ -735,11 +731,7 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
             child: OutlinedButton.icon(
               onPressed: crypto.isUploading ? null : _retryKeyUpload,
               icon: crypto.isUploading
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
+                  ? const InlineLoadingSpinner(size: 16)
                   : const Icon(Icons.upload_outlined, size: 18),
               label: Text(
                 crypto.isUploading
@@ -911,7 +903,7 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
             'Account deleted successfully.',
             type: ToastType.success,
           );
-          context.go('/login');
+          context.go(routeLogin);
         }
       } else {
         String errorMsg = 'Failed to delete account';

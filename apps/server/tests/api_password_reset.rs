@@ -30,8 +30,9 @@ async fn forgot_password_known_user_returns_200() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let username = common::unique_username("fpknown");
+    let password = common::unique_password();
 
-    common::register(&client, &base, &username, "password123").await;
+    common::register(&client, &base, &username, &password).await;
 
     let resp = client
         .post(format!("{base}/api/auth/forgot-password"))
@@ -48,10 +49,11 @@ async fn forgot_password_known_user_returns_200() {
 // ---------------------------------------------------------------------------
 
 /// Helper: register a user, request a reset token from the DB, and return
-/// (base_url, token, username).
-async fn setup_reset(client: &Client, base: &str, suffix: &str) -> (String, String) {
+/// `(username, reset_token, old_password)`.
+async fn setup_reset(client: &Client, base: &str, suffix: &str) -> (String, String, String) {
     let username = common::unique_username(suffix);
-    common::register(client, base, &username, "old_password123").await;
+    let old_password = common::unique_password();
+    common::register(client, base, &username, &old_password).await;
 
     // Trigger forgot-password so the token row is created.
     client
@@ -73,14 +75,14 @@ async fn setup_reset(client: &Client, base: &str, suffix: &str) -> (String, Stri
     .await
     .expect("token not found in DB");
 
-    (username, row.0)
+    (username, row.0, old_password)
 }
 
 #[tokio::test]
 async fn reset_password_happy_path() {
     let base = common::spawn_server().await;
     let client = Client::new();
-    let (_username, token) = setup_reset(&client, &base, "rpok").await;
+    let (_username, token, _old_password) = setup_reset(&client, &base, "rpok").await;
 
     let resp = client
         .post(format!("{base}/api/auth/reset-password"))
@@ -99,7 +101,7 @@ async fn reset_password_happy_path() {
 async fn reset_password_new_password_works_for_login() {
     let base = common::spawn_server().await;
     let client = Client::new();
-    let (username, token) = setup_reset(&client, &base, "rplogin").await;
+    let (username, token, old_password) = setup_reset(&client, &base, "rplogin").await;
 
     // Reset the password.
     client
@@ -112,8 +114,8 @@ async fn reset_password_new_password_works_for_login() {
         .await
         .expect("reset request failed");
 
-    // Old password must be rejected.
-    let old_resp = common::login_raw(&client, &base, &username, "old_password123").await;
+    // Old password must be rejected after the reset.
+    let old_resp = common::login_raw(&client, &base, &username, &old_password).await;
     assert_eq!(old_resp.status().as_u16(), 401);
 
     // New password must work.
@@ -125,7 +127,7 @@ async fn reset_password_new_password_works_for_login() {
 async fn reset_password_token_reuse_rejected() {
     let base = common::spawn_server().await;
     let client = Client::new();
-    let (_username, token) = setup_reset(&client, &base, "rpreuse").await;
+    let (_username, token, _old_password) = setup_reset(&client, &base, "rpreuse").await;
 
     // First use succeeds.
     let first = client
@@ -174,7 +176,7 @@ async fn reset_password_invalid_token_rejected() {
 async fn reset_password_short_password_rejected() {
     let base = common::spawn_server().await;
     let client = Client::new();
-    let (_username, token) = setup_reset(&client, &base, "rpshort").await;
+    let (_username, token, _old_password) = setup_reset(&client, &base, "rpshort").await;
 
     let resp = client
         .post(format!("{base}/api/auth/reset-password"))

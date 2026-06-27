@@ -26,8 +26,9 @@ const ELF_BYTES: &[u8] = b"\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x
 /// Helper: register a user, log in, return (token, user_id).
 async fn setup_user(client: &Client, base: &str, prefix: &str) -> (String, String) {
     let username = common::unique_username(prefix);
-    common::register(client, base, &username, "password123").await;
-    common::login(client, base, &username, "password123").await
+    let password = common::unique_password();
+    common::register(client, base, &username, &password).await;
+    common::login(client, base, &username, &password).await
 }
 
 // ---------------------------------------------------------------------------
@@ -279,13 +280,16 @@ async fn update_privacy_searchable_false() {
 async fn change_password_succeeds_with_correct_current() {
     let base = common::spawn_server().await;
     let client = Client::new();
-    let (token, _) = setup_user(&client, &base, "pwchange").await;
+    let password = common::unique_password();
+    let username = common::unique_username("pwchange");
+    common::register(&client, &base, &username, &password).await;
+    let (token, _) = common::login(&client, &base, &username, &password).await;
 
     let resp = client
         .patch(format!("{base}/api/users/me/password"))
         .header("Authorization", format!("Bearer {token}"))
         .json(&serde_json::json!({
-            "current_password": "password123",
+            "current_password": password,
             "new_password": "newpassword456"
         }))
         .send()
@@ -321,13 +325,16 @@ async fn change_password_wrong_current_returns_401() {
 async fn change_password_too_short_returns_400() {
     let base = common::spawn_server().await;
     let client = Client::new();
-    let (token, _) = setup_user(&client, &base, "pwshort").await;
+    let password = common::unique_password();
+    let username = common::unique_username("pwshort");
+    common::register(&client, &base, &username, &password).await;
+    let (token, _) = common::login(&client, &base, &username, &password).await;
 
     let resp = client
         .patch(format!("{base}/api/users/me/password"))
         .header("Authorization", format!("Bearer {token}"))
         .json(&serde_json::json!({
-            "current_password": "password123",
+            "current_password": password,
             "new_password": "short"
         }))
         .send()
@@ -345,15 +352,16 @@ async fn change_password_too_short_returns_400() {
 async fn search_users_returns_results() {
     let base = common::spawn_server().await;
     let client = Client::new();
+    let password = common::unique_password();
     let searcher_name = common::unique_username("searcher");
     // Use full unique_username so the search query is specific enough to stay
     // within the LIMIT 10 result window even when prior test runs left stale
     // rows with the same prefix in the shared database (#699).
     let target_name = common::unique_username("srchtgt");
 
-    common::register(&client, &base, &searcher_name, "password123").await;
-    common::register(&client, &base, &target_name, "password123").await;
-    let (token, _) = common::login(&client, &base, &searcher_name, "password123").await;
+    common::register(&client, &base, &searcher_name, &password).await;
+    common::register(&client, &base, &target_name, &password).await;
+    let (token, _) = common::login(&client, &base, &searcher_name, &password).await;
 
     // Search by the full unique username so at most one row matches.
     let resp = client
@@ -422,9 +430,10 @@ async fn search_users_does_not_return_self() {
         &uuid::Uuid::new_v4().simple().to_string()[..4]
     );
     let username = common::unique_username(&unique_prefix);
+    let password = common::unique_password();
 
-    common::register(&client, &base, &username, "password123").await;
-    let (token, user_id) = common::login(&client, &base, &username, "password123").await;
+    common::register(&client, &base, &username, &password).await;
+    let (token, user_id) = common::login(&client, &base, &username, &password).await;
 
     let resp = client
         .get(format!("{base}/api/users/search?q={unique_prefix}"))
@@ -453,13 +462,14 @@ async fn resolve_username_invite_returns_contact_relationship() {
     let base = common::spawn_server().await;
     let client = Client::new();
 
+    let password = common::unique_password();
     let alice_name = common::unique_username("res_contact_a");
     let bob_name = common::unique_username("res_contact_b");
-    common::register(&client, &base, &alice_name, "password123").await;
-    common::register(&client, &base, &bob_name, "password123").await;
+    common::register(&client, &base, &alice_name, &password).await;
+    common::register(&client, &base, &bob_name, &password).await;
 
-    let (alice_token, _alice_id) = common::login(&client, &base, &alice_name, "password123").await;
-    let (bob_token, bob_id) = common::login(&client, &base, &bob_name, "password123").await;
+    let (alice_token, _alice_id) = common::login(&client, &base, &alice_name, &password).await;
+    let (bob_token, bob_id) = common::login(&client, &base, &bob_name, &password).await;
 
     // Alice -> Bob request
     let req = client
@@ -517,7 +527,8 @@ async fn resolve_username_invite_is_case_insensitive() {
     let client = Client::new();
     let (token, _) = setup_user(&client, &base, "res_case_a").await;
     let target_name = common::unique_username("res_case_target");
-    common::register(&client, &base, &target_name, "password123").await;
+    let target_password = common::unique_password();
+    common::register(&client, &base, &target_name, &target_password).await;
 
     let mixed = target_name.to_uppercase();
     let resp = client
@@ -537,13 +548,14 @@ async fn resolve_username_invite_is_case_insensitive() {
 async fn resolve_username_invite_hides_non_searchable_without_relationship() {
     let base = common::spawn_server().await;
     let client = Client::new();
+    let password = common::unique_password();
     let viewer_name = common::unique_username("res_priv_viewer");
     let target_name = common::unique_username("res_priv_target");
-    common::register(&client, &base, &viewer_name, "password123").await;
-    common::register(&client, &base, &target_name, "password123").await;
+    common::register(&client, &base, &viewer_name, &password).await;
+    common::register(&client, &base, &target_name, &password).await;
 
-    let (viewer_token, _) = common::login(&client, &base, &viewer_name, "password123").await;
-    let (target_token, _) = common::login(&client, &base, &target_name, "password123").await;
+    let (viewer_token, _) = common::login(&client, &base, &viewer_name, &password).await;
+    let (target_token, _) = common::login(&client, &base, &target_name, &password).await;
 
     // Target opts out of discoverability.
     let privacy_resp = client
@@ -573,9 +585,10 @@ async fn resolve_username_invite_returns_blocked_relationship() {
     let (viewer_token, _viewer_id) = setup_user(&client, &base, "res_block_viewer").await;
 
     let target_name = common::unique_username("res_block_target");
-    common::register(&client, &base, &target_name, "password123").await;
+    let target_password = common::unique_password();
+    common::register(&client, &base, &target_name, &target_password).await;
     let (target_token, target_id) =
-        common::login(&client, &base, &target_name, "password123").await;
+        common::login(&client, &base, &target_name, &target_password).await;
 
     // Viewer blocks target.
     let block_resp = client
@@ -632,9 +645,10 @@ async fn delete_account_returns_204() {
 async fn deleted_user_cannot_login() {
     let base = common::spawn_server().await;
     let client = Client::new();
+    let password = common::unique_password();
     let username = common::unique_username("delacc2");
-    common::register(&client, &base, &username, "password123").await;
-    let (token, _) = common::login(&client, &base, &username, "password123").await;
+    common::register(&client, &base, &username, &password).await;
+    let (token, _) = common::login(&client, &base, &username, &password).await;
 
     // Delete the account
     client
@@ -649,7 +663,7 @@ async fn deleted_user_cannot_login() {
         .post(format!("{base}/api/auth/login"))
         .json(&serde_json::json!({
             "username": username,
-            "password": "password123"
+            "password": password
         }))
         .send()
         .await

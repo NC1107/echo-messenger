@@ -16,9 +16,12 @@ import '../providers/user_presence_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
+import '../utils/color_utils.dart';
 import '../utils/presence.dart';
+import '../utils/timezone_offsets.dart';
 import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
 import '../widgets/confirm_dialog.dart';
+import '../widgets/loading_indicator.dart';
 import '../widgets/profile_sheets.dart';
 import 'safety_number_screen.dart';
 
@@ -164,99 +167,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
   /// Common IANA timezone -> UTC offset in minutes.
   /// Covers major world timezones. DST is approximated for standard offset;
   /// for perfect DST handling a full tz database would be needed.
-  static const _ianaOffsetMinutes = <String, int>{
-    // UTC / GMT
-    'UTC': 0,
-    'GMT': 0,
-    'Etc/UTC': 0,
-    'Etc/GMT': 0,
-    // North America
-    'America/New_York': -300,
-    'America/Toronto': -300,
-    'America/Detroit': -300,
-    'America/Chicago': -360,
-    'America/Winnipeg': -360,
-    'America/Denver': -420,
-    'America/Edmonton': -420,
-    'America/Phoenix': -420,
-    'America/Los_Angeles': -480,
-    'America/Vancouver': -480,
-    'America/Anchorage': -540,
-    'Pacific/Honolulu': -600,
-    'America/Halifax': -240,
-    'America/St_Johns': -210,
-    // Central / South America
-    'America/Mexico_City': -360,
-    'America/Bogota': -300,
-    'America/Lima': -300,
-    'America/Santiago': -240,
-    'America/Sao_Paulo': -180,
-    'America/Argentina/Buenos_Aires': -180,
-    'America/Caracas': -240,
-    // Europe
-    'Europe/London': 0,
-    'Europe/Dublin': 0,
-    'Europe/Lisbon': 0,
-    'Europe/Paris': 60,
-    'Europe/Berlin': 60,
-    'Europe/Amsterdam': 60,
-    'Europe/Brussels': 60,
-    'Europe/Madrid': 60,
-    'Europe/Rome': 60,
-    'Europe/Vienna': 60,
-    'Europe/Zurich': 60,
-    'Europe/Stockholm': 60,
-    'Europe/Oslo': 60,
-    'Europe/Copenhagen': 60,
-    'Europe/Warsaw': 60,
-    'Europe/Prague': 60,
-    'Europe/Budapest': 60,
-    'Europe/Helsinki': 120,
-    'Europe/Bucharest': 120,
-    'Europe/Athens': 120,
-    'Europe/Istanbul': 180,
-    'Europe/Moscow': 180,
-    'Europe/Kiev': 120,
-    'Europe/Kyiv': 120,
-    // Africa
-    'Africa/Cairo': 120,
-    'Africa/Lagos': 60,
-    'Africa/Johannesburg': 120,
-    'Africa/Nairobi': 180,
-    'Africa/Casablanca': 60,
-    // Middle East
-    'Asia/Dubai': 240,
-    'Asia/Riyadh': 180,
-    'Asia/Tehran': 210,
-    'Asia/Jerusalem': 120,
-    // South / Southeast Asia
-    'Asia/Kolkata': 330,
-    'Asia/Colombo': 330,
-    'Asia/Dhaka': 360,
-    'Asia/Karachi': 300,
-    'Asia/Bangkok': 420,
-    'Asia/Jakarta': 420,
-    'Asia/Ho_Chi_Minh': 420,
-    'Asia/Singapore': 480,
-    'Asia/Kuala_Lumpur': 480,
-    'Asia/Manila': 480,
-    // East Asia
-    'Asia/Shanghai': 480,
-    'Asia/Hong_Kong': 480,
-    'Asia/Taipei': 480,
-    'Asia/Seoul': 540,
-    'Asia/Tokyo': 540,
-    // Oceania
-    'Australia/Sydney': 600,
-    'Australia/Melbourne': 600,
-    'Australia/Brisbane': 600,
-    'Australia/Perth': 480,
-    'Australia/Adelaide': 570,
-    'Australia/Darwin': 570,
-    'Pacific/Auckland': 720,
-    'Pacific/Fiji': 720,
-    'Pacific/Guam': 600,
-  };
+  static const _ianaOffsetMinutes = kIanaOffsetMinutes;
 
   String _formatMemberSince(String? isoDate) {
     if (isoDate == null) return 'Unknown';
@@ -313,7 +224,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
     // the profile sheet that the avatar overlaps. Uses the user's
     // background_color when set (validated server-side as #RRGGBB);
     // otherwise reads as transparent and looks like a normal sheet.
-    final bannerColor = _parseHexColor(_backgroundColor);
+    final bannerColor = parseHexColor(_backgroundColor);
 
     return SingleChildScrollView(
       padding: EdgeInsets.zero,
@@ -367,12 +278,6 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
 
   /// Parse a #RRGGBB hex string into a Color, returning null on any
   /// parse failure so a bad backend value can't crash the sheet.
-  Color? _parseHexColor(String? hex) {
-    if (hex == null || hex.length != 7 || !hex.startsWith('#')) return null;
-    final v = int.tryParse(hex.substring(1), radix: 16);
-    return v == null ? null : Color(0xFF000000 | v);
-  }
-
   /// Display name + username + pronouns header section.
   Widget _buildNameSection() {
     return Column(
@@ -637,11 +542,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
                 child: FilledButton.icon(
                   onPressed: _isStartingDm ? null : _messageDm,
                   icon: _isStartingDm
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
+                      ? const InlineLoadingSpinner(size: 16)
                       : const Icon(Icons.chat_bubble_outline, size: 18),
                   label: const Text('Message'),
                   style: FilledButton.styleFrom(

@@ -8,8 +8,9 @@ use serde_json::Value;
 /// Helper: register a user, log in, and return (token, user_id).
 async fn register_and_login(client: &Client, base: &str, prefix: &str) -> (String, String) {
     let username = common::unique_username(prefix);
-    common::register(client, base, &username, "password123").await;
-    common::login(client, base, &username, "password123").await
+    let password = common::unique_password();
+    common::register(client, base, &username, &password).await;
+    common::login(client, base, &username, &password).await
 }
 
 /// Helper: create a group and return (group_id, token).
@@ -63,7 +64,7 @@ async fn list_channels_returns_default_channels() {
 }
 
 #[tokio::test]
-async fn list_channels_non_member_returns_401() {
+async fn list_channels_non_member_returns_403() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let (group_id, _) = setup_group(&client, &base, "ListChanPriv").await;
@@ -76,7 +77,7 @@ async fn list_channels_non_member_returns_401() {
         .await
         .unwrap();
 
-    assert_eq!(resp.status().as_u16(), 401);
+    assert_eq!(resp.status().as_u16(), 403);
 }
 
 // ---------------------------------------------------------------------------
@@ -181,7 +182,7 @@ async fn regular_member_cannot_create_channel() {
         .await
         .unwrap();
 
-    assert_eq!(resp.status().as_u16(), 401);
+    assert_eq!(resp.status().as_u16(), 403);
 }
 
 #[tokio::test]
@@ -299,4 +300,60 @@ async fn channel_name_is_normalised_to_lowercase_hyphenated() {
     assert_eq!(resp.status().as_u16(), 201);
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["name"], "my-cool-channel");
+}
+
+// ---------------------------------------------------------------------------
+// Divider channels (context-menu "Create divider")
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn create_divider_channel_succeeds() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (group_id, token) = setup_group(&client, &base, "DividerGroup").await;
+
+    let resp = client
+        .post(format!("{base}/api/groups/{group_id}/channels"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({ "name": "divider-1", "kind": "divider" }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status().as_u16(), 201);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["kind"], "divider");
+}
+
+#[tokio::test]
+async fn voice_join_on_divider_is_rejected() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (group_id, token) = setup_group(&client, &base, "DividerVoiceGroup").await;
+
+    let create = client
+        .post(format!("{base}/api/groups/{group_id}/channels"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({ "name": "divider-x", "kind": "divider" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(create.status().as_u16(), 201);
+    let divider: Value = create.json().await.unwrap();
+    let divider_id = divider["id"].as_str().unwrap();
+
+    // A divider carries no voice session; joining it as voice must fail.
+    let resp = client
+        .post(format!(
+            "{base}/api/groups/{group_id}/channels/{divider_id}/voice/join"
+        ))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+    assert!(
+        resp.status().as_u16() >= 400,
+        "voice-join on a divider should be rejected, got {}",
+        resp.status()
+    );
 }

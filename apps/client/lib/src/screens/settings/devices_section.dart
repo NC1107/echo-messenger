@@ -14,7 +14,9 @@ import '../../providers/server_url_provider.dart';
 import '../../providers/websocket_provider.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
+import '../../utils/time_utils.dart';
 import '../../widgets/confirm_dialog.dart';
+import '../../widgets/loading_indicator.dart';
 import '../../widgets/settings_panel_scaffold.dart';
 
 class DevicesSection extends ConsumerStatefulWidget {
@@ -26,6 +28,11 @@ class DevicesSection extends ConsumerStatefulWidget {
 
 /// Editable device names accept 1..=40 chars (matches server validation).
 const int _kDeviceNameMaxLength = 40;
+
+// Repeated string literals hoisted to satisfy S1192 (no literal 3+ times).
+const _kContentTypeHeader = 'Content-Type';
+const _kJsonContentType = 'application/json';
+const _kNetworkErrorMsg = 'Network error';
 
 /// Visible-for-testing: client-side mirror of the server's `validate_device_name`.
 /// Returns null on success or a human-readable error message; the UI surfaces
@@ -104,7 +111,7 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
               Uri.parse('$serverUrl/api/keys/devices/$userId'),
               headers: {
                 'Authorization': 'Bearer $token',
-                'Content-Type': 'application/json',
+                _kContentTypeHeader: _kJsonContentType,
               },
             ),
           );
@@ -194,7 +201,7 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
       }
     } catch (e) {
       if (mounted) {
-        ToastService.show(context, 'Network error', type: ToastType.error);
+        ToastService.show(context, _kNetworkErrorMsg, type: ToastType.error);
       }
     }
   }
@@ -220,7 +227,7 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
               Uri.parse('$serverUrl/api/keys/devices/revoke-others'),
               headers: {
                 'Authorization': 'Bearer $token',
-                'Content-Type': 'application/json',
+                _kContentTypeHeader: _kJsonContentType,
               },
               body: jsonEncode({'current_device_id': currentDeviceId}),
             ),
@@ -249,7 +256,7 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
       }
     } catch (e) {
       if (mounted) {
-        ToastService.show(context, 'Network error', type: ToastType.error);
+        ToastService.show(context, _kNetworkErrorMsg, type: ToastType.error);
       }
     }
   }
@@ -292,7 +299,7 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
               Uri.parse('$serverUrl/api/keys/device/${device.deviceId}'),
               headers: {
                 'Authorization': 'Bearer $token',
-                'Content-Type': 'application/json',
+                _kContentTypeHeader: _kJsonContentType,
               },
               body: jsonEncode({'device_name': normalized}),
             ),
@@ -317,7 +324,7 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
     } catch (_) {
       _revertRename(device.deviceId, previousName);
       if (mounted) {
-        ToastService.show(context, 'Network error', type: ToastType.error);
+        ToastService.show(context, _kNetworkErrorMsg, type: ToastType.error);
       }
     }
   }
@@ -342,7 +349,7 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
     if (_loading) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 48),
-        child: Center(child: CircularProgressIndicator()),
+        child: CenteredLoadingIndicator(),
       );
     }
     if (_error != null) {
@@ -634,19 +641,7 @@ class _Device {
 String _formatLastSeen(String? isoString) {
   if (isoString == null) return 'Never';
   try {
-    final dt = DateTime.parse(isoString).toLocal();
-    final diff = DateTime.now().difference(dt);
-    if (diff.inMinutes < 2) return 'just now';
-    if (diff.inMinutes < 60) {
-      final m = diff.inMinutes;
-      return '$m ${m == 1 ? 'minute' : 'minutes'} ago';
-    }
-    if (diff.inHours < 24) {
-      final h = diff.inHours;
-      return '$h ${h == 1 ? 'hour' : 'hours'} ago';
-    }
-    final d = diff.inDays;
-    return '$d ${d == 1 ? 'day' : 'days'} ago';
+    return formatRelativeTimeLong(DateTime.parse(isoString).toLocal());
   } catch (_) {
     return isoString;
   }

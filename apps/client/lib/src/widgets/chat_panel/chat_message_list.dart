@@ -8,6 +8,8 @@ import '../../models/conversation.dart';
 import '../../providers/accessibility_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../theme/echo_theme.dart';
+import '../loading_indicator.dart';
+import '../message/message_actions.dart';
 import '../message_item.dart';
 import '../skeleton_loader.dart';
 import 'date_divider.dart';
@@ -209,33 +211,38 @@ class ChatMessageList extends ConsumerWidget {
             hideUndecryptable: ref
                 .watch(accessibilityProvider)
                 .hideUndecryptable,
-            onReactionTap: onReactionTap,
-            onReactionSelect: (message, emoji) {
-              final alreadyReacted = message.reactions.any(
-                (r) => r.emoji == emoji && r.userId == myUserId,
-              );
-              onToggleReaction(message, emoji, alreadyReacted);
-            },
-            onMoreReactions: onMoreReactions,
-            onDelete: msg.status == MessageStatus.failed
-                ? onDeleteFailed
-                : onConfirmDelete,
-            onRetry: msg.status == MessageStatus.failed ? onRetryMessage : null,
-            // #582: suppress edit on encrypted convs — would broadcast plaintext until per-device edit fanout ships.
-            onEdit: conv.isEncrypted ? null : onEnterEditMode,
-            onReply: onReply,
-            onReplyInThread: onReplyInThread,
-            onViewThread: onOpenThread,
-            onPin: onPin,
-            onUnpin: onUnpin,
-            onForward: onForward,
             isSaved: savedIds.contains(msg.id) || isMessageSaved(msg.id),
-            onSave: onSaveMessage,
-            onUnsave: onUnsaveMessage,
-            onTapReplyQuote: onJumpToReplyQuote,
-            onAvatarTap: onAvatarTap,
-            onVerifyIdentity: onVerifyIdentity,
-            onImageTap: onImageTap,
+            actions: MessageActions(
+              onReactionTap: onReactionTap,
+              onReactionSelect: (message, emoji) {
+                final alreadyReacted = message.reactions.any(
+                  (r) => r.emoji == emoji && r.userId == myUserId,
+                );
+                onToggleReaction(message, emoji, alreadyReacted);
+              },
+              onMoreReactions: onMoreReactions,
+              onDelete: msg.status == MessageStatus.failed
+                  ? onDeleteFailed
+                  : onConfirmDelete,
+              onRetry: msg.status == MessageStatus.failed
+                  ? onRetryMessage
+                  : null,
+              // #582: suppress edit on encrypted convs — would broadcast
+              // plaintext until per-device edit fanout ships.
+              onEdit: conv.isEncrypted ? null : onEnterEditMode,
+              onReply: onReply,
+              onReplyInThread: onReplyInThread,
+              onViewThread: onOpenThread,
+              onPin: onPin,
+              onUnpin: onUnpin,
+              onForward: onForward,
+              onSave: onSaveMessage,
+              onUnsave: onUnsaveMessage,
+              onTapReplyQuote: onJumpToReplyQuote,
+              onAvatarTap: onAvatarTap,
+              onVerifyIdentity: onVerifyIdentity,
+              onImageTap: onImageTap,
+            ),
           ),
         ),
       ],
@@ -264,13 +271,7 @@ class ChatMessageList extends ConsumerWidget {
               return SizedBox(
                 height: 48,
                 child: isLoadingHistory
-                    ? const Center(
-                        child: SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      )
+                    ? const Center(child: InlineLoadingSpinner(size: 16))
                     : const SizedBox.shrink(),
               );
             }

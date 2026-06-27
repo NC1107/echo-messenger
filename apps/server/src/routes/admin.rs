@@ -395,3 +395,31 @@ pub async fn promote_user(
         is_admin,
     }))
 }
+
+// ---------------------------------------------------------------------------
+// Feedback triage
+// ---------------------------------------------------------------------------
+
+/// `DELETE /api/admin/feedback/{id}` — permanently remove a feedback row.
+///
+/// The operator inbox has no archive concept; once a report is read and
+/// actioned (or is noise) the operator clears it so the list doesn't grow
+/// unbounded. Hard delete keeps the table tidy and the `feedback_open`
+/// stat honest. 404 on an unknown id; 204 on success.
+pub async fn delete_feedback(
+    State(state): State<Arc<AppState>>,
+    _admin: AdminUser,
+    Path(feedback_id): Path<uuid::Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let result = sqlx::query("DELETE FROM feedback WHERE id = $1")
+        .bind(feedback_id)
+        .execute(&state.pool)
+        .await
+        .db_ctx("admin/delete_feedback")?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::not_found("Feedback not found"));
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}

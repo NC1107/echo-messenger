@@ -241,7 +241,11 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
       'audio': 'Voice message',
     };
     final icon = icons[kind] ?? '';
-    return caption.isEmpty ? '$icon ${fallbacks[kind]!}' : '$icon $caption';
+    // Defensive: match the `icons[kind] ?? ''` style above so a future regex
+    // `kind` not present in this map degrades to a generic label, never throws.
+    return caption.isEmpty
+        ? '$icon ${fallbacks[kind] ?? 'Attachment'}'
+        : '$icon $caption';
   }
 
   String? _prependSenderLabel(String? snippet, Conversation conv) {

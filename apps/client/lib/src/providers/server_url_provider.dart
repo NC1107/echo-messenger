@@ -18,6 +18,12 @@ part 'server_url_provider.g.dart';
 /// Self-hosters override via the auth-screen server picker as before.
 const defaultServerUrl = 'https://us-east.echo-messenger.us';
 
+/// Pre-migration apex (#1063). After Phase 2 the apex became the marketing
+/// site and 405s every `/api/*` call, so any install still pinned to it is
+/// silently locked out of login/register. [ServerUrlNotifier.load] repoints it
+/// to [defaultServerUrl] on launch so those installs self-heal.
+const _legacyApexUrl = 'https://echo-messenger.us';
+
 /// SharedPreferences keys.
 const _prefsKeyServerUrl = 'echo_server_url';
 const _prefsKeyKnownServers = 'echo_known_servers';
@@ -171,21 +177,28 @@ class ServerUrlNotifier extends _$ServerUrlNotifier {
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
     final stored = prefs.getString(_prefsKeyServerUrl);
-    final url = (stored != null && stored.isNotEmpty)
-        ? stored
-        : defaultServerUrl;
+    var url = (stored != null && stored.isNotEmpty) ? stored : defaultServerUrl;
+
+    // One-time repoint off the dead apex (#1063): it now serves the marketing
+    // site and 405s the API, so anyone pinned to it can't log in. Move them to
+    // the regional alias and persist so the change sticks.
+    if (url == _legacyApexUrl) {
+      url = defaultServerUrl;
+      await prefs.setString(_prefsKeyServerUrl, url);
+    }
     state = url;
 
-    // Update the companion known-servers provider.
-    final servers = KnownServersNotifier.readKnownServers(prefs);
-    final migrated = _maybeMigrate(prefs, url, servers);
+    // Update the companion known-servers provider, repointing any apex tile.
+    final original = KnownServersNotifier.readKnownServers(prefs);
+    final repointed = _repointLegacyApex(original);
+    final migrated = _maybeMigrate(prefs, url, repointed);
     final notifier = ref.read(knownServersProvider.notifier);
-    if (!_listEquals(servers, migrated)) {
+    if (!_listEquals(original, migrated)) {
       await notifier.setAll(migrated);
     } else {
       // Still publish the current list so widgets can read it on first
       // build without waiting for the next mutation.
-      notifier.publish(servers);
+      notifier.publish(migrated);
     }
   }
 
@@ -375,6 +388,39 @@ class ServerUrlNotifier extends _$ServerUrlNotifier {
       activeUrl,
       lastUsername: prefs.getString(_legacyKeyUsername),
     );
+  }
+
+  /// Rewrite any known-server entry pinned to the dead apex to
+  /// [defaultServerUrl], deduping into an existing alias entry (keeping the
+  /// newer `lastSeen` and any captured `lastUsername`) and preserving order.
+  static List<KnownServer> _repointLegacyApex(List<KnownServer> servers) {
+    if (!servers.any((s) => s.url == _legacyApexUrl)) return servers;
+    final merged = <String, KnownServer>{};
+    for (final s in servers) {
+      final mapped = s.url == _legacyApexUrl
+          ? s.copyWith(url: defaultServerUrl)
+          : s;
+      final existing = merged[mapped.url];
+      if (existing == null) {
+        merged[mapped.url] = mapped;
+      } else {
+        final newer = mapped.lastSeen.isAfter(existing.lastSeen)
+            ? mapped
+            : existing;
+        merged[mapped.url] = newer.copyWith(
+          lastUsername: existing.lastUsername ?? mapped.lastUsername,
+          serverId: existing.serverId ?? mapped.serverId,
+        );
+      }
+    }
+    // Preserve first-seen ordering by the post-rewrite URL.
+    final seen = <String>{};
+    final out = <KnownServer>[];
+    for (final s in servers) {
+      final url = s.url == _legacyApexUrl ? defaultServerUrl : s.url;
+      if (seen.add(url)) out.add(merged[url]!);
+    }
+    return out;
   }
 
   static bool _listEquals(List<KnownServer> a, List<KnownServer> b) {

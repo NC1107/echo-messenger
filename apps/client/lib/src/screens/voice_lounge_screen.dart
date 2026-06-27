@@ -719,7 +719,6 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   /// `dart:io`'s [File] is unavailable).  Mobile/desktop is the supported
   /// surface for MVP.
   Future<void> _pickBackground() async {
-    String stage = 'open picker';
     try {
       final result = await FilePicker.pickFiles(
         type: FileType.image,
@@ -730,9 +729,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
         // User dismissed — not an error.
         return;
       }
-      final picked = result.files.single;
-      stage = 'read picked path';
-      final srcPath = picked.path;
+      final srcPath = result.files.single.path;
       if (srcPath == null || srcPath.isEmpty) {
         if (mounted) {
           ToastService.show(
@@ -744,41 +741,8 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
         return;
       }
 
-      stage = 'copy to documents dir';
-      String resolved = srcPath;
-      if (!kIsWeb) {
-        try {
-          final docs = await getApplicationDocumentsDirectory();
-          final ext = p.extension(srcPath).isNotEmpty
-              ? p.extension(srcPath)
-              : '.img';
-          final destName =
-              'voice_lounge_bg_${DateTime.now().millisecondsSinceEpoch}$ext';
-          final destPath = p.join(docs.path, destName);
-          await File(srcPath).copy(destPath);
-          resolved = destPath;
-        } catch (e) {
-          debugPrint('[VoiceLoungeScreen] copy background failed: $e');
-          // Fall back to the original path; it may still load if the source
-          // file is in a stable location (e.g. the user's own ~/Pictures).
-          stage = 'fall back to source path';
-        }
-      }
-
-      // Final guard: confirm the resolved path actually points at a readable
-      // file before persisting. Without this we silently saved a dead path
-      // and the background quietly didn't update on next render.
-      if (!kIsWeb && !File(resolved).existsSync()) {
-        if (mounted) {
-          ToastService.show(
-            context,
-            'Picked file isn’t accessible (sandbox path). Try saving the '
-            'image to your Documents folder and picking it again.',
-            type: ToastType.error,
-          );
-        }
-        return;
-      }
+      final resolved = await _resolveBackgroundFile(srcPath);
+      if (resolved == null) return; // unresolvable — already toasted
 
       await ref
           .read(voiceLoungeBackgroundProvider.notifier)
@@ -792,15 +756,56 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
         );
       }
     } catch (e) {
-      debugPrint('[VoiceLoungeScreen] pick background failed at $stage: $e');
+      debugPrint('[VoiceLoungeScreen] pick background failed: $e');
       if (mounted) {
         ToastService.show(
           context,
-          'Couldn’t set background ($stage): $e',
+          'Couldn’t set background: $e',
           type: ToastType.error,
         );
       }
     }
+  }
+
+  /// Copy the picked image into the app documents dir (so a transient sandbox
+  /// source path survives) and return a readable path — or null, after showing
+  /// a toast, when the file can't be accessed. Extracted from [_pickBackground]
+  /// to keep its cognitive complexity in budget (S3776).
+  Future<String?> _resolveBackgroundFile(String srcPath) async {
+    var resolved = srcPath;
+    if (!kIsWeb) {
+      try {
+        final docs = await getApplicationDocumentsDirectory();
+        final ext = p.extension(srcPath).isNotEmpty
+            ? p.extension(srcPath)
+            : '.img';
+        final destName =
+            'voice_lounge_bg_${DateTime.now().millisecondsSinceEpoch}$ext';
+        final destPath = p.join(docs.path, destName);
+        await File(srcPath).copy(destPath);
+        resolved = destPath;
+      } catch (e) {
+        // Fall back to the original path; it may still load if the source file
+        // is in a stable location (e.g. the user's own ~/Pictures).
+        debugPrint('[VoiceLoungeScreen] copy background failed: $e');
+      }
+    }
+
+    // Confirm the resolved path points at a readable file before persisting —
+    // otherwise we silently save a dead path and the background quietly fails
+    // to update on next render.
+    if (!kIsWeb && !File(resolved).existsSync()) {
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Picked file isn’t accessible (sandbox path). Try saving the '
+          'image to your Documents folder and picking it again.',
+          type: ToastType.error,
+        );
+      }
+      return null;
+    }
+    return resolved;
   }
 
   Future<void> _clearBackground() async {
@@ -1293,22 +1298,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
         // cutout. When not fullscreen, sit below LoungeHeader.
         top: isFull ? (MediaQuery.viewPaddingOf(context).top + 8) : 60,
         right: 12,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildFullscreenButton(context),
-            const SizedBox(width: 8),
-            if (_viewportTransformed && !_spotlightMode) ...[
-              _buildResetViewButton(context),
-              const SizedBox(width: 8),
-            ],
-            if (!_spotlightMode) ...[
-              _buildClearBoardButton(context),
-              const SizedBox(width: 8),
-            ],
-            _buildBackgroundPickerButton(context),
-          ],
-        ),
+        child: _buildCornerControls(context),
       ),
       if (authorityPill != null)
         Positioned(
@@ -1318,24 +1308,67 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
           child: Center(child: authorityPill),
         ),
       if (!_spotlightMode)
-        Positioned(
-          top: authorityPill != null
-              ? (isFull ? (MediaQuery.viewPaddingOf(context).top + 54) : 150)
-              : (isFull ? (MediaQuery.viewPaddingOf(context).top + 8) : 108),
-          left: 0,
-          right: 0,
-          child: Center(
-            child: IgnorePointer(
-              ignoring: ref.watch(
-                canvasProvider.select(
-                  (s) => s.attachState != CanvasAttachState.failed,
-                ),
-              ),
-              child: const CanvasLoadingBanner(),
-            ),
-          ),
+        _buildCanvasBannerOverlay(
+          context,
+          isFull: isFull,
+          hasAuthorityPill: authorityPill != null,
         ),
     ]);
+  }
+
+  /// Top-right corner control cluster (fullscreen, reset-view, clear-board,
+  /// background picker). Extracted from [_buildPortraitLayout] to keep that
+  /// method's cognitive complexity in budget (S3776).
+  Widget _buildCornerControls(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildFullscreenButton(context),
+        const SizedBox(width: 8),
+        if (_viewportTransformed && !_spotlightMode) ...[
+          _buildResetViewButton(context),
+          const SizedBox(width: 8),
+        ],
+        if (!_spotlightMode) ...[
+          _buildClearBoardButton(context),
+          const SizedBox(width: 8),
+        ],
+        _buildBackgroundPickerButton(context),
+      ],
+    );
+  }
+
+  /// Centered canvas loading/failed banner, positioned below the header (and
+  /// below the authority pill when present). The vertical offset depends on
+  /// fullscreen + whether the authority pill is showing; computed here with
+  /// plain branches to avoid a nested ternary (S3358).
+  Widget _buildCanvasBannerOverlay(
+    BuildContext context, {
+    required bool isFull,
+    required bool hasAuthorityPill,
+  }) {
+    final notchTop = MediaQuery.viewPaddingOf(context).top;
+    final double top;
+    if (hasAuthorityPill) {
+      top = isFull ? (notchTop + 54) : 150;
+    } else {
+      top = isFull ? (notchTop + 8) : 108;
+    }
+    return Positioned(
+      top: top,
+      left: 0,
+      right: 0,
+      child: Center(
+        child: IgnorePointer(
+          ignoring: ref.watch(
+            canvasProvider.select(
+              (s) => s.attachState != CanvasAttachState.failed,
+            ),
+          ),
+          child: const CanvasLoadingBanner(),
+        ),
+      ),
+    );
   }
 
   /// Build all dock submenu follower widgets for the current [_activeSubmenu].
@@ -1610,6 +1643,35 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     return next;
   }
 
+  /// Toggle a dock submenu open/closed. Extracted from [build]'s inline
+  /// [FloatingDock] callback to keep that method's cognitive complexity in
+  /// budget (S3776).
+  void _handleToggleSubmenu(DockSubmenu submenu) {
+    setState(() {
+      _activeSubmenu = _activeSubmenu == submenu ? null : submenu;
+    });
+  }
+
+  /// Flip between spotlight and canvas view. Dropping into spotlight clears any
+  /// active tool/submenu; returning to canvas re-centers the viewport on the
+  /// next frame (the gesture widget mounts behind the `_spotlightMode` guard).
+  void _handleToggleSpotlight() {
+    final notifier = ref.read(voiceLoungeViewModeProvider.notifier);
+    final next = _spotlightMode
+        ? VoiceLoungeView.canvas
+        : VoiceLoungeView.spotlight;
+    notifier.state = next;
+    if (next == VoiceLoungeView.spotlight) {
+      ref.read(canvasProvider.notifier).setTool(CanvasTool.none);
+      setState(() => _activeSubmenu = null);
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _resetViewport();
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final voiceLk = ref.watch(livekitVoiceProvider);
@@ -1660,38 +1722,13 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       isDrawing: isDrawing,
       onToggleDrawing: _toggleDrawingMode,
       activeSubmenu: _activeSubmenu,
-      onToggleSubmenu: (submenu) {
-        setState(() {
-          _activeSubmenu = _activeSubmenu == submenu ? null : submenu;
-        });
-      },
+      onToggleSubmenu: _handleToggleSubmenu,
       micLayerLink: _micLayerLink,
       cameraLayerLink: _cameraLayerLink,
       screenShareLayerLink: _screenShareLayerLink,
       drawingToolsLayerLink: _drawingToolsLayerLink,
       spotlightMode: _spotlightMode,
-      onToggleSpotlight: () {
-        final notifier = ref.read(voiceLoungeViewModeProvider.notifier);
-        final next = _spotlightMode
-            ? VoiceLoungeView.canvas
-            : VoiceLoungeView.spotlight;
-        notifier.state = next;
-        if (next == VoiceLoungeView.spotlight) {
-          // Drop the tool selection when the user flips to spotlight so
-          // they don't re-enter the canvas with a stale pen active.
-          ref.read(canvasProvider.notifier).setTool(CanvasTool.none);
-          setState(() => _activeSubmenu = null);
-        } else {
-          // Re-center the canvas on the home pose when switching INTO canvas
-          // mode. The gesture widget mounts on the NEXT frame (it's behind the
-          // _spotlightMode guard), so defer via addPostFrameCallback so that
-          // resetToTransform finds the key populated.
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            _resetViewport();
-          });
-        }
-      },
+      onToggleSpotlight: _handleToggleSpotlight,
     );
 
     // Figma-style zoom + pan + draw over a finite 4096×4096 surface,

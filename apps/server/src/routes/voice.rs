@@ -12,6 +12,17 @@ use crate::db;
 use crate::error::{AppError, DbErrCtx};
 use crate::routes::AppState;
 
+/// Lifetime of a minted LiveKit access token, in seconds.
+///
+/// Deliberately short (5 minutes). The token grants room-join + publish, and
+/// the server has no LiveKit management client wired (see `evict_from_voice`
+/// below), so a participant who is kicked or banned from the conversation can
+/// keep an *already-minted* token until it expires. A short window caps that
+/// window of access at 5 minutes instead of an hour (VL-14 / VL-24). The
+/// LiveKit client SDK refreshes the grant transparently before expiry for
+/// participants who are still members, so legitimate long calls are unaffected.
+const TOKEN_TTL_SECS: i64 = 5 * 60;
+
 #[derive(Debug, Deserialize)]
 pub struct TokenRequest {
     pub identity: Option<String>,
@@ -120,7 +131,7 @@ pub async fn generate_token(
         .await
         .db_ctx("checking voice token membership")?;
     if !is_member {
-        return Err(AppError::bad_request("Not a member of this conversation"));
+        return Err(AppError::forbidden("Not a member of this conversation"));
     }
 
     // Use the conversation UUID (canonical, hyphenated) as the LiveKit room
@@ -145,7 +156,7 @@ pub async fn generate_token(
         iss: api_key,
         sub: identity,
         iat: now,
-        exp: now + 3600, // 1 hour
+        exp: now + TOKEN_TTL_SECS,
         video: VideoGrant {
             room,
             room_join: true,
@@ -172,6 +183,36 @@ pub async fn generate_token(
 
     state.voice_tokens_issued.inc();
     Ok(Json(TokenResponse { token, url }))
+}
+
+/// Forcibly disconnect a participant from the LiveKit SFU (VL-24).
+///
+/// DEFERRED — needs a LiveKit RoomService management client that is not yet
+/// wired into this server. Today the server only *mints* tokens (raw
+/// `jsonwebtoken` JWTs); it never calls back into LiveKit, so there is no way
+/// to actively evict a participant who is already connected to the SFU. The
+/// short [`TOKEN_TTL_SECS`] window is the mitigation in the meantime: a kicked
+/// user keeps SFU access for at most that window because their next token
+/// refresh fails the membership check in [`generate_token`].
+///
+/// To complete this:
+///   1. Add the `livekit-api` crate (`RoomServiceClient`) to
+///      `apps/server/Cargo.toml`.
+///   2. Construct the client from `LIVEKIT_URL` + `LIVEKIT_API_KEY` +
+///      `LIVEKIT_API_SECRET` (already read here) and stash it on `AppState`.
+///   3. Call `room_service.remove_participant(room, identity)` for every active
+///      `voice_sessions` row of the removed user. Because the LiveKit identity
+///      is `username#nonce` (not stable), the caller must look up the live
+///      participant identities from the SFU (`list_participants`) and match by
+///      the `username#` prefix, since the server does not persist the nonce.
+///
+/// Integration point: call this from
+/// `routes::groups::members::after_member_loss` (and `lifecycle::leave_group`),
+/// right after [`db::channels::leave_all_user_voice_sessions`] clears the
+/// server-side presence rows.
+#[allow(dead_code)]
+async fn evict_from_voice_deferred() {
+    // Intentionally unimplemented — see doc comment above.
 }
 
 #[cfg(test)]
@@ -205,6 +246,53 @@ mod tests {
                 "Expected invalid: {name}"
             );
         }
+    }
+
+    #[test]
+    fn token_ttl_is_short_window() {
+        // VL-14 / VL-24: a kicked user's already-minted token must self-expire
+        // quickly. Guard against an accidental regression back to the 1h grant.
+        // Kept <= 10 min so a removed member loses SFU access promptly.
+        assert_eq!(TOKEN_TTL_SECS, 300, "token TTL should be 5 minutes");
+    }
+
+    #[test]
+    fn minted_token_carries_short_expiry() {
+        // Mirror the mint path and verify the encoded JWT's exp/iat span equals
+        // the configured TTL (so a decoded token expires within the window).
+        let now = Utc::now().timestamp();
+        let claims = LiveKitClaims {
+            iss: "test-key".into(),
+            sub: "user#abcdef12".into(),
+            iat: now,
+            exp: now + TOKEN_TTL_SECS,
+            video: VideoGrant {
+                room: "00000000-0000-0000-0000-000000000000".into(),
+                room_join: true,
+                can_publish: true,
+                can_subscribe: true,
+                can_update_own_metadata: true,
+            },
+        };
+        let secret = "test-secret";
+        let token = encode(
+            &Header::default(),
+            &claims,
+            &EncodingKey::from_secret(secret.as_bytes()),
+        )
+        .unwrap();
+
+        let mut validation = jsonwebtoken::Validation::default();
+        validation.validate_exp = false;
+        let decoded = jsonwebtoken::decode::<serde_json::Value>(
+            &token,
+            &jsonwebtoken::DecodingKey::from_secret(secret.as_bytes()),
+            &validation,
+        )
+        .unwrap();
+        let exp = decoded.claims["exp"].as_i64().unwrap();
+        let iat = decoded.claims["iat"].as_i64().unwrap();
+        assert_eq!(exp - iat, TOKEN_TTL_SECS);
     }
 
     #[test]

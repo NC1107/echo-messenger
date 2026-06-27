@@ -21,8 +21,10 @@ import '../../providers/crypto_provider.dart';
 import '../../providers/websocket_provider.dart';
 import '../../services/accounts_storage.dart';
 import '../../theme/echo_theme.dart';
+import '../../utils/time_utils.dart';
 import '../../widgets/account_list_row.dart';
 import '../../widgets/echo_logo_icon.dart';
+import '../../widgets/loading_indicator.dart';
 
 const String _kRouteLogin = '/login';
 const String _kRouteHome = '/home';
@@ -65,7 +67,7 @@ class _AccountPickerScreenState extends ConsumerState<AccountPickerScreen> {
           future: _snapshotFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
+              return const CenteredLoadingIndicator();
             }
             final data =
                 snapshot.data ??
@@ -141,11 +143,7 @@ class _AccountPickerScreenState extends ConsumerState<AccountPickerScreen> {
 
   Widget? _trailingFor(StoredAccount account) {
     if (_busyAccountId != account.id) return null;
-    return const SizedBox(
-      width: 20,
-      height: 20,
-      child: CircularProgressIndicator(strokeWidth: 2),
-    );
+    return const InlineLoadingSpinner(size: 20);
   }
 
   String _subtitleFor(StoredAccount account) {
@@ -206,27 +204,7 @@ class _AccountPickerScreenState extends ConsumerState<AccountPickerScreen> {
   /// `lastUsed` field shipped).
   String? _formatLastUsed(DateTime when) {
     if (when.millisecondsSinceEpoch <= 0) return null;
-    final diff = DateTime.now().difference(when);
-    if (diff.isNegative) return 'just now';
-    if (diff.inMinutes < 1) return 'just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    if (diff.inDays < 7) return '${diff.inDays}d ago';
-    final months = const [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${months[when.month - 1]} ${when.day}';
+    return formatRelativeTimeShort(when, older: formatShortDate);
   }
 }
 

@@ -69,7 +69,8 @@ pub struct GroupKeyResponse {
     pub conversation_id: Uuid,
     pub key_version: i32,
     pub encrypted_key: String,
-    pub created_by: Uuid,
+    /// Null when the creating user has been deleted (FK SET NULL).
+    pub created_by: Option<Uuid>,
     pub created_at: String,
 }
 
@@ -182,11 +183,11 @@ async fn require_admin_or_above(
     let role_str = db::groups::get_member_role(&state.pool, group_id, user_id)
         .await
         .db_ctx("upload_group_key/get_role")?
-        .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
+        .ok_or_else(|| AppError::forbidden("Not a member of this group"))?;
 
     let role = Role::from_str_opt(&role_str).unwrap_or(Role::Member);
     if !role.is_admin_or_above() {
-        return Err(AppError::unauthorized(
+        return Err(AppError::forbidden(
             "Only admins and owners can upload group keys",
         ));
     }
@@ -351,7 +352,7 @@ pub async fn get_latest_group_key(
         .db_ctx("get_latest_group_key/is_member")?;
 
     if !is_member {
-        return Err(AppError::unauthorized("Not a member of this group"));
+        return Err(AppError::forbidden("Not a member of this group"));
     }
 
     // Try envelope-based lookup first (new E2E scheme)
@@ -397,7 +398,7 @@ pub async fn get_group_key_version(
         .db_ctx("get_group_key_version/is_member")?;
 
     if !is_member {
-        return Err(AppError::unauthorized("Not a member of this group"));
+        return Err(AppError::forbidden("Not a member of this group"));
     }
 
     // Try envelope-based lookup first
@@ -458,10 +459,10 @@ pub async fn list_encryption_activity(
     let role_str = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
         .await
         .db_ctx("list_encryption_activity/get_role")?
-        .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
+        .ok_or_else(|| AppError::forbidden("Not a member of this group"))?;
     let role = Role::from_str_opt(&role_str).unwrap_or(Role::Member);
     if !role.is_admin_or_above() {
-        return Err(AppError::unauthorized(
+        return Err(AppError::forbidden(
             "Only admins and owners can view encryption activity",
         ));
     }

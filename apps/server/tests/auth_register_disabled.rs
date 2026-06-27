@@ -18,11 +18,12 @@ static ENV_LOCK: Mutex<()> = Mutex::const_new(());
 async fn try_register(base: &str) -> u16 {
     let client = Client::new();
     let username = common::unique_username("reg_disabled");
+    let password = common::unique_password();
     client
         .post(format!("{base}/api/auth/register"))
         .json(&serde_json::json!({
             "username": username,
-            "password": "password123",
+            "password": password,
         }))
         .send()
         .await

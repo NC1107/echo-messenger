@@ -39,7 +39,7 @@ pub async fn get_canvas(
         .await
         .db_ctx("get_canvas/is_member")?;
     if !is_member {
-        return Err(AppError::unauthorized("Not a member of this group"));
+        return Err(AppError::forbidden("Not a member of this group"));
     }
 
     // Verify the channel belongs to this group.
@@ -79,7 +79,7 @@ pub async fn clear_canvas(
         .await
         .db_ctx("clear_canvas/is_member")?;
     if !is_member {
-        return Err(AppError::unauthorized("Not a member of this group"));
+        return Err(AppError::forbidden("Not a member of this group"));
     }
 
     let channel = db::channels::get_channel(&state.pool, channel_id)

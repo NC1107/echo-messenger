@@ -32,6 +32,33 @@ class _FailingLoginAuthNotifier extends AuthNotifier {
   Future<bool> tryAutoLogin() async => false;
 }
 
+/// Auth notifier whose `login` / `logout` can be driven from a test so we can
+/// reproduce the account-switch flow on a kept-alive login screen.
+class _SwitchableAuthNotifier extends AuthNotifier {
+  @override
+  AuthState build() => const AuthState();
+
+  @override
+  Future<void> login(String username, String password) async {
+    state = const AuthState(
+      isLoggedIn: true,
+      userId: 'user-a',
+      username: 'echoqa_alice',
+      token: 'tok',
+    );
+  }
+
+  @override
+  Future<void> register(String username, String password) async {}
+
+  @override
+  Future<bool> tryAutoLogin() async => false;
+
+  @override
+  Future<void> logout({String? serverUrl, bool forgetAccount = true}) async =>
+      state = const AuthState();
+}
+
 /// Builds a minimal [GoRouter] that renders [LoginScreen] on `/login` and
 /// captures navigation to `/register` and `/home`.
 GoRouter _buildRouter({required AuthState authState}) {
@@ -335,5 +362,61 @@ void main() {
       expect(fields[1].controller?.text, '');
       expect(find.text('Invalid username or password'), findsOneWidget);
     });
+
+    testWidgets(
+      'clears username on logout so a new account does not concatenate',
+      (tester) async {
+        // Regression: the login screen is kept alive (wantKeepAlive), so its
+        // TextEditingController survives logging in. After logout, the stale
+        // username remained and typing a new one appended -- producing
+        // "echoqa_aliceechoqa_bob" and a failed login.
+        final router = _buildRouter(authState: loggedOutAuthState);
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              authProvider.overrideWith(() => _SwitchableAuthNotifier()),
+              serverUrlOverride(),
+              accessibilityOverride(),
+            ],
+            child: MaterialApp.router(
+              theme: EchoTheme.darkTheme,
+              darkTheme: EchoTheme.darkTheme,
+              themeMode: ThemeMode.dark,
+              routerConfig: router,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final usernameField = find.widgetWithText(TextField, 'Username');
+
+        // User A types their name and logs in (controller now holds the name).
+        await tester.enterText(usernameField, 'echoqa_alice');
+        await tester.pump();
+        TextFormField usernameWidget() =>
+            tester.widgetList<TextFormField>(find.byType(TextFormField)).first;
+        expect(usernameWidget().controller?.text, 'echoqa_alice');
+
+        final container = ProviderScope.containerOf(
+          tester.element(find.byType(LoginScreen)),
+        );
+        await container.read(authProvider.notifier).login('echoqa_alice', 'pw');
+        await tester.pumpAndSettle();
+
+        // User A logs out; the kept-alive login screen rebuilds.
+        await container.read(authProvider.notifier).logout();
+        await tester.pumpAndSettle();
+
+        // The stale username must be gone -- not still sitting in the field.
+        expect(usernameWidget().controller?.text, '');
+
+        // User B types their name; it must be exactly that, not appended.
+        await tester.enterText(usernameField, 'echoqa_bob');
+        await tester.pump();
+        expect(usernameWidget().controller?.text, 'echoqa_bob');
+        expect(find.text('echoqa_aliceecho_bob'), findsNothing);
+      },
+    );
   });
 }

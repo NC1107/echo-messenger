@@ -171,6 +171,83 @@ void main() {
     });
   });
 
+  group('formatRelativeTimeShort', () {
+    DateTime ago(Duration d) => DateTime.now().subtract(d);
+
+    test('future timestamp reads as "just now", not a negative value', () {
+      expect(
+        formatRelativeTimeShort(DateTime.now().add(const Duration(hours: 1))),
+        'just now',
+      );
+    });
+
+    test('"just now" under a minute', () {
+      expect(
+        formatRelativeTimeShort(ago(const Duration(seconds: 30))),
+        'just now',
+      );
+    });
+
+    test('compact minutes / hours / days', () {
+      expect(
+        formatRelativeTimeShort(ago(const Duration(minutes: 5))),
+        '5m ago',
+      );
+      expect(formatRelativeTimeShort(ago(const Duration(hours: 3))), '3h ago');
+      expect(formatRelativeTimeShort(ago(const Duration(days: 2))), '2d ago');
+    });
+
+    test('weeks after 7 days when no older builder is given', () {
+      expect(formatRelativeTimeShort(ago(const Duration(days: 15))), '2w ago');
+    });
+
+    test('delegates to older builder past a week when supplied', () {
+      final result = formatRelativeTimeShort(
+        ago(const Duration(days: 15)),
+        older: formatShortDate,
+      );
+      expect(result, matches(RegExp(r'^[A-Z][a-z]{2} \d{1,2}')));
+    });
+  });
+
+  group('formatRelativeTimeLong', () {
+    DateTime ago(Duration d) => DateTime.now().subtract(d);
+
+    test('"just now" under a minute', () {
+      expect(
+        formatRelativeTimeLong(ago(const Duration(seconds: 10))),
+        'just now',
+      );
+    });
+
+    test('singular vs plural units', () {
+      expect(
+        formatRelativeTimeLong(ago(const Duration(minutes: 1))),
+        '1 minute ago',
+      );
+      expect(
+        formatRelativeTimeLong(ago(const Duration(minutes: 5))),
+        '5 minutes ago',
+      );
+      expect(
+        formatRelativeTimeLong(ago(const Duration(hours: 1))),
+        '1 hour ago',
+      );
+      expect(formatRelativeTimeLong(ago(const Duration(days: 1))), '1 day ago');
+    });
+
+    test('climbs to months and years', () {
+      expect(
+        formatRelativeTimeLong(ago(const Duration(days: 60))),
+        '2 months ago',
+      );
+      expect(
+        formatRelativeTimeLong(ago(const Duration(days: 400))),
+        '1 year ago',
+      );
+    });
+  });
+
   group('formatPeerStatusLabel (#503)', () {
     test('online returns "online" regardless of lastSeen', () {
       expect(formatPeerStatusLabel(isOnline: true, lastSeen: null), 'online');

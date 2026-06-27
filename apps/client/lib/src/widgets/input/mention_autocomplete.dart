@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/conversation.dart';
 import '../../theme/echo_theme.dart';
+import '../member_role.dart';
 
 /// Displays an autocomplete popup for @-mentioning conversation members.
 ///
@@ -222,12 +223,9 @@ class _MentionItem extends StatelessWidget {
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                if (member.role != null) ...[
-                  const SizedBox(width: 6),
-                  Text(
-                    member.role!,
-                    style: TextStyle(fontSize: 11, color: context.textMuted),
-                  ),
+                if (member.role == 'owner' || member.role == 'admin') ...[
+                  const SizedBox(width: 4),
+                  MemberRoleIcon(role: member.role, size: 12),
                 ],
               ],
             ),

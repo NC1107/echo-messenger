@@ -67,6 +67,10 @@ impl ConversationKind {
 pub enum ChannelKind {
     Text,
     Voice,
+    /// Pure visual separator in the channel bar — carries no messages and no
+    /// voice sessions. Created/deleted like any channel; the client renders
+    /// it as a thin vertical line.
+    Divider,
 }
 
 impl ChannelKind {
@@ -74,6 +78,7 @@ impl ChannelKind {
         match s {
             "text" => Some(Self::Text),
             "voice" => Some(Self::Voice),
+            "divider" => Some(Self::Divider),
             _ => None,
         }
     }
@@ -82,6 +87,7 @@ impl ChannelKind {
         match self {
             Self::Text => "text",
             Self::Voice => "voice",
+            Self::Divider => "divider",
         }
     }
 }

@@ -121,3 +121,29 @@ reference and a Dart re-implementation of the same crypto primitives,
 the FFI bridge that would have unified them never landed, and the most
 likely failure mode is silent spec drift between them. These vectors
 are the cheap, language-agnostic interlock that makes drift loud.
+
+## 1:1 vectors (`1to1/`)
+
+`1to1/` holds golden vectors for the **1:1 X3DH + Double-Ratchet** primitives
+(audit P2-2), consumed by `core/rust-core/tests/wire_compat_1to1.rs` and
+`apps/client/test/services/signal_1to1_wire_compat_test.dart`. Two kinds:
+
+- `kind: "x3dh_respond"` — Bob-side X3DH shared-secret derivation. All keys are
+  pinned as **private** bytes (Alice's publics are derived in-test on both
+  sides), so the only requirement is that X25519 + the DH ordering + the
+  `EchoSignalX3DH` HKDF label agree across impls. `respond` is deterministic
+  (`initiate` is not — it self-generates the ephemeral), so only `respond` is
+  pinned.
+- `kind: "message_header"` — the 40-byte normal-message header
+  `ratchet_pub(32) || prev_chain_length(4 LE) || message_number(4 LE)`.
+
+**Regenerating an `x3dh_respond` secret:** set `expected_shared_secret_b64` to
+the literal `"GENERATE"` and run
+`cargo test -p echo-core --test wire_compat_1to1 -- --nocapture`; the test
+prints the computed base64 secret instead of asserting. Bake it into the JSON,
+then re-run to assert. (`message_header` expected bytes are pure concatenation
+and need no generator.)
+
+**Deferred (tracked in `TECHNICAL_DEBT.md`):** a full end-to-end vector — a
+byte-frozen Initial-V2 `[0xEC,0x02]` frame + a follow-up normal-message wire,
+decrypted by both impls — needs a one-time frozen-bytes generation step.

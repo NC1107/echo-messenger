@@ -6,12 +6,14 @@ import 'package:go_router/go_router.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/server_url_provider.dart';
+import '../router/routes.dart';
 import '../theme/echo_theme.dart';
 import '../utils/version_utils.dart';
 import '../widgets/auth/auth_layout.dart';
 import '../widgets/auth/auth_scaffold_chrome.dart';
 import '../widgets/auth/server_subtitle.dart';
 import '../widgets/echo_logo_icon.dart';
+import '../widgets/loading_indicator.dart';
 import '../widgets/window_chrome.dart';
 
 /// Larger bottom padding in debug builds leaves room for the multi-line
@@ -112,7 +114,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
     // After successful registration, redirect to onboarding wizard
     if (mounted && ref.read(authProvider).isLoggedIn) {
-      context.go('/onboarding');
+      context.go(routeOnboarding);
     }
   }
 
@@ -173,6 +175,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   tagline: 'Sign up. Talk privately.',
                   formTitle: 'Create your account',
                   compactHeader: _buildHeader(context),
+                  // Wide layout drops compactHeader, so pass the server picker
+                  // separately or desktop users can't pick a server (#1063).
+                  serverControl: ServerSubtitle(serverUrl: serverUrl),
                   narrowPadding: const EdgeInsets.fromLTRB(
                     EchoSpacing.xl,
                     EchoSpacing.xl,
@@ -201,7 +206,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         _buildSubmitButton(authState),
                         const SizedBox(height: 12),
                         TextButton(
-                          onPressed: () => context.go('/login'),
+                          onPressed: () => context.go(routeLogin),
                           style: TextButton.styleFrom(
                             foregroundColor: context.textSecondary,
                           ),
@@ -391,11 +396,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         child: FilledButton(
           onPressed: authState.isLoading ? null : _register,
           child: authState.isLoading
-              ? const SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+              ? const InlineLoadingSpinner(size: 20)
               : const Text('Create account'),
         ),
       ),

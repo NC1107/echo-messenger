@@ -5,6 +5,7 @@ import 'package:perfect_freehand/perfect_freehand.dart';
 
 import '../../models/canvas_models.dart';
 import '../../services/canvas_perf.dart';
+import '../../utils/color_utils.dart';
 
 // ---------------------------------------------------------------------------
 // Active stroke snapshot
@@ -289,9 +290,51 @@ void paintStroke(Canvas c, Size size, CanvasStroke stroke) {
   }
   // Freehand (pen / highlighter / eraser): pipe through perfect_freehand
   // to get a tapered, velocity-thinned outline polygon; fill the polygon.
+  // VL-1d: the smoothed outline + filled Path are memoised per stroke instance
+  // (see [committedStrokePath]). Re-running getStroke() over every committed
+  // stroke each frame is exactly what turned a single remote partial tick into
+  // an O(strokes × points) re-tessellation storm — a remote peer drawing flips
+  // canvas.strokes to a fresh list ~30×/s, repainting this layer, and only the
+  // one mutated partial stroke actually changed. The cache keeps every static
+  // stroke's paint cost at a single drawPath.
+  final path = committedStrokePath(stroke);
+  if (path == null) return;
+  c.drawPath(path, paint..style = PaintingStyle.fill);
+}
+
+/// Cache entry slot: an [Expando] cannot store `null` to mean "computed and
+/// empty", so we wrap the (possibly-null) Path. A missing expando entry is a
+/// cold miss; a present entry with a null [path] is a memoised empty outline.
+@immutable
+class _CachedOutline {
+  final Path? path;
+  const _CachedOutline(this.path);
+}
+
+/// Per-stroke memoised outline cache, keyed on [CanvasStroke] **instance
+/// identity**. [CanvasStroke] is immutable, so a new instance is produced only
+/// when geometry actually changes (a remote partial's `copyWith` append, a
+/// colour/width edit, undo/redo rebuilding the list). Static committed strokes
+/// keep the same instance frame-to-frame, so they hit the cache and skip the
+/// perfect_freehand tessellation entirely. [Expando] auto-evicts when a stroke
+/// is garbage-collected (undo / clear / 2000-stroke cap), so no manual reaping.
+final Expando<_CachedOutline> _committedOutlineCache = Expando<_CachedOutline>(
+  'committedStrokeOutline',
+);
+
+/// Returns the memoised filled-outline [Path] for a committed freehand
+/// [stroke], computing it lazily on first paint and reusing it on every
+/// subsequent frame where the same stroke instance is rendered. Returns `null`
+/// when perfect_freehand yields an empty outline (degenerate input) — callers
+/// skip the draw in that case. Public for tests.
+@visibleForTesting
+Path? committedStrokePath(CanvasStroke stroke) {
+  final cached = _committedOutlineCache[stroke];
+  if (cached != null) return cached.path;
   final outline = _freehandOutline(stroke, isComplete: true);
-  if (outline.isEmpty) return;
-  c.drawPath(_outlineToPath(outline), paint..style = PaintingStyle.fill);
+  final path = outline.isEmpty ? null : _outlineToPath(outline);
+  _committedOutlineCache[stroke] = _CachedOutline(path);
+  return path;
 }
 
 /// Same as [paintStroke] but for the in-flight stroke: passes
@@ -441,18 +484,7 @@ Path _outlineToPath(List<Offset> outline) {
   return path;
 }
 
-ui.Color _parseColor(String hex) {
-  // VL-1: this runs inside CustomPainter.paint() on every stroke, including
-  // strokes authored by remote peers. A non-hex colour string (a future
-  // client, a CSS name, corruption) would make int.parse throw *inside*
-  // paint(), corrupting the frame for everyone. tryParse + fallback instead.
-  final s = hex.replaceFirst('#', '');
-  if (s.length == 8) {
-    final v = int.tryParse(s, radix: 16);
-    if (v != null) return ui.Color(v);
-  } else if (s.length == 6) {
-    final v = int.tryParse(s, radix: 16);
-    if (v != null) return ui.Color(0xFF000000 | v);
-  }
-  return const ui.Color(0xFFFFFFFF);
-}
+// VL-1: runs inside CustomPainter.paint() on every stroke (incl. remote peers'),
+// so it must never throw on a malformed colour. Delegates to the shared lenient
+// parser, which tryParses + falls back instead of crashing the frame.
+ui.Color _parseColor(String hex) => parseHexColorLenient(hex);

@@ -73,6 +73,17 @@ extension _MembersSection on _GroupInfoScreenState {
     );
     if (!confirmed) return;
 
+    await _applyRoleChange(member, newRole, isPromoting: isPromoting);
+  }
+
+  /// PATCH the member's role and surface the result. Extracted from
+  /// [_changeRole] (which keeps the confirm flow) to stay within the
+  /// cognitive-complexity budget (S3776).
+  Future<void> _applyRoleChange(
+    ConversationMember member,
+    String newRole, {
+    required bool isPromoting,
+  }) async {
     final token = ref.read(authProvider).token;
     if (token == null) return;
     final serverUrl = ref.read(serverUrlProvider);
@@ -299,25 +310,16 @@ extension _MembersSection on _GroupInfoScreenState {
   }) {
     final isMe = member.userId == myUserId;
     final role = member.role ?? 'member';
-    // "You" trumps the presence label on the row that represents the
-    // viewer themselves; everyone else gets the standard activity line.
-    final String activity;
-    if (isMe) {
-      activity = 'You';
-    } else {
-      final presence = ref.watch(userPresenceProvider(member.userId));
-      activity = presenceLabel(presence.status, isOnline: presence.isOnline);
-    }
 
-    return InkWell(
-      onTap: () {
-        // Tapping a row opens the member's profile sheet, matching the
-        // desktop members panel.
-        // Avoid for self -- you can already see your own settings.
-        if (!isMe) {
-          showUserProfileSheet(context, ref, member.userId);
-        }
-      },
+    return MemberListRow(
+      member: member,
+      isMe: isMe,
+      density: MemberRowDensity.comfortable,
+      // Tapping a row opens the member's profile sheet (skip for self —
+      // you can already see your own settings).
+      onTap: isMe
+          ? null
+          : () => showUserProfileSheet(context, ref, member.userId),
       onSecondaryTapDown: (details) => _openMemberContextMenu(
         anchor: details.globalPosition,
         member: member,
@@ -334,67 +336,12 @@ extension _MembersSection on _GroupInfoScreenState {
         viewerIsOwner: viewerIsOwner,
         isMe: isMe,
       ),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Row(
-          children: [
-            // The outer InkWell owns the tap; UserAvatar renders the
-            // avatar + presence dot in one go.
-            UserAvatar(
-              userId: member.userId,
-              username: member.username,
-              avatarUrl: member.avatarUrl,
-              radius: 18,
-              showPresence: true,
-              openProfileOnTap: false,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Row(
-                    children: [
-                      if (role == 'owner' || role == 'admin') ...[
-                        MemberRoleIcon(role: role),
-                        const SizedBox(width: 4),
-                      ],
-                      Flexible(
-                        child: Text(
-                          member.username,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: context.textPrimary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                      MemberRoleBadge(
-                        role: role,
-                        margin: const EdgeInsets.only(left: 6),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    activity,
-                    style: TextStyle(color: context.textMuted, fontSize: 11),
-                  ),
-                ],
-              ),
-            ),
-            _buildMemberActions(
-                  member: member,
-                  isOwnerOrAdmin: isOwnerOrAdmin,
-                  viewerIsOwner: viewerIsOwner,
-                  isMe: isMe,
-                  role: role,
-                ) ??
-                const SizedBox.shrink(),
-          ],
-        ),
+      trailing: _buildMemberActions(
+        member: member,
+        isOwnerOrAdmin: isOwnerOrAdmin,
+        viewerIsOwner: viewerIsOwner,
+        isMe: isMe,
+        role: role,
       ),
     );
   }

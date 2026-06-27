@@ -166,63 +166,69 @@ pub async fn get_profile(
     }))
 }
 
-/// PATCH /api/users/me/profile
-///
-/// Update the authenticated user's profile fields. All fields are optional;
-/// only provided fields are updated.
-pub async fn update_profile(
-    auth: AuthUser,
-    State(state): State<Arc<AppState>>,
-    Json(body): Json<UpdateProfileRequest>,
-) -> Result<impl IntoResponse, AppError> {
-    // Validate field lengths
-    if let Some(ref name) = body.display_name
-        && name.len() > 50
-    {
-        return Err(AppError::bad_request(
+/// Validate the optional profile fields. Extracted from [`update_profile`] and
+/// table-driven for the simple length limits so the cognitive complexity stays
+/// in budget (S3776). Returns the first violation as a 400, matching the prior
+/// inline order closely enough for single-field callers.
+fn validate_profile_fields(body: &UpdateProfileRequest) -> Result<(), AppError> {
+    // (value, max length, message) for the plain max-length fields.
+    let length_limits: [(Option<&str>, usize, &str); 8] = [
+        (
+            body.display_name.as_deref(),
+            50,
             "Display name must be 50 characters or less",
-        ));
-    }
-    if let Some(ref bio) = body.bio
-        && bio.len() > 300
-    {
-        return Err(AppError::bad_request("Bio must be 300 characters or less"));
-    }
-    if let Some(ref status) = body.status_message
-        && status.len() > 100
-    {
-        return Err(AppError::bad_request(
+        ),
+        (
+            body.bio.as_deref(),
+            300,
+            "Bio must be 300 characters or less",
+        ),
+        (
+            body.status_message.as_deref(),
+            100,
             "Status message must be 100 characters or less",
-        ));
-    }
-    if let Some(ref pronouns) = body.pronouns
-        && pronouns.len() > 30
-    {
-        return Err(AppError::bad_request(
+        ),
+        (
+            body.pronouns.as_deref(),
+            30,
             "Pronouns must be 30 characters or less",
-        ));
-    }
-    if let Some(ref website) = body.website
-        && website.len() > 200
-    {
-        return Err(AppError::bad_request(
+        ),
+        (
+            body.website.as_deref(),
+            200,
             "Website must be 200 characters or less",
-        ));
+        ),
+        (
+            body.email.as_deref(),
+            254,
+            "Email must be 254 characters or less",
+        ),
+        (
+            body.phone.as_deref(),
+            30,
+            "Phone must be 30 characters or less",
+        ),
+        (
+            body.location.as_deref(),
+            80,
+            "Location must be 80 characters or less",
+        ),
+    ];
+    for (value, max, msg) in length_limits {
+        if let Some(v) = value
+            && v.len() > max
+        {
+            return Err(AppError::bad_request(msg));
+        }
     }
-    if let Some(ref email) = body.email
+
+    if let Some(email) = body.email.as_deref()
         && !email.is_empty()
         && !email.contains('@')
     {
         return Err(AppError::bad_request("Email must contain an @ symbol"));
     }
-    if let Some(ref email) = body.email
-        && email.len() > 254
-    {
-        return Err(AppError::bad_request(
-            "Email must be 254 characters or less",
-        ));
-    }
-    if let Some(ref phone) = body.phone
+    if let Some(phone) = body.phone.as_deref()
         && !phone.is_empty()
         && !phone
             .chars()
@@ -232,16 +238,11 @@ pub async fn update_profile(
             "Phone must contain only digits, +, -, or spaces",
         ));
     }
-    if let Some(ref phone) = body.phone
-        && phone.len() > 30
-    {
-        return Err(AppError::bad_request("Phone must be 30 characters or less"));
-    }
-    if let Some(ref color) = body.background_color
+    if let Some(color) = body.background_color.as_deref()
         && !color.is_empty()
     {
-        // Strict #RRGGBB. Front-end constrains to a preset palette, but
-        // we re-validate so callers using the raw API can't inject CSS.
+        // Strict #RRGGBB. Front-end constrains to a preset palette, but we
+        // re-validate so callers using the raw API can't inject CSS.
         let valid = color.len() == 7
             && color.starts_with('#')
             && color[1..].chars().all(|c| c.is_ascii_hexdigit());
@@ -251,13 +252,19 @@ pub async fn update_profile(
             ));
         }
     }
-    if let Some(ref loc) = body.location
-        && loc.len() > 80
-    {
-        return Err(AppError::bad_request(
-            "Location must be 80 characters or less",
-        ));
-    }
+    Ok(())
+}
+
+/// PATCH /api/users/me/profile
+///
+/// Update the authenticated user's profile fields. All fields are optional;
+/// only provided fields are updated.
+pub async fn update_profile(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<UpdateProfileRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    validate_profile_fields(&body)?;
 
     // Normalize phone to E.164: strip all non-digit chars except leading +.
     let normalized_phone = body.phone.as_deref().map(|p| {

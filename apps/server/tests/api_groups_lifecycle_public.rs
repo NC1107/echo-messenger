@@ -178,9 +178,9 @@ async fn delete_group_owner_cascades() {
     );
 }
 
-/// A non-owner member cannot delete the group; returns 401.
+/// A non-owner member cannot delete the group; returns 403.
 #[tokio::test]
-async fn delete_group_non_owner_returns_401() {
+async fn delete_group_non_owner_returns_403() {
     let base = common::spawn_server().await;
     let client = Client::new();
 
@@ -196,13 +196,13 @@ async fn delete_group_non_owner_returns_401() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status().as_u16(), 401, "non-owner delete should 401");
+    assert_eq!(resp.status().as_u16(), 403, "non-owner delete should 403");
 }
 
-/// Deleting a non-existent group returns 401 (the owner-check fails → same code
+/// Deleting a non-existent group returns 403 (the owner-check fails → same code
 /// as the non-owner path because the EXISTS subquery returns 0 rows).
 #[tokio::test]
-async fn delete_group_nonexistent_returns_401() {
+async fn delete_group_nonexistent_returns_403() {
     let base = common::spawn_server().await;
     let client = Client::new();
 
@@ -217,8 +217,8 @@ async fn delete_group_nonexistent_returns_401() {
         .unwrap();
     assert_eq!(
         resp.status().as_u16(),
-        401,
-        "non-existent group delete should 401"
+        403,
+        "non-existent group delete should 403"
     );
 }
 

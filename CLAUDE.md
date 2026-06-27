@@ -167,6 +167,10 @@ If you find yourself copy-pasting a widget tree (an avatar + presence dot, a con
 - Per-user presence lookup → `userPresenceProvider(userId)`.
 - Copy text + toast → `copyToClipboard(context, text, successMessage: ...)`.
 - Empty state with illustration → `EmptyState` in `widgets/empty_state.dart`.
+- Labelled/bordered dropdowns → `EchoDropdown<T>` in `widgets/echo_dropdown.dart`.
+- Channel-bar dividers → `ChannelDivider` in `widgets/channel_divider.dart`.
+- Authenticated HTTP from a Riverpod notifier → `mixin AuthedHttp<S>` in `providers/authed_http.dart` (provides `headersWithToken` + `authenticatedRequest`).
+- Group member roster row (sidebar rail / members sheet / group-info) → `MemberListRow` in `widgets/member_list_row.dart` (`MemberRowDensity.compact` for the rail, `comfortable` elsewhere; inject actions via the `trailing`/`hoverTrailing` slots).
 
 If your use case doesn't fit an existing helper, **extend the helper rather than fork it**. New options or `destructive: true`-style flags belong in the shared widget so the next user picks them up automatically.
 
@@ -176,7 +180,7 @@ If your use case doesn't fit an existing helper, **extend the helper rather than
 - **Web renderer**: CanvasKit is the default (and only) renderer in Flutter 3.22+. The `--web-renderer` flag was removed.
 - **Rust edition 2024** used in both Cargo.toml and rustfmt.toml.
 - **rustfmt**: max_width=100, Unix newlines, field_init_shorthand + try_shorthand enabled.
-- **Server required env**: `DATABASE_URL` and `JWT_SECRET` (≥32 chars, panics without them). Optional: `SERVER_HOST` (default `0.0.0.0`), `SERVER_PORT` (default `8080`), `CORS_ORIGINS` for allowed origins, `RUST_LOG` for log filtering (e.g. `echo_server=debug`). Legacy `HOST`/`PORT` are still accepted but emit a deprecation warning at startup (#532).
+- **Server required env**: `DATABASE_URL` and `JWT_SECRET` (≥32 chars, panics without them). Optional: `SERVER_HOST` (default `0.0.0.0`), `SERVER_PORT` (default `8080`), `CORS_ORIGINS` for allowed origins, `RUST_LOG` for log filtering (e.g. `echo_server=debug`), `WELCOME_GROUP_ID` (UUID of a public group offered to new users on first home-screen visit via `GET /api/groups/featured`; unset = no offer). Legacy `HOST`/`PORT` are still accepted but emit a deprecation warning at startup (#532).
 - **Traefik routing**: API priority 100, Web priority 1 (API routes must take precedence). Phase 1 of the domain migration (#1063) means both the apex and `us-east.echo-messenger.us` (API) / `web.echo-messenger.us` (web) hit the same routers via a Host union — see [docs/domain-migration/](docs/domain-migration/) for the phased plan, including the cookie/CORS work Phase 2 needs.
 - **Message wire format**: Initial V2 (with OTP) = `[0xEC, 0x02] + identity_pub(32) + ephemeral_pub(32) + otp_id(4 LE) + ratchet_wire`; Initial V1 (no OTP) = `[0xEC, 0x01] + identity_pub(32) + ephemeral_pub(32) + ratchet_wire`; Normal = `header_len(4 LE) + header(40) + nonce(12) + ciphertext + tag(16)`. All base64-wrapped over WebSocket.
 - **Soft deletes**: Messages use a `deleted_at TIMESTAMPTZ NULL` column; queries filter with `deleted_at IS NULL`. Hard deletes only happen during `cleanup_expired_messages` (disappearing TTL) and `delete_group_dependents`.

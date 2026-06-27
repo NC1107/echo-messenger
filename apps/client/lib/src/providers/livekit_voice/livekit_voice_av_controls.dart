@@ -29,7 +29,7 @@ mixin LiveKitVoiceAvControlsMixin on Notifier<LiveKitVoiceState> {
     if (_disposed) return;
     DebugLogService.instance.log(
       LogLevel.info,
-      'LiveKitVoice',
+      _kLogTag,
       'setCaptureEnabled($enabled)',
     );
     // Optimistic state update; native audio-session errors caught below to
@@ -40,7 +40,7 @@ mixin LiveKitVoiceAvControlsMixin on Notifier<LiveKitVoiceState> {
       future.then((_) {}).catchError((Object e) {
         DebugLogService.instance.log(
           LogLevel.error,
-          'LiveKitVoice',
+          _kLogTag,
           'setCaptureEnabled($enabled): setMicrophoneEnabled threw: $e',
         );
       });
@@ -94,7 +94,7 @@ mixin LiveKitVoiceAvControlsMixin on Notifier<LiveKitVoiceState> {
     final enabled = !state.isVideoEnabled;
     DebugLogService.instance.log(
       LogLevel.info,
-      'LiveKitVoice',
+      _kLogTag,
       'toggleVideo: setCameraEnabled($enabled)',
     );
     try {
@@ -102,14 +102,14 @@ mixin LiveKitVoiceAvControlsMixin on Notifier<LiveKitVoiceState> {
       state = state.copyWith(isVideoEnabled: enabled);
       DebugLogService.instance.log(
         LogLevel.info,
-        'LiveKitVoice',
+        _kLogTag,
         'toggleVideo: camera enabled=$enabled',
       );
     } catch (e) {
       debugPrint('[LiveKitVoice] toggleVideo failed: $e');
       DebugLogService.instance.log(
         LogLevel.error,
-        'LiveKitVoice',
+        _kLogTag,
         'toggleVideo failed: $e',
       );
       state = state.copyWith(error: _friendlyMediaError(e, 'camera'));
@@ -150,7 +150,7 @@ mixin LiveKitVoiceAvControlsMixin on Notifier<LiveKitVoiceState> {
       debugPrint('[LiveKitVoice] switchCamera failed: $e');
       DebugLogService.instance.log(
         LogLevel.error,
-        'LiveKitVoice',
+        _kLogTag,
         'switchCamera failed: $e',
       );
     }
@@ -168,7 +168,7 @@ mixin LiveKitVoiceAvControlsMixin on Notifier<LiveKitVoiceState> {
 
     DebugLogService.instance.log(
       LogLevel.info,
-      'LiveKitVoice',
+      _kLogTag,
       'setScreenShareEnabled($enabled) on ${defaultTargetPlatform.name}',
     );
     try {
@@ -206,7 +206,7 @@ mixin LiveKitVoiceAvControlsMixin on Notifier<LiveKitVoiceState> {
       }
       DebugLogService.instance.log(
         LogLevel.info,
-        'LiveKitVoice',
+        _kLogTag,
         'setScreenShareEnabled($enabled): screen share toggled successfully',
       );
       return true;
@@ -214,7 +214,7 @@ mixin LiveKitVoiceAvControlsMixin on Notifier<LiveKitVoiceState> {
       debugPrint('[LiveKitVoice] setScreenShareEnabled($enabled) failed: $e');
       DebugLogService.instance.log(
         LogLevel.error,
-        'LiveKitVoice',
+        _kLogTag,
         'setScreenShareEnabled($enabled) failed: $e',
       );
       state = state.copyWith(error: _friendlyMediaError(e, 'screen share'));
@@ -288,7 +288,7 @@ mixin LiveKitVoiceAvControlsMixin on Notifier<LiveKitVoiceState> {
           debugPrint('[LiveKitVoice] setVideoParams (camera) failed: $e');
           DebugLogService.instance.log(
             LogLevel.warning,
-            'LiveKitVoice',
+            _kLogTag,
             'Video params change (camera) failed: $e',
           );
         }
@@ -324,7 +324,7 @@ mixin LiveKitVoiceAvControlsMixin on Notifier<LiveKitVoiceState> {
         debugPrint('[LiveKitVoice] setVideoParams (screen) failed: $e');
         DebugLogService.instance.log(
           LogLevel.warning,
-          'LiveKitVoice',
+          _kLogTag,
           'Video params change (screen) failed: $e',
         );
       }

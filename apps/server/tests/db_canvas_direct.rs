@@ -39,16 +39,17 @@ async fn append_stroke_accumulates() {
         .await
         .unwrap();
 
-    echo_server::db::canvas::append_stroke(&pool, cid, json!({"id":"d1","kind":"pen"}))
+    let author = Uuid::new_v4();
+    echo_server::db::canvas::append_stroke(&pool, cid, author, json!({"id":"d1","kind":"pen"}))
         .await
         .unwrap();
-    echo_server::db::canvas::append_stroke(&pool, cid, json!({"id":"d2","kind":"text"}))
+    echo_server::db::canvas::append_stroke(&pool, cid, author, json!({"id":"d2","kind":"text"}))
         .await
         .unwrap();
-    echo_server::db::canvas::append_stroke(&pool, cid, json!({"id":"d3","kind":"rect"}))
+    echo_server::db::canvas::append_stroke(&pool, cid, author, json!({"id":"d3","kind":"rect"}))
         .await
         .unwrap();
-    echo_server::db::canvas::add_image(&pool, cid, json!({"id":"i1","url":"x"}))
+    echo_server::db::canvas::add_image(&pool, cid, author, json!({"id":"i1","url":"x"}))
         .await
         .unwrap();
 

@@ -47,6 +47,17 @@ class AdminStats {
       feedbackLast24h: asInt(json['feedback_last_24h']),
     );
   }
+
+  // S107: wide on purpose — immutable-state copyWith mirroring the field set.
+  AdminStats copyWith({int? feedbackOpen}) => AdminStats(
+    usersTotal: usersTotal,
+    usersActive24h: usersActive24h,
+    messages24h: messages24h,
+    groupsTotal: groupsTotal,
+    onlineDevices: onlineDevices,
+    feedbackOpen: feedbackOpen ?? this.feedbackOpen,
+    feedbackLast24h: feedbackLast24h,
+  );
 }
 
 /// A single row out of `GET /api/admin/feedback`. Server wraps these in a
@@ -161,6 +172,45 @@ class AdminDashboardNotifier
   Future<void> refresh() async {
     state = const AsyncValue.loading();
     state = await AsyncValue.guard(_load);
+  }
+
+  /// Permanently delete one feedback report (`DELETE /api/admin/feedback/{id}`)
+  /// and drop it from the in-memory list without a full reload, so the row
+  /// vanishes instantly. The `feedback_open` headline stat is decremented
+  /// locally when the removed row was open. Throws on a non-2xx response so
+  /// the caller can surface a toast.
+  Future<void> deleteFeedback(String id) async {
+    final serverUrl = ref.read(serverUrlProvider);
+    final auth = ref.read(authProvider.notifier);
+
+    final res = await auth.authenticatedRequest(
+      (token) => http.delete(
+        Uri.parse('$serverUrl/api/admin/feedback/$id'),
+        headers: {'Authorization': 'Bearer $token'},
+      ),
+    );
+    if (res.statusCode != 200 && res.statusCode != 204) {
+      throw _AdminHttpError(
+        'Failed to delete feedback (HTTP ${res.statusCode})',
+        res.statusCode,
+      );
+    }
+
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final removed = current.feedback.where((f) => f.id == id).firstOrNull;
+    final remaining = current.feedback
+        .where((f) => f.id != id)
+        .toList(growable: false);
+    final newOpen = removed?.status == 'open'
+        ? (current.stats.feedbackOpen - 1).clamp(0, 1 << 31)
+        : current.stats.feedbackOpen;
+    state = AsyncValue.data(
+      AdminDashboardData(
+        stats: current.stats.copyWith(feedbackOpen: newOpen),
+        feedback: remaining,
+      ),
+    );
   }
 }
 

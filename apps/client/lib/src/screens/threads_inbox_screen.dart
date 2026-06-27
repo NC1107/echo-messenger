@@ -12,6 +12,9 @@ import 'package:go_router/go_router.dart';
 import '../models/thread_inbox_entry.dart';
 import '../providers/threads_inbox_provider.dart';
 import '../theme/echo_theme.dart';
+import '../utils/time_utils.dart';
+import '../widgets/empty_state.dart';
+import '../widgets/loading_indicator.dart';
 import '../widgets/window_chrome.dart';
 
 class ThreadsInboxScreen extends ConsumerStatefulWidget {
@@ -78,7 +81,7 @@ class _ThreadsInboxScreenState extends ConsumerState<ThreadsInboxScreen> {
 
   Widget _buildBody(BuildContext context, ThreadsInboxState inbox) {
     if (inbox.loading && inbox.entries.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return const CenteredLoadingIndicator();
     }
     if (inbox.error != null && inbox.entries.isEmpty) {
       return _buildErrorState(context, inbox.error!);
@@ -103,65 +106,21 @@ class _ThreadsInboxScreenState extends ConsumerState<ThreadsInboxScreen> {
   }
 
   Widget _buildEmptyState(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(40),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.forum_outlined, size: 48, color: context.textMuted),
-            const SizedBox(height: 16),
-            Text(
-              'No threads yet',
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Reply to a message in thread and it will show up here.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: context.textSecondary, fontSize: 13),
-            ),
-          ],
-        ),
-      ),
+    return const EmptyState(
+      icon: Icons.forum_outlined,
+      title: 'No threads yet',
+      body: 'Reply to a message in thread and it will show up here.',
     );
   }
 
   Widget _buildErrorState(BuildContext context, String error) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(40),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.error_outline, size: 48, color: context.textMuted),
-            const SizedBox(height: 16),
-            Text(
-              "Couldn't load threads",
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              error,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: context.textSecondary, fontSize: 13),
-            ),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: () => ref.read(threadsInboxProvider.notifier).load(),
-              child: const Text('Try again'),
-            ),
-          ],
-        ),
-      ),
+    return EmptyState(
+      icon: Icons.error_outline,
+      title: "Couldn't load threads",
+      body: error,
+      ctaLabel: 'Try again',
+      onCta: () => ref.read(threadsInboxProvider.notifier).load(),
+      variant: EmptyStateVariant.error,
     );
   }
 
@@ -293,12 +252,5 @@ class _ThreadInboxRow extends StatelessWidget {
     );
   }
 
-  static String _formatAgo(DateTime when) {
-    final delta = DateTime.now().toUtc().difference(when.toUtc());
-    if (delta.inSeconds < 60) return 'just now';
-    if (delta.inMinutes < 60) return '${delta.inMinutes}m ago';
-    if (delta.inHours < 24) return '${delta.inHours}h ago';
-    if (delta.inDays < 7) return '${delta.inDays}d ago';
-    return '${(delta.inDays / 7).floor()}w ago';
-  }
+  static String _formatAgo(DateTime when) => formatRelativeTimeShort(when);
 }

@@ -147,17 +147,21 @@ class UIDensityNotifier extends _$UIDensityNotifier {
   @override
   UIDensity build() {
     _load();
-    // Compact matches MessageLayoutNotifier's compact default (sidebar parity).
-    return UIDensity.compact;
+    // Normal is the balanced default for new users (Discord layout + normal density).
+    return UIDensity.normal;
   }
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_kUiDensityKey);
     if (raw == null) {
-      // Upgrade migration: preserve spacious sidebar for non-compact legacy layout.
+      // Upgrade migration: derive density from a legacy layout choice so
+      // existing users keep their effective density. Brand-new users (no
+      // layout pref either) fall through to the build() default (normal).
       final legacy = prefs.getString(_kMessageLayoutKey);
-      if (legacy != null && legacy != 'compact') {
+      if (legacy == 'compact') {
+        state = UIDensity.compact;
+      } else if (legacy != null) {
         state = UIDensity.normal;
       }
       return;

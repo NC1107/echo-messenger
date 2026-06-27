@@ -8,6 +8,7 @@ import '../providers/crypto_provider.dart';
 import '../providers/locale_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/websocket_provider.dart';
+import '../router/routes.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
 import '../version.dart';
@@ -246,7 +247,7 @@ class SettingsRootView extends ConsumerWidget {
                     icon: Icons.shield_outlined,
                     iconColor: context.settingsIconPalette.admin,
                     label: 'Admin dashboard',
-                    onTap: () => context.push('/admin'),
+                    onTap: () => context.push(routeAdmin),
                   ),
                 ),
               _row(
@@ -426,7 +427,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   void _openSavedMessages() {
-    context.push('/saved');
+    context.push(routeSaved);
   }
 
   @override

@@ -8,8 +8,9 @@ use serde_json::Value;
 /// Helper: register a user, log in, and return (token, user_id).
 async fn register_and_login(client: &Client, base: &str, prefix: &str) -> (String, String) {
     let username = common::unique_username(prefix);
-    common::register(client, base, &username, "password123").await;
-    common::login(client, base, &username, "password123").await
+    let password = common::unique_password();
+    common::register(client, base, &username, &password).await;
+    common::login(client, base, &username, &password).await
 }
 
 /// Helper: create a group and return its id.
@@ -224,7 +225,7 @@ async fn regular_member_cannot_add_to_private_group() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status().as_u16(), 401);
+    assert_eq!(resp.status().as_u16(), 403);
 }
 
 // ---------------------------------------------------------------------------
@@ -463,7 +464,7 @@ async fn non_owner_cannot_delete_group() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status().as_u16(), 401);
+    assert_eq!(resp.status().as_u16(), 403);
 }
 
 // ---------------------------------------------------------------------------

@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/conversation.dart';
+import '../router/routes.dart';
 import '../services/clipboard_service.dart';
 import '../services/toast_service.dart';
 import '../services/upload_client.dart';
@@ -18,14 +19,13 @@ import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/media_ticket_provider.dart';
 import '../providers/server_url_provider.dart';
-import '../providers/user_presence_provider.dart';
 import '../utils/fuzzy_score.dart';
-import '../utils/presence.dart';
 import '../widgets/avatar_crop_dialog.dart';
 import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
+import '../widgets/channel_editor_dialog.dart';
 import '../widgets/confirm_dialog.dart';
-import '../widgets/member_role.dart';
-import '../widgets/user_avatar.dart';
+import '../widgets/loading_indicator.dart';
+import '../widgets/member_list_row.dart';
 import '../widgets/context_menu/actions/member_actions_registry.dart';
 import '../widgets/context_menu/echo_context_menu.dart';
 import '../widgets/profile_sheets.dart';
@@ -152,7 +152,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         title: const Text(_kGroupInfoTitle),
         leading: _backButton(context),
       ),
-      body: const Center(child: CircularProgressIndicator()),
+      body: const CenteredLoadingIndicator(),
     );
   }
 

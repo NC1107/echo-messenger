@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/auth_provider.dart';
 import '../theme/echo_theme.dart';
 import '../utils/presence.dart';
+import 'loading_indicator.dart';
 
 /// Maximum characters for custom status text (server cap is 64).
 const int kStatusMaxLength = 80;
@@ -199,13 +200,7 @@ class _CustomStatusRowState extends State<CustomStatusRow> {
             width: 32,
             height: 32,
             child: _busy
-                ? const Center(
-                    child: SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  )
+                ? const Center(child: InlineLoadingSpinner(size: 14))
                 : IconButton(
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
@@ -250,13 +245,7 @@ class _CustomStatusRowState extends State<CustomStatusRow> {
             width: 32,
             height: 32,
             child: _busy
-                ? const Center(
-                    child: SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  )
+                ? const Center(child: InlineLoadingSpinner(size: 14))
                 : IconButton(
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),

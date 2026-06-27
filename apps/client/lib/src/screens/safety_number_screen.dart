@@ -20,6 +20,8 @@ import '../services/safety_number_service.dart';
 import '../services/secure_key_store.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
+import '../utils/time_utils.dart';
+import '../widgets/loading_indicator.dart';
 
 /// Displays and manages safety number verification for a DM conversation.
 ///
@@ -207,28 +209,7 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
   }
 
   /// Return a human-readable "X ago" string relative to [dateTime].
-  String _timeAgo(DateTime dateTime) {
-    final diff = DateTime.now().difference(dateTime);
-    if (diff.inSeconds < 60) return 'just now';
-    if (diff.inMinutes < 60) {
-      final m = diff.inMinutes;
-      return '$m ${m == 1 ? 'minute' : 'minutes'} ago';
-    }
-    if (diff.inHours < 24) {
-      final h = diff.inHours;
-      return '$h ${h == 1 ? 'hour' : 'hours'} ago';
-    }
-    if (diff.inDays < 30) {
-      final d = diff.inDays;
-      return '$d ${d == 1 ? 'day' : 'days'} ago';
-    }
-    if (diff.inDays < 365) {
-      final mo = diff.inDays ~/ 30;
-      return '$mo ${mo == 1 ? 'month' : 'months'} ago';
-    }
-    final y = diff.inDays ~/ 365;
-    return '$y ${y == 1 ? 'year' : 'years'} ago';
-  }
+  String _timeAgo(DateTime dateTime) => formatRelativeTimeLong(dateTime);
 
   String get _inviteUrl =>
       'https://echo-messenger.us/#/u/${Uri.encodeComponent(widget.myUsername)}';
@@ -263,7 +244,7 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
 
   Widget _buildBody(BuildContext context, bool isDialog) {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return const CenteredLoadingIndicator();
     }
 
     if (_error != null) {

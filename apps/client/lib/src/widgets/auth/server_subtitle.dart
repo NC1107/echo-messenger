@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../../providers/server_url_provider.dart';
 import '../../theme/echo_theme.dart';
+import '../loading_indicator.dart';
 
 /// Small subtitle row shown under the tagline: "Server: echo-messenger.us ›"
 ///
@@ -250,11 +251,7 @@ class _ServerSwitchDialogState extends ConsumerState<_ServerSwitchDialog> {
               ? null
               : () => _switchCustom(widget.urlController.text),
           child: _switching
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+              ? const InlineLoadingSpinner(size: 16)
               : const Text('Connect'),
         ),
       ],

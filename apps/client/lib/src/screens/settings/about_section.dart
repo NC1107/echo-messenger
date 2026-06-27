@@ -11,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/server_url_provider.dart';
 import '../../providers/update_provider.dart';
+import '../../router/routes.dart';
 import '../../services/clipboard_service.dart';
 import '../../services/debug_log_service.dart';
 import '../../services/message_cache.dart';
@@ -165,7 +166,7 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
     if (!mounted) return;
     // The switch logged out the active session; route back to /login so
     // the user can re-authenticate against the new origin.
-    context.go('/login');
+    context.go(routeLogin);
   }
 
   /// Forget a known server: drop it from the list and best-effort wipe its

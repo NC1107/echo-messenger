@@ -122,23 +122,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     try {
       final player = Player();
       final controller = VideoController(player);
-      _playingSub = player.stream.playing.listen((v) {
-        if (mounted) setState(() => _isPlaying = v);
-      });
-      _widthSub = player.stream.width.listen((v) {
-        if (mounted && v != null) setState(() => _videoWidth = v);
-      });
-      _heightSub = player.stream.height.listen((v) {
-        if (mounted && v != null) setState(() => _videoHeight = v);
-      });
-      _errorSub = player.stream.error.listen((e) {
-        if (!mounted || e.isEmpty) return;
-        debugPrint('[InlineVideoPlayer] player error: $e');
-        setState(() {
-          _initFailed = true;
-          _errorMessage = e;
-        });
-      });
+      _wirePlayerStreams(player);
       await player.open(
         Media(widget.videoUrl, httpHeaders: widget.headers),
         play: true,
@@ -160,6 +144,28 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
         });
       }
     }
+  }
+
+  /// Subscribe to the player's playing/size/error streams. Extracted from
+  /// [_startInline] to keep it within the cognitive-complexity budget (S3776).
+  void _wirePlayerStreams(Player player) {
+    _playingSub = player.stream.playing.listen((v) {
+      if (mounted) setState(() => _isPlaying = v);
+    });
+    _widthSub = player.stream.width.listen((v) {
+      if (mounted && v != null) setState(() => _videoWidth = v);
+    });
+    _heightSub = player.stream.height.listen((v) {
+      if (mounted && v != null) setState(() => _videoHeight = v);
+    });
+    _errorSub = player.stream.error.listen((e) {
+      if (!mounted || e.isEmpty) return;
+      debugPrint('[InlineVideoPlayer] player error: $e');
+      setState(() {
+        _initFailed = true;
+        _errorMessage = e;
+      });
+    });
   }
 
   void _togglePlayPause() {

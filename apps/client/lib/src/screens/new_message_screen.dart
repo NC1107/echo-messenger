@@ -19,6 +19,9 @@ import '../widgets/empty_state.dart';
 import '../widgets/settings/section_header.dart';
 import '../widgets/user_avatar.dart';
 
+/// Hoisted to satisfy S1192 (literal used 3+ times).
+const _kNewGroup = 'New group';
+
 /// "New chat" composer: one search box over a tappable list.
 ///
 /// - Default (DM) mode: tapping a contact row opens the DM immediately — no
@@ -324,7 +327,7 @@ class _NewMessageScreenState extends ConsumerState<NewMessageScreen> {
             ),
           ),
           Text(
-            isGroup ? 'New group' : 'New chat',
+            isGroup ? _kNewGroup : 'New chat',
             style: TextStyle(
               color: context.textPrimary,
               fontSize: 18,
@@ -409,14 +412,14 @@ class _NewMessageScreenState extends ConsumerState<NewMessageScreen> {
   Widget _buildNewGroupRow(BuildContext context) {
     return Semantics(
       button: true,
-      label: 'New group',
+      label: _kNewGroup,
       child: ListTile(
         leading: CircleAvatar(
           backgroundColor: context.accentLight,
           child: Icon(Icons.group_add_outlined, color: context.accent),
         ),
         title: Text(
-          'New group',
+          _kNewGroup,
           style: TextStyle(
             color: context.textPrimary,
             fontWeight: FontWeight.w600,

@@ -64,6 +64,16 @@ services:
   web:
     image: ghcr.io/nc1107/echo-messenger/web:${WEB_VERSION:?WEB_VERSION must be set to a published release tag (no 'latest' fallback)}
     restart: unless-stopped
+    # Override the image's baked-in `wget http://localhost/healthz` check: it
+    # resolves localhost to ::1 first, which nginx doesn't listen on, so the
+    # container shows unhealthy and Traefik's docker provider silently filters
+    # it out (#prod-2026-05-08). curl over IPv4 keeps the container visible.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     # Phase 1 of the domain migration (#1063, docs/domain-migration/):
     # `web.echo-messenger.us` becomes the canonical hostname for the
     # web build, but the apex keeps serving the same content so legacy

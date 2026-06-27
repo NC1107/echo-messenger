@@ -36,6 +36,12 @@ class AuthLayout extends StatelessWidget {
   /// its existing scroll padding without leaking the constant here).
   final EdgeInsets narrowPadding;
 
+  /// Server-picker control (e.g. `ServerSubtitle`). In narrow mode it already
+  /// lives inside [compactHeader]; in wide mode the brand panel replaces the
+  /// header, so this is rendered at the foot of the form card instead. Without
+  /// it, desktop users had no way to switch servers (#1063 regression).
+  final Widget? serverControl;
+
   const AuthLayout({
     super.key,
     required this.tagline,
@@ -43,6 +49,7 @@ class AuthLayout extends StatelessWidget {
     required this.compactHeader,
     required this.formColumn,
     this.narrowPadding = const EdgeInsets.fromLTRB(24, 24, 24, 56),
+    this.serverControl,
   });
 
   @override
@@ -102,6 +109,7 @@ class AuthLayout extends StatelessWidget {
                 const SizedBox(width: 48),
                 _FormCard(
                   title: formTitle,
+                  serverControl: serverControl,
                   child: SingleChildScrollView(child: formColumn),
                 ),
               ],
@@ -226,8 +234,13 @@ class _FeatureRow extends StatelessWidget {
 class _FormCard extends StatelessWidget {
   final String title;
   final Widget child;
+  final Widget? serverControl;
 
-  const _FormCard({required this.title, required this.child});
+  const _FormCard({
+    required this.title,
+    required this.child,
+    this.serverControl,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -269,6 +282,10 @@ class _FormCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 20),
                 child,
+                if (serverControl != null) ...[
+                  const SizedBox(height: 16),
+                  Center(child: serverControl!),
+                ],
               ],
             ),
           ),

@@ -79,13 +79,17 @@ void main() {
     testWidgets('lists known servers when the provider has entries', (
       tester,
     ) async {
+      // Neutral hosts so this "lists known servers" assertion isn't entangled
+      // with the apex→alias boot migration in ServerUrlNotifier.load() (which
+      // would rewrite a `echo-messenger.us` entry). That migration has its own
+      // coverage in server_url_provider_test.dart.
       SharedPreferences.setMockInitialValues({
         'echo_known_servers':
-            '[{"url":"https://echo-messenger.us","last_seen":"2026-05-21T00:00:00.000Z"},'
+            '[{"url":"https://server-a.example.com","last_seen":"2026-05-21T00:00:00.000Z"},'
             '{"url":"https://echo.example.com","last_seen":"2026-05-21T00:00:00.000Z"}]',
       });
       await tester.pumpWidget(
-        host(const ServerSubtitle(serverUrl: 'https://echo-messenger.us')),
+        host(const ServerSubtitle(serverUrl: 'https://server-a.example.com')),
       );
       // The provider only loads on demand — call it.
       final element = tester.element(find.byType(ServerSubtitle));
@@ -101,7 +105,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Known servers'), findsOneWidget);
-      expect(find.text('echo-messenger.us'), findsOneWidget);
+      expect(find.text('server-a.example.com'), findsOneWidget);
       expect(find.text('echo.example.com'), findsOneWidget);
     });
 
