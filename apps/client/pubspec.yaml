@@ -11,26 +11,26 @@ dependencies:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
-  flutter_riverpod: ^2.6.0
-  riverpod_annotation: ^2.6.0
-  go_router: ^17.2.3
+  flutter_riverpod: ^3.1.0
+  riverpod_annotation: ^4.0.0
+  go_router: ^17.3.0
   http: ^1.3.0
   http_parser: ^4.1.0
-  uuid: ^4.5.1
+  uuid: ^4.6.0
   web_socket_channel: ^3.0.0
   cryptography: ^2.7.0
   shared_preferences: ^2.3.0
-  flutter_secure_storage: ^10.2.0
-  google_fonts: ^8.1.0
+  flutter_secure_storage: ^10.3.1
+  google_fonts: ^8.2.0
   url_launcher: ^6.3.0
   file_picker: ^11.0.2
   qr_flutter: ^4.1.0
-  audioplayers: ^6.1.0
+  audioplayers: ^6.8.1
   record: ^6.2.0
   web: ^1.1.0
-  flutter_webrtc: 1.4.0
+  flutter_webrtc: 1.5.2
   dart_webrtc: ^1.8.1
-  livekit_client: ^2.7.0
+  livekit_client: ^2.9.0
   # video_player has no Linux desktop backend (#727), so we use media_kit
   # everywhere for a single libmpv-backed video stack on every platform
   # (Linux/Windows/macOS/iOS/Android/Web). media_kit_libs_video bundles
@@ -40,22 +40,22 @@ dependencies:
   media_kit_libs_video: ^1.0.5
   cached_network_image: ^3.4.1
   flutter_cache_manager: ^3.4.1
-  flutter_local_notifications: ^21.0.0
+  flutter_local_notifications: ^22.2.0
   path: ^1.9.0
   path_provider: ^2.1.0
-  emoji_picker_flutter: ^4.0.0
+  emoji_picker_flutter: ^4.5.3
   hive: ^2.2.3
   hive_flutter: ^1.1.0
-  photo_manager: ^3.6.0
+  photo_manager: ^3.11.0
   tray_manager: ^0.5.2
   window_manager: ^0.5.1
   screen_retriever: ^0.2.0
   local_auth: ^3.0.1
   desktop_drop: ^0.7.1
   flutter_slidable: ^3.1.1
-  image: ^4.8.0
+  image: ^4.9.1
   flutter_colorpicker: ^1.1.0
-  flutter_callkit_incoming: ^3.0.0
+  flutter_callkit_incoming: ^3.1.3
   flutter_markdown_plus: ^1.0.4
   # Algorithm-only package (~30 KB) — emits a stroke outline polygon from a
   # raw point list with velocity-thinned smoothing. Used locally on the canvas
@@ -69,12 +69,12 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^6.0.0
   fake_async: ^1.3.1
-  mockito: ^5.4.4
+  mockito: ^5.6.4
   mocktail: ^1.0.4
-  build_runner: ^2.4.8
-  riverpod_generator: ^2.6.0
-  custom_lint: ^0.7.0
-  riverpod_lint: ^2.6.0
+  build_runner: ^2.6.1
+  riverpod_generator: ^4.0.0+1
+  custom_lint: ^0.8.1
+  riverpod_lint: ^3.1.0
   network_image_mock: ^2.1.1
   path_provider_platform_interface: ^2.1.0
   plugin_platform_interface: ^2.1.0
