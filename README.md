@@ -21,7 +21,7 @@ Client apps and server binaries are on the [Releases page](https://github.com/NC
 | Linux | [Echo-x86_64.AppImage](https://github.com/NC1107/echo-messenger/releases/latest/download/Echo-x86_64.AppImage) (single file) |
 | macOS | [echo-macos-x64.tar.gz](https://github.com/NC1107/echo-messenger/releases/latest/download/echo-macos-x64.tar.gz) (extract and run `Echo.app`) |
 | Web | [echo-messenger.us](https://echo-messenger.us) (hosted) or [echo-web.tar.gz](https://github.com/NC1107/echo-messenger/releases/latest/download/echo-web.tar.gz) (self-host static files) |
-| iOS | Available via TestFlight — see [ios-testflight-setup.md](docs/ios-testflight-setup.md) |
+| iOS | Available via TestFlight - see [ios-testflight-setup.md](docs/ios-testflight-setup.md) |
 | Android | APK on the [Releases page](https://github.com/NC1107/echo-messenger/releases) (sideload) |
 
 **Self-hosting the server**
@@ -105,8 +105,10 @@ cd apps/client && flutter analyze --fatal-infos
 
 ## License
 
-[PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0). See [LICENSE](LICENSE).
+[PolyForm Noncommercial 1.0.0](LICENSE).
 
-This is a **source-available** license — anyone may use, modify, and contribute to Echo for any **non-commercial** purpose (personal, hobby, educational, non-profit, public-research, religious). Selling it, hosting it as a paid service, or using it inside a commercial entity is **not permitted** without a separate commercial license from the copyright holder.
+Free for noncommercial use: personal, hobby, educational, research, nonprofit, and all that.
+You can fork it, change it and redistribute it, you just can't sell it or use it commercially without asking first.
+If you want to use it commercially, open an issue and ask.
 
-Contributions are welcome via pull request. By submitting a contribution you agree that your changes are released under the same license.
+Contributions are welcome. By submitting a pull request you agree that your changes are released under this same license.
