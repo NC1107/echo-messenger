@@ -7,7 +7,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../models/blocked_user.dart';
 import '../models/contact.dart';
 import '../services/debug_log_service.dart';
-import 'auth_provider.dart';
+import 'authed_http.dart';
 import 'conversations_provider.dart';
 import 'server_url_provider.dart';
 
@@ -54,7 +54,7 @@ class ContactsState {
 }
 
 @Riverpod(keepAlive: true)
-class Contacts extends _$Contacts {
+class Contacts extends _$Contacts with AuthedHttp<ContactsState> {
   bool _isPendingLoadInFlight = false;
   DateTime? _lastPendingLoadedAt;
 
@@ -77,26 +77,14 @@ class Contacts extends _$Contacts {
 
   String get _serverUrl => ref.read(serverUrlProvider);
 
-  Map<String, String> _headersWithToken(String token) => {
-    'Content-Type': 'application/json',
-    'Authorization': 'Bearer $token',
-  };
-
-  /// Make an authenticated request with automatic 401 refresh-and-retry.
-  Future<http.Response> _authenticatedRequest(
-    Future<http.Response> Function(String token) requestFn,
-  ) {
-    return ref.read(authProvider.notifier).authenticatedRequest(requestFn);
-  }
-
   Future<void> loadContacts() async {
     state = state.copyWith(isLoading: true, error: null);
     final gen = ++_loadGen;
     try {
-      final response = await _authenticatedRequest(
+      final response = await authenticatedRequest(
         (token) => http.get(
           Uri.parse('$_serverUrl/api/contacts'),
-          headers: _headersWithToken(token),
+          headers: headersWithToken(token),
         ),
       );
       // Drop a stale response -- a newer call has been issued or the notifier
@@ -133,10 +121,10 @@ class Contacts extends _$Contacts {
 
     _isPendingLoadInFlight = true;
     try {
-      final response = await _authenticatedRequest(
+      final response = await authenticatedRequest(
         (token) => http.get(
           Uri.parse('$_serverUrl/api/contacts/pending'),
-          headers: _headersWithToken(token),
+          headers: headersWithToken(token),
         ),
       );
       if (response.statusCode == 200) {
@@ -160,10 +148,10 @@ class Contacts extends _$Contacts {
 
   Future<void> sendRequest(String username) async {
     try {
-      final response = await _authenticatedRequest(
+      final response = await authenticatedRequest(
         (token) => http.post(
           Uri.parse('$_serverUrl/api/contacts/request'),
-          headers: _headersWithToken(token),
+          headers: headersWithToken(token),
           body: jsonEncode({'username': username}),
         ),
       );
@@ -183,10 +171,10 @@ class Contacts extends _$Contacts {
 
   Future<void> declineRequest(String contactId) async {
     try {
-      final response = await _authenticatedRequest(
+      final response = await authenticatedRequest(
         (token) => http.post(
           Uri.parse('$_serverUrl/api/contacts/decline'),
-          headers: _headersWithToken(token),
+          headers: headersWithToken(token),
           body: jsonEncode({'contact_id': contactId}),
         ),
       );
@@ -216,10 +204,10 @@ class Contacts extends _$Contacts {
 
   Future<void> acceptRequest(String contactId) async {
     try {
-      final response = await _authenticatedRequest(
+      final response = await authenticatedRequest(
         (token) => http.post(
           Uri.parse('$_serverUrl/api/contacts/accept'),
-          headers: _headersWithToken(token),
+          headers: headersWithToken(token),
           body: jsonEncode({'contact_id': contactId}),
         ),
       );
@@ -248,10 +236,10 @@ class Contacts extends _$Contacts {
   Future<void> loadBlockedUsers() async {
     state = state.copyWith(isBlockedLoading: true, error: null);
     try {
-      final response = await _authenticatedRequest(
+      final response = await authenticatedRequest(
         (token) => http.get(
           Uri.parse('$_serverUrl/api/contacts/blocked'),
-          headers: _headersWithToken(token),
+          headers: headersWithToken(token),
         ),
       );
       if (response.statusCode == 200) {
@@ -272,10 +260,10 @@ class Contacts extends _$Contacts {
 
   Future<bool> unblockUser(String userId) async {
     try {
-      final response = await _authenticatedRequest(
+      final response = await authenticatedRequest(
         (token) => http.post(
           Uri.parse('$_serverUrl/api/contacts/unblock'),
-          headers: _headersWithToken(token),
+          headers: headersWithToken(token),
           body: jsonEncode({'user_id': userId}),
         ),
       );

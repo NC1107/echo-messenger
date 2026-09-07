@@ -73,7 +73,7 @@ mixin _HomeScreenListenersMixin
     if (next.error == 'Voice disconnected. Please sign in again.' &&
         !ref.read(authProvider).isLoggedIn &&
         mounted) {
-      context.go('/login');
+      context.go(routeLogin);
     }
   }
 

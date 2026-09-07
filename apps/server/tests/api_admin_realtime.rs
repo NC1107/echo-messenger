@@ -232,11 +232,12 @@ async fn register_response_includes_is_admin_flag() {
     // truncate the UUID suffix so we stay inside the budget.
     let suffix = Uuid::new_v4().simple().to_string();
     let username = format!("admin_flag_{}", &suffix[..8]);
+    let password = common::unique_password();
     let resp = client
         .post(format!("{base}/api/auth/register"))
         .json(&serde_json::json!({
             "username": username,
-            "password": "password123",
+            "password": password,
         }))
         .send()
         .await

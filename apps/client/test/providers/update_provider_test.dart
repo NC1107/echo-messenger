@@ -78,4 +78,28 @@ void main() {
       );
     });
   });
+
+  group('isNewerVersion', () {
+    test('stable semver comparison', () {
+      expect(isNewerVersion('0.0.6', '0.0.5'), isTrue);
+      expect(isNewerVersion('0.0.5', '0.0.5'), isFalse);
+      expect(isNewerVersion('0.0.4', '0.0.5'), isFalse);
+      expect(isNewerVersion('1.0.0', '0.9.9'), isTrue);
+    });
+
+    test('legacy bare "dev" local never updates', () {
+      expect(isNewerVersion('0.0.500', 'dev'), isFalse);
+    });
+
+    test('dev channel compares the monotonic -dev.<n> counter', () {
+      expect(isNewerVersion('0.0.0-dev.50', '0.0.0-dev.42'), isTrue);
+      expect(isNewerVersion('0.0.0-dev.42', '0.0.0-dev.42'), isFalse);
+      expect(isNewerVersion('0.0.0-dev.10', '0.0.0-dev.42'), isFalse);
+    });
+
+    test('a dev build never offers to "update" to a stable release', () {
+      // remote has no -dev.<n>, local does → not newer (no cross-channel jump).
+      expect(isNewerVersion('0.0.500', '0.0.0-dev.42'), isFalse);
+    });
+  });
 }

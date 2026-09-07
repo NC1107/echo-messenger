@@ -24,9 +24,12 @@ import '../utils/semantics_preview.dart';
 import '../utils/time_utils.dart';
 import 'avatar_utils.dart' show avatarColor, buildAvatar, senderLabelColor;
 import '../services/media_cache_service.dart';
+import 'message/edited_badge.dart';
 import 'message/hover_action_button.dart';
+import 'message/image_viewer_dialog.dart';
 import 'message/link_preview_card.dart';
 import 'message/media_content.dart';
+import 'message/message_actions.dart';
 import 'message/message_status_icon.dart';
 import 'message/message_indicators.dart';
 import 'message/reaction_bar.dart';
@@ -59,34 +62,10 @@ class MessageItem extends StatefulWidget {
   final bool showHeader;
   final bool isLastInGroup;
   final String myUserId;
-  final void Function(ChatMessage message, Offset globalPosition)?
-  onReactionTap;
-  final void Function(ChatMessage message, String emoji)? onReactionSelect;
 
-  /// Called when user taps "More emojis…" in the mobile action sheet
-  /// to open the full Unicode emoji picker.
-  final void Function(ChatMessage message)? onMoreReactions;
-  final void Function(ChatMessage message)? onDelete;
-  final void Function(ChatMessage message)? onEdit;
-  final void Function(ChatMessage message)? onReply;
-
-  /// Distinct from [onReply]: stamps the reply with the thread root so
-  /// the message vanishes from the main timeline and only shows in the
-  /// thread panel (Slack-style "Reply in thread").
-  final void Function(ChatMessage message)? onReplyInThread;
-  final void Function(ChatMessage message)? onViewThread;
-  final void Function(String userId)? onAvatarTap;
-  final void Function(ChatMessage message)? onPin;
-  final void Function(ChatMessage message)? onUnpin;
-  final void Function(ChatMessage message)? onRetry;
-  final void Function(ChatMessage message)? onSave;
-  final void Function(ChatMessage message)? onUnsave;
-  final void Function(ChatMessage message)? onForward;
-  final void Function(String replyToId)? onTapReplyQuote;
-
-  /// Called when the tiny lock icon on a received message is tapped.
-  /// When null, the lock icon is non-interactive.
-  final void Function(ChatMessage message)? onVerifyIdentity;
+  /// Grouped action + navigation callbacks (reply, delete, react, pin,
+  /// avatar/image tap, …). See [MessageActions].
+  final MessageActions actions;
 
   /// Whether this message is currently bookmarked.
   final bool isSaved;
@@ -135,34 +114,13 @@ class MessageItem extends StatefulWidget {
   /// `chat.hide_undecryptable_messages` SharedPreferences key.
   final bool hideUndecryptable;
 
-  /// Called when an image in this message is tapped, with the resolved URL.
-  /// When provided, the gallery viewer in the parent is opened instead of the
-  /// single-image dialog inside [MediaContent] / [_showImageViewer].
-  final void Function(String resolvedUrl)? onImageTap;
-
   const MessageItem({
     super.key,
     required this.message,
     required this.showHeader,
     required this.isLastInGroup,
     required this.myUserId,
-    this.onReactionTap,
-    this.onReactionSelect,
-    this.onMoreReactions,
-    this.onDelete,
-    this.onEdit,
-    this.onReply,
-    this.onReplyInThread,
-    this.onViewThread,
-    this.onAvatarTap,
-    this.onPin,
-    this.onUnpin,
-    this.onRetry,
-    this.onSave,
-    this.onUnsave,
-    this.onForward,
-    this.onTapReplyQuote,
-    this.onVerifyIdentity,
+    this.actions = const MessageActions(),
     this.isSaved = false,
     this.serverUrl,
     this.authToken,
@@ -172,7 +130,6 @@ class MessageItem extends StatefulWidget {
     this.density = UIDensity.normal,
     this.avatarShape = AvatarShape.circle,
     this.hideUndecryptable = false,
-    this.onImageTap,
   });
 
   @override
@@ -432,88 +389,11 @@ class _MessageItemState extends State<MessageItem>
   }
 
   void _showImageViewer({required String imageUrl}) {
-    final headers = _mediaHeaders();
-    showDialog<void>(
-      context: context,
-      barrierDismissible: true,
-      barrierColor: Theme.of(context).shadowColor.withValues(alpha: 0.9),
-      builder: (dialogContext) {
-        return Stack(
-          children: [
-            Positioned.fill(
-              child: GestureDetector(
-                onTap: () => Navigator.of(dialogContext).pop(),
-                behavior: HitTestBehavior.opaque,
-                child: const SizedBox.expand(),
-              ),
-            ),
-            // Image content — centered, constrained, does NOT fill screen
-            Center(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: MediaQuery.of(dialogContext).size.width * 0.85,
-                  maxHeight: MediaQuery.of(dialogContext).size.height * 0.85,
-                ),
-                child: InteractiveViewer(
-                  minScale: 0.8,
-                  maxScale: 4,
-                  child: GestureDetector(
-                    onTap: () => Navigator.of(dialogContext).pop(),
-                    behavior: HitTestBehavior.opaque,
-                    child: CachedNetworkImage(
-                      imageUrl: imageUrl,
-                      cacheKey: stableMediaCacheKey(imageUrl),
-                      httpHeaders: headers,
-                      cacheManager: chatMediaCacheManager,
-                      fit: BoxFit.contain,
-                      placeholder: (_, _) => SizedBox(
-                        width: 320,
-                        height: 240,
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            color: Theme.of(context).colorScheme.onPrimary,
-                          ),
-                        ),
-                      ),
-                      errorWidget: (_, _, _) => Center(
-                        child: Icon(
-                          Icons.broken_image_outlined,
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onPrimary.withValues(alpha: 0.54),
-                          size: 48,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            // Action buttons
-            Positioned(
-              top: 16,
-              right: 16,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.download_outlined),
-                    color: Theme.of(context).colorScheme.onPrimary,
-                    tooltip: 'Download',
-                    onPressed: () => _downloadMedia(imageUrl),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    color: Theme.of(context).colorScheme.onPrimary,
-                    tooltip: 'Close',
-                    onPressed: () => Navigator.of(dialogContext).pop(),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        );
-      },
+    ImageViewerDialog.show(
+      context,
+      imageUrl: imageUrl,
+      headers: _mediaHeaders(),
+      onDownload: () => _downloadMedia(imageUrl),
     );
   }
 
@@ -533,7 +413,7 @@ class _MessageItemState extends State<MessageItem>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (widget.onReply != null)
+          if (widget.actions.onReply != null)
             Semantics(
               label: 'Reply to message',
               button: true,
@@ -544,10 +424,10 @@ class _MessageItemState extends State<MessageItem>
                 iconOpacity: style.iconOpacity,
                 iconColor: style.iconColor,
                 cornerRadius: style.buttonRadius,
-                onPressed: () => widget.onReply?.call(msg),
+                onPressed: () => widget.actions.onReply?.call(msg),
               ),
             ),
-          if (widget.onForward != null)
+          if (widget.actions.onForward != null)
             Semantics(
               label: 'Forward message',
               button: true,
@@ -558,7 +438,7 @@ class _MessageItemState extends State<MessageItem>
                 iconOpacity: style.iconOpacity,
                 iconColor: style.iconColor,
                 cornerRadius: style.buttonRadius,
-                onPressed: () => widget.onForward?.call(msg),
+                onPressed: () => widget.actions.onForward?.call(msg),
               ),
             ),
           // Overflow menu: copy, pin, edit, delete
@@ -719,8 +599,8 @@ class _MessageItemState extends State<MessageItem>
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: GestureDetector(
-        onTap: () => widget.onImageTap != null
-            ? widget.onImageTap!(imgUrl)
+        onTap: () => widget.actions.onImageTap != null
+            ? widget.actions.onImageTap!(imgUrl)
             : _showImageViewer(imageUrl: imgUrl),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 400, maxHeight: 320),
@@ -812,7 +692,7 @@ class _MessageItemState extends State<MessageItem>
       serverUrl: widget.serverUrl,
       authToken: widget.authToken,
       mediaTicket: widget.mediaTicket,
-      onImageTap: widget.onImageTap,
+      onImageTap: widget.actions.onImageTap,
     );
     final caption = extractMediaCaption(mediaContent);
     if (caption == null) return mediaWidget;
@@ -841,8 +721,12 @@ class _MessageItemState extends State<MessageItem>
     if (isMine && (msg.failedContent ?? '').isNotEmpty) {
       return OwnDecryptFailedBubble(
         originalText: msg.failedContent!,
-        onResend: widget.onRetry == null ? null : () => widget.onRetry!(msg),
-        onDelete: widget.onDelete == null ? null : () => widget.onDelete!(msg),
+        onResend: widget.actions.onRetry == null
+            ? null
+            : () => widget.actions.onRetry!(msg),
+        onDelete: widget.actions.onDelete == null
+            ? null
+            : () => widget.actions.onDelete!(msg),
       );
     }
     return const DecryptFailurePill();
@@ -948,8 +832,8 @@ class _MessageItemState extends State<MessageItem>
           replyToUsername: msg.replyToUsername,
           replyToContent: msg.replyToContent!,
           isMine: isMine,
-          onTap: msg.replyToId != null && widget.onTapReplyQuote != null
-              ? () => widget.onTapReplyQuote!(msg.replyToId!)
+          onTap: msg.replyToId != null && widget.actions.onTapReplyQuote != null
+              ? () => widget.actions.onTapReplyQuote!(msg.replyToId!)
               : null,
         ),
       if (msg.content.startsWith(_forwardedPrefix))
@@ -961,17 +845,7 @@ class _MessageItemState extends State<MessageItem>
         hasMedia: hasMedia,
       ),
       if (msg.editedAt != null && !widget.isLastInGroup)
-        Padding(
-          padding: const EdgeInsets.only(top: 2),
-          child: Text(
-            '(edited)',
-            style: GoogleFonts.inter(
-              fontSize: 11,
-              fontStyle: FontStyle.italic,
-              color: context.textMuted,
-            ),
-          ),
-        ),
+        const EditedBadge(inline: true),
     ];
   }
 
@@ -1091,8 +965,8 @@ class _MessageItemState extends State<MessageItem>
       label: 'View profile of ${msg.fromUsername}',
       button: true,
       child: GestureDetector(
-        onTap: widget.onAvatarTap != null
-            ? () => widget.onAvatarTap!(msg.fromUserId)
+        onTap: widget.actions.onAvatarTap != null
+            ? () => widget.actions.onAvatarTap!(msg.fromUserId)
             : null,
         child: SizedBox(
           // Slice 5: bump compact avatar to 32px (closer to Discord's 40)
@@ -1142,36 +1016,14 @@ class _MessageItemState extends State<MessageItem>
             LockIcon(
               message: msg,
               isMine: isMine,
-              onVerifyIdentity: widget.onVerifyIdentity,
+              onVerifyIdentity: widget.actions.onVerifyIdentity,
             ),
           if (msg.pinnedAt != null)
             Padding(
               padding: const EdgeInsets.only(left: 4),
               child: Icon(Icons.push_pin, size: 10, color: context.accent),
             ),
-          if (msg.editedAt != null)
-            Padding(
-              padding: const EdgeInsets.only(left: 6),
-              // Slack-style edited pill: distinct token in the metadata
-              // row rather than inline italic text. Reads as a label, not
-              // part of the timestamp.
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                decoration: BoxDecoration(
-                  color: context.surfaceHover,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  'edited',
-                  style: GoogleFonts.inter(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w500,
-                    color: context.textMuted,
-                    letterSpacing: 0.2,
-                  ),
-                ),
-              ),
-            ),
+          if (msg.editedAt != null) const EditedBadge(),
           if (msg.expiresAt != null)
             Padding(
               padding: const EdgeInsets.only(left: 4),
@@ -1387,24 +1239,20 @@ class _MessageItemState extends State<MessageItem>
     return SizedBox(width: double.infinity, child: stack);
   }
 
-  /// Handle long-press: open the centralised context menu on mobile,
-  /// or fall through to the desktop reaction picker on non-mobile
-  /// when no reactions are present yet (matches pre-migration
-  /// behaviour where long-press without reactions seeded the
-  /// floating picker).
+  /// Handle long-press: a mobile-only affordance that opens the centralised
+  /// context menu. On desktop, click-and-hold deliberately does nothing —
+  /// reactions and actions are reached via right-click (`onSecondaryTapDown`
+  /// → [_openContextMenu]) or the hover bar, so we don't pop a second floating
+  /// reaction surface on hold.
   void _handleLongPress(
     LongPressStartDetails details,
     ChatMessage msg,
     bool isMine,
     String? mediaUrl,
-    bool hasReactions,
   ) {
-    if (Responsive.isMobile(context)) {
-      HapticFeedback.mediumImpact();
-      _openContextMenu(details.globalPosition, msg, isMine, mediaUrl);
-    } else if (!hasReactions) {
-      widget.onReactionTap?.call(msg, details.globalPosition);
-    }
+    if (!Responsive.isMobile(context)) return;
+    HapticFeedback.mediumImpact();
+    _openContextMenu(details.globalPosition, msg, isMine, mediaUrl);
   }
 
   /// Open the centralised Echo context menu for [msg]. Single
@@ -1428,9 +1276,9 @@ class _MessageItemState extends State<MessageItem>
       isEncryptedUnreadable: unreadable,
       mediaUrl: mediaUrl,
       isImageMedia: isImage,
-      onReply: _wrapMsgCallback(widget.onReply, msg),
-      onReplyInThread: _wrapMsgCallback(widget.onReplyInThread, msg),
-      onForward: _wrapMsgCallback(widget.onForward, msg),
+      onReply: _wrapMsgCallback(widget.actions.onReply, msg),
+      onReplyInThread: _wrapMsgCallback(widget.actions.onReplyInThread, msg),
+      onForward: _wrapMsgCallback(widget.actions.onForward, msg),
       onRetry: _resolveRetryCallback(msg),
       onCopyText: () => _copyMessageText(msg, mediaUrl),
       // `isImage` only true when `mediaUrl` is non-null (the predicate
@@ -1438,16 +1286,16 @@ class _MessageItemState extends State<MessageItem>
       onViewGallery: isImage ? () => _handleImageAction(mediaUrl) : null,
       onPin: _resolvePinCallback(msg),
       onUnpin: _resolveUnpinCallback(msg),
-      onSave: _wrapMsgCallback(widget.onSave, msg),
-      onUnsave: _wrapMsgCallback(widget.onUnsave, msg),
-      onEdit: _wrapMsgCallback(widget.onEdit, msg),
-      onDelete: _wrapMsgCallback(widget.onDelete, msg),
+      onSave: _wrapMsgCallback(widget.actions.onSave, msg),
+      onUnsave: _wrapMsgCallback(widget.actions.onUnsave, msg),
+      onEdit: _wrapMsgCallback(widget.actions.onEdit, msg),
+      onDelete: _wrapMsgCallback(widget.actions.onDelete, msg),
       onCopyId: () => _copyMessageId(msg),
       // Registry decides visibility based on isEncryptedUnreadable; we still wire callbacks.
-      onPickReaction: widget.onReactionSelect == null
+      onPickReaction: widget.actions.onReactionSelect == null
           ? null
-          : (emoji) => widget.onReactionSelect!(msg, emoji),
-      onOpenFullPicker: _wrapMsgCallback(widget.onMoreReactions, msg),
+          : (emoji) => widget.actions.onReactionSelect!(msg, emoji),
+      onOpenFullPicker: _wrapMsgCallback(widget.actions.onMoreReactions, msg),
       recentReactions: reactionEmojis.take(4).toList(),
     );
 
@@ -1468,20 +1316,20 @@ class _MessageItemState extends State<MessageItem>
   }
 
   VoidCallback? _resolveRetryCallback(ChatMessage msg) {
-    if (msg.status != MessageStatus.failed || widget.onRetry == null) {
+    if (msg.status != MessageStatus.failed || widget.actions.onRetry == null) {
       return null;
     }
-    return () => widget.onRetry!(msg);
+    return () => widget.actions.onRetry!(msg);
   }
 
   VoidCallback? _resolvePinCallback(ChatMessage msg) {
-    if (msg.pinnedAt != null || widget.onPin == null) return null;
-    return () => widget.onPin!(msg);
+    if (msg.pinnedAt != null || widget.actions.onPin == null) return null;
+    return () => widget.actions.onPin!(msg);
   }
 
   VoidCallback? _resolveUnpinCallback(ChatMessage msg) {
-    if (msg.pinnedAt == null || widget.onUnpin == null) return null;
-    return () => widget.onUnpin!(msg);
+    if (msg.pinnedAt == null || widget.actions.onUnpin == null) return null;
+    return () => widget.actions.onUnpin!(msg);
   }
 
   void _copyMessageText(ChatMessage msg, String? mediaUrl) {
@@ -1598,7 +1446,7 @@ class _MessageItemState extends State<MessageItem>
               ReplyCountBadge(
                 message: msg,
                 isMine: isMine,
-                onTap: widget.onViewThread,
+                onTap: widget.actions.onViewThread,
                 inlineStyle: widget._isPlain,
               ),
             if (msg.replyCount > 0 &&
@@ -1620,8 +1468,8 @@ class _MessageItemState extends State<MessageItem>
             if (isFailed && isMine)
               RetryRow(
                 message: msg,
-                onRetry: widget.onRetry,
-                onDelete: widget.onDelete,
+                onRetry: widget.actions.onRetry,
+                onDelete: widget.actions.onDelete,
               ),
           ],
         ),
@@ -1637,13 +1485,12 @@ class _MessageItemState extends State<MessageItem>
     required ChatMessage msg,
     required bool isMine,
     required bool canSwipeToReply,
-    required bool hasReactions,
     required String? mediaUrl,
     required Widget child,
   }) {
     return GestureDetector(
       onLongPressStart: (details) =>
-          _handleLongPress(details, msg, isMine, mediaUrl, hasReactions),
+          _handleLongPress(details, msg, isMine, mediaUrl),
       // Right-click routes through _openContextMenu like the hover-bar overflow.
       onSecondaryTapDown: (details) =>
           _openContextMenu(details.globalPosition, msg, isMine, mediaUrl),
@@ -1661,7 +1508,7 @@ class _MessageItemState extends State<MessageItem>
           : null,
       onHorizontalDragEnd: canSwipeToReply
           ? (_) {
-              if (_swipeTriggered) widget.onReply?.call(msg);
+              if (_swipeTriggered) widget.actions.onReply?.call(msg);
               _swipeTriggered = false;
               _startSpringBack();
             }
@@ -1703,7 +1550,7 @@ class _MessageItemState extends State<MessageItem>
       currentUserId: widget.myUserId,
       isMine: isMine,
       chatBgColor: context.chatBg,
-      onTap: (pos) => widget.onReactionTap?.call(msg, pos),
+      onTap: (pos) => widget.actions.onReactionTap?.call(msg, pos),
       density: widget.density,
     );
 
@@ -1723,7 +1570,7 @@ class _MessageItemState extends State<MessageItem>
 
     final isAlignedEnd = isMine && !widget.compactLayout;
     final canSwipeToReply =
-        _isMobileTouch && widget.onReply != null && !msg.isSystemEvent;
+        _isMobileTouch && widget.actions.onReply != null && !msg.isSystemEvent;
     final topPad = _buildTopPad();
     final hoverSpec = _hoverStyle;
 
@@ -1764,13 +1611,11 @@ class _MessageItemState extends State<MessageItem>
             msg,
             isMine,
             mediaUrl,
-            hasReactions,
           ),
           child: _buildGestureDetector(
             msg: msg,
             isMine: isMine,
             canSwipeToReply: canSwipeToReply,
-            hasReactions: hasReactions,
             mediaUrl: mediaUrl,
             child: _buildSwipeToReplyWrapper(
               canSwipe: canSwipeToReply,

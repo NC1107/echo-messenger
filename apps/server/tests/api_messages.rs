@@ -17,14 +17,15 @@ async fn setup_dm_with_message(
 ) -> (Client, String, String, String, String, String, String) {
     let client = Client::new();
 
+    let password = common::unique_password();
     let alice_name = common::unique_username("pin_alice");
     let bob_name = common::unique_username("pin_bob");
 
-    common::register(&client, base, &alice_name, "password123").await;
-    common::register(&client, base, &bob_name, "password123").await;
+    common::register(&client, base, &alice_name, &password).await;
+    common::register(&client, base, &bob_name, &password).await;
 
-    let (alice_token, alice_id) = common::login(&client, base, &alice_name, "password123").await;
-    let (bob_token, _bob_id) = common::login(&client, base, &bob_name, "password123").await;
+    let (alice_token, alice_id) = common::login(&client, base, &alice_name, &password).await;
+    let (bob_token, _bob_id) = common::login(&client, base, &bob_name, &password).await;
 
     // Make contacts
     let resp = client

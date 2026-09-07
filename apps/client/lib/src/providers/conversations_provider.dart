@@ -10,6 +10,7 @@ import '../services/message_cache.dart';
 import '../services/notification_service.dart';
 import '../utils/crypto_utils.dart';
 import 'auth_provider.dart';
+import 'authed_http.dart';
 import 'chat_provider.dart';
 import 'crypto_provider.dart';
 import 'encrypted_preview_provider.dart';
@@ -46,7 +47,10 @@ class ConversationsState {
 
 @Riverpod(keepAlive: true)
 class ConversationsNotifier extends _$ConversationsNotifier
-    with _ConversationsWsHandlersMixin, _ConversationsHttpActionsMixin {
+    with
+        _ConversationsWsHandlersMixin,
+        AuthedHttp<ConversationsState>,
+        _ConversationsHttpActionsMixin {
   /// Cache of decrypted message previews by conversationId.
   @override
   final Map<String, String> _decryptedPreviews = {};
@@ -108,12 +112,6 @@ class ConversationsNotifier extends _$ConversationsNotifier
     return fallback;
   }
 
-  @override
-  Map<String, String> _headersWithToken(String token) => {
-    'Content-Type': 'application/json',
-    'Authorization': 'Bearer $token',
-  };
-
   /// Compute total unread count and update the browser tab badge.
   @override
   void _updateTabBadge() {
@@ -122,14 +120,6 @@ class ConversationsNotifier extends _$ConversationsNotifier
       (sum, c) => sum + c.unreadCount,
     );
     NotificationService().updateTabBadge(total);
-  }
-
-  /// Make an authenticated request with automatic 401 refresh-and-retry.
-  @override
-  Future<http.Response> _authenticatedRequest(
-    Future<http.Response> Function(String token) requestFn,
-  ) {
-    return ref.read(authProvider.notifier).authenticatedRequest(requestFn);
   }
 
   /// Load all conversations from the server.
@@ -142,10 +132,10 @@ class ConversationsNotifier extends _$ConversationsNotifier
     state = state.copyWith(isLoading: true, error: null);
     final gen = ++_loadGen;
     try {
-      final response = await _authenticatedRequest(
+      final response = await authenticatedRequest(
         (token) => http.get(
           Uri.parse('$_serverUrl/api/conversations'),
-          headers: _headersWithToken(token),
+          headers: headersWithToken(token),
         ),
       );
       // Drop a stale response (a newer call has been issued) before any
@@ -265,10 +255,10 @@ class ConversationsNotifier extends _$ConversationsNotifier
       return;
     }
     try {
-      await _authenticatedRequest(
+      await authenticatedRequest(
         (token) => http.post(
           Uri.parse('$_serverUrl/api/conversations/$conversationId/read'),
-          headers: _headersWithToken(token),
+          headers: headersWithToken(token),
         ),
       );
     } catch (e) {

@@ -6,67 +6,12 @@ part of '../../group_info_screen.dart';
 /// dialog, delete-channel confirm + provider plumbing.
 extension _ChannelsSection on _GroupInfoScreenState {
   Future<void> _showAddChannelDialog() async {
-    final nameController = TextEditingController();
-    String selectedKind = 'text';
-
-    final result = await showDialog<Map<String, String>>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('Add Channel'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  labelText: 'Channel name',
-                  hintText: 'e.g. general',
-                ),
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                initialValue: selectedKind,
-                decoration: const InputDecoration(labelText: 'Type'),
-                items: const [
-                  DropdownMenuItem(value: 'text', child: Text('Text')),
-                  DropdownMenuItem(value: 'voice', child: Text('Voice')),
-                ],
-                onChanged: (v) {
-                  if (v != null) setDialogState(() => selectedKind = v);
-                },
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final name = nameController.text.trim();
-                if (name.isNotEmpty) {
-                  Navigator.pop(dialogContext, {
-                    'name': name,
-                    'kind': selectedKind,
-                  });
-                }
-              },
-              child: const Text('Create'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    nameController.dispose();
-    if (result == null) return;
+    final result = await showCreateChannelDialog(context);
+    if (result == null || !mounted) return;
 
     final success = await ref
         .read(channelsProvider.notifier)
-        .createChannel(widget.conversationId, result['name']!, result['kind']!);
+        .createChannel(widget.conversationId, result.name, result.kind);
     if (mounted) {
       ToastService.show(
         context,
@@ -142,21 +87,27 @@ extension _ChannelsSection on _GroupInfoScreenState {
     }
     return Column(
       children: channels.map((channel) {
+        final isDivider = channel.isDivider;
         return ListTile(
           leading: Icon(
-            channel.isText ? Icons.tag : Icons.headset_mic_outlined,
+            isDivider
+                ? Icons.more_vert
+                : (channel.isText ? Icons.tag : Icons.headset_mic_outlined),
             size: 20,
           ),
-          title: Text(channel.name),
-          subtitle: Text(channel.kind),
+          title: Text(isDivider ? 'Divider' : channel.name),
+          subtitle: isDivider ? null : Text(channel.kind),
           trailing: IconButton(
             icon: Icon(
               Icons.delete_outline,
               size: 18,
               color: Theme.of(context).colorScheme.error,
             ),
-            tooltip: 'Delete channel',
-            onPressed: () => _deleteChannel(channel.id, channel.name),
+            tooltip: isDivider ? 'Delete divider' : 'Delete channel',
+            onPressed: () => _deleteChannel(
+              channel.id,
+              isDivider ? 'this divider' : channel.name,
+            ),
           ),
         );
       }).toList(),

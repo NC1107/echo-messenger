@@ -77,7 +77,7 @@ extension _DangerActions on _GroupInfoScreenState {
       if ((response.statusCode == 200 || response.statusCode == 204) &&
           mounted) {
         await ref.read(conversationsProvider.notifier).loadConversations();
-        if (mounted) context.go('/home');
+        if (mounted) context.go(routeHome);
       }
     } catch (e) {
       debugPrint('[GroupInfo] _leaveGroup failed: $e');
@@ -100,11 +100,7 @@ extension _DangerActions on _GroupInfoScreenState {
         child: OutlinedButton.icon(
           onPressed: _isGeneratingInvite ? null : _generateAndCopyInviteLink,
           icon: _isGeneratingInvite
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+              ? const InlineLoadingSpinner(size: 16)
               : const Icon(Icons.link_outlined),
           label: const Text('Copy Invite Link'),
         ),

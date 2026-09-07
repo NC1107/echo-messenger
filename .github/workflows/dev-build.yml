@@ -38,7 +38,7 @@ jobs:
       dev-build-workflow: ${{ steps.filter.outputs.dev-build-workflow }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3
         id: filter
         with:
           filters: |
@@ -106,6 +106,9 @@ jobs:
     timeout-minutes: 60
     needs: [paths]
     if: needs.paths.outputs.linux == 'true' || needs.paths.outputs.dev-build-workflow == 'true'
+    # contents: write so the rolling `dev-latest` pre-release can be published.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
@@ -133,17 +136,43 @@ jobs:
           sudo apt-get install -y clang cmake ninja-build libgtk-3-dev libfuse2 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-good libsecret-1-dev libayatana-appindicator3-dev libasound2-dev libmpv-dev
       - name: Build
         working-directory: apps/client
-        run: flutter build linux --release --dart-define=APP_VERSION=dev
+        # Monotonic dev version so the client's dev update channel can tell
+        # builds apart (run_number increments on every workflow run).
+        run: flutter build linux --release --dart-define=APP_VERSION=0.0.0-dev.${{ github.run_number }}
       - name: Package tar.gz
         run: |
           cd apps/client/build/linux/x64/release/bundle
           tar czf ${{ github.workspace }}/echo-linux-dev.tar.gz .
+      - name: Build AppImage
+        run: bash scripts/build_appimage.sh
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dev-linux
-          path: echo-linux-dev.tar.gz
+          path: |
+            echo-linux-dev.tar.gz
+            Echo-x86_64.AppImage
           retention-days: 7
+      # Rolling dev-channel release. Recreated each push so the `dev-latest`
+      # tag tracks the newest dev commit, its title carries the version the
+      # client compares, and the AppImage asset is refreshed. Tag is
+      # `dev-latest` (not `dev`) to avoid colliding with the dev BRANCH; it is
+      # NOT a `v*` tag, so release.yml's version auto-increment ignores it.
+      # Only the dev branch publishes — feature/fix branches build for
+      # verification but don't touch the channel.
+      - name: Publish rolling dev pre-release
+        if: github.ref == 'refs/heads/dev'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEV_VERSION: 0.0.0-dev.${{ github.run_number }}
+        run: |
+          gh release delete dev-latest --yes --cleanup-tag 2>/dev/null || true
+          gh release create dev-latest \
+            Echo-x86_64.AppImage echo-linux-dev.tar.gz \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "$DEV_VERSION" \
+            --notes "Rolling Echo dev-channel build (auto-published on every push to \`dev\`). Clients on the dev update channel pull from here. Not for production."
 
   build-windows:
     name: Build Windows Portable Zip

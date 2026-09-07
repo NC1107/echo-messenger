@@ -8,8 +8,9 @@ use serde_json::Value;
 /// Helper: register a user, log in, return (token, user_id, username).
 async fn setup(client: &Client, base: &str, prefix: &str) -> (String, String, String) {
     let username = common::unique_username(prefix);
-    common::register(client, base, &username, "password123").await;
-    let (token, user_id) = common::login(client, base, &username, "password123").await;
+    let password = common::unique_password();
+    common::register(client, base, &username, &password).await;
+    let (token, user_id) = common::login(client, base, &username, &password).await;
     (token, user_id, username)
 }
 

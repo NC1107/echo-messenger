@@ -19,8 +19,9 @@ async fn heartbeat_arrives_on_idle_connection() {
     let client = Client::new();
 
     let name = common::unique_username("hb");
-    common::register(&client, &base, &name, "password123").await;
-    let (token, _) = common::login(&client, &base, &name, "password123").await;
+    let password = common::unique_password();
+    common::register(&client, &base, &name, &password).await;
+    let (token, _) = common::login(&client, &base, &name, &password).await;
     let ticket = common::get_ws_ticket(&client, &base, &token).await;
 
     let ws_url = base.replace("http://", "ws://");

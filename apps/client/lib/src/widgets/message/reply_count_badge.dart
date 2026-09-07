@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../models/chat_message.dart';
 import '../../providers/threads_inbox_provider.dart';
 import '../../theme/echo_theme.dart';
+import '../face_circle_avatar.dart';
 
 /// Tappable "X replies" pill shown beneath a message that has at least
 /// one threaded reply.  Aligns to the bubble's own side (right for
@@ -216,40 +217,9 @@ class _FaceStack extends StatelessWidget {
           for (int i = 0; i < faces.length; i++)
             Positioned(
               left: i * (faceSize - overlap),
-              child: _FaceCircle(name: faces[i], size: faceSize),
+              child: FaceCircleAvatar(name: faces[i], size: faceSize),
             ),
         ],
-      ),
-    );
-  }
-}
-
-class _FaceCircle extends StatelessWidget {
-  const _FaceCircle({required this.name, required this.size});
-  final String name;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
-    final hue = (name.hashCode % 360).abs().toDouble();
-    final bg = HSLColor.fromAHSL(1.0, hue, 0.55, 0.45).toColor();
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: bg,
-        shape: BoxShape.circle,
-        border: Border.all(color: context.surface, width: 1.5),
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        initial,
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: size * 0.55,
-          fontWeight: FontWeight.w700,
-        ),
       ),
     );
   }

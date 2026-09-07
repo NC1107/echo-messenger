@@ -112,7 +112,13 @@ pub(in crate::ws) async fn handle_text_message(
             .await;
         }
         ClientMessage::ReadReceipt { conversation_id } => {
-            typing_service::handle_read_receipt(state, sender_id, conversation_id).await;
+            typing_service::handle_read_receipt(
+                state,
+                sender_id,
+                sender_device_id,
+                conversation_id,
+            )
+            .await;
         }
         ClientMessage::VoiceSignal {
             conversation_id,
@@ -153,6 +159,7 @@ pub(in crate::ws) async fn handle_text_message(
             handle_broadcast_event(
                 state,
                 sender_id,
+                sender_device_id,
                 sender_username,
                 conversation_id,
                 |from_user_id, from_username, conversation_id| ServerMessage::KeyReset {
@@ -167,6 +174,7 @@ pub(in crate::ws) async fn handle_text_message(
             handle_broadcast_event(
                 state,
                 sender_id,
+                sender_device_id,
                 sender_username,
                 conversation_id,
                 |from_user_id, from_username, conversation_id| ServerMessage::CallStarted {

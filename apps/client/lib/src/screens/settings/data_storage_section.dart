@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/conversations_provider.dart';
 import '../../providers/server_url_provider.dart';
+import '../../services/clipboard_service.dart';
 import '../../services/export_service.dart';
 import '../../services/message_cache.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
+import '../../utils/byte_format.dart';
 import '../../widgets/confirm_dialog.dart';
+import '../../widgets/loading_indicator.dart';
 import '../../widgets/settings/settings_list_tile.dart';
 import '../../widgets/settings_panel_scaffold.dart';
 
@@ -37,18 +39,12 @@ class _DataStorageSectionState extends ConsumerState<DataStorageSection> {
       final totalBytes = count * 512;
       if (mounted) {
         setState(
-          () => _cacheSize = '$count entries (~${_formatBytes(totalBytes)})',
+          () => _cacheSize = '$count entries (~${formatBytes(totalBytes)})',
         );
       }
     } catch (_) {
       if (mounted) setState(() => _cacheSize = 'Unknown');
     }
-  }
-
-  String _formatBytes(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
   Future<void> _clearMessageCache() async {
@@ -83,11 +79,11 @@ class _DataStorageSectionState extends ConsumerState<DataStorageSection> {
       'Server: $serverUrl',
     ];
 
-    await Clipboard.setData(ClipboardData(text: lines.join('\n')));
-
-    if (mounted) {
-      ToastService.show(context, 'Account info copied to clipboard');
-    }
+    await copyToClipboard(
+      context,
+      lines.join('\n'),
+      successMessage: 'Account info copied to clipboard',
+    );
   }
 
   Future<void> _exportChats() async {
@@ -188,11 +184,7 @@ class _DataStorageSectionState extends ConsumerState<DataStorageSection> {
             OutlinedButton.icon(
               onPressed: _isExporting ? null : _exportChats,
               icon: _isExporting
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
+                  ? const InlineLoadingSpinner(size: 14)
                   : const Icon(Icons.download_outlined, size: 16),
               label: Text(
                 _isExporting ? 'Exporting...' : 'Export chats (JSON)',

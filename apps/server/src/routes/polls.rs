@@ -81,7 +81,7 @@ pub async fn create_poll(
         .await
         .db_ctx("create_poll/is_member")?;
     if !is_member {
-        return Err(AppError::unauthorized("Not a member of this conversation"));
+        return Err(AppError::forbidden("Not a member of this conversation"));
     }
 
     // Reject duplicate polls.
@@ -124,7 +124,7 @@ pub async fn vote_poll(
         .await
         .db_ctx("vote_poll/is_member")?;
     if !is_member {
-        return Err(AppError::unauthorized("Not a member of this conversation"));
+        return Err(AppError::forbidden("Not a member of this conversation"));
     }
 
     // Bounds-check the option index against the stored options.
@@ -161,7 +161,7 @@ pub async fn get_poll(
         .await
         .db_ctx("get_poll/is_member")?;
     if !is_member {
-        return Err(AppError::unauthorized("Not a member of this conversation"));
+        return Err(AppError::forbidden("Not a member of this conversation"));
     }
 
     let result = db::polls::get_poll(&state.pool, message_id, auth.user_id)

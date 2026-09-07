@@ -208,7 +208,7 @@ pub async fn add_member(
 
     let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
     if !is_public && !caller_role_enum.is_admin_or_above() {
-        return Err(AppError::unauthorized(
+        return Err(AppError::forbidden(
             "Only owners and admins can add members to private groups",
         ));
     }
@@ -314,7 +314,7 @@ pub async fn remove_member(
     // If removing someone else, must be owner or admin
     let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
     if target_user_id != auth.user_id && !caller_role_enum.is_admin_or_above() {
-        return Err(AppError::unauthorized(
+        return Err(AppError::forbidden(
             "Only owners and admins can remove other members",
         ));
     }
@@ -373,7 +373,7 @@ pub async fn ban_member(
 
     let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
     if !caller_role_enum.is_admin_or_above() {
-        return Err(AppError::unauthorized(
+        return Err(AppError::forbidden(
             "Only owners and admins can ban members",
         ));
     }
@@ -426,7 +426,7 @@ pub async fn unban_member(
 
     let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
     if !caller_role_enum.is_admin_or_above() {
-        return Err(AppError::unauthorized(
+        return Err(AppError::forbidden(
             "Only owners and admins can unban members",
         ));
     }
@@ -489,7 +489,7 @@ pub async fn change_member_role(
         .ok_or_else(|| AppError::with_code(ErrorCode::NotMember, "Not a member of this group"))?;
 
     if Role::from_str_opt(&caller_role) != Some(Role::Owner) {
-        return Err(AppError::unauthorized(
+        return Err(AppError::forbidden(
             "Only the group owner can change member roles",
         ));
     }
@@ -552,6 +552,13 @@ async fn after_member_loss(
     target_user_id: Uuid,
     action: &str,
 ) {
+    // VL-24: drop the removed member's voice presence in this conversation so a
+    // kicked/banned user no longer shows up in the lounge and the server stops
+    // counting them. Their already-minted LiveKit token still works until it
+    // expires (short TTL — see routes::voice::TOKEN_TTL_SECS); actively booting
+    // them off the SFU needs a management client (evict_from_voice_deferred).
+    crate::ws::events::voice::evict_member_voice_sessions(state, group_id, target_user_id).await;
+
     let remaining = db::groups::get_conversation_member_ids(&state.pool, group_id)
         .await
         .map_err(|e| tracing::error!("Failed to get member IDs for broadcast: {e:?}"))

@@ -466,23 +466,13 @@ class _DiscoverGroupsScreenState extends ConsumerState<DiscoverGroupsScreen> {
   }
 
   Widget _buildErrorState() {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.error_outline, size: 40, color: context.textMuted),
-          const SizedBox(height: 12),
-          Text(
-            _error!,
-            style: TextStyle(color: context.textSecondary, fontSize: 14),
-          ),
-          const SizedBox(height: 12),
-          TextButton(
-            onPressed: () => _searchGroups(_searchController.text.trim()),
-            child: const Text('Retry'),
-          ),
-        ],
-      ),
+    return EmptyState(
+      icon: Icons.error_outline,
+      title: "Couldn't load groups",
+      body: _error,
+      ctaLabel: 'Retry',
+      onCta: () => _searchGroups(_searchController.text.trim()),
+      variant: EmptyStateVariant.error,
     );
   }
 

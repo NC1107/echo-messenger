@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/admin_realtime_provider.dart';
 import '../../providers/admin_stats_provider.dart';
+import '../../services/toast_service.dart';
+import '../../widgets/confirm_dialog.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/skeleton_loader.dart';
 
@@ -347,12 +349,12 @@ class _StatCardText extends StatelessWidget {
   }
 }
 
-class _FeedbackTile extends StatelessWidget {
+class _FeedbackTile extends ConsumerWidget {
   final FeedbackItem item;
   const _FeedbackTile(this.item);
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final who = (item.username?.isNotEmpty ?? false)
         ? item.username!
@@ -383,6 +385,22 @@ class _FeedbackTile extends StatelessWidget {
                     color: scheme.onSurfaceVariant,
                   ),
                 ),
+                const SizedBox(width: 4),
+                IconButton(
+                  tooltip: 'Delete feedback',
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 18,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
+                  onPressed: () => _confirmDelete(context, ref),
+                  icon: Icon(
+                    Icons.delete_outline,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
               ],
             ),
             if (item.title.isNotEmpty) ...[
@@ -408,6 +426,33 @@ class _FeedbackTile extends StatelessWidget {
     );
   }
 
+  /// Confirm, then hard-delete this report. Optimistic removal lives in the
+  /// notifier; we only surface a toast on failure so the operator knows the
+  /// row is still there.
+  Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showEchoConfirmDialog(
+      context,
+      title: 'Delete feedback?',
+      content:
+          'This permanently removes the report. This action cannot be undone.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    );
+    if (!confirmed) return;
+
+    try {
+      await ref.read(adminDashboardProvider.notifier).deleteFeedback(item.id);
+    } catch (e) {
+      if (context.mounted) {
+        ToastService.show(
+          context,
+          'Failed to delete feedback',
+          type: ToastType.error,
+        );
+      }
+    }
+  }
+
   /// Render the row's `created_at` as a short UTC string. We intentionally
   /// avoid the `intl` locale-formatter dance here; the dashboard is an
   /// operator surface and ISO-ish output is the most useful.
@@ -426,36 +471,13 @@ class _ErrorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.error_outline, size: 48, color: scheme.error),
-            const SizedBox(height: 12),
-            Text(
-              'Could not load admin data',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-            ),
-          ],
-        ),
-      ),
+    return EmptyState(
+      icon: Icons.error_outline,
+      title: 'Could not load admin data',
+      body: message,
+      ctaLabel: 'Retry',
+      onCta: onRetry,
+      variant: EmptyStateVariant.error,
     );
   }
 }

@@ -14,9 +14,13 @@ import '../../services/media_cache_service.dart';
 import '../../services/toast_service.dart';
 import '../../services/upload_client.dart';
 import '../../theme/echo_theme.dart';
+import '../../utils/color_utils.dart';
 import '../../utils/friendly_error.dart';
+import '../../utils/timezone_offsets.dart';
 import '../../widgets/avatar_crop_dialog.dart';
 import '../../widgets/avatar_utils.dart' show resolveAvatarUrl;
+import '../../widgets/echo_dropdown.dart';
+import '../../widgets/loading_indicator.dart';
 import '../../widgets/settings_panel_scaffold.dart';
 
 class _CountryCode {
@@ -764,11 +768,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
           child: OutlinedButton(
             onPressed: _changingPassword ? null : _changePassword,
             child: _changingPassword
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
+                ? const InlineLoadingSpinner(size: 18)
                 : const Text('Change Password'),
           ),
         ),
@@ -855,26 +855,9 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        DropdownButtonFormField<String>(
-          initialValue: dropdownInitial,
-          decoration: InputDecoration(
-            labelText: 'Pronouns',
-            labelStyle: TextStyle(color: context.textSecondary),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: context.border),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: context.accent),
-            ),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 10,
-            ),
-          ),
-          dropdownColor: context.surface,
-          style: TextStyle(color: context.textPrimary, fontSize: 14),
+        EchoDropdown<String>(
+          value: dropdownInitial,
+          labelText: 'Pronouns',
           items: [
             ..._pronounOptions.map(
               (p) => DropdownMenuItem(
@@ -960,90 +943,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
   static String _tzDisplayName(String iana) {
     final pretty = iana.replaceAll('_', ' ').replaceAll('/', ' / ');
     // Look up offset from the same map used in user_profile_screen.dart
-    const offsets = <String, int>{
-      'UTC': 0,
-      'GMT': 0,
-      'Etc/UTC': 0,
-      'Etc/GMT': 0,
-      'America/New_York': -300,
-      'America/Toronto': -300,
-      'America/Detroit': -300,
-      'America/Chicago': -360,
-      'America/Winnipeg': -360,
-      'America/Denver': -420,
-      'America/Edmonton': -420,
-      'America/Phoenix': -420,
-      'America/Los_Angeles': -480,
-      'America/Vancouver': -480,
-      'America/Anchorage': -540,
-      'Pacific/Honolulu': -600,
-      'America/Halifax': -240,
-      'America/St_Johns': -210,
-      'America/Mexico_City': -360,
-      'America/Bogota': -300,
-      'America/Lima': -300,
-      'America/Santiago': -240,
-      'America/Sao_Paulo': -180,
-      'America/Argentina/Buenos_Aires': -180,
-      'America/Caracas': -240,
-      'Europe/London': 0,
-      'Europe/Dublin': 0,
-      'Europe/Lisbon': 0,
-      'Europe/Paris': 60,
-      'Europe/Berlin': 60,
-      'Europe/Amsterdam': 60,
-      'Europe/Brussels': 60,
-      'Europe/Madrid': 60,
-      'Europe/Rome': 60,
-      'Europe/Vienna': 60,
-      'Europe/Zurich': 60,
-      'Europe/Stockholm': 60,
-      'Europe/Oslo': 60,
-      'Europe/Copenhagen': 60,
-      'Europe/Warsaw': 60,
-      'Europe/Prague': 60,
-      'Europe/Budapest': 60,
-      'Europe/Helsinki': 120,
-      'Europe/Bucharest': 120,
-      'Europe/Athens': 120,
-      'Europe/Istanbul': 180,
-      'Europe/Moscow': 180,
-      'Europe/Kiev': 120,
-      'Europe/Kyiv': 120,
-      'Africa/Cairo': 120,
-      'Africa/Lagos': 60,
-      'Africa/Johannesburg': 120,
-      'Africa/Nairobi': 180,
-      'Africa/Casablanca': 60,
-      'Asia/Dubai': 240,
-      'Asia/Riyadh': 180,
-      'Asia/Tehran': 210,
-      'Asia/Jerusalem': 120,
-      'Asia/Kolkata': 330,
-      'Asia/Colombo': 330,
-      'Asia/Dhaka': 360,
-      'Asia/Karachi': 300,
-      'Asia/Bangkok': 420,
-      'Asia/Jakarta': 420,
-      'Asia/Ho_Chi_Minh': 420,
-      'Asia/Singapore': 480,
-      'Asia/Kuala_Lumpur': 480,
-      'Asia/Manila': 480,
-      'Asia/Shanghai': 480,
-      'Asia/Hong_Kong': 480,
-      'Asia/Taipei': 480,
-      'Asia/Seoul': 540,
-      'Asia/Tokyo': 540,
-      'Australia/Sydney': 600,
-      'Australia/Melbourne': 600,
-      'Australia/Brisbane': 600,
-      'Australia/Perth': 480,
-      'Australia/Adelaide': 570,
-      'Australia/Darwin': 570,
-      'Pacific/Auckland': 720,
-      'Pacific/Fiji': 720,
-      'Pacific/Guam': 600,
-    };
+    const offsets = kIanaOffsetMinutes;
 
     final offsetMinutes = offsets[iana];
     if (offsetMinutes == null) return pretty;
@@ -1062,29 +962,10 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     final current = _timezoneController.text;
     final isInList = _timezones.contains(current);
 
-    return DropdownButtonFormField<String>(
-      initialValue: isInList ? current : null,
-      decoration: InputDecoration(
-        labelText: 'Timezone',
-        hintText: current.isNotEmpty && !isInList ? current : 'Select timezone',
-        hintStyle: TextStyle(color: context.textMuted),
-        labelStyle: TextStyle(color: context.textSecondary),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: context.border),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: context.accent),
-        ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 10,
-        ),
-      ),
-      dropdownColor: context.surface,
-      style: TextStyle(color: context.textPrimary, fontSize: 14),
-      isExpanded: true,
+    return EchoDropdown<String>(
+      value: isInList ? current : null,
+      labelText: 'Timezone',
+      hintText: current.isNotEmpty && !isInList ? current : 'Select timezone',
       menuMaxHeight: 300,
       items: _timezones
           .map(
@@ -1142,27 +1023,10 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
           children: [
             SizedBox(
               width: 110,
-              child: DropdownButtonFormField<_CountryCode>(
-                initialValue: _selectedCountry,
-                decoration: InputDecoration(
-                  labelText: 'Country code',
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 10,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: context.border),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: context.accent),
-                  ),
-                ),
-                dropdownColor: context.surface,
-                isExpanded: true,
+              child: EchoDropdown<_CountryCode>(
+                value: _selectedCountry,
+                labelText: 'Country code',
                 menuMaxHeight: 300,
-                style: TextStyle(color: context.textPrimary, fontSize: 13),
                 items: _countries
                     .map(
                       (c) => DropdownMenuItem<_CountryCode>(
@@ -1269,8 +1133,7 @@ class _BgSwatch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final value = int.tryParse(hex.substring(1), radix: 16);
-    final color = value == null ? Colors.grey : Color(0xFF000000 | value);
+    final color = parseHexColor(hex) ?? Colors.grey;
     return Semantics(
       label: '$label background${selected ? " (selected)" : ""}',
       button: true,

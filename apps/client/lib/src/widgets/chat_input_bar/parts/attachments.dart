@@ -165,44 +165,13 @@ extension _Attachments on ChatInputBarState {
     final preserve = await readPreserveOriginalFilenames();
     final uploadFileName = preserve ? fileName : genericFilename(fileName);
 
-    // Resumable chunked PATCH (#556): 5MB chunks bypass Cloudflare's 100MB cap without pinning payload in RAM.
-    Future<UploadResult> uploadChunked() async {
-      final auth = ref.read(authProvider.notifier);
-      final chunked = ChunkedUploadClient(
-        tokenGetter: () => auth.currentToken,
-        refresher: auth.refreshAccessToken,
-      );
-      final chunkedResult = await chunked.uploadBytes(
-        bytes: bytes,
-        serverUrl: serverUrl,
-        mimeType: mimeType,
-        filename: uploadFileName,
-        conversationId: widget.conversation.id,
-        onProgress: onProgress,
-      );
-      return chunkedResult.toUploadResult();
-    }
-
-    final UploadResult result;
-    if (shouldUseChunkedUpload(bytes.length)) {
-      result = await uploadChunked();
-    } else {
-      final uploader = UploadClient(ref.read(authProvider.notifier));
-      final singleShotResult = await uploader.uploadFile(
-        serverUrl: serverUrl,
-        path: '/api/media/upload',
-        bytes: bytes,
-        fileName: uploadFileName,
-        mimeType: mimeType,
-        extraFields: {'conversation_id': widget.conversation.id},
-        onProgress: onProgress,
-      );
-      if (!singleShotResult.ok && singleShotResult.statusCode == 413) {
-        result = await uploadChunked();
-      } else {
-        result = singleShotResult;
-      }
-    }
+    final result = await _runUpload(
+      serverUrl: serverUrl,
+      bytes: bytes,
+      mimeType: mimeType,
+      uploadFileName: uploadFileName,
+      onProgress: onProgress,
+    );
 
     if (result.ok) {
       // Pre-populate the dimension cache so ImageAttachment can reserve the
@@ -216,7 +185,7 @@ extension _Attachments on ChatInputBarState {
       return url;
     }
 
-    if (mounted && !result.ok) {
+    if (mounted) {
       final error = result.errorMessage?.trim();
       ToastService.show(
         context,
@@ -227,6 +196,73 @@ extension _Attachments on ChatInputBarState {
       );
     }
     return null;
+  }
+
+  /// Pick the upload strategy: chunked for large files, single-shot otherwise
+  /// with a 413 → chunked fallback. Extracted from [_uploadWithAuthRetry] to
+  /// keep it within the cognitive-complexity budget (S3776).
+  Future<UploadResult> _runUpload({
+    required String serverUrl,
+    required List<int> bytes,
+    required String mimeType,
+    required String uploadFileName,
+    void Function(int sent, int total)? onProgress,
+  }) async {
+    if (shouldUseChunkedUpload(bytes.length)) {
+      return _uploadChunked(
+        serverUrl: serverUrl,
+        bytes: bytes,
+        mimeType: mimeType,
+        uploadFileName: uploadFileName,
+        onProgress: onProgress,
+      );
+    }
+    final uploader = UploadClient(ref.read(authProvider.notifier));
+    final singleShot = await uploader.uploadFile(
+      serverUrl: serverUrl,
+      path: '/api/media/upload',
+      bytes: bytes,
+      fileName: uploadFileName,
+      mimeType: mimeType,
+      extraFields: {'conversation_id': widget.conversation.id},
+      onProgress: onProgress,
+    );
+    // Cloudflare's 100MB cap can 413 a single-shot POST; fall back to chunked.
+    if (!singleShot.ok && singleShot.statusCode == 413) {
+      return _uploadChunked(
+        serverUrl: serverUrl,
+        bytes: bytes,
+        mimeType: mimeType,
+        uploadFileName: uploadFileName,
+        onProgress: onProgress,
+      );
+    }
+    return singleShot;
+  }
+
+  /// Resumable chunked PATCH (#556): 5MB chunks bypass Cloudflare's 100MB cap
+  /// without pinning the payload in RAM.
+  Future<UploadResult> _uploadChunked({
+    required String serverUrl,
+    required List<int> bytes,
+    required String mimeType,
+    required String uploadFileName,
+    void Function(int sent, int total)? onProgress,
+  }) async {
+    final auth = ref.read(authProvider.notifier);
+    final chunked = ChunkedUploadClient(
+      tokenGetter: () => auth.currentToken,
+      refresher: auth.refreshAccessToken,
+    );
+    final chunkedResult = await chunked.uploadBytes(
+      bytes: bytes,
+      serverUrl: serverUrl,
+      mimeType: mimeType,
+      filename: uploadFileName,
+      conversationId: widget.conversation.id,
+      onProgress: onProgress,
+    );
+    return chunkedResult.toUploadResult();
   }
 
   Future<void> _pasteImageFromClipboard() async {

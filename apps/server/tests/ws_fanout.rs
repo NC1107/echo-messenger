@@ -246,8 +246,8 @@ async fn revoked_device_excluded_from_fanout_and_storage() {
     let pool = test_pool().await;
 
     let (alice_token, alice_id, _) = common::register_and_login(&client, &base, "rflt_alice").await;
-    let (bob_token, bob_id, bob_name) =
-        common::register_and_login(&client, &base, "rflt_bob").await;
+    let (bob_token, bob_id, bob_name, bob_password) =
+        common::register_and_login_pw(&client, &base, "rflt_bob").await;
     let bob_username = bob_name.clone();
 
     common::make_contacts(&client, &base, &alice_token, &bob_token, &bob_id, &bob_name).await;
@@ -269,8 +269,7 @@ async fn revoked_device_excluded_from_fanout_and_storage() {
     // pre-revoke token may be rejected on subsequent AuthUser checks under
     // CI load when iat seconds roll over.  Re-login to obtain a fresh token
     // before fetching WS tickets.
-    let (bob_token, _) =
-        common::login(&client, &base, &bob_username, common::TEST_USER_PASSWORD).await;
+    let (bob_token, _) = common::login(&client, &base, &bob_username, &bob_password).await;
 
     // Connect both devices (even revoked ones can maintain a WS session;
     // only the fanout filter should silence them).

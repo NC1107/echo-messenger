@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -26,11 +26,7 @@ import '../screens/splash_screen.dart';
 import '../screens/threads_inbox_screen.dart';
 import '../screens/username_invite_screen.dart';
 import '../screens/user_profile_screen.dart';
-
-const _routeHome = '/home';
-const _routeLogin = '/login';
-const _routeSplash = '/splash';
-const _routeAccountPicker = '/auth/pick-account';
+import 'routes.dart';
 
 // ---------------------------------------------------------------------------
 // Pending Deep Link State Management
@@ -91,41 +87,53 @@ class _AuthNotifierListenable extends ChangeNotifier {
 }
 
 /// Redirect logic for auth state.
-String? _authRedirect(Ref ref, GoRouterState state) {
+String? _authRedirect(Ref ref, GoRouterState state) =>
+    authGateRedirect(ref, state.matchedLocation, state.uri);
+
+/// Pure auth-gate decision, factored out of [_authRedirect] so it can be
+/// unit-tested without mounting a [GoRouter] (whose [GoRouterState] carries a
+/// private configuration that is awkward to fabricate in tests).
+///
+/// Reads `authProvider` for the login + onboarding flags and mutates the
+/// pending-deep-link state via [pendingDeepLinkProvider]. Behaviour is
+/// identical to the previous inline closure; only the input surface changed
+/// from a [GoRouterState] to its `matchedLocation` + `uri`.
+@visibleForTesting
+String? authGateRedirect(Ref ref, String matchedLocation, Uri uri) {
   final isLoggedIn = ref.read(authProvider).isLoggedIn;
-  final isSplash = state.matchedLocation == _routeSplash;
+  final isSplash = matchedLocation == routeSplash;
   final isAuthRoute =
-      state.matchedLocation == _routeLogin ||
-      state.matchedLocation == '/register' ||
-      state.matchedLocation == '/forgot-password' ||
-      state.matchedLocation == '/reset-password' ||
-      state.matchedLocation == _routeAccountPicker;
-  final isOnboarding = state.matchedLocation == '/onboarding';
+      matchedLocation == routeLogin ||
+      matchedLocation == routeRegister ||
+      matchedLocation == routeForgotPassword ||
+      matchedLocation == routeResetPassword ||
+      matchedLocation == routeAccountPicker;
+  final isOnboarding = matchedLocation == routeOnboarding;
   final isJoinRoute =
-      state.matchedLocation.startsWith('/join') ||
-      state.matchedLocation.startsWith('/invite') ||
-      state.matchedLocation.startsWith('/u/');
+      matchedLocation.startsWith('/join') ||
+      matchedLocation.startsWith('/invite') ||
+      matchedLocation.startsWith('/u/');
 
   if (isSplash) return null;
 
   // Already logged in AND onboarding was previously completed — skip back to home.
   // New accounts have onboardingCompleted=false so they are allowed through.
   final onboardingCompleted = ref.read(authProvider).onboardingCompleted;
-  if (isLoggedIn && isOnboarding && onboardingCompleted) return _routeHome;
+  if (isLoggedIn && isOnboarding && onboardingCompleted) return routeHome;
 
   if (!isLoggedIn && !isAuthRoute && !isOnboarding && !isJoinRoute) {
-    final intended = state.matchedLocation;
-    if (intended != _routeHome && intended != _routeLogin) {
-      ref.read(_pendingDeepLinkProvider.notifier).set(state.uri.toString());
+    final intended = matchedLocation;
+    if (intended != routeHome && intended != routeLogin) {
+      ref.read(_pendingDeepLinkProvider.notifier).set(uri.toString());
     }
-    return _routeLogin;
+    return routeLogin;
   }
   if (isLoggedIn && isAuthRoute) {
     final deepLink = ref.read(_pendingDeepLinkProvider.notifier).takeAndClear();
     if (deepLink != null) {
       return deepLink;
     }
-    return _routeHome;
+    return routeHome;
   }
   return null;
 }
@@ -176,7 +184,7 @@ List<GoRoute> _profileRoutes() {
       redirect: (context, state) {
         final qp = state.uri.queryParameters;
         final userId = qp['userId'] ?? qp['uid'] ?? qp['id'] ?? '';
-        if (userId.isEmpty) return _routeHome;
+        if (userId.isEmpty) return routeHome;
         return '/profile/$userId';
       },
     ),
@@ -188,47 +196,47 @@ final routerProvider = Provider<GoRouter>((ref) {
   final refreshListenable = _AuthNotifierListenable(ref);
 
   return GoRouter(
-    initialLocation: _routeSplash,
+    initialLocation: routeSplash,
     refreshListenable: refreshListenable,
     redirect: (context, state) => _authRedirect(ref, state),
     routes: [
       GoRoute(
-        path: _routeSplash,
+        path: routeSplash,
         pageBuilder: (context, state) =>
             _fadePage(key: state.pageKey, child: const SplashScreen()),
       ),
       GoRoute(
-        path: _routeLogin,
+        path: routeLogin,
         pageBuilder: (context, state) =>
             _fadePage(key: state.pageKey, child: const LoginScreen()),
       ),
       GoRoute(
-        path: _routeAccountPicker,
+        path: routeAccountPicker,
         pageBuilder: (context, state) =>
             _fadePage(key: state.pageKey, child: const AccountPickerScreen()),
       ),
       GoRoute(
-        path: '/register',
+        path: routeRegister,
         pageBuilder: (context, state) =>
             _fadePage(key: state.pageKey, child: const RegisterScreen()),
       ),
       GoRoute(
-        path: '/forgot-password',
+        path: routeForgotPassword,
         pageBuilder: (context, state) =>
             _fadePage(key: state.pageKey, child: const ForgotPasswordScreen()),
       ),
       GoRoute(
-        path: '/reset-password',
+        path: routeResetPassword,
         pageBuilder: (context, state) =>
             _fadePage(key: state.pageKey, child: const ResetPasswordScreen()),
       ),
       GoRoute(
-        path: '/onboarding',
+        path: routeOnboarding,
         pageBuilder: (context, state) =>
             _fadePage(key: state.pageKey, child: const OnboardingWizard()),
       ),
       GoRoute(
-        path: _routeHome,
+        path: routeHome,
         pageBuilder: (context, state) {
           final conversationId = state.uri.queryParameters['conversation'];
           final messageId = state.uri.queryParameters['messageId'];
@@ -242,17 +250,17 @@ final routerProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(
-        path: '/contacts',
+        path: routeContacts,
         pageBuilder: (context, state) =>
             _fadePage(key: state.pageKey, child: const ContactsScreen()),
       ),
       GoRoute(
-        path: '/threads',
+        path: routeThreads,
         pageBuilder: (context, state) =>
             _fadePage(key: state.pageKey, child: const ThreadsInboxScreen()),
       ),
       GoRoute(
-        path: '/create-group',
+        path: routeCreateGroup,
         pageBuilder: (context, state) =>
             _fadePage(key: state.pageKey, child: const CreateGroupScreen()),
       ),
@@ -266,17 +274,17 @@ final routerProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(
-        path: '/discover-groups',
+        path: routeDiscoverGroups,
         pageBuilder: (context, state) =>
             _fadePage(key: state.pageKey, child: const DiscoverGroupsScreen()),
       ),
       GoRoute(
-        path: '/settings',
+        path: routeSettings,
         pageBuilder: (context, state) =>
             _fadePage(key: state.pageKey, child: const SettingsScreen()),
       ),
       GoRoute(
-        path: '/saved',
+        path: routeSaved,
         pageBuilder: (context, state) =>
             _fadePage(key: state.pageKey, child: const SavedMessagesScreen()),
       ),
@@ -287,7 +295,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       // description; it needs the server's login response to surface the
       // `is_admin` flag, which is out of scope for this client-only slice.
       GoRoute(
-        path: '/admin',
+        path: routeAdmin,
         pageBuilder: (context, state) =>
             _fadePage(key: state.pageKey, child: const AdminDashboardScreen()),
       ),
@@ -321,7 +329,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           final qp = state.uri.queryParameters;
           final groupId =
               qp['groupId'] ?? qp['gid'] ?? qp['id'] ?? qp['invite'] ?? '';
-          if (groupId.isEmpty) return _routeHome;
+          if (groupId.isEmpty) return routeHome;
           return '/join/$groupId';
         },
       ),

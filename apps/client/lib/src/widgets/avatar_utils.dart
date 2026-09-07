@@ -68,11 +68,23 @@ Widget buildAvatar({
         ? ClipRRect(
             key: ValueKey(imageUrl),
             borderRadius: BorderRadius.circular(squareRadius),
-            child: _avatarImage(imageUrl, radius, memCacheWidth, fallback),
+            child: _avatarImage(
+              imageUrl,
+              radius,
+              memCacheWidth,
+              fallback,
+              authToken: authToken,
+            ),
           )
         : ClipOval(
             key: ValueKey(imageUrl),
-            child: _avatarImage(imageUrl, radius, memCacheWidth, fallback),
+            child: _avatarImage(
+              imageUrl,
+              radius,
+              memCacheWidth,
+              fallback,
+              authToken: authToken,
+            ),
           );
     return clipper;
   }
@@ -83,8 +95,9 @@ Widget _avatarImage(
   String imageUrl,
   double radius,
   int memCacheWidth,
-  Widget fallback,
-) {
+  Widget fallback, {
+  String? authToken,
+}) {
   return SizedBox(
     width: radius * 2,
     height: radius * 2,
@@ -92,6 +105,10 @@ Widget _avatarImage(
       imageUrl: imageUrl,
       cacheKey: stableMediaCacheKey(imageUrl),
       cacheManager: chatMediaCacheManager,
+      // Forward the bearer token for auth-gated avatar URLs (e.g. voice
+      // participant avatars served via /api/media). Null token → no header,
+      // matching the public-avatar path used everywhere else.
+      httpHeaders: avatarAuthHeaders(authToken),
       memCacheWidth: memCacheWidth,
       fit: BoxFit.cover,
       fadeInDuration: Duration.zero,
@@ -101,6 +118,12 @@ Widget _avatarImage(
     ),
   );
 }
+
+/// Bearer-auth header map for auth-gated avatar URLs (e.g. voice participant
+/// avatars served via `/api/media`), or null for public avatars (no header).
+/// Public so the wiring is unit-testable without driving `CachedNetworkImage`.
+Map<String, String>? avatarAuthHeaders(String? authToken) =>
+    authToken != null ? {'Authorization': 'Bearer $authToken'} : null;
 
 /// Deterministic color from a name string.
 Color avatarColor(String name) {

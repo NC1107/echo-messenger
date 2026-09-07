@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 
 import '../providers/server_url_provider.dart';
+import '../router/routes.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../widgets/auth/auth_layout.dart';
@@ -71,7 +72,7 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
           'Password reset! Log in with your new password.',
           type: ToastType.success,
         );
-        context.go('/login');
+        context.go(routeLogin);
       } else {
         String msg = 'Invalid or expired reset token';
         try {
@@ -228,7 +229,7 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
                     button: true,
                     label: 'back-to-login',
                     child: TextButton(
-                      onPressed: () => context.go('/login'),
+                      onPressed: () => context.go(routeLogin),
                       style: TextButton.styleFrom(
                         foregroundColor: context.textSecondary,
                       ),

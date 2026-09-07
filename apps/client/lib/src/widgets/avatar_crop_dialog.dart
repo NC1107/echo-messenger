@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 
 import '../theme/echo_theme.dart';
+import 'loading_indicator.dart';
 
 /// Decodes [bytes] into an [img.Image] suitable for cropping.
 ///
@@ -419,11 +420,7 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
               ? null
               : _confirm,
           child: _processing
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+              ? const InlineLoadingSpinner(size: 16)
               : const Text('Use Photo'),
         ),
       ],
@@ -456,7 +453,7 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
                   ),
                 )
               else if (_error == null)
-                const Center(child: CircularProgressIndicator()),
+                const CenteredLoadingIndicator(),
 
               // Circular mask overlay — darkened corners, bright circle border.
               CustomPaint(

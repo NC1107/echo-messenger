@@ -10,10 +10,8 @@ import '../providers/user_presence_provider.dart';
 import '../screens/user_profile_screen.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
-import '../utils/presence.dart';
 import 'confirm_dialog.dart';
-import 'member_role.dart';
-import 'user_avatar.dart';
+import 'member_list_row.dart';
 
 class MembersPanel extends ConsumerWidget {
   final Conversation? conversation;
@@ -192,7 +190,6 @@ class _MemberRow extends ConsumerStatefulWidget {
 }
 
 class _MemberRowState extends ConsumerState<_MemberRow> {
-  bool _isHovered = false;
   bool _isRemoving = false;
 
   Future<void> _removeMember() async {
@@ -260,137 +257,37 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
   @override
   Widget build(BuildContext context) {
     final member = widget.member;
-    final showRemove =
-        widget.canRemove && !widget.isMe && _isHovered && !_isRemoving;
+    final canRemove = widget.canRemove && !widget.isMe && !_isRemoving;
 
-    // Self isn't broadcast by the WS, so use auth's local status.
-    // Everyone else reads from the centralized provider.
-    final UserPresence presence;
-    if (widget.isMe) {
-      final myStatus = ref.watch(authProvider.select((s) => s.presenceStatus));
-      presence = UserPresence(status: myStatus, isOnline: true);
-    } else {
-      presence = ref.watch(userPresenceProvider(member.userId));
+    Widget? trailing;
+    Widget? hoverTrailing;
+    if (_isRemoving) {
+      trailing = SizedBox(
+        width: 14,
+        height: 14,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: context.textMuted,
+        ),
+      );
+    } else if (canRemove) {
+      hoverTrailing = IconButton(
+        icon: const Icon(Icons.close, size: 14),
+        color: context.textMuted,
+        tooltip: 'Remove member',
+        onPressed: _removeMember,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+      );
     }
 
-    return Semantics(
-      label: 'member ${member.username} — open profile',
-      button: true,
-      child: GestureDetector(
-        onTap: () {
-          UserProfileScreen.show(context, ref, member.userId);
-        },
-        child: MouseRegion(
-          onEnter: (_) => setState(() => _isHovered = true),
-          onExit: (_) => setState(() => _isHovered = false),
-          child: Container(
-            // Slice 7: a touch taller so the activity line under each name
-            // fits without crowding the avatar.
-            height: 48,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                // The row-level GestureDetector handles the tap; the
-                // avatar widget renders chrome only.
-                UserAvatar(
-                  userId: member.userId,
-                  username: member.username,
-                  avatarUrl: member.avatarUrl,
-                  radius: 14,
-                  showPresence: true,
-                  openProfileOnTap: false,
-                ),
-                const SizedBox(width: 12),
-                // Username + role icon + activity line (slice 7).
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Row(
-                        children: [
-                          if (member.role == 'owner' ||
-                              member.role == 'admin') ...[
-                            MemberRoleIcon(role: member.role),
-                            const SizedBox(width: 4),
-                          ],
-                          Flexible(
-                            child: Text(
-                              member.username,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: context.textSecondary,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
-                          MemberRoleBadge(
-                            role: member.role,
-                            margin: const EdgeInsets.only(left: 6),
-                          ),
-                        ],
-                      ),
-                      Builder(
-                        builder: (_) {
-                          final selfStatusText = widget.isMe
-                              ? ref.watch(
-                                  authProvider.select((s) => s.statusText),
-                                )
-                              : null;
-                          final memberStatus =
-                              selfStatusText ?? member.statusText;
-                          final label =
-                              (memberStatus != null &&
-                                  memberStatus.trim().isNotEmpty)
-                              ? memberStatus
-                              : presenceLabel(
-                                  presence.status,
-                                  isOnline: presence.isOnline,
-                                );
-                          return Text(
-                            label,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: context.textMuted,
-                              fontSize: 11,
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-                // Remove button
-                if (showRemove)
-                  SizedBox(
-                    width: 44,
-                    height: 44,
-                    child: IconButton(
-                      icon: const Icon(Icons.close, size: 14),
-                      color: context.textMuted,
-                      tooltip: 'Remove member',
-                      onPressed: _removeMember,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 44,
-                        minHeight: 44,
-                      ),
-                    ),
-                  ),
-                if (_isRemoving)
-                  SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: context.textMuted,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    return MemberListRow(
+      member: member,
+      isMe: widget.isMe,
+      density: MemberRowDensity.compact,
+      onTap: () => UserProfileScreen.show(context, ref, member.userId),
+      trailing: trailing,
+      hoverTrailing: hoverTrailing,
     );
   }
 }

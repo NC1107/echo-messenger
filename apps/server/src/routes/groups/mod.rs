@@ -28,7 +28,7 @@ pub use members::{add_member, ban_member, change_member_role, remove_member, unb
 
 pub use lifecycle::{delete_group, leave_group};
 
-pub use public::{get_group_preview, join_group, list_public_groups};
+pub use public::{featured_group, get_group_preview, join_group, list_public_groups};
 
 pub use settings::MAX_GROUP_AVATAR_SIZE;
 pub use settings::{get_group_avatar, update_group, upload_group_avatar};

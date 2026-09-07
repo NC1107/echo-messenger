@@ -13,6 +13,7 @@ import '../router/app_router.dart' show pendingDeepLinkProvider;
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
+import '../widgets/loading_indicator.dart';
 
 const _routeHome = '/home';
 const _routeLogin = '/login';
@@ -187,7 +188,7 @@ class _UsernameInviteScreenState extends ConsumerState<UsernameInviteScreen> {
     if (_isLoading) {
       return Scaffold(
         backgroundColor: context.mainBg,
-        body: const Center(child: CircularProgressIndicator()),
+        body: const CenteredLoadingIndicator(),
       );
     }
 

@@ -1397,8 +1397,8 @@ async fn revoked_device_excluded_from_fanout() {
 
     let (alice_token, alice_id, alice_name) =
         common::register_and_login(&client, &base, "rev657_alice").await;
-    let (bob_token, bob_id, bob_name) =
-        common::register_and_login(&client, &base, "rev657_bob").await;
+    let (bob_token, bob_id, bob_name, bob_password) =
+        common::register_and_login_pw(&client, &base, "rev657_bob").await;
     let bob_username = bob_name.clone();
 
     common::make_contacts(&client, &base, &alice_token, &bob_token, &bob_id, &bob_name).await;
@@ -1421,8 +1421,7 @@ async fn revoked_device_excluded_from_fanout() {
     // AuthUser checks on slow CI runs where the iat second has rolled over.
     // Re-login Bob to obtain a token whose iat is strictly newer than the
     // invalidation floor before fetching WS tickets.
-    let (bob_token, _) =
-        common::login(&client, &base, &bob_username, common::TEST_USER_PASSWORD).await;
+    let (bob_token, _) = common::login(&client, &base, &bob_username, &bob_password).await;
 
     // Alice connects on her device.
     let alice_ticket = common::get_ws_ticket_for_device(&client, &base, &alice_token, 1).await;

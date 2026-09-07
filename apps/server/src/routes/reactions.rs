@@ -56,7 +56,7 @@ pub async fn add_reaction(
         .db_ctx("add_reaction/is_member")?;
 
     if !is_member {
-        return Err(AppError::unauthorized("Not a member of this conversation"));
+        return Err(AppError::forbidden("Not a member of this conversation"));
     }
 
     let reaction = db::reactions::add_reaction(&state.pool, message_id, auth.user_id, &body.emoji)
@@ -107,7 +107,7 @@ pub async fn remove_reaction(
         .db_ctx("remove_reaction/is_member")?;
 
     if !is_member {
-        return Err(AppError::unauthorized("Not a member of this conversation"));
+        return Err(AppError::forbidden("Not a member of this conversation"));
     }
 
     let removed = db::reactions::remove_reaction(&state.pool, message_id, auth.user_id, &emoji)
@@ -153,7 +153,7 @@ pub async fn mark_read(
         .db_ctx("mark_read/is_member")?;
 
     if !is_member {
-        return Err(AppError::unauthorized("Not a member of this conversation"));
+        return Err(AppError::forbidden("Not a member of this conversation"));
     }
 
     let privacy = db::users::get_privacy_preferences(&state.pool, auth.user_id)

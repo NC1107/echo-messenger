@@ -59,7 +59,7 @@ pub async fn update_group(
 
     let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
     if !caller_role_enum.is_admin_or_above() {
-        return Err(AppError::unauthorized(
+        return Err(AppError::forbidden(
             "Only the group owner or admin can update the group",
         ));
     }
@@ -102,7 +102,7 @@ pub async fn upload_group_avatar(
 
     let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
     if !caller_role_enum.is_admin_or_above() {
-        return Err(AppError::unauthorized(
+        return Err(AppError::forbidden(
             "Only the group owner or admin can change the avatar",
         ));
     }

@@ -168,7 +168,7 @@ async fn create_poll_too_few_options_returns_400() {
 }
 
 #[tokio::test]
-async fn create_poll_non_member_returns_401() {
+async fn create_poll_non_member_returns_403() {
     let base = common::spawn_server().await;
     let (client, _, _, _, _, _, message_id) = setup_dm(&base).await;
 
@@ -185,7 +185,7 @@ async fn create_poll_non_member_returns_401() {
         .await
         .unwrap();
 
-    assert_eq!(resp.status().as_u16(), 401);
+    assert_eq!(resp.status().as_u16(), 403);
 }
 
 // ---------------------------------------------------------------------------

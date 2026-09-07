@@ -29,11 +29,6 @@ use tokio::sync::OnceCell;
 /// JWT secret used across all integration tests.
 pub const TEST_JWT_SECRET: &str = "integration-test-secret";
 
-/// Password every fixture user registers with.  Centralised so CodeQL's
-/// hard-coded-credentials scanner sees a single constant instead of an
-/// inline literal at every login site.
-pub const TEST_USER_PASSWORD: &str = "password123";
-
 /// Run migrations exactly once across all tests, even when running in parallel.
 static MIGRATIONS: OnceCell<()> = OnceCell::const_new();
 
@@ -232,6 +227,16 @@ pub fn unique_username(prefix: &str) -> String {
     format!("{prefix}_{}", &suffix[..8])
 }
 
+/// Generate a unique, valid password for a test account.
+///
+/// Prefer this over a hardcoded literal: every account gets a distinct
+/// credential, so a test can never accidentally depend on a shared password
+/// (and a leaked test secret can't be reused). Comfortably satisfies the
+/// 8–128 char policy. Pair it with [`register`] + [`login`] for the same user.
+pub fn unique_password() -> String {
+    format!("pw-{}", uuid::Uuid::new_v4())
+}
+
 // ---------------------------------------------------------------------------
 // WebSocket helpers (audit #695)
 // ---------------------------------------------------------------------------
@@ -293,15 +298,31 @@ pub async fn drain_pending(ws: &mut WsStream) {
 // ---------------------------------------------------------------------------
 
 /// Register a new user, log in, and return `(token, user_id, username)`.
+///
+/// The account gets a freshly-generated [`unique_password`] — tests that need
+/// to re-authenticate the same user later (e.g. after a token-invalidating
+/// device reset/revoke) should use [`register_and_login_pw`] to capture it.
 pub async fn register_and_login(
     client: &Client,
     base: &str,
     prefix: &str,
 ) -> (String, String, String) {
-    let username = unique_username(prefix);
-    register(client, base, &username, "password123").await;
-    let (token, user_id) = login(client, base, &username, "password123").await;
+    let (token, user_id, username, _password) = register_and_login_pw(client, base, prefix).await;
     (token, user_id, username)
+}
+
+/// Like [`register_and_login`] but also returns the generated `password`, for
+/// tests that must re-login the same user later.
+pub async fn register_and_login_pw(
+    client: &Client,
+    base: &str,
+    prefix: &str,
+) -> (String, String, String, String) {
+    let username = unique_username(prefix);
+    let password = unique_password();
+    register(client, base, &username, &password).await;
+    let (token, user_id) = login(client, base, &username, &password).await;
+    (token, user_id, username, password)
 }
 
 /// Send a contact request from A to B, accept it, then create the DM

@@ -1,0 +1,12 @@
+{
+  "name": "x3dh-respond-with-otp",
+  "kind": "x3dh_respond",
+  "description": "Bob-side X3DH respond with one-time prekey (4 DH ops); alice keys pinned as privates, publics derived",
+  "bob_identity_private_b64": "ERERERERERERERERERERERERERERERERERERERERERE=",
+  "signing_seed_b64": "EhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhI=",
+  "bob_signed_prekey_private_b64": "ExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExM=",
+  "bob_one_time_prekey_private_b64": "FBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ=",
+  "alice_identity_private_b64": "ISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISE=",
+  "alice_ephemeral_private_b64": "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI=",
+  "expected_shared_secret_b64": "fOwuXphzN9tD82OfhPmMR7N5Glqe6GQVQDtLoj7+25U="
+}

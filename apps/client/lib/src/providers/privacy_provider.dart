@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'auth_provider.dart';
+import 'authed_http.dart';
 import 'server_url_provider.dart';
 
 part 'privacy_provider.g.dart';
@@ -59,22 +60,11 @@ class PrivacyState {
 }
 
 @Riverpod(keepAlive: true)
-class Privacy extends _$Privacy {
+class Privacy extends _$Privacy with AuthedHttp<PrivacyState> {
   @override
   PrivacyState build() => const PrivacyState();
 
   String get _serverUrl => ref.read(serverUrlProvider);
-
-  Map<String, String> _headersWithToken(String token) => {
-    'Content-Type': 'application/json',
-    'Authorization': 'Bearer $token',
-  };
-
-  Future<http.Response> _authenticatedRequest(
-    Future<http.Response> Function(String token) requestFn,
-  ) {
-    return ref.read(authProvider.notifier).authenticatedRequest(requestFn);
-  }
 
   Future<void> load() async {
     if (!ref.read(authProvider).isLoggedIn) {
@@ -84,10 +74,10 @@ class Privacy extends _$Privacy {
 
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final response = await _authenticatedRequest(
+      final response = await authenticatedRequest(
         (token) => http.get(
           Uri.parse('$_serverUrl/api/users/me/privacy'),
-          headers: _headersWithToken(token),
+          headers: headersWithToken(token),
         ),
       );
 
@@ -198,10 +188,10 @@ class Privacy extends _$Privacy {
         showOnlineStatus: showOnlineStatus,
       );
 
-      final response = await _authenticatedRequest(
+      final response = await authenticatedRequest(
         (token) => http.patch(
           Uri.parse('$_serverUrl/api/users/me/privacy'),
-          headers: _headersWithToken(token),
+          headers: headersWithToken(token),
           body: jsonEncode(patchBody),
         ),
       );

@@ -366,6 +366,7 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpNet>) -> Route
     let group_routes = Router::new()
         .route("/", post(groups::create_group))
         .route("/public", get(groups::list_public_groups))
+        .route("/featured", get(groups::featured_group))
         .route("/{id}/keys", post(group_keys::upload_group_key))
         .route("/{id}/keys/latest", get(group_keys::get_latest_group_key))
         .route(
@@ -494,6 +495,10 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpNet>) -> Route
         .route("/api/admin/stats", get(admin::get_stats))
         .route("/api/admin/stats/realtime", get(admin::get_realtime_stats))
         .route("/api/admin/feedback", get(admin::list_feedback))
+        .route(
+            "/api/admin/feedback/{id}",
+            delete(admin::delete_feedback),
+        )
         .route("/api/admin/promote/{user_id}", post(admin::promote_user))
         .route("/api/metrics", get(metrics_route::get_metrics))
         .route("/healthz", get(healthz))

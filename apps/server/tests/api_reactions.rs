@@ -11,8 +11,9 @@ use tokio_tungstenite::tungstenite::Message;
 /// Helper: register a user, log in, and return (token, user_id, username).
 async fn register_and_login(client: &Client, base: &str, prefix: &str) -> (String, String, String) {
     let username = common::unique_username(prefix);
-    common::register(client, base, &username, "password123").await;
-    let (token, user_id) = common::login(client, base, &username, "password123").await;
+    let password = common::unique_password();
+    common::register(client, base, &username, &password).await;
+    let (token, user_id) = common::login(client, base, &username, &password).await;
     (token, user_id, username)
 }
 
@@ -151,7 +152,7 @@ async fn add_reaction_empty_emoji_returns_400() {
 }
 
 #[tokio::test]
-async fn add_reaction_non_member_returns_401() {
+async fn add_reaction_non_member_returns_403() {
     let base = common::spawn_server().await;
     let (client, _, _, _, _, message_id) = setup_dm_with_message(&base).await;
 
@@ -166,7 +167,7 @@ async fn add_reaction_non_member_returns_401() {
         .await
         .unwrap();
 
-    assert_eq!(resp.status().as_u16(), 401);
+    assert_eq!(resp.status().as_u16(), 403);
 }
 
 // TD-34: not-found cases now return 404 instead of 400.
@@ -257,7 +258,7 @@ async fn mark_read_returns_200() {
 }
 
 #[tokio::test]
-async fn mark_read_non_member_returns_401() {
+async fn mark_read_non_member_returns_403() {
     let base = common::spawn_server().await;
     let (client, _, _, _, conv_id, _) = setup_dm_with_message(&base).await;
 
@@ -270,7 +271,7 @@ async fn mark_read_non_member_returns_401() {
         .await
         .unwrap();
 
-    assert_eq!(resp.status().as_u16(), 401);
+    assert_eq!(resp.status().as_u16(), 403);
 }
 
 #[tokio::test]

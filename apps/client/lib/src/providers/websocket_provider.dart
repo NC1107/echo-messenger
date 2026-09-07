@@ -30,6 +30,9 @@ part 'websocket/websocket_receive_dispatcher.dart';
 part 'websocket/websocket_lifecycle.dart';
 part 'websocket/websocket_send.dart';
 
+/// Debug-log tag for this subsystem (one place, not a repeated literal — S1192).
+const _kLogTag = 'WebSocket';
+
 @Riverpod(keepAlive: true)
 class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
   WebSocketChannel? _channel;
@@ -152,10 +155,10 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
 
     if (ticket == null || ticket.isEmpty) {
       // Ticket fetch failed -- don't connect, schedule retry with backoff
-      debugLog('Failed to obtain ticket, will retry...', 'WebSocket');
+      debugLog('Failed to obtain ticket, will retry...', _kLogTag);
       DebugLogService.instance.log(
         LogLevel.warning,
-        'WebSocket',
+        _kLogTag,
         'Failed to obtain ticket, will retry...',
       );
       state = state.copyWith(isConnected: false);
@@ -173,7 +176,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
       debugPrint('[WebSocket] connect() threw: $e');
       DebugLogService.instance.log(
         LogLevel.error,
-        'WebSocket',
+        _kLogTag,
         'Connection failed: $e',
       );
       state = state.copyWith(isConnected: false);
@@ -185,7 +188,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     _reconnectAttempts = 0;
     DebugLogService.instance.log(
       LogLevel.info,
-      'WebSocket',
+      _kLogTag,
       'Connected to $wsBase',
     );
 
@@ -221,7 +224,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     required String message,
   }) {
     _resetTransportAfterDisconnect();
-    DebugLogService.instance.log(level, 'WebSocket', message);
+    DebugLogService.instance.log(level, _kLogTag, message);
     clearOnlineUsers();
     state = state.copyWith(isConnected: false);
     _scheduleReconnect();
@@ -242,12 +245,12 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     if (_reconnectAttempts >= _maxReconnectAttempts) {
       debugLog(
         'Max reconnect attempts ($_maxReconnectAttempts) '
-            'reached -- server unreachable',
-        'WebSocket',
+        'reached -- server unreachable',
+        _kLogTag,
       );
       DebugLogService.instance.log(
         LogLevel.error,
-        'WebSocket',
+        _kLogTag,
         'Max reconnect attempts ($_maxReconnectAttempts) reached',
       );
       state = state.copyWith(
@@ -267,14 +270,14 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     if (_reconnectAttempts > 1) {
       debugLog(
         'Reconnecting in ${delayMs}ms '
-            '(attempt $_reconnectAttempts/$_maxReconnectAttempts)',
-        'WebSocket',
+        '(attempt $_reconnectAttempts/$_maxReconnectAttempts)',
+        _kLogTag,
       );
       DebugLogService.instance.log(
         LogLevel.info,
-        'WebSocket',
+        _kLogTag,
         'Reconnecting in ${delayMs}ms '
-            '(attempt $_reconnectAttempts/$_maxReconnectAttempts)',
+        '(attempt $_reconnectAttempts/$_maxReconnectAttempts)',
       );
     }
 
@@ -296,7 +299,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     // Clear queued messages to prevent leaks on reconnect to different account
     clearPendingDecryptQueue();
     state = state.copyWith(isConnected: false);
-    DebugLogService.instance.log(LogLevel.info, 'WebSocket', 'Disconnected');
+    DebugLogService.instance.log(LogLevel.info, _kLogTag, 'Disconnected');
   }
 
   /// Send a DM message to a peer.
@@ -391,7 +394,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
             ),
           );
     } catch (e) {
-      debugLog('sendReaction error: $e', 'WebSocket');
+      debugLog('sendReaction error: $e', _kLogTag);
     }
   }
 
@@ -412,7 +415,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
             ),
           );
     } catch (e) {
-      debugLog('removeReaction error: $e', 'WebSocket');
+      debugLog('removeReaction error: $e', _kLogTag);
     }
   }
 
@@ -468,7 +471,7 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
       if (elapsed.inSeconds > 60) {
         DebugLogService.instance.log(
           LogLevel.warning,
-          'WebSocket',
+          _kLogTag,
           'Heartbeat timeout (${elapsed.inSeconds}s since last message)',
         );
         disconnect();

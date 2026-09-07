@@ -7,15 +7,11 @@ part of 'conversations_provider.dart';
 // REST API calls and manage local state for CRUD operations.
 // ---------------------------------------------------------------------------
 
-mixin _ConversationsHttpActionsMixin on Notifier<ConversationsState> {
+mixin _ConversationsHttpActionsMixin on AuthedHttp<ConversationsState> {
   // Dependencies implemented by ConversationsNotifier.
-  // `ref` is provided by the Notifier base; do not re-declare here.
+  // `ref`, `headersWithToken` and `authenticatedRequest` come from [AuthedHttp].
   String get _serverUrl;
   Future<void> loadConversations();
-  Future<http.Response> _authenticatedRequest(
-    Future<http.Response> Function(String token) requestFn,
-  );
-  Map<String, String> _headersWithToken(String token);
   String _friendlyError(Object error);
   String _parseServerError(String body, String fallback);
 
@@ -63,10 +59,10 @@ mixin _ConversationsHttpActionsMixin on Notifier<ConversationsState> {
 
   /// POST /api/conversations/dm and return the response.
   Future<http.Response> _createDmRequest(String peerUserId) {
-    return _authenticatedRequest(
+    return authenticatedRequest(
       (token) => http.post(
         Uri.parse('$_serverUrl/api/conversations/dm'),
-        headers: _headersWithToken(token),
+        headers: headersWithToken(token),
         body: jsonEncode({'peer_user_id': peerUserId}),
       ),
     );
@@ -127,10 +123,10 @@ mixin _ConversationsHttpActionsMixin on Notifier<ConversationsState> {
   /// disappears from their conversation list. Messages are not deleted.
   Future<bool> leaveConversation(String conversationId) async {
     try {
-      final response = await _authenticatedRequest(
+      final response = await authenticatedRequest(
         (token) => http.post(
           Uri.parse('$_serverUrl/api/conversations/$conversationId/leave'),
-          headers: _headersWithToken(token),
+          headers: headersWithToken(token),
         ),
       );
       if (response.statusCode == 200) {
@@ -181,10 +177,10 @@ mixin _ConversationsHttpActionsMixin on Notifier<ConversationsState> {
 
     bool success = false;
     try {
-      final response = await _authenticatedRequest(
+      final response = await authenticatedRequest(
         (token) => http.put(
           Uri.parse('$_serverUrl/api/conversations/$conversationId/mute'),
-          headers: _headersWithToken(token),
+          headers: headersWithToken(token),
           body: jsonEncode({'is_muted': isMuted}),
         ),
       );
@@ -232,15 +228,15 @@ mixin _ConversationsHttpActionsMixin on Notifier<ConversationsState> {
 
     bool success = false;
     try {
-      final response = await _authenticatedRequest(
+      final response = await authenticatedRequest(
         (token) => pinned
             ? http.put(
                 Uri.parse('$_serverUrl/api/conversations/$conversationId/pin'),
-                headers: _headersWithToken(token),
+                headers: headersWithToken(token),
               )
             : http.delete(
                 Uri.parse('$_serverUrl/api/conversations/$conversationId/pin'),
-                headers: _headersWithToken(token),
+                headers: headersWithToken(token),
               ),
       );
       success = response.statusCode == 204 || response.statusCode == 200;
@@ -269,10 +265,10 @@ mixin _ConversationsHttpActionsMixin on Notifier<ConversationsState> {
   /// Returns true on success, false on failure.
   Future<bool> leaveGroup(String groupId) async {
     try {
-      final response = await _authenticatedRequest(
+      final response = await authenticatedRequest(
         (token) => http.post(
           Uri.parse('$_serverUrl/api/groups/$groupId/leave'),
-          headers: _headersWithToken(token),
+          headers: headersWithToken(token),
         ),
       );
 
@@ -300,10 +296,10 @@ mixin _ConversationsHttpActionsMixin on Notifier<ConversationsState> {
   /// non-owners get 403. Returns true on success, false on failure.
   Future<bool> deleteGroup(String groupId) async {
     try {
-      final response = await _authenticatedRequest(
+      final response = await authenticatedRequest(
         (token) => http.delete(
           Uri.parse('$_serverUrl/api/groups/$groupId'),
-          headers: _headersWithToken(token),
+          headers: headersWithToken(token),
         ),
       );
 
@@ -350,10 +346,10 @@ mixin _ConversationsHttpActionsMixin on Notifier<ConversationsState> {
       if (description != null) {
         body['description'] = description;
       }
-      final response = await _authenticatedRequest(
+      final response = await authenticatedRequest(
         (token) => http.post(
           Uri.parse('$_serverUrl/api/groups'),
-          headers: _headersWithToken(token),
+          headers: headersWithToken(token),
           body: jsonEncode(body),
         ),
       );

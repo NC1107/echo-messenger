@@ -12,6 +12,7 @@ import '../../services/debug_log_service.dart';
 import '../../services/sound_service.dart';
 import '../../theme/echo_theme.dart';
 import '../../utils/audio_level_analyzer.dart';
+import '../../widgets/echo_dropdown.dart';
 import '../../widgets/settings_panel_scaffold.dart';
 
 /// Voice & Video settings.
@@ -26,15 +27,23 @@ class VoiceVideoSection extends ConsumerStatefulWidget {
   ConsumerState<VoiceVideoSection> createState() => _VoiceVideoSectionState();
 }
 
+// Friendly fallback names for unlabeled "default" devices. Hoisted because
+// each is used 3+ times (S1192).
+const _kDefaultMic = 'Default Microphone';
+const _kDefaultOutput = 'Default Output';
+const _kDefaultCamera = 'Default Camera';
+// — = em dash. (Used twice — kept as a const for the shared helper below.)
+const _kNoEnumDeviceName = 'Using system default — no enumeration available';
+
 class _VoiceVideoSectionState extends ConsumerState<VoiceVideoSection> {
   List<Map<String, String>> _audioInputDevices = [
-    {'id': 'default', 'name': 'Default Microphone'},
+    {'id': 'default', 'name': _kDefaultMic},
   ];
   List<Map<String, String>> _audioOutputDevices = [
-    {'id': 'default', 'name': 'Default Output'},
+    {'id': 'default', 'name': _kDefaultOutput},
   ];
   List<Map<String, String>> _videoInputDevices = [
-    {'id': 'default', 'name': 'Default Camera'},
+    {'id': 'default', 'name': _kDefaultCamera},
   ];
   bool _devicesLoaded = false;
 
@@ -268,70 +277,19 @@ class _VoiceVideoSectionState extends ConsumerState<VoiceVideoSection> {
         '_loadAudioDevices: enumerateDevices returned ${devices.length} '
             'device(s)',
       );
-      final inputs = <Map<String, String>>[];
-      final outputs = <Map<String, String>>[];
-      final cameras = <Map<String, String>>[];
-      for (final d in devices) {
-        if (d.deviceId.isEmpty) continue;
-        // On Linux, PulseAudio exposes the default sink/source with
-        // deviceId='default' and an empty label. Accept the device but
-        // substitute a friendly per-kind name when the label is missing.
-        final String label;
-        if (d.label.isNotEmpty) {
-          label = d.label;
-        } else if (d.deviceId == 'default') {
-          label = switch (d.kind) {
-            'audioinput' => 'Default Microphone',
-            'audiooutput' => 'Default Output',
-            'videoinput' => 'Default Camera',
-            _ => 'Default Device',
-          };
-        } else {
-          label = d.deviceId;
-        }
-        if (d.kind == 'audioinput') {
-          inputs.add({'id': d.deviceId, 'name': label});
-        } else if (d.kind == 'audiooutput') {
-          outputs.add({'id': d.deviceId, 'name': label});
-        } else if (d.kind == 'videoinput') {
-          cameras.add({'id': d.deviceId, 'name': label});
-        }
-      }
-      // Keep a sentinel when empty so dropdowns aren't blank; distinguish no-enum vs no-matching-kind.
-      final noEnum = devices.isEmpty;
-      if (inputs.isEmpty) {
-        inputs.add({
-          'id': 'default',
-          'name': noEnum
-              // \u2014 = em dash
-              ? 'Using system default \u2014 no enumeration available'
-              : 'Default Microphone',
-        });
-      }
-      if (outputs.isEmpty) {
-        outputs.add({
-          'id': 'default',
-          'name': noEnum
-              // \u2014 = em dash
-              ? 'Using system default \u2014 no enumeration available'
-              : 'Default Output',
-        });
-      }
-      if (cameras.isEmpty) {
-        cameras.add({'id': 'default', 'name': 'Default Camera'});
-      }
+      final picks = _classifyDevices(devices);
       if (mounted) {
         setState(() {
-          _audioInputDevices = inputs;
-          _audioOutputDevices = outputs;
-          _videoInputDevices = cameras;
+          _audioInputDevices = picks.inputs;
+          _audioOutputDevices = picks.outputs;
+          _videoInputDevices = picks.cameras;
         });
       }
       DebugLogService.instance.log(
         LogLevel.info,
         'VoiceSettings',
-        '_loadAudioDevices: applied ${inputs.length} in / '
-            '${outputs.length} out / ${cameras.length} cam',
+        '_loadAudioDevices: applied ${picks.inputs.length} in / '
+            '${picks.outputs.length} out / ${picks.cameras.length} cam',
       );
     } catch (e, st) {
       // Persist the error: bare `catch (_)` swallowed the type-confusion preceding the native crash.
@@ -351,6 +309,68 @@ class _VoiceVideoSectionState extends ConsumerState<VoiceVideoSection> {
     }
   }
 
+  /// Friendly label for one enumerated device: its real label, a per-kind
+  /// "Default …" name for an unlabeled `default` device (Linux/PulseAudio
+  /// exposes these), else the raw id.
+  String _deviceLabel(webrtc.MediaDeviceInfo d) {
+    if (d.label.isNotEmpty) return d.label;
+    if (d.deviceId == 'default') {
+      return switch (d.kind) {
+        'audioinput' => _kDefaultMic,
+        'audiooutput' => _kDefaultOutput,
+        'videoinput' => _kDefaultCamera,
+        _ => 'Default Device',
+      };
+    }
+    return d.deviceId;
+  }
+
+  /// Split enumerated devices into input/output/camera dropdown entries,
+  /// adding a sentinel entry per kind when none were found so the dropdowns
+  /// are never blank. Extracted from [_loadAudioDevices] to keep its cognitive
+  /// complexity in budget (S3776).
+  ({
+    List<Map<String, String>> inputs,
+    List<Map<String, String>> outputs,
+    List<Map<String, String>> cameras,
+  })
+  _classifyDevices(List<webrtc.MediaDeviceInfo> devices) {
+    final inputs = <Map<String, String>>[];
+    final outputs = <Map<String, String>>[];
+    final cameras = <Map<String, String>>[];
+    for (final d in devices) {
+      if (d.deviceId.isEmpty) continue;
+      final entry = {'id': d.deviceId, 'name': _deviceLabel(d)};
+      switch (d.kind) {
+        case 'audioinput':
+          inputs.add(entry);
+        case 'audiooutput':
+          outputs.add(entry);
+        case 'videoinput':
+          cameras.add(entry);
+      }
+    }
+    // Sentinels when empty; distinguish "no enumeration" from "no device of
+    // this kind".
+    final noEnum = devices.isEmpty;
+    if (inputs.isEmpty) {
+      inputs.add({
+        'id': 'default',
+        'name': noEnum ? _kNoEnumDeviceName : _kDefaultMic,
+      });
+    }
+    if (outputs.isEmpty) {
+      outputs.add({
+        'id': 'default',
+        'name': noEnum ? _kNoEnumDeviceName : _kDefaultOutput,
+      });
+    }
+    if (cameras.isEmpty) {
+      cameras.add({'id': 'default', 'name': _kDefaultCamera});
+    }
+    return (inputs: inputs, outputs: outputs, cameras: cameras);
+  }
+
   Color _micLevelColor() {
     if (_micLevel > 0.7) return EchoTheme.danger;
     if (_micLevel > 0.4) return EchoTheme.warning;
@@ -364,11 +384,9 @@ class _VoiceVideoSectionState extends ConsumerState<VoiceVideoSection> {
     required String currentId,
     required ValueChanged<String> onChanged,
   }) {
-    return DropdownButtonFormField<String>(
-      initialValue: devices.any((d) => d['id'] == currentId)
-          ? currentId
-          : 'default',
-      decoration: InputDecoration(labelText: label),
+    return EchoDropdown<String>(
+      value: devices.any((d) => d['id'] == currentId) ? currentId : 'default',
+      labelText: label,
       items: devices
           .map(
             (device) => DropdownMenuItem(

@@ -335,6 +335,24 @@ fn validate_image_add(payload: &Value) -> Result<(), ValidationError> {
     validate_image_dims(payload)
 }
 
+/// Extract the media UUID referenced by an `image_add` payload's `url`.
+///
+/// Production media URLs are `/api/media/<uuid>` (optionally suffixed with
+/// `/thumb`). The first path segment after `/api/media/` must parse as a
+/// UUID; any extension or sub-path is rejected so the ownership check in the
+/// async handler always runs against a canonical id.
+///
+/// Returns `None` when the URL is missing, not the expected shape, or the id
+/// segment is not a UUID — the caller treats that as "reject".
+pub fn media_id_from_image_add(payload: &Value) -> Option<uuid::Uuid> {
+    const PREFIX: &str = "/api/media/";
+    let url = payload.get("url").and_then(Value::as_str)?;
+    let rest = url.strip_prefix(PREFIX)?;
+    // Take only the first path segment; drop a trailing `/thumb` etc.
+    let segment = rest.split('/').next()?;
+    uuid::Uuid::parse_str(segment).ok()
+}
+
 fn validate_image_move(payload: &Value) -> Result<(), ValidationError> {
     require_uuid(payload, "id")?;
     canvas_coord(payload, "x")?;
@@ -562,6 +580,43 @@ mod tests {
     fn clear_rejects_unknown_field() {
         let payload = json!({"haha": "gotcha"});
         assert!(err_code("clear", payload).contains("unknown_field"));
+    }
+
+    // -- media_id_from_image_add ------------------------------------------
+
+    #[test]
+    fn media_id_parses_canonical_url() {
+        let p = json!({"url": "/api/media/11111111-1111-1111-1111-111111111111"});
+        assert_eq!(
+            media_id_from_image_add(&p).unwrap().to_string(),
+            "11111111-1111-1111-1111-111111111111"
+        );
+    }
+
+    #[test]
+    fn media_id_strips_thumb_suffix() {
+        let p = json!({"url": "/api/media/22222222-2222-2222-2222-222222222222/thumb"});
+        assert_eq!(
+            media_id_from_image_add(&p).unwrap().to_string(),
+            "22222222-2222-2222-2222-222222222222"
+        );
+    }
+
+    #[test]
+    fn media_id_rejects_non_uuid_segment() {
+        let p = json!({"url": "/api/media/abc.png"});
+        assert!(media_id_from_image_add(&p).is_none());
+    }
+
+    #[test]
+    fn media_id_rejects_foreign_prefix() {
+        let p = json!({"url": "https://evil.example.com/x.png"});
+        assert!(media_id_from_image_add(&p).is_none());
+    }
+
+    #[test]
+    fn media_id_rejects_missing_url() {
+        assert!(media_id_from_image_add(&json!({})).is_none());
     }
 
     // -- image_add --------------------------------------------------------

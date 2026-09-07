@@ -35,13 +35,13 @@ extension WsLifecycle on WebSocketNotifier {
     if (!crypto.isInitialized) {
       debugLog(
         'Crypto not yet initialized; deferring WS ticket fetch.',
-        'WebSocket',
+        _kLogTag,
       );
       DebugLogService.instance.log(
         LogLevel.info,
-        'WebSocket',
+        _kLogTag,
         'Crypto not initialized — deferring WS ticket fetch to avoid '
-            'device_id=0 canvas authority mismatch (BUG #20).',
+        'device_id=0 canvas authority mismatch (BUG #20).',
       );
       return null;
     }
@@ -65,10 +65,10 @@ extension WsLifecycle on WebSocketNotifier {
         return data['ticket'] as String?;
       }
     } catch (e) {
-      debugLog('Failed to fetch ws ticket: $e', 'WebSocket');
+      debugLog('Failed to fetch ws ticket: $e', _kLogTag);
       DebugLogService.instance.log(
         LogLevel.error,
-        'WebSocket',
+        _kLogTag,
         'Failed to fetch ws ticket: $e',
       );
     }

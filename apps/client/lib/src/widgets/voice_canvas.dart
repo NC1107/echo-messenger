@@ -17,6 +17,7 @@ import '../theme/motion_tokens.dart';
 import '../utils/canvas_utils.dart';
 import 'puck_trail.dart';
 import 'voice/participant_attention.dart';
+import 'voice_lounge/draggable_canvas_item.dart';
 import 'voice_lounge/lounge_canvas_gestures.dart' show CanvasDragScope;
 import 'voice_speaking_ring.dart';
 
@@ -1073,132 +1074,90 @@ class _CanvasImageWidget extends StatefulWidget {
 }
 
 class _CanvasImageWidgetState extends State<_CanvasImageWidget> {
-  bool _hovered = false;
-
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.move,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        // DragStartBehavior.down: the inner image's pan recognizer wins
-        // the gesture arena on pointer-down instead of waiting for
-        // kPanSlop. Without this, a fast drag occasionally lost
-        // arbitration to the parent InteractiveViewer's PanGestureRecognizer
-        // mid-gesture and detached, forcing the user to click and start
-        // the drag over (user-reported 2026-05-27).
-        dragStartBehavior: DragStartBehavior.down,
-        // BUG #22: suppress canvas pan while the image drag owns the
-        // pointer (same root cause as avatar dragging — raw Listener).
-        onPanStart: (_) => CanvasDragScope.of(context)?.suppress(),
-        onPanUpdate: (d) => widget.onMove(d.delta.dx, d.delta.dy),
-        onPanEnd: (_) {
+    return DraggableCanvasItem(
+      gestures: CanvasItemGestures(
+        // BUG #22: suppress canvas pan while the image drag owns the pointer
+        // (same root cause as avatar dragging — raw Listener). Released on end
+        // or cancel so the canvas can pan again.
+        onMoveStart: () => CanvasDragScope.of(context)?.suppress(),
+        onMove: (dx, dy) => widget.onMove(dx, dy),
+        onMoveEnd: () {
           CanvasDragScope.of(context)?.release();
           widget.onMoveEnd();
         },
-        onPanCancel: () => CanvasDragScope.of(context)?.release(),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(4),
-                boxShadow: [
-                  BoxShadow(
-                    color: context.mainBg.withValues(alpha: 0.4),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                // GIFs need Image.network for multi-frame animation;
-                // CachedNetworkImage decodes a single frame so animated
-                // GIFs render as a static first frame. Detect the .gif
-                // extension and pick the right widget per image.
-                child: _isGif(widget.image.url)
-                    ? Image.network(
-                        widget.image.url,
-                        headers: widget.httpHeaders ?? const {},
-                        fit: BoxFit.cover,
-                        gaplessPlayback: true,
-                        errorBuilder: (_, _, _) => Container(
-                          color: context.surfaceHover,
-                          child: Icon(
-                            Icons.broken_image,
-                            color: context.textMuted,
-                          ),
-                        ),
-                      )
-                    : CachedNetworkImage(
-                        imageUrl: widget.image.url,
-                        httpHeaders: widget.httpHeaders ?? const {},
-                        fit: BoxFit.cover,
-                        errorWidget: (_, _, _) => Container(
-                          color: context.surfaceHover,
-                          child: Icon(
-                            Icons.broken_image,
-                            color: context.textMuted,
-                          ),
-                        ),
-                      ),
-              ),
+        onMoveCancel: () => CanvasDragScope.of(context)?.release(),
+        onResize: (dx, dy) => widget.onResize(dx, dy),
+        onResizeEnd: widget.onResizeEnd,
+      ),
+      hoverOverlayBuilder: (context) => Positioned(
+        top: 4,
+        right: 4,
+        child: GestureDetector(
+          onTap: widget.onRemove,
+          child: Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: context.surface.withValues(alpha: 0.54),
+              shape: BoxShape.circle,
             ),
-            if (_hovered)
-              Positioned(
-                top: 4,
-                right: 4,
-                child: GestureDetector(
-                  onTap: widget.onRemove,
-                  child: Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: context.surface.withValues(alpha: 0.54),
-                      shape: BoxShape.circle,
-                    ),
-                    alignment: Alignment.center,
-                    child: Icon(
-                      Icons.close,
-                      size: 16,
-                      color: context.textPrimary,
-                    ),
-                  ),
-                ),
-              ),
-            if (_hovered)
-              Positioned(
-                bottom: 0,
-                right: 0,
-                child: MouseRegion(
-                  cursor: SystemMouseCursors.resizeDownRight,
-                  child: GestureDetector(
-                    dragStartBehavior: DragStartBehavior.down,
-                    onPanUpdate: (d) => widget.onResize(d.delta.dx, d.delta.dy),
-                    onPanEnd: (_) => widget.onResizeEnd(),
-                    child: Container(
-                      width: 24,
-                      height: 24,
-                      decoration: BoxDecoration(
-                        color: context.surface.withValues(alpha: 0.7),
-                        borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(8),
-                          bottomRight: Radius.circular(4),
-                        ),
-                      ),
-                      alignment: Alignment.center,
-                      child: Icon(
-                        Icons.open_in_full,
-                        size: 14,
-                        color: context.textPrimary,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+            alignment: Alignment.center,
+            child: Icon(Icons.close, size: 16, color: context.textPrimary),
+          ),
+        ),
+      ),
+      resizeHandle: Container(
+        width: 24,
+        height: 24,
+        decoration: BoxDecoration(
+          color: context.surface.withValues(alpha: 0.7),
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(8),
+            bottomRight: Radius.circular(4),
+          ),
+        ),
+        alignment: Alignment.center,
+        child: Icon(Icons.open_in_full, size: 14, color: context.textPrimary),
+      ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(4),
+          boxShadow: [
+            BoxShadow(
+              color: context.mainBg.withValues(alpha: 0.4),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
           ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          // GIFs need Image.network for multi-frame animation;
+          // CachedNetworkImage decodes a single frame so animated GIFs render
+          // as a static first frame. Detect the .gif extension and pick the
+          // right widget per image.
+          child: _isGif(widget.image.url)
+              ? Image.network(
+                  widget.image.url,
+                  headers: widget.httpHeaders ?? const {},
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                  errorBuilder: (_, _, _) => Container(
+                    color: context.surfaceHover,
+                    child: Icon(Icons.broken_image, color: context.textMuted),
+                  ),
+                )
+              : CachedNetworkImage(
+                  imageUrl: widget.image.url,
+                  httpHeaders: widget.httpHeaders ?? const {},
+                  fit: BoxFit.cover,
+                  errorWidget: (_, _, _) => Container(
+                    color: context.surfaceHover,
+                    child: Icon(Icons.broken_image, color: context.textMuted),
+                  ),
+                ),
         ),
       ),
     );

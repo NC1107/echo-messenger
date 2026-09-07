@@ -30,6 +30,10 @@ String friendlyError(Object e) {
 /// or the laptop being offline all read identically. This variant returns:
 ///
 /// - 401 / 403  → "Invalid username or password." (the credential path)
+/// - 404 / 405  → "This server isn't responding as an Echo server…" — the
+///   endpoint isn't there, which almost always means the configured server URL
+///   points at the wrong host (e.g. a static/marketing site). Surfacing this as
+///   a credential error sent testers chasing the wrong problem (#1063 fallout).
 /// - SocketException / TimeoutException → "Can't reach the server. Check
 ///   your connection or server URL."
 /// - 5xx → "Server error — please try again in a moment."
@@ -42,6 +46,10 @@ String friendlyLoginError({int? statusCode, Object? exception}) {
   if (statusCode != null) {
     if (statusCode == 401 || statusCode == 403) {
       return 'Invalid username or password.';
+    }
+    if (statusCode == 404 || statusCode == 405) {
+      return "This server isn't responding as an Echo server. "
+          'Check the server URL.';
     }
     if (statusCode >= 500 && statusCode < 600) {
       return 'Server error — please try again in a moment.';

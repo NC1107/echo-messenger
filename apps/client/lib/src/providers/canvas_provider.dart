@@ -619,7 +619,10 @@ class CanvasController extends _$CanvasController {
       return;
     }
     _pendingImageMove = null;
-    _sendCanvasEvent('image_move', pending);
+    // Intermediate drag frame: relay-only. The server skips the DB write for
+    // `commit: false` so a drag doesn't rewrite the whole images JSONB array
+    // ~10×/sec (#1339); the pointer-up commit below persists the final spot.
+    _sendCanvasEvent('image_move', {...pending, 'commit': false});
   }
 
   /// Called when image drag ends -- flush immediately.
@@ -634,7 +637,8 @@ class CanvasController extends _$CanvasController {
     final updated = state.images[idx].copyWith(x: x, y: y);
     final newImages = List<CanvasImage>.from(state.images)..[idx] = updated;
     state = state.copyWith(images: newImages);
-    _sendCanvasEvent('image_move', updated.toJson());
+    // Pointer-up: `commit: true` tells the server to persist the final spot.
+    _sendCanvasEvent('image_move', {...updated.toJson(), 'commit': true});
   }
 
   void removeImage(String imageId) {
@@ -678,7 +682,11 @@ class CanvasController extends _$CanvasController {
     if (_channelId == null) return;
     final idx = state.images.indexWhere((img) => img.id == imageId);
     if (idx == -1) return;
-    _sendCanvasEvent('image_move', state.images[idx].toJson());
+    // Pointer-up commit (see commitImageMove) — persists the final size.
+    _sendCanvasEvent('image_move', {
+      ...state.images[idx].toJson(),
+      'commit': true,
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -985,147 +993,21 @@ class CanvasController extends _$CanvasController {
     try {
       switch (kind) {
         case 'stroke_partial':
-          // Partial stroke delta: points arriving incrementally.
-          // Build a temporary stroke and add it for live display. Apply the
-          // legacy 0..1 → pixel migration heuristic inline — without this,
-          // a pre-4096 client's partial strokes paint into the top-left
-          // 1×1 pixel and only "jump" to the right place when the final
-          // stroke arrives (audit Finding 6, 2026-05-28).
-          final pointsList = (payload['points'] as List? ?? []).map((p) {
-            final rawX = (p['x'] as num?)?.toDouble() ?? 0.0;
-            final rawY = (p['y'] as num?)?.toDouble() ?? 0.0;
-            return CanvasPoint(
-              x: rawX <= 1.0 ? rawX * kCanvasWidth : rawX,
-              y: rawY <= 1.0 ? rawY * kCanvasHeight : rawY,
-            );
-          }).toList();
-          final color = payload['color'] as String? ?? '#000000';
-          final width = (payload['width'] as num?)?.toDouble() ?? 2.0;
-          final kind = payload['kind'] as String? ?? 'pen';
-
-          if (pointsList.isEmpty) return;
-
-          // Look for an existing partial stroke from this user.
-          final partialId = 'partial_${fromUserId}_in_progress';
-          final existingIdx = state.strokes.indexWhere(
-            (s) => s.id == partialId,
-          );
-
-          if (existingIdx != -1) {
-            // Append points to existing partial stroke.
-            final existing = state.strokes[existingIdx];
-            final updated = existing.copyWith(
-              points: List.from(existing.points)..addAll(pointsList),
-            );
-            final newStrokes = List<CanvasStroke>.from(state.strokes)
-              ..[existingIdx] = updated;
-            state = state.copyWith(strokes: newStrokes);
-          } else {
-            // Honour the wire `kind` so highlighter partials render as a
-            // translucent thick pen on remotes instead of being coerced to
-            // plain pen. Falls through `_strokeKindFromString` for any
-            // value the receiver doesn't recognise.
-            final partialStroke = CanvasStroke(
-              id: partialId,
-              color: color,
-              width: width,
-              points: pointsList,
-              kind: _wireKindToStrokeKind(kind),
-            );
-            final newStrokes = List<CanvasStroke>.from(state.strokes)
-              ..add(partialStroke);
-            state = state.copyWith(strokes: newStrokes);
-          }
+          _applyRemoteStrokePartial(payload, fromUserId);
         case 'stroke':
-          final stroke = CanvasStroke.fromJson(payload);
-          // Remove the partial stroke placeholder if it exists, AND any prior
-          // copy of this stroke id (VL-4 dedup: a reconnect snapshot replay or
-          // an importSnapshot rebroadcast can re-deliver a stroke we already
-          // hold; a blind append would accumulate duplicates and diverge).
-          final partialId = 'partial_${fromUserId}_in_progress';
-          final strokes =
-              state.strokes
-                  .where((s) => s.id != partialId && s.id != stroke.id)
-                  .toList()
-                ..add(stroke);
-          state = state.copyWith(strokes: _capStrokes(strokes));
+          _applyRemoteStroke(payload, fromUserId);
         case 'clear':
-          // VL-6: a remote clear must also abort our in-flight local stroke,
-          // otherwise the pending endStroke re-appends + re-broadcasts a stroke
-          // onto the just-cleared board (resurrection race).
-          _abortActiveStroke();
-          state = state.copyWith(strokes: [], images: []);
-          // Remote clear wipes the board for us too — drop the mine-sets so
-          // "Clear my drawings" reflects the now-empty canvas.
-          _myStrokeIds.clear();
-          _myImageIds.clear();
+          _applyRemoteClear();
         case 'image_add':
-          final image = CanvasImage.fromJson(payload);
-          // VL-4 dedup: replace any existing image with the same id rather than
-          // blindly appending a duplicate.
-          final newImages =
-              state.images.where((img) => img.id != image.id).toList()
-                ..add(image);
-          state = state.copyWith(images: _capImages(newImages));
+          _applyRemoteImageAdd(payload);
         case 'image_move':
-          final updatedImage = CanvasImage.fromJson(payload);
-          final idx = state.images.indexWhere(
-            (img) => img.id == updatedImage.id,
-          );
-          if (idx != -1) {
-            final newImages = List<CanvasImage>.from(state.images)
-              ..[idx] = updatedImage;
-            state = state.copyWith(images: newImages);
-          }
+          _applyRemoteImageMove(payload);
         case 'image_remove':
-          final id = payload['id'] as String?;
-          if (id != null) {
-            final newImages = state.images
-                .where((img) => img.id != id)
-                .toList();
-            state = state.copyWith(images: newImages);
-          }
+          _applyRemoteImageRemove(payload);
         case 'avatar_move':
-          // Shared-whiteboard semantics: the *target* user id is carried in
-          // the payload, not derived from the sender. Older clients only
-          // ever moved their own avatar and sent `user_id == from_user_id`,
-          // so falling back to `fromUserId` keeps them compatible.
-          final targetUserId = (payload['user_id'] as String?) ?? fromUserId;
-          if (targetUserId.isEmpty) return;
-          // Coords arrive in canvas-space pixels on the new wire format.
-          // Legacy clients (pre-4096) sent 0..1 normalized — rescale inline
-          // using the same heuristic the model layer applies in fromJson.
-          final rawX = (payload['x'] as num?)?.toDouble() ?? kCanvasWidth / 2;
-          final rawY = (payload['y'] as num?)?.toDouble() ?? kCanvasHeight / 2;
-          final x = rawX <= 1.0 ? rawX * kCanvasWidth : rawX;
-          final y = rawY <= 1.0 ? rawY * kCanvasHeight : rawY;
-          // Older clients won't send `scale`; preserve the prior value (or
-          // default to 1.0) so a move from an old build doesn't reset the
-          // size that a newer participant just resized.
-          final existing = state.avatarPositions[targetUserId];
-          final rawScale = (payload['scale'] as num?)?.toDouble();
-          final scale = (rawScale ?? existing?.scale ?? 1.0).clamp(
-            AvatarPosition.minScale,
-            AvatarPosition.maxScale,
-          );
-          final updated = Map<String, AvatarPosition>.from(
-            state.avatarPositions,
-          );
-          updated[targetUserId] = AvatarPosition(
-            userId: targetUserId,
-            x: x.clamp(0.0, kCanvasWidth),
-            y: y.clamp(0.0, kCanvasHeight),
-            scale: scale,
-          );
-          state = state.copyWith(avatarPositions: updated);
+          _applyRemoteAvatarMove(payload, fromUserId);
         case 'screenshare_move':
-          final resolved = _resolveScreenShareMove(payload);
-          if (resolved == null) return;
-          final updated = Map<String, ScreenShareWindow>.from(
-            state.screenSharePositions,
-          );
-          updated[resolved.windowId] = resolved;
-          state = state.copyWith(screenSharePositions: updated);
+          _applyRemoteScreenShareMove(payload);
       }
     } catch (e) {
       DebugLogService.instance.log(
@@ -1134,6 +1016,169 @@ class CanvasController extends _$CanvasController {
         'Dropped malformed canvas event (kind=$kind): $e',
       );
     }
+  }
+
+  // Per-kind handlers for [handleCanvasEvent]. Each applies one remote event to
+  // state; the dispatcher above stays a flat switch so its complexity reads as
+  // routing, not logic. All are called inside the dispatcher's try/catch, so a
+  // malformed payload here is dropped rather than crashing the client (VL-1).
+
+  /// `stroke_partial`: incremental points for a peer's in-flight stroke.
+  void _applyRemoteStrokePartial(
+    Map<String, dynamic> payload,
+    String fromUserId,
+  ) {
+    // Build a temporary stroke and add it for live display. Apply the legacy
+    // 0..1 → pixel migration heuristic inline — without this, a pre-4096
+    // client's partial strokes paint into the top-left 1×1 pixel and only
+    // "jump" to the right place when the final stroke arrives (audit Finding 6,
+    // 2026-05-28).
+    final pointsList = (payload['points'] as List? ?? []).map((p) {
+      final rawX = (p['x'] as num?)?.toDouble() ?? 0.0;
+      final rawY = (p['y'] as num?)?.toDouble() ?? 0.0;
+      return CanvasPoint(
+        x: rawX <= 1.0 ? rawX * kCanvasWidth : rawX,
+        y: rawY <= 1.0 ? rawY * kCanvasHeight : rawY,
+      );
+    }).toList();
+    final color = payload['color'] as String? ?? '#000000';
+    final width = (payload['width'] as num?)?.toDouble() ?? 2.0;
+    final kind = payload['kind'] as String? ?? 'pen';
+
+    if (pointsList.isEmpty) return;
+
+    // Look for an existing partial stroke from this user.
+    final partialId = 'partial_${fromUserId}_in_progress';
+    final existingIdx = state.strokes.indexWhere((s) => s.id == partialId);
+
+    if (existingIdx != -1) {
+      // Append points to existing partial stroke.
+      final existing = state.strokes[existingIdx];
+      final updated = existing.copyWith(
+        points: List.from(existing.points)..addAll(pointsList),
+      );
+      final newStrokes = List<CanvasStroke>.from(state.strokes)
+        ..[existingIdx] = updated;
+      state = state.copyWith(strokes: newStrokes);
+    } else {
+      // Honour the wire `kind` so highlighter partials render as a translucent
+      // thick pen on remotes instead of being coerced to plain pen. Falls
+      // through `_wireKindToStrokeKind` for any value we don't recognise.
+      final partialStroke = CanvasStroke(
+        id: partialId,
+        color: color,
+        width: width,
+        points: pointsList,
+        kind: _wireKindToStrokeKind(kind),
+      );
+      final newStrokes = List<CanvasStroke>.from(state.strokes)
+        ..add(partialStroke);
+      state = state.copyWith(strokes: newStrokes);
+    }
+  }
+
+  /// `stroke`: a peer's completed stroke replaces its partial placeholder.
+  void _applyRemoteStroke(Map<String, dynamic> payload, String fromUserId) {
+    final stroke = CanvasStroke.fromJson(payload);
+    // Remove the partial stroke placeholder if it exists, AND any prior copy of
+    // this stroke id (VL-4 dedup: a reconnect snapshot replay or an
+    // importSnapshot rebroadcast can re-deliver a stroke we already hold; a
+    // blind append would accumulate duplicates and diverge).
+    final partialId = 'partial_${fromUserId}_in_progress';
+    final strokes =
+        state.strokes
+            .where((s) => s.id != partialId && s.id != stroke.id)
+            .toList()
+          ..add(stroke);
+    state = state.copyWith(strokes: _capStrokes(strokes));
+  }
+
+  /// `clear`: a peer wiped the board.
+  void _applyRemoteClear() {
+    // VL-6: a remote clear must also abort our in-flight local stroke,
+    // otherwise the pending endStroke re-appends + re-broadcasts a stroke onto
+    // the just-cleared board (resurrection race).
+    _abortActiveStroke();
+    state = state.copyWith(strokes: [], images: []);
+    // Remote clear wipes the board for us too — drop the mine-sets so "Clear my
+    // drawings" reflects the now-empty canvas.
+    _myStrokeIds.clear();
+    _myImageIds.clear();
+  }
+
+  /// `image_add`: a peer added an image.
+  void _applyRemoteImageAdd(Map<String, dynamic> payload) {
+    final image = CanvasImage.fromJson(payload);
+    // VL-4 dedup: replace any existing image with the same id rather than
+    // blindly appending a duplicate.
+    final newImages = state.images.where((img) => img.id != image.id).toList()
+      ..add(image);
+    state = state.copyWith(images: _capImages(newImages));
+  }
+
+  /// `image_move`: a peer repositioned/resized an existing image.
+  void _applyRemoteImageMove(Map<String, dynamic> payload) {
+    final updatedImage = CanvasImage.fromJson(payload);
+    final idx = state.images.indexWhere((img) => img.id == updatedImage.id);
+    if (idx != -1) {
+      final newImages = List<CanvasImage>.from(state.images)
+        ..[idx] = updatedImage;
+      state = state.copyWith(images: newImages);
+    }
+  }
+
+  /// `image_remove`: a peer deleted an image.
+  void _applyRemoteImageRemove(Map<String, dynamic> payload) {
+    final id = payload['id'] as String?;
+    if (id != null) {
+      final newImages = state.images.where((img) => img.id != id).toList();
+      state = state.copyWith(images: newImages);
+    }
+  }
+
+  /// `avatar_move`: a peer moved/resized an avatar on the shared whiteboard.
+  void _applyRemoteAvatarMove(Map<String, dynamic> payload, String fromUserId) {
+    // Shared-whiteboard semantics: the *target* user id is carried in the
+    // payload, not derived from the sender. Older clients only ever moved their
+    // own avatar and sent `user_id == from_user_id`, so falling back to
+    // `fromUserId` keeps them compatible.
+    final targetUserId = (payload['user_id'] as String?) ?? fromUserId;
+    if (targetUserId.isEmpty) return;
+    // Coords arrive in canvas-space pixels on the new wire format. Legacy
+    // clients (pre-4096) sent 0..1 normalized — rescale inline using the same
+    // heuristic the model layer applies in fromJson.
+    final rawX = (payload['x'] as num?)?.toDouble() ?? kCanvasWidth / 2;
+    final rawY = (payload['y'] as num?)?.toDouble() ?? kCanvasHeight / 2;
+    final x = rawX <= 1.0 ? rawX * kCanvasWidth : rawX;
+    final y = rawY <= 1.0 ? rawY * kCanvasHeight : rawY;
+    // Older clients won't send `scale`; preserve the prior value (or default to
+    // 1.0) so a move from an old build doesn't reset the size that a newer
+    // participant just resized.
+    final existing = state.avatarPositions[targetUserId];
+    final rawScale = (payload['scale'] as num?)?.toDouble();
+    final scale = (rawScale ?? existing?.scale ?? 1.0).clamp(
+      AvatarPosition.minScale,
+      AvatarPosition.maxScale,
+    );
+    final updated = Map<String, AvatarPosition>.from(state.avatarPositions);
+    updated[targetUserId] = AvatarPosition(
+      userId: targetUserId,
+      x: x.clamp(0.0, kCanvasWidth),
+      y: y.clamp(0.0, kCanvasHeight),
+      scale: scale,
+    );
+    state = state.copyWith(avatarPositions: updated);
+  }
+
+  /// `screenshare_move`: a peer moved/resized a shared-screen window.
+  void _applyRemoteScreenShareMove(Map<String, dynamic> payload) {
+    final resolved = _resolveScreenShareMove(payload);
+    if (resolved == null) return;
+    final updated = Map<String, ScreenShareWindow>.from(
+      state.screenSharePositions,
+    );
+    updated[resolved.windowId] = resolved;
+    state = state.copyWith(screenSharePositions: updated);
   }
 
   // VL-5: mirror the server's MAX_STROKES / MAX_IMAGES (apps/server/src/db/

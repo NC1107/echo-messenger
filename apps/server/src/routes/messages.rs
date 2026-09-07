@@ -776,7 +776,7 @@ pub async fn set_disappearing_ttl(
             .and_then(Role::from_str_opt)
             .unwrap_or(Role::Member);
         if !role.is_admin_or_above() {
-            return Err(AppError::unauthorized(
+            return Err(AppError::forbidden(
                 "Only admins can change disappearing messages settings",
             ));
         }
@@ -835,7 +835,7 @@ pub async fn pin_message(
             .and_then(Role::from_str_opt)
             .unwrap_or(Role::Member);
         if !role.is_admin_or_above() {
-            return Err(AppError::unauthorized(
+            return Err(AppError::forbidden(
                 "Only admins and owners can pin messages in groups",
             ));
         }
@@ -912,7 +912,7 @@ pub async fn unpin_message(
             .and_then(Role::from_str_opt)
             .unwrap_or(Role::Member);
         if !role.is_admin_or_above() {
-            return Err(AppError::unauthorized(
+            return Err(AppError::forbidden(
                 "Only admins and owners can unpin messages in groups",
             ));
         }

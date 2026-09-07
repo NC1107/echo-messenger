@@ -2,7 +2,8 @@
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
-use axum::response::IntoResponse;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -84,6 +85,47 @@ pub async fn get_group_preview(
             "role": m.role,
         })).collect::<Vec<_>>(),
     })))
+}
+
+/// GET /api/groups/featured -- The server's "welcome" group, if configured.
+///
+/// The operator points `WELCOME_GROUP_ID` at one public group (e.g. the
+/// Echo Public Group). New clients offer it as a one-tap join on first
+/// reaching the home screen. Returns the same preview shape as
+/// `/:id/preview` so the client can reuse its parser, or `204 No Content`
+/// when the env var is unset, malformed, or the referenced group no longer
+/// exists / isn't public. We never 500 on a misconfigured env var — a
+/// missing welcome group is a non-event, not an error.
+pub async fn featured_group(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<Response, AppError> {
+    let Some(group_id) = std::env::var("WELCOME_GROUP_ID")
+        .ok()
+        .and_then(|v| Uuid::parse_str(v.trim()).ok())
+    else {
+        return Ok(StatusCode::NO_CONTENT.into_response());
+    };
+
+    let preview = db::groups::get_group_preview(&state.pool, group_id, auth.user_id)
+        .await
+        .db_ctx("featured_group/preview")?;
+
+    // Only surface a public group; a misconfigured pointer at a private or
+    // deleted group degrades silently to "no welcome group".
+    let Some(preview) = preview.filter(|p| p.is_public) else {
+        return Ok(StatusCode::NO_CONTENT.into_response());
+    };
+
+    Ok(Json(json!({
+        "id": preview.id,
+        "title": preview.title,
+        "description": preview.description,
+        "icon_url": preview.icon_url,
+        "member_count": preview.member_count,
+        "is_member": preview.is_member,
+    }))
+    .into_response())
 }
 
 /// POST /api/groups/:id/join -- Join a public group.

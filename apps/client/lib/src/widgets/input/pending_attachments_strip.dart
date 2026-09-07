@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../../theme/echo_theme.dart';
+import '../../utils/byte_format.dart';
 
 /// State for a single attachment staged for sending.
 ///
@@ -137,7 +138,7 @@ class _AttachmentChip extends StatelessWidget {
                   Text(
                     attachment.isExternalUrl
                         ? 'GIF'
-                        : _formatBytes(attachment.sizeBytes),
+                        : formatBytes(attachment.sizeBytes),
                     style: TextStyle(fontSize: 10, color: context.textMuted),
                   ),
                   const SizedBox(height: 4),
@@ -270,17 +271,4 @@ class _AttachmentChip extends StatelessWidget {
       },
     );
   }
-}
-
-/// Format a byte count as a human-readable string (1024-based, 1 decimal).
-String _formatBytes(int bytes) {
-  if (bytes < 1024) return '$bytes B';
-  const units = ['KB', 'MB', 'GB'];
-  var v = bytes / 1024.0;
-  var i = 0;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return '${v.toStringAsFixed(1)} ${units[i]}';
 }

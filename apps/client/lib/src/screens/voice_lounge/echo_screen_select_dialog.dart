@@ -22,6 +22,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 
+import '../../widgets/loading_indicator.dart';
+
 /// Shows the screen / window picker and returns the selected source, or null
 /// when the user cancels.
 Future<rtc.DesktopCapturerSource?> showEchoScreenSelectDialog(
@@ -193,7 +195,7 @@ class _EchoScreenSelectDialogState extends State<_EchoScreenSelectDialog> {
                     const SizedBox(height: 2),
                     Expanded(
                       child: visible.isEmpty
-                          ? const Center(child: CircularProgressIndicator())
+                          ? const CenteredLoadingIndicator()
                           : GridView.builder(
                               padding: const EdgeInsets.all(12),
                               gridDelegate:

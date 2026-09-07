@@ -78,6 +78,14 @@ void main() {
       );
     });
 
+    test('404 / 405 map to a wrong-server message, not bad credentials', () {
+      const msg =
+          "This server isn't responding as an Echo server. "
+          'Check the server URL.';
+      expect(friendlyLoginError(statusCode: 404), msg);
+      expect(friendlyLoginError(statusCode: 405), msg);
+    });
+
     test('5xx maps to server-error message', () {
       expect(
         friendlyLoginError(statusCode: 500),

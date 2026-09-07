@@ -60,7 +60,7 @@ async fn upload_group_key_as_member_rejected() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status().as_u16(), 401);
+    assert_eq!(resp.status().as_u16(), 403);
 }
 
 #[tokio::test]
@@ -86,7 +86,7 @@ async fn upload_group_key_as_nonmember_rejected() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status().as_u16(), 401);
+    assert_eq!(resp.status().as_u16(), 403);
 }
 
 // ---------------------------------------------------------------------------
@@ -707,7 +707,7 @@ async fn rotation_audit_is_admin_only() {
         .unwrap();
     assert_eq!(
         resp.status().as_u16(),
-        401,
+        403,
         "regular members must not see encryption activity"
     );
 }

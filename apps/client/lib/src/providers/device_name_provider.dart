@@ -57,17 +57,23 @@ class DeviceNamesNotifier extends AsyncNotifier<Map<int, String>> {
     if (response.statusCode != 200) {
       return const <int, String>{};
     }
+    return _parseDeviceNames(_extractRawDevices(jsonDecode(response.body)));
+  }
 
-    final body = jsonDecode(response.body);
-    final List<dynamic> rawDevices;
-    if (body is List) {
-      rawDevices = body;
-    } else if (body is Map<String, dynamic>) {
-      rawDevices = (body['devices'] as List<dynamic>?) ?? const [];
-    } else {
-      rawDevices = const [];
+  /// The device list comes back either as a bare array or under a `devices`
+  /// key depending on server version; normalise to a list. Extracted to keep
+  /// [_fetch] within the cognitive-complexity budget (S3776).
+  List<dynamic> _extractRawDevices(dynamic body) {
+    if (body is List) return body;
+    if (body is Map<String, dynamic>) {
+      return (body['devices'] as List<dynamic>?) ?? const [];
     }
+    return const [];
+  }
 
+  /// Map `device_id → display name`, falling back to `platform` then
+  /// `"Device N"` when the server hasn't persisted a `device_name` yet.
+  Map<int, String> _parseDeviceNames(List<dynamic> rawDevices) {
     final result = <int, String>{};
     for (final raw in rawDevices) {
       if (raw is! Map<String, dynamic>) continue;
@@ -78,15 +84,10 @@ class DeviceNamesNotifier extends AsyncNotifier<Map<int, String>> {
         result[id] = name;
         continue;
       }
-      // Backward-compat fallback when the server hasn't been migrated yet:
-      // fall back to `platform` then `Device $id` so the pill still has
-      // something to show.
       final platform = raw['platform'] as String?;
-      if (platform != null && platform.trim().isNotEmpty) {
-        result[id] = platform;
-      } else {
-        result[id] = 'Device $id';
-      }
+      result[id] = (platform != null && platform.trim().isNotEmpty)
+          ? platform
+          : 'Device $id';
     }
     return result;
   }

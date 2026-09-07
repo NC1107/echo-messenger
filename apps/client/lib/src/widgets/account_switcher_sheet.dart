@@ -20,10 +20,12 @@ import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/crypto_provider.dart';
 import '../providers/websocket_provider.dart';
+import '../router/routes.dart';
 import '../services/accounts_storage.dart';
 import '../theme/echo_theme.dart';
 import 'account_list_row.dart';
 import 'echo_bottom_sheet.dart';
+import 'loading_indicator.dart';
 
 const String _kSwitchAccountTitle = 'Switch account';
 const String _kAddAccountLabel = 'Add another account';
@@ -81,7 +83,7 @@ class _AccountSwitcherSheetState extends ConsumerState<AccountSwitcherSheet> {
   Widget _buildLoading() {
     return const Padding(
       padding: EdgeInsets.symmetric(vertical: 32),
-      child: Center(child: CircularProgressIndicator()),
+      child: CenteredLoadingIndicator(),
     );
   }
 
@@ -138,11 +140,11 @@ class _AccountSwitcherSheetState extends ConsumerState<AccountSwitcherSheet> {
     Navigator.of(context).maybePop();
 
     if (ok) {
-      context.go('/home');
+      context.go(routeHome);
       return;
     }
     _showExpiredSnackbar();
-    context.go('/login');
+    context.go(routeLogin);
   }
 
   void _showExpiredSnackbar() {
@@ -160,7 +162,7 @@ class _AccountSwitcherSheetState extends ConsumerState<AccountSwitcherSheet> {
     // Fire-and-forget; resetState awaits internally on next switch.
     ref.read(cryptoProvider.notifier).resetState();
     ref.read(authProvider.notifier).logout(forgetAccount: false);
-    context.go('/login');
+    context.go(routeLogin);
   }
 }
 

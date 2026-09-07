@@ -89,7 +89,7 @@ async fn ensure_group_member(
     }
 
     if !ctx.is_member {
-        return Err(AppError::unauthorized("Not a member of this group"));
+        return Err(AppError::forbidden("Not a member of this group"));
     }
 
     Ok(())
@@ -111,12 +111,12 @@ async fn ensure_group_admin(
         .ok_or_else(|| AppError::bad_request("Group not found"))?;
 
     if !ctx.is_member {
-        return Err(AppError::unauthorized("Not a member of this group"));
+        return Err(AppError::forbidden("Not a member of this group"));
     }
 
     match ctx.role.as_deref().and_then(Role::from_str_opt) {
         Some(r) if r.is_admin_or_above() => Ok(()),
-        _ => Err(AppError::unauthorized(
+        _ => Err(AppError::forbidden(
             "Only group owners and admins can manage channels",
         )),
     }
@@ -181,7 +181,7 @@ pub async fn create_channel(
     let kind = body.kind.trim().to_lowercase();
     if !is_valid_channel_kind(&kind) {
         return Err(AppError::bad_request(
-            "Channel kind must be 'text' or 'voice'",
+            "Channel kind must be 'text', 'voice', or 'divider'",
         ));
     }
 

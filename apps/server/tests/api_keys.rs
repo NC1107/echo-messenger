@@ -703,16 +703,17 @@ async fn device_0_legacy_fingerprint_still_enforced() {
 async fn reset_device_clears_only_that_device() {
     let base = common::spawn_server().await;
     let client = Client::new();
-    let (token, uid, username) = common::register_and_login(&client, &base, "keyresetdev").await;
+    let (token, uid, username, password) =
+        common::register_and_login_pw(&client, &base, "keyresetdev").await;
 
     let bundle0 = common::upload_prekey_bundle(&client, &base, &token, 0, 0).await;
     common::upload_additional_device(&client, &base, &token, &bundle0, 1).await;
 
-    // Reset only device 1 (password matches the constant used by `register`).
+    // Reset only device 1 (password must match the account's registered one).
     let resp = client
         .post(format!("{base}/api/keys/reset_device"))
         .header("Authorization", format!("Bearer {token}"))
-        .json(&serde_json::json!({ "password": "password123", "device_id": 1 }))
+        .json(&serde_json::json!({ "password": password, "device_id": 1 }))
         .send()
         .await
         .unwrap();
@@ -722,7 +723,7 @@ async fn reset_device_clears_only_that_device() {
     // (see auth::invalidation). Re-login to acquire a fresh JWT for the
     // post-reset re-upload below; the original `token` predates the
     // invalidation floor and would 401.
-    let (token, _uid) = common::login(&client, &base, &username, common::TEST_USER_PASSWORD).await;
+    let (token, _uid) = common::login(&client, &base, &username, &password).await;
 
     // Device 0 must still be reachable
     let (token_other, _, _) = common::register_and_login(&client, &base, "keyresetdevobs").await;

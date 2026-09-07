@@ -29,14 +29,11 @@ const UNRECOGNIZED_BYTES: &[u8] = &[0xAA, 0xBB, 0xCC];
 // Local helpers
 // ---------------------------------------------------------------------------
 
-/// Test-only password used to register the temporary users this suite spins
-/// up against an ephemeral DB.  Never used outside `#[cfg(test)]`.
-const TEST_PASSWORD: &str = "password123";
-
 async fn register_and_login(client: &Client, base: &str, prefix: &str) -> (String, String) {
     let username = common::unique_username(prefix);
-    common::register(client, base, &username, TEST_PASSWORD).await;
-    common::login(client, base, &username, TEST_PASSWORD).await
+    let password = common::unique_password();
+    common::register(client, base, &username, &password).await;
+    common::login(client, base, &username, &password).await
 }
 
 async fn create_group(client: &Client, base: &str, token: &str, name: &str) -> String {
@@ -122,7 +119,7 @@ async fn update_group_owner_can_change_description() {
 }
 
 #[tokio::test]
-async fn update_group_non_admin_member_gets_401() {
+async fn update_group_non_admin_member_gets_403() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let (owner_token, _) = register_and_login(&client, &base, "upd_own403").await;
@@ -144,7 +141,7 @@ async fn update_group_non_admin_member_gets_401() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status().as_u16(), 401);
+    assert_eq!(resp.status().as_u16(), 403);
 }
 
 #[tokio::test]
@@ -250,7 +247,7 @@ async fn upload_group_avatar_file_field_name_also_accepted() {
 }
 
 #[tokio::test]
-async fn upload_group_avatar_non_admin_gets_401() {
+async fn upload_group_avatar_non_admin_gets_403() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let (owner_token, _) = register_and_login(&client, &base, "gav_own_403").await;
@@ -278,7 +275,7 @@ async fn upload_group_avatar_non_admin_gets_401() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status().as_u16(), 401);
+    assert_eq!(resp.status().as_u16(), 403);
 }
 
 #[tokio::test]
@@ -604,7 +601,7 @@ async fn list_invites_returns_only_this_groups_invites() {
 }
 
 #[tokio::test]
-async fn list_invites_regular_member_gets_401() {
+async fn list_invites_regular_member_gets_403() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let (owner_token, _) = register_and_login(&client, &base, "li_own401").await;
@@ -625,7 +622,7 @@ async fn list_invites_regular_member_gets_401() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status().as_u16(), 401);
+    assert_eq!(resp.status().as_u16(), 403);
 }
 
 // ---------------------------------------------------------------------------
@@ -987,7 +984,7 @@ async fn revoke_invite_nonexistent_token_returns_404() {
 }
 
 #[tokio::test]
-async fn revoke_invite_regular_member_gets_401() {
+async fn revoke_invite_regular_member_gets_403() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let (owner_token, _) = register_and_login(&client, &base, "ri_mem_own").await;
@@ -1009,7 +1006,7 @@ async fn revoke_invite_regular_member_gets_401() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status().as_u16(), 401);
+    assert_eq!(resp.status().as_u16(), 403);
 }
 
 #[tokio::test]

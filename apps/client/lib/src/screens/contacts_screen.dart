@@ -16,6 +16,7 @@ import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
 import '../widgets/empty_state.dart';
+import '../widgets/loading_indicator.dart';
 import 'user_profile_screen.dart';
 
 /// A user returned from the /api/users/search endpoint.
@@ -370,7 +371,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
         contactsState.pendingRequests.isEmpty;
 
     if (isInitialLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return const CenteredLoadingIndicator();
     }
 
     return RefreshIndicator(

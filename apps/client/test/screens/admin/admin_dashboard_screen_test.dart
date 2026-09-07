@@ -138,6 +138,106 @@ void main() {
       findsOneWidget,
     );
   });
+
+  // ------------------------------------------------------------------
+  // Feedback deletion
+  // ------------------------------------------------------------------
+
+  testWidgets('delete button confirms then removes the feedback row', (
+    tester,
+  ) async {
+    late _DeletableNotifier notifier;
+    await pump(
+      tester,
+      override: () {
+        notifier = _DeletableNotifier();
+        return notifier;
+      },
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Server is on fire'), findsOneWidget);
+    expect(find.byIcon(Icons.delete_outline), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete feedback?'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+    await tester.pumpAndSettle();
+
+    expect(notifier.deletedIds, contains('fb-1'));
+    expect(find.text('Server is on fire'), findsNothing);
+  });
+
+  testWidgets('cancelling the confirm dialog keeps the row', (tester) async {
+    late _DeletableNotifier notifier;
+    await pump(
+      tester,
+      override: () {
+        notifier = _DeletableNotifier();
+        return notifier;
+      },
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(notifier.deletedIds, isEmpty);
+    expect(find.text('Server is on fire'), findsOneWidget);
+  });
+}
+
+/// Fake that records deleted ids and mutates state in place so the screen
+/// re-renders without the removed row — exercising the same code path the
+/// real notifier's optimistic removal takes.
+class _DeletableNotifier extends AdminDashboardNotifier {
+  final List<String> deletedIds = [];
+
+  @override
+  Future<AdminDashboardData> build() async {
+    return AdminDashboardData(
+      stats: const AdminStats(
+        usersTotal: 1,
+        usersActive24h: 1,
+        messages24h: 1,
+        groupsTotal: 0,
+        onlineDevices: 0,
+        feedbackOpen: 1,
+        feedbackLast24h: 1,
+      ),
+      feedback: [
+        FeedbackItem(
+          id: 'fb-1',
+          userId: 'u-1',
+          username: 'alice',
+          title: 'Server is on fire',
+          body: 'The voice chat dropped twice last night.',
+          publicOk: true,
+          status: 'open',
+          createdAt: DateTime.utc(2026, 5, 14, 12, 0, 0),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<void> deleteFeedback(String id) async {
+    deletedIds.add(id);
+    final current = state.valueOrNull;
+    if (current == null) return;
+    state = AsyncValue.data(
+      AdminDashboardData(
+        stats: current.stats,
+        feedback: current.feedback
+            .where((f) => f.id != id)
+            .toList(growable: false),
+      ),
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

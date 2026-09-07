@@ -5,6 +5,7 @@ import 'package:network_image_mock/network_image_mock.dart';
 
 import 'package:echo_app/src/models/chat_message.dart';
 import 'package:echo_app/src/widgets/conversation_panel.dart';
+import 'package:echo_app/src/widgets/message/message_actions.dart';
 import 'package:echo_app/src/widgets/message_item.dart';
 
 import '../helpers/mock_providers.dart';
@@ -46,8 +47,7 @@ void main() {
             // After the hover-action overhaul, the reply/forward buttons
             // are gated on callbacks being non-null — pass stubs here so
             // the 33×33 hit-target contract still has a button to check.
-            onReply: (_) {},
-            onForward: (_) {},
+            actions: MessageActions(onReply: (_) {}, onForward: (_) {}),
           ),
         );
         await tester.pump();

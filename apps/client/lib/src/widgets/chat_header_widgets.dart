@@ -25,6 +25,7 @@ import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/time_utils.dart';
 import 'echo_bottom_sheet.dart';
+import 'loading_indicator.dart';
 
 const _kAuthorizationHeader = 'Authorization';
 const _kDisappearingMessagesLabel = 'Disappearing messages';
@@ -477,7 +478,7 @@ class _PinnedMessagesDialogState extends ConsumerState<PinnedMessagesDialog> {
 
   Widget _buildContent(BuildContext context) {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return const CenteredLoadingIndicator();
     }
     if (_error != null) {
       return Center(

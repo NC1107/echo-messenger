@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/server_url_provider.dart';
+import '../router/routes.dart';
 import '../theme/echo_theme.dart';
 import '../utils/version_utils.dart';
 import '../widgets/auth/auth_layout.dart';
@@ -13,6 +14,7 @@ import '../widgets/auth/auth_scaffold_chrome.dart';
 import '../widgets/auth/beta_banner.dart';
 import '../widgets/auth/server_subtitle.dart';
 import '../widgets/echo_logo_icon.dart';
+import '../widgets/loading_indicator.dart';
 import '../widgets/window_chrome.dart';
 
 /// Pre-fill the username from the [knownServersProvider] entry that
@@ -107,6 +109,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         _maybePrefillUsername();
       }
     });
+    // This screen is kept alive (wantKeepAlive), so its controllers survive
+    // navigation away on login. When the user later logs out, the username
+    // controller would still hold the previous account's value -- the prefill
+    // guard (text.isNotEmpty) then leaves it untouched, the field can render
+    // blank, and typing a new name *appends* to it (e.g.
+    // "echoqa_bobechoqa_alice"), which fails to authenticate. Reset both
+    // fields on the logged-in -> logged-out transition so account switching
+    // starts clean, then re-apply the last-username prefill.
+    ref.listen<AuthState>(authProvider, (prev, next) {
+      if ((prev?.isLoggedIn ?? false) && !next.isLoggedIn) {
+        _usernameController.clear();
+        _passwordController.clear();
+        _maybePrefillUsername();
+      }
+    });
     _maybePrefillUsername();
 
     _versionFuture ??= fetchVersionInfo(serverUrl);
@@ -126,6 +143,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                   tagline: 'Welcome back.',
                   formTitle: 'Log in to Echo',
                   compactHeader: _buildHeader(serverUrl),
+                  // Wide layout drops compactHeader (brand panel replaces it),
+                  // so the server picker must be passed separately or desktop
+                  // users can't switch servers (#1063).
+                  serverControl: ServerSubtitle(serverUrl: serverUrl),
                   narrowPadding: const EdgeInsets.fromLTRB(
                     EchoSpacing.xl,
                     EchoSpacing.xl,
@@ -153,7 +174,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                             button: true,
                             label: 'forgot-password',
                             child: TextButton(
-                              onPressed: () => context.go('/forgot-password'),
+                              onPressed: () => context.go(routeForgotPassword),
                               style: TextButton.styleFrom(
                                 foregroundColor: context.textSecondary,
                               ),
@@ -167,7 +188,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           // selectors (`getByRole('button', { name: /create
                           // an account/i })` resolves to 2).
                           TextButton(
-                            onPressed: () => context.go('/register'),
+                            onPressed: () => context.go(routeRegister),
                             style: TextButton.styleFrom(
                               foregroundColor: context.textSecondary,
                             ),
@@ -293,11 +314,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         child: FilledButton(
           onPressed: authState.isLoading ? null : _login,
           child: authState.isLoading
-              ? const SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+              ? const InlineLoadingSpinner(size: 20)
               : const Text('Log in'),
         ),
       ),

@@ -26,7 +26,10 @@ jobs:
   sonarcloud:
     name: SonarCloud Analysis
     runs-on: ubuntu-latest
-    environment: production
+    # SONAR_TOKEN is now a repo-level secret, so this job no longer borrows the
+    # `production` environment just to read it. That borrowing opened a spurious
+    # "production" deployment record on every push (including dev) that sat
+    # spinning for the duration of the scan — it never actually deployed prod.
     services:
       postgres:
         image: postgres:17

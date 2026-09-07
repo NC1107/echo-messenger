@@ -171,6 +171,19 @@ class DebugTarget extends ContextMenuTarget {
   String get analyticsName => 'debug:$label';
 }
 
+/// Channel-bar context menu target (rename / delete / create channel /
+/// create divider). The model is built at the call site since the actions
+/// are a small, fixed admin-only set; this target exists so the menu is a
+/// first-class citizen of the context-menu system rather than a raw
+/// `showMenu`.
+class ChannelTarget extends ContextMenuTarget {
+  const ChannelTarget({required this.channelId, required this.kind});
+  final String channelId;
+  final String kind;
+  @override
+  String get analyticsName => 'channel:$kind';
+}
+
 /// Message context menu (PR 2). Carries the message itself plus the
 /// per-callsite callbacks `MessageItem` already wires up — by holding
 /// references to the existing handlers we keep state-management in

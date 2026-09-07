@@ -34,4 +34,14 @@ void main() {
       expect(senderLabelColor('bob'), senderLabelColor('bob'));
     });
   });
+
+  group('avatarAuthHeaders', () {
+    test('returns null when no token (public avatars get no header)', () {
+      expect(avatarAuthHeaders(null), isNull);
+    });
+
+    test('builds a Bearer Authorization header when a token is present', () {
+      expect(avatarAuthHeaders('abc123'), {'Authorization': 'Bearer abc123'});
+    });
+  });
 }

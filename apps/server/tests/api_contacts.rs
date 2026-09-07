@@ -10,14 +10,15 @@ async fn contact_request_accept_list_flow() {
     let base = common::spawn_server().await;
     let client = Client::new();
 
+    let password = common::unique_password();
     let alice_name = common::unique_username("alice");
     let bob_name = common::unique_username("bob");
 
-    common::register(&client, &base, &alice_name, "password123").await;
-    common::register(&client, &base, &bob_name, "password123").await;
+    common::register(&client, &base, &alice_name, &password).await;
+    common::register(&client, &base, &bob_name, &password).await;
 
-    let (alice_token, _alice_id) = common::login(&client, &base, &alice_name, "password123").await;
-    let (bob_token, _bob_id) = common::login(&client, &base, &bob_name, "password123").await;
+    let (alice_token, _alice_id) = common::login(&client, &base, &alice_name, &password).await;
+    let (bob_token, _bob_id) = common::login(&client, &base, &bob_name, &password).await;
 
     // Alice sends contact request to Bob
     let resp = client
@@ -79,14 +80,15 @@ async fn pending_requests_visible() {
     let base = common::spawn_server().await;
     let client = Client::new();
 
+    let password = common::unique_password();
     let alice_name = common::unique_username("alice");
     let bob_name = common::unique_username("bob");
 
-    common::register(&client, &base, &alice_name, "password123").await;
-    common::register(&client, &base, &bob_name, "password123").await;
+    common::register(&client, &base, &alice_name, &password).await;
+    common::register(&client, &base, &bob_name, &password).await;
 
-    let (alice_token, _) = common::login(&client, &base, &alice_name, "password123").await;
-    let (bob_token, _) = common::login(&client, &base, &bob_name, "password123").await;
+    let (alice_token, _) = common::login(&client, &base, &alice_name, &password).await;
+    let (bob_token, _) = common::login(&client, &base, &bob_name, &password).await;
 
     // Alice sends contact request to Bob
     let resp = client
@@ -152,14 +154,15 @@ async fn contact_list_includes_last_seen_field() {
     let base = common::spawn_server().await;
     let client = Client::new();
 
+    let password = common::unique_password();
     let alice_name = common::unique_username("ls_alice");
     let bob_name = common::unique_username("ls_bob");
 
-    common::register(&client, &base, &alice_name, "password123").await;
-    common::register(&client, &base, &bob_name, "password123").await;
+    common::register(&client, &base, &alice_name, &password).await;
+    common::register(&client, &base, &bob_name, &password).await;
 
-    let (alice_token, _) = common::login(&client, &base, &alice_name, "password123").await;
-    let (bob_token, _) = common::login(&client, &base, &bob_name, "password123").await;
+    let (alice_token, _) = common::login(&client, &base, &alice_name, &password).await;
+    let (bob_token, _) = common::login(&client, &base, &bob_name, &password).await;
 
     make_contacts(&client, &base, &alice_token, &bob_token, &bob_name).await;
 
@@ -190,14 +193,15 @@ async fn invisible_contact_last_seen_is_null() {
     let base = common::spawn_server().await;
     let client = Client::new();
 
+    let password = common::unique_password();
     let alice_name = common::unique_username("inv_alice");
     let bob_name = common::unique_username("inv_bob");
 
-    common::register(&client, &base, &alice_name, "password123").await;
-    common::register(&client, &base, &bob_name, "password123").await;
+    common::register(&client, &base, &alice_name, &password).await;
+    common::register(&client, &base, &bob_name, &password).await;
 
-    let (alice_token, _) = common::login(&client, &base, &alice_name, "password123").await;
-    let (bob_token, _) = common::login(&client, &base, &bob_name, "password123").await;
+    let (alice_token, _) = common::login(&client, &base, &alice_name, &password).await;
+    let (bob_token, _) = common::login(&client, &base, &bob_name, &password).await;
 
     make_contacts(&client, &base, &alice_token, &bob_token, &bob_name).await;
 

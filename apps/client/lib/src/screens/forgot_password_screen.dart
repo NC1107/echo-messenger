@@ -6,10 +6,12 @@ import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 
 import '../providers/server_url_provider.dart';
+import '../router/routes.dart';
 import '../theme/echo_theme.dart';
 import '../widgets/auth/auth_layout.dart';
 import '../widgets/auth/auth_scaffold_chrome.dart';
 import '../widgets/echo_logo_icon.dart';
+import '../widgets/loading_indicator.dart';
 
 /// Forgot-password screen (#476).
 ///
@@ -128,11 +130,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
               child: FilledButton(
                 onPressed: _isLoading ? null : _submit,
                 child: _isLoading
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
+                    ? const InlineLoadingSpinner(size: 20)
                     : const Text('Request reset'),
               ),
             ),
@@ -142,7 +140,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
             button: true,
             label: 'back-to-login',
             child: TextButton(
-              onPressed: () => context.go('/login'),
+              onPressed: () => context.go(routeLogin),
               style: TextButton.styleFrom(
                 foregroundColor: context.textSecondary,
               ),
@@ -213,7 +211,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
             button: true,
             label: 'enter-reset-token',
             child: FilledButton(
-              onPressed: () => context.go('/reset-password'),
+              onPressed: () => context.go(routeResetPassword),
               child: const Text('Enter reset token'),
             ),
           ),
@@ -223,7 +221,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
           button: true,
           label: 'back-to-login',
           child: TextButton(
-            onPressed: () => context.go('/login'),
+            onPressed: () => context.go(routeLogin),
             style: TextButton.styleFrom(foregroundColor: context.textSecondary),
             child: const Text('Back to login'),
           ),

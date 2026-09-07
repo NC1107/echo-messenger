@@ -211,6 +211,32 @@ impl Hub {
             self.send_to_user(member_id, msg.clone());
         }
     }
+
+    /// Broadcast a JSON event to all members, excluding only the **originating
+    /// device** of the actor (not the actor's whole user).
+    ///
+    /// `broadcast_json` with `Some(actor)` skips every one of the actor's
+    /// devices, which silently desyncs multi-device users: device B never sees
+    /// the stroke / read-receipt / call-started event device A just produced
+    /// (the VL-19 device-id-vs-user-id class). This variant delivers to the
+    /// actor's sibling devices while still suppressing the echo to the device
+    /// that sent the frame.
+    pub fn broadcast_json_except_device(
+        &self,
+        member_ids: &[Uuid],
+        json: &str,
+        actor: Uuid,
+        actor_device_id: i32,
+    ) {
+        let msg = WsMessage::Text(json.into());
+        for member_id in member_ids {
+            if *member_id == actor {
+                self.send_to_user_except_device(member_id, actor_device_id, msg.clone());
+            } else {
+                self.send_to_user(member_id, msg.clone());
+            }
+        }
+    }
 }
 
 impl Hub {
@@ -411,6 +437,38 @@ mod tests {
 
         // user2 (excluded) should not have received anything
         assert!(rx2.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn test_broadcast_json_except_device_reaches_actor_sibling_devices() {
+        let hub = Hub::new();
+        let actor = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        let (tx_a1, mut rx_a1) = mpsc::channel(16); // actor's originating device
+        let (tx_a2, mut rx_a2) = mpsc::channel(16); // actor's sibling device
+        let (tx_o, mut rx_o) = mpsc::channel(16); // another member
+
+        hub.register(actor, 1, tx_a1);
+        hub.register(actor, 2, tx_a2);
+        hub.register(other, 1, tx_o);
+
+        let members = [actor, other];
+        hub.broadcast_json_except_device(&members, r#"{"type":"stroke"}"#, actor, 1);
+
+        // The actor's SIBLING device (2) and the other member both receive it.
+        match rx_a2.recv().await.unwrap() {
+            WsMessage::Text(t) => assert_eq!(t.as_str(), r#"{"type":"stroke"}"#),
+            _ => panic!("expected Text"),
+        }
+        match rx_o.recv().await.unwrap() {
+            WsMessage::Text(t) => assert_eq!(t.as_str(), r#"{"type":"stroke"}"#),
+            _ => panic!("expected Text"),
+        }
+        // The originating device (1) is excluded — no echo of its own frame.
+        assert!(
+            rx_a1.try_recv().is_err(),
+            "originating device must not receive its own broadcast"
+        );
     }
 
     #[tokio::test]

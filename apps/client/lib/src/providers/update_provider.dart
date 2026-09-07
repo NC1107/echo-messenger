@@ -128,7 +128,26 @@ String? sanitizeReleaseBody(String? raw) {
   return body.isEmpty ? null : body;
 }
 
+/// Monotonic build counter from a dev version like `0.0.0-dev.42`, or null
+/// if [v] isn't a dev-channel version.
+int? _devBuildNumber(String v) {
+  final m = RegExp(r'-dev\.(\d+)$').firstMatch(v);
+  return m == null ? null : int.tryParse(m.group(1)!);
+}
+
+/// True when the dev channel is active for this build, i.e. `APP_VERSION` is a
+/// `0.0.0-dev.<n>` rolling build. The bare legacy `'dev'` is NOT a channel —
+/// it has no comparable build number, so updates stay disabled for it.
+bool get _isDevChannel => _devBuildNumber(appVersion) != null;
+
 bool _isNewer(String remote, String local) {
+  // Dev channel: compare the monotonic `-dev.<n>` counter, since the semver
+  // triple is always 0.0.0 for dev builds.
+  final localDev = _devBuildNumber(local);
+  if (localDev != null) {
+    final remoteDev = _devBuildNumber(remote);
+    return remoteDev != null && remoteDev > localDev;
+  }
   if (local == 'dev') return false;
   final r = remote.split('.').map((s) => int.tryParse(s) ?? 0).toList();
   final l = local.split('.').map((s) => int.tryParse(s) ?? 0).toList();
@@ -140,6 +159,11 @@ bool _isNewer(String remote, String local) {
   }
   return false;
 }
+
+/// Test-only view of the pure version comparison (handles both the stable
+/// semver triple and the dev channel's `-dev.<n>` counter).
+@visibleForTesting
+bool isNewerVersion(String remote, String local) => _isNewer(remote, local);
 
 const _cacheKey = 'update_check_cache';
 const _cacheTimeKey = 'update_check_time';
@@ -158,6 +182,15 @@ const _releaseApiUrl =
     'https://api.github.com/repos/NC1107/echo-messenger/releases/latest';
 const _releasesPageUrl =
     'https://github.com/NC1107/echo-messenger/releases/latest';
+
+/// Dev channel endpoints. `dev-build.yml` keeps a single rolling pre-release
+/// tagged `dev-latest` whose title carries the `0.0.0-dev.<n>` version and
+/// whose asset is the latest dev AppImage. `/releases/latest` deliberately
+/// excludes pre-releases, so stable builds never see this.
+const _devReleaseApiUrl =
+    'https://api.github.com/repos/NC1107/echo-messenger/releases/tags/dev-latest';
+const _devReleasesPageUrl =
+    'https://github.com/NC1107/echo-messenger/releases/tag/dev-latest';
 
 @Riverpod(keepAlive: true)
 class Update extends _$Update {
@@ -188,8 +221,10 @@ class Update extends _$Update {
   }
 
   Future<void> check({bool force = false}) async {
+    // The bare legacy 'dev' build has no comparable version → no channel.
+    // A `0.0.0-dev.<n>` build rides the dev channel (see [_isDevChannel]).
     if (appVersion == 'dev') {
-      debugPrint('[UpdateProvider] check skipped — running dev build');
+      debugPrint('[UpdateProvider] check skipped — untagged dev build');
       return;
     }
     state = state.copyWith(status: UpdateStatus.checking);
@@ -247,10 +282,14 @@ class Update extends _$Update {
   }
 
   /// Fetch the latest release from GitHub and update state + cache.
+  ///
+  /// Dev-channel builds read the rolling `dev-latest` pre-release; stable
+  /// builds read `/releases/latest` (which excludes pre-releases).
   Future<void> _fetchLatestRelease(SharedPreferences prefs) async {
+    final isDev = _isDevChannel;
     final response = await http
         .get(
-          Uri.parse(_releaseApiUrl),
+          Uri.parse(isDev ? _devReleaseApiUrl : _releaseApiUrl),
           headers: {'Accept': 'application/vnd.github.v3+json'},
         )
         .timeout(const Duration(seconds: 10));
@@ -261,9 +300,18 @@ class Update extends _$Update {
     }
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;
-    final tagName = (data['tag_name'] as String?) ?? '';
-    final version = tagName.startsWith('v') ? tagName.substring(1) : tagName;
-    final url = (data['html_url'] as String?) ?? _releasesPageUrl;
+    final String version;
+    if (isDev) {
+      // The dev-latest tag is constant; the rolling version lives in the
+      // release title (e.g. "0.0.0-dev.42").
+      version = ((data['name'] as String?) ?? '').trim();
+    } else {
+      final tagName = (data['tag_name'] as String?) ?? '';
+      version = tagName.startsWith('v') ? tagName.substring(1) : tagName;
+    }
+    final url =
+        (data['html_url'] as String?) ??
+        (isDev ? _devReleasesPageUrl : _releasesPageUrl);
     final assetUrl = _findPlatformAssetUrl(data);
     final body = sanitizeReleaseBody(data['body'] as String?);
 

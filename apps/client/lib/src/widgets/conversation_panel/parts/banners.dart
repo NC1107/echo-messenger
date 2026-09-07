@@ -154,11 +154,7 @@ mixin _ConversationPanelBannersMixin on ConsumerState<ConversationPanel> {
       case UpdateStatus.installing:
         return (
           label: 'Installing update...',
-          action: const SizedBox(
-            width: 12,
-            height: 12,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
+          action: const InlineLoadingSpinner(size: 12),
           showDismiss: false,
           progress: null,
         );

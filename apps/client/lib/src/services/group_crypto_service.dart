@@ -117,6 +117,16 @@ class GroupCryptoService {
   /// requests against the server for plaintext groups.
   final Set<String> _unencryptedGroups = {};
 
+  /// Negative cache: conversation → time until which we treat the group key
+  /// as unavailable (envelope unwrap failed, 410, etc.). Without this, every
+  /// undecryptable message in a group this device has no key for re-runs the
+  /// full `SecureKeyStore.readAll()` scan AND re-hits the server on every
+  /// rebuild — a fetch storm + log flood (observed on a fresh device joining
+  /// an encrypted group). Cleared the moment a key is cached, so a real key
+  /// arrival (rotation / manual refresh) is picked up immediately.
+  final Map<String, DateTime> _noKeyUntil = {};
+  static const _noKeyTtl = Duration(seconds: 30);
+
   /// Callback fired when the server reports 410 Gone from
   /// `GET /api/groups/:id/keys/latest` (no envelope at the latest key
   /// version for this caller). The chat layer wires this to a
@@ -507,6 +517,14 @@ class GroupCryptoService {
       return (version, base64Encode(bytes));
     }
 
+    // 1b. Negative cache: a recent fetch found no usable key for this group,
+    // so short-circuit before the expensive storage scan + HTTP fetch. Bounds
+    // the per-message storm to one attempt per [_noKeyTtl].
+    final noKeyUntil = _noKeyUntil[conversationId];
+    if (noKeyUntil != null && DateTime.now().isBefore(noKeyUntil)) {
+      return null;
+    }
+
     // 2. Secure storage
     final store = SecureKeyStore.instance;
     final allEntries = await store.readAll();
@@ -532,11 +550,17 @@ class GroupCryptoService {
         Uint8List.fromList(base64Decode(bestKey)),
         1,
       );
+      _noKeyUntil.remove(conversationId); // a key exists after all
       return (bestVersion, bestKey);
     }
 
-    // 3. Fetch from server
-    return fetchGroupKey(conversationId);
+    // 3. Fetch from server. On failure, negative-cache so the next message
+    // doesn't repeat the storage scan + HTTP round-trip until [_noKeyTtl].
+    final fetched = await fetchGroupKey(conversationId);
+    if (fetched == null) {
+      _noKeyUntil[conversationId] = DateTime.now().add(_noKeyTtl);
+    }
+    return fetched;
   }
 
   /// Phase 2C: read the cached `min_wire_version` for a conversation.
@@ -1004,6 +1028,7 @@ class GroupCryptoService {
   Future<void> clearAll() async {
     _keyCache.clear();
     _unencryptedGroups.clear();
+    _noKeyUntil.clear();
     final store = SecureKeyStore.instance;
     final allEntries = await store.readAll();
     for (final key in allEntries.keys) {
@@ -1025,6 +1050,9 @@ class GroupCryptoService {
   }) async {
     final bytes = Uint8List.fromList(base64Decode(keyBase64));
     _keyCache[conversationId] = (version, bytes, minWireVersion);
+    // A verified key just landed — lift any negative-cache suppression so the
+    // very next decrypt uses it instead of waiting out the TTL.
+    _noKeyUntil.remove(conversationId);
 
     final store = SecureKeyStore.instance;
     await store.write('group_key_${conversationId}_$version', keyBase64);
@@ -1044,6 +1072,9 @@ class GroupCryptoService {
   /// the old key cannot inject ciphertext we would encrypt for them.
   Future<void> _purgeKey(String conversationId) async {
     _keyCache.remove(conversationId);
+    // Clear negative-cache too: a manual "Refresh key" / rotation must be
+    // allowed to re-fetch immediately rather than be suppressed by the TTL.
+    _noKeyUntil.remove(conversationId);
     final store = SecureKeyStore.instance;
     final allEntries = await store.readAll();
     final prefix = 'group_key_${conversationId}_';

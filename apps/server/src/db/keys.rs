@@ -416,28 +416,49 @@ pub async fn get_all_prekey_bundles(
         .collect();
     candidates.sort_unstable_by(|a, b| b.cmp(a));
 
+    // Batch-consume one unused OTP per candidate device in a single round-trip
+    // (this was an N+1 — one UPDATE…RETURNING per device). The LATERAL picks the
+    // lowest unused prekey per device with FOR UPDATE SKIP LOCKED, so two
+    // concurrent bundle fetches never hand out the same one-time prekey.
+    let otp_rows: Vec<(i32, i32, Vec<u8>)> = sqlx::query_as(
+        "WITH picks AS ( \
+             SELECT p.id, p.device_id, p.key_id, p.public_key \
+             FROM unnest($2::int[]) AS c(device_id) \
+             CROSS JOIN LATERAL ( \
+                 SELECT id, device_id, key_id, public_key \
+                 FROM one_time_prekeys \
+                 WHERE user_id = $1 AND device_id = c.device_id AND NOT used \
+                 ORDER BY id ASC LIMIT 1 \
+                 FOR UPDATE SKIP LOCKED \
+             ) p \
+         ) \
+         UPDATE one_time_prekeys o SET used = true \
+         FROM picks WHERE o.id = picks.id \
+         RETURNING picks.device_id, picks.key_id, picks.public_key",
+    )
+    .bind(user_id)
+    .bind(&candidates)
+    .fetch_all(pool)
+    .await?;
+
+    let otp_map: HashMap<i32, (i32, Vec<u8>)> = otp_rows
+        .into_iter()
+        .map(|(dev, kid, pk)| (dev, (kid, pk)))
+        .collect();
+
     let mut results = Vec::with_capacity(candidates.len());
     for device_id in candidates {
         let (identity_key, signing_key) = identity_map[&device_id].clone();
         let (signed_prekey_id, signed_prekey, signed_prekey_signature) =
             spk_map[&device_id].clone();
 
-        let otp_row: Option<(i32, Vec<u8>)> = sqlx::query_as(
-            "UPDATE one_time_prekeys SET used = true \
-             WHERE id = ( \
-                 SELECT id FROM one_time_prekeys \
-                 WHERE user_id = $1 AND device_id = $2 AND NOT used \
-                 ORDER BY id ASC LIMIT 1 \
-                 FOR UPDATE SKIP LOCKED \
-             ) RETURNING key_id, public_key",
-        )
-        .bind(user_id)
-        .bind(device_id)
-        .fetch_optional(pool)
-        .await?;
-
         let one_time_prekey =
-            otp_row.map(|(key_id, public_key)| OneTimePreKeyRow { key_id, public_key });
+            otp_map
+                .get(&device_id)
+                .map(|(key_id, public_key)| OneTimePreKeyRow {
+                    key_id: *key_id,
+                    public_key: public_key.clone(),
+                });
 
         results.push((
             device_id,
@@ -716,7 +737,9 @@ pub struct GroupKeyRow {
     pub conversation_id: Uuid,
     pub key_version: i32,
     pub encrypted_key: String,
-    pub created_by: Uuid,
+    /// Nullable: SET NULL on creator deletion (the key survives, attribution
+    /// is dropped — see migration 20260610000000).
+    pub created_by: Option<Uuid>,
     pub created_at: DateTime<Utc>,
 }
 

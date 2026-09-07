@@ -1,0 +1,12 @@
+{
+  "name": "x3dh-respond-no-otp",
+  "kind": "x3dh_respond",
+  "description": "Bob-side X3DH respond without one-time prekey (3 DH ops)",
+  "bob_identity_private_b64": "MTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTE=",
+  "signing_seed_b64": "MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjI=",
+  "bob_signed_prekey_private_b64": "MzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzM=",
+  "bob_one_time_prekey_private_b64": null,
+  "alice_identity_private_b64": "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
+  "alice_ephemeral_private_b64": "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=",
+  "expected_shared_secret_b64": "yGRdziVFnbfoki/f4T1i3mtRJBJb8vDRnK4Y2rZ9XWc="
+}
